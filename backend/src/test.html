@@ -1,0 +1,116 @@
+<style>
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0
+    }
+
+    .ts {
+        background: #f5f4f2;
+        padding: 30px;
+        border-top: 4px solid #7d0000;
+        width: 750px;
+    }
+
+    .tw {
+        display: flex;
+        gap: 18px;
+        align-items: center
+    }
+
+    .tiw {
+        flex: 1;
+        position: relative
+    }
+
+    .tiw svg {
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 20px;
+        height: 20px;
+        stroke: #9a8d73;
+        fill: none;
+        pointer-events: none
+    }
+
+    .ti {
+        width: 100%;
+        height: 58px;
+        border: 1px solid #d5d0c7;
+        background: #fff;
+        padding: 0 20px 0 52px !important;
+        font-size: 18px;
+        color: #333;
+        outline: none;
+        transition: border-color 0.3s ease;
+        border-radius: 0;
+        -webkit-appearance: none
+    }
+
+    .ti::placeholder {
+        color: #6c7a89
+    }
+
+    .ti:focus {
+        border-color: #b89b63
+    }
+
+    .tb {
+        min-width: 270px;
+        height: 58px;
+        border: none;
+        background: #1c170d;
+        color: #ffd400;
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 1px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        transition: transform 0.3s ease;
+        flex-shrink: 0;
+        border-radius: 0;
+        -webkit-appearance: none
+    }
+
+    .tb:hover {
+        transform: translateY(-2px)
+    }
+
+    .tb svg {
+        width: 20px;
+        height: 20px;
+        fill: #ffd400
+    }
+
+    @media(max-width:768px) {
+        .tw {
+            flex-direction: column
+        }
+
+        .tb {
+            width: 100%;
+            min-width: unset
+        }
+    }
+</style>
+<div class="ts">
+    <div class="tw">
+        <div class="tiw">
+            <svg viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 7h18M5 7v10a2 2 0 002 2h10a2 2 0 002-2V7M9 11h6"></path>
+            </svg>
+            <input type="text" class="ti" placeholder="Enter Tracking Number (e.g., SK-98721)">
+        </div>
+        <button class="tb">
+            <svg viewBox="0 0 24 24">
+                <path d="M5 4h14v16H5V4zm2 2v12h10V6H7zm2 2h2v2H9V8zm0 4h2v4H9v-4zm4-4h2v8h-2V8z"></path>
+            </svg>
+            REAL-TIME INSIGHT
+        </button>
+    </div>
+</div>
