@@ -1,8 +1,8 @@
 // Password Reset Utility
-// Usage: node src/utils/resetPassword.js
+// Usage: node src/utils/resetPassword.js [email] [password]
 
 import bcrypt from 'bcryptjs'
-import supabase from '../config/supabase.js'
+import { query, execute } from '../config/db.js'
 
 const EMAIL = process.argv[2] || 'admin@princeexp.com'
 const NEW_PASSWORD = process.argv[3] || 'admin123'
@@ -10,35 +10,24 @@ const NEW_PASSWORD = process.argv[3] || 'admin123'
 async function resetPassword() {
   try {
     // Check if user exists
-    const { data: user, error: fetchError } = await supabase
-      .from('users')
-      .select('id, email, name')
-      .eq('email', EMAIL)
-      .single()
+    const rows = await query(
+      'SELECT id, email, name FROM users WHERE email = ? LIMIT 1',
+      [EMAIL]
+    )
 
-    if (fetchError || !user) {
+    const user = rows[0]
+
+    if (!user) {
       console.log(`\n❌ User with email "${EMAIL}" not found.`)
       console.log('Creating new admin user...\n')
 
       const hashedPassword = await bcrypt.hash(NEW_PASSWORD, 10)
 
-      const { data: newUser, error: createError } = await supabase
-        .from('users')
-        .insert([
-          {
-            name: 'Admin',
-            email: EMAIL,
-            password: hashedPassword,
-            role: 'admin',
-            is_active: true
-          }
-        ])
-        .select()
-
-      if (createError) {
-        console.error('Failed to create user:', createError.message)
-        process.exit(1)
-      }
+      await execute(
+        `INSERT INTO users (name, email, password, role, is_active)
+         VALUES (?, ?, ?, ?, ?)`,
+        ['Admin', EMAIL, hashedPassword, 'admin', true]
+      )
 
       console.log('✅ Admin user created successfully!')
       console.log(`   Email:    ${EMAIL}`)
@@ -50,15 +39,10 @@ async function resetPassword() {
     // Update password
     const hashedPassword = await bcrypt.hash(NEW_PASSWORD, 10)
 
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({ password: hashedPassword })
-      .eq('id', user.id)
-
-    if (updateError) {
-      console.error('Failed to update password:', updateError.message)
-      process.exit(1)
-    }
+    await execute(
+      'UPDATE users SET password = ? WHERE id = ?',
+      [hashedPassword, user.id]
+    )
 
     console.log('\n✅ Password reset successfully!')
     console.log(`   User:     ${user.name}`)

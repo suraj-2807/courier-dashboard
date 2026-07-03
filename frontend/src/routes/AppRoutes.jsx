@@ -9,6 +9,7 @@ import BookingDetailPage from '../pages/BookingDetailPage'
 import NewBookingPage from '../pages/NewBookingPage'
 import TrackingPage from '../pages/TrackingPage'
 import ApiSettingsPage from '../pages/ApiSettingsPage'
+import RatesPage from '../pages/RatesPage'
 
 export default function AppRoutes() {
   return (
@@ -71,6 +72,16 @@ export default function AppRoutes() {
           <ProtectedRoute>
             <DashboardLayout>
               <ApiSettingsPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/rates"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <RatesPage />
             </DashboardLayout>
           </ProtectedRoute>
         }

@@ -15,7 +15,8 @@ import {
   Check,
   Loader2,
   Plug,
-  Zap
+  Zap,
+  FileText
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -28,22 +29,29 @@ const STEPS = [
 const INITIAL_FORM = {
   // Step 1 — Sender
   sender_name: '',
+  sender_company: '',
   sender_email: '',
   sender_phone: '',
   sender_address: '',
+  sender_address_2: '',
   sender_city: '',
   sender_pincode: '',
   sender_state: '',
   sender_country: 'INDIA',
+  sender_gstin_type: '',
+  sender_gstin_no: '',
   // Step 1 — Receiver
   receiver_name: '',
   receiver_email: '',
   receiver_phone: '',
   receiver_address: '',
+  receiver_address_2: '',
   receiver_city: '',
   receiver_pincode: '',
   receiver_state: '',
-  receiver_country: 'INDIA',
+  receiver_country: '',
+  receiver_gstin_type: '',
+  receiver_gstin_no: '',
   // Step 2 — Package
   package_type: 'parcel',
   weight: '',
@@ -56,6 +64,13 @@ const INITIAL_FORM = {
   content_description: '',
   declared_value: '',
   is_fragile: false,
+  // Step 2 — Invoice / Export
+  invoice_no: '',
+  invoice_date: '',
+  invoice_currency: 'INR',
+  hs_code: '',
+  export_reason: '',
+  terms_of_trade: 'CIF',
   // Step 3 — Courier
   courier_provider_id: '',
   vendor_config_id: '',
@@ -104,21 +119,28 @@ export default function NewBookingPage() {
     try {
       const result = await createBooking.mutateAsync({
         sender_name: form.sender_name,
+        sender_company: form.sender_company,
         sender_email: form.sender_email,
         sender_phone: form.sender_phone,
         sender_address: form.sender_address,
+        sender_address_2: form.sender_address_2,
         sender_city: form.sender_city,
         sender_pincode: form.sender_pincode,
         sender_state: form.sender_state,
         sender_country: form.sender_country,
+        sender_gstin_type: form.sender_gstin_type,
+        sender_gstin_no: form.sender_gstin_no,
         receiver_name: form.receiver_name,
         receiver_email: form.receiver_email,
         receiver_phone: form.receiver_phone,
         receiver_address: form.receiver_address,
+        receiver_address_2: form.receiver_address_2,
         receiver_city: form.receiver_city,
         receiver_pincode: form.receiver_pincode,
         receiver_state: form.receiver_state,
         receiver_country: form.receiver_country,
+        receiver_gstin_type: form.receiver_gstin_type,
+        receiver_gstin_no: form.receiver_gstin_no,
         weight: parseFloat(form.weight) || 0,
         length: parseFloat(form.length) || 0,
         breadth: parseFloat(form.breadth) || 0,
@@ -134,7 +156,14 @@ export default function NewBookingPage() {
         remarks: form.remarks,
         vendor_config_id: form.vendor_config_id || null,
         service_code: form.service_code || '',
-        cod_amount: parseFloat(form.cod_amount) || 0
+        cod_amount: parseFloat(form.cod_amount) || 0,
+        // Pacific-specific fields
+        invoice_no: form.invoice_no,
+        invoice_date: form.invoice_date,
+        invoice_currency: form.invoice_currency,
+        hs_code: form.hs_code,
+        export_reason: form.export_reason,
+        terms_of_trade: form.terms_of_trade
       })
 
       // Show vendor result if available
@@ -223,15 +252,26 @@ export default function NewBookingPage() {
                     <h2 className="text-[16px] font-bold text-text-primary">Sender Information</h2>
                   </div>
                   <div className="p-5 space-y-4">
-                    <FormField label="Full Name / Company" required>
-                      <input
-                        type="text"
-                        placeholder="e.g. Acme Corp"
-                        value={form.sender_name}
-                        onChange={e => updateForm('sender_name', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField label="Contact Name" required>
+                        <input
+                          type="text"
+                          placeholder="e.g. Rachit Shah"
+                          value={form.sender_name}
+                          onChange={e => updateForm('sender_name', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                      <FormField label="Company Name">
+                        <input
+                          type="text"
+                          placeholder="e.g. Acme Corp Pvt Ltd"
+                          value={form.sender_company}
+                          onChange={e => updateForm('sender_company', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField label="Email Address">
                         <input
@@ -252,15 +292,26 @@ export default function NewBookingPage() {
                         />
                       </FormField>
                     </div>
-                    <FormField label="Pickup Address" required>
-                      <input
-                        type="text"
-                        placeholder="Street Address"
-                        value={form.sender_address}
-                        onChange={e => updateForm('sender_address', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField label="Address Line 1" required>
+                        <input
+                          type="text"
+                          placeholder="Street / Building"
+                          value={form.sender_address}
+                          onChange={e => updateForm('sender_address', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                      <FormField label="Address Line 2">
+                        <input
+                          type="text"
+                          placeholder="Area / Landmark"
+                          value={form.sender_address_2}
+                          onChange={e => updateForm('sender_address_2', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <FormField label="City" required>
                         <input
@@ -286,6 +337,31 @@ export default function NewBookingPage() {
                           placeholder="State"
                           value={form.sender_state}
                           onChange={e => updateForm('sender_state', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField label="Document Type">
+                        <select
+                          value={form.sender_gstin_type}
+                          onChange={e => updateForm('sender_gstin_type', e.target.value)}
+                          className="form-input"
+                        >
+                          <option value="">— Select —</option>
+                          <option value="Aadhaar Number">Aadhaar Number</option>
+                          <option value="Pan Number">PAN Number</option>
+                          <option value="Passport">Passport</option>
+                          <option value="Voter ID">Voter ID</option>
+                          <option value="Driving License">Driving License</option>
+                        </select>
+                      </FormField>
+                      <FormField label="Document Number">
+                        <input
+                          type="text"
+                          placeholder="e.g. 1234 5678 9012"
+                          value={form.sender_gstin_no}
+                          onChange={e => updateForm('sender_gstin_no', e.target.value)}
                           className="form-input"
                         />
                       </FormField>
@@ -322,23 +398,34 @@ export default function NewBookingPage() {
                       <FormField label="Phone Number" required>
                         <input
                           type="tel"
-                          placeholder="+91 99999 99999"
+                          placeholder="+1 999 999 9999"
                           value={form.receiver_phone}
                           onChange={e => updateForm('receiver_phone', e.target.value)}
                           className="form-input"
                         />
                       </FormField>
                     </div>
-                    <FormField label="Delivery Address" required>
-                      <input
-                        type="text"
-                        placeholder="Street Address"
-                        value={form.receiver_address}
-                        onChange={e => updateForm('receiver_address', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField label="Address Line 1" required>
+                        <input
+                          type="text"
+                          placeholder="Street / Building"
+                          value={form.receiver_address}
+                          onChange={e => updateForm('receiver_address', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                      <FormField label="Address Line 2">
+                        <input
+                          type="text"
+                          placeholder="Apt / Suite / Floor"
+                          value={form.receiver_address_2}
+                          onChange={e => updateForm('receiver_address_2', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField label="City" required>
                         <input
                           type="text"
@@ -348,6 +435,17 @@ export default function NewBookingPage() {
                           className="form-input"
                         />
                       </FormField>
+                      <FormField label="Country" required>
+                        <input
+                          type="text"
+                          placeholder="e.g. US, GB, AE"
+                          value={form.receiver_country}
+                          onChange={e => updateForm('receiver_country', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <FormField label="Pincode" required>
                         <input
                           type="text"
@@ -363,6 +461,29 @@ export default function NewBookingPage() {
                           placeholder="State"
                           value={form.receiver_state}
                           onChange={e => updateForm('receiver_state', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <FormField label="Document Type">
+                        <select
+                          value={form.receiver_gstin_type}
+                          onChange={e => updateForm('receiver_gstin_type', e.target.value)}
+                          className="form-input"
+                        >
+                          <option value="">— Select —</option>
+                          <option value="Pan Number">PAN Number</option>
+                          <option value="Passport">Passport</option>
+                          <option value="Tax ID">Tax ID</option>
+                        </select>
+                      </FormField>
+                      <FormField label="Document Number">
+                        <input
+                          type="text"
+                          placeholder="e.g. ABCDE1234F"
+                          value={form.receiver_gstin_no}
+                          onChange={e => updateForm('receiver_gstin_no', e.target.value)}
                           className="form-input"
                         />
                       </FormField>
@@ -507,6 +628,92 @@ export default function NewBookingPage() {
                         />
                         <span className="text-[13px] text-text-secondary">Fragile / Handle with care</span>
                       </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Invoice & Export Details */}
+                <div className="bg-surface border border-border rounded-2xl">
+                  <div className="p-5 border-b border-border flex items-center gap-2.5">
+                    <FileText className="w-5 h-5 text-primary" />
+                    <div>
+                      <h2 className="text-[16px] font-bold text-text-primary">Invoice & Export Details</h2>
+                      <p className="text-[11px] text-text-tertiary mt-0.5">Required for international shipments</p>
+                    </div>
+                  </div>
+                  <div className="p-5 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <FormField label="Invoice Number">
+                        <input
+                          type="text"
+                          placeholder="e.g. INV-2026-001"
+                          value={form.invoice_no}
+                          onChange={e => updateForm('invoice_no', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                      <FormField label="Invoice Date">
+                        <input
+                          type="date"
+                          value={form.invoice_date}
+                          onChange={e => updateForm('invoice_date', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                      <FormField label="Currency">
+                        <select
+                          value={form.invoice_currency}
+                          onChange={e => updateForm('invoice_currency', e.target.value)}
+                          className="form-input"
+                        >
+                          <option value="INR">INR — Indian Rupee</option>
+                          <option value="USD">USD — US Dollar</option>
+                          <option value="GBP">GBP — British Pound</option>
+                          <option value="EUR">EUR — Euro</option>
+                          <option value="AED">AED — UAE Dirham</option>
+                          <option value="SGD">SGD — Singapore Dollar</option>
+                          <option value="AUD">AUD — Australian Dollar</option>
+                        </select>
+                      </FormField>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <FormField label="HS Code">
+                        <input
+                          type="text"
+                          placeholder="e.g. 854231"
+                          value={form.hs_code}
+                          onChange={e => updateForm('hs_code', e.target.value)}
+                          className="form-input"
+                        />
+                      </FormField>
+                      <FormField label="Export Reason">
+                        <select
+                          value={form.export_reason}
+                          onChange={e => updateForm('export_reason', e.target.value)}
+                          className="form-input"
+                        >
+                          <option value="">— Select —</option>
+                          <option value="COMMERCIAL">Commercial</option>
+                          <option value="FREE SAMPLE OF NO COMMERICAL VALUE">Free Sample</option>
+                          <option value="PERSONAL USE">Personal Use</option>
+                          <option value="GIFT">Gift</option>
+                          <option value="REPAIR AND RETURN">Repair & Return</option>
+                          <option value="EXHIBITION">Exhibition</option>
+                        </select>
+                      </FormField>
+                      <FormField label="Terms of Trade">
+                        <select
+                          value={form.terms_of_trade}
+                          onChange={e => updateForm('terms_of_trade', e.target.value)}
+                          className="form-input"
+                        >
+                          <option value="CIF">CIF — Cost, Insurance & Freight</option>
+                          <option value="FOB">FOB — Free on Board</option>
+                          <option value="EXW">EXW — Ex Works</option>
+                          <option value="DAP">DAP — Delivered at Place</option>
+                          <option value="DDP">DDP — Delivered Duty Paid</option>
+                        </select>
+                      </FormField>
                     </div>
                   </div>
                 </div>

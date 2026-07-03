@@ -40,7 +40,9 @@ import {
   testApiConnection,
   toggleApiSetting,
   saveAuthToken,
-  getPushLogs
+  getPushLogs,
+  getInternalFields,
+  extractTemplatePaths
 } from '../api/apiSettings.api'
 
 const AUTH_TYPES = [
@@ -73,7 +75,9 @@ const EMPTY_FORM = {
   // Settings
   environment: 'production',
   is_active: true,
-  // Headers
+  // Templates & Mappings
+  request_template: {},
+  field_mapping: {},
   headers_template: {}
 }
 
@@ -93,6 +97,16 @@ export default function ApiSettingsPage() {
   const [logsData, setLogsData] = useState([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [activeTab, setActiveTab] = useState('vendors')
+  const [requestTemplateStr, setRequestTemplateStr] = useState('')
+  const [headersTemplateStr, setHeadersTemplateStr] = useState('')
+  const [modalTab, setModalTab] = useState('connection')
+
+  // Fetch internal fields for mapping
+  const { data: fieldsData } = useQuery({
+    queryKey: ['internal-fields'],
+    queryFn: getInternalFields
+  })
+  const internalFields = fieldsData?.fields || []
 
   // Fetch configs
   const { data, isLoading } = useQuery({
@@ -144,12 +158,18 @@ export default function ApiSettingsPage() {
     setShowModal(false)
     setEditingId(null)
     setForm(EMPTY_FORM)
+    setRequestTemplateStr('')
+    setHeadersTemplateStr('')
+    setModalTab('connection')
     setShowPassword(false)
     setNewService(EMPTY_SERVICE)
   }
 
   const openAdd = () => {
     setForm(EMPTY_FORM)
+    setRequestTemplateStr('{\n  \n}')
+    setHeadersTemplateStr('{\n  "Content-Type": "application/json"\n}')
+    setModalTab('connection')
     setEditingId(null)
     setShowModal(true)
   }
@@ -175,14 +195,82 @@ export default function ApiSettingsPage() {
       available_services: config.available_services || [],
       environment: config.environment || 'production',
       is_active: config.is_active,
-      headers_template: config.headers_template || {}
+      field_mapping: config.field_mapping || {}
     })
+    setRequestTemplateStr(JSON.stringify(config.request_template || {}, null, 2))
+    setHeadersTemplateStr(JSON.stringify(config.headers_template || { "Content-Type": "application/json" }, null, 2))
+    setModalTab('connection')
     setEditingId(config.id)
     setShowModal(true)
   }
 
+  const handleParseTemplate = async () => {
+    let parsed
+    try {
+      parsed = JSON.parse(requestTemplateStr)
+    } catch (e) {
+      toast.error('Invalid JSON in Request Template: ' + e.message)
+      return
+    }
+
+    const toastId = toast.loading('Extracting field paths...')
+    try {
+      const response = await extractTemplatePaths(parsed)
+      if (response.success && Array.isArray(response.paths)) {
+        toast.success(`Successfully parsed ${response.paths.length} field paths!`, { id: toastId })
+        const newMapping = { ...form.field_mapping }
+        for (const path of response.paths) {
+          if (!newMapping[path]) {
+            newMapping[path] = { type: 'ignore', source: '', value: '', transform: '' }
+          }
+        }
+        setForm(prev => ({
+          ...prev,
+          field_mapping: newMapping
+        }))
+      } else {
+        toast.error('Failed to parse field paths', { id: toastId })
+      }
+    } catch (err) {
+      toast.error(err.message || 'Error parsing template', { id: toastId })
+    }
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
+
+    let request_template = {}
+    let headers_template = {}
+
+    try {
+      if (requestTemplateStr.trim()) {
+        request_template = JSON.parse(requestTemplateStr)
+      }
+    } catch (err) {
+      toast.error('Request Template must be valid JSON')
+      return
+    }
+
+    try {
+      if (headersTemplateStr.trim()) {
+        headers_template = JSON.parse(headersTemplateStr)
+      }
+    } catch (err) {
+      toast.error('Headers Template must be valid JSON')
+      return
+    }
+
+    const cleanedMapping = {}
+    for (const [key, mappingConfig] of Object.entries(form.field_mapping || {})) {
+      if (mappingConfig.type && mappingConfig.type !== 'ignore') {
+        cleanedMapping[key] = {
+          type: mappingConfig.type,
+          source: mappingConfig.source || '',
+          value: mappingConfig.value || '',
+          transform: mappingConfig.transform || ''
+        }
+      }
+    }
 
     const payload = {
       name: form.name,
@@ -198,11 +286,12 @@ export default function ApiSettingsPage() {
       available_services: form.available_services,
       environment: form.environment,
       is_active: form.is_active,
-      headers_template: form.headers_template
+      request_template,
+      headers_template,
+      field_mapping: cleanedMapping
     }
 
-    // Include credentials if provided
-    if (form.user_id || form.username || form.password) {
+    if (form.user_id || form.username || form.password || form.customer_code || form.company_code || form.customer_id) {
       if (form.user_id) payload.user_id = form.user_id
       if (form.username) payload.username = form.username
       if (form.password) payload.password = form.password
@@ -706,300 +795,548 @@ export default function ApiSettingsPage() {
               </button>
             </div>
 
+            {/* Modal Tabs */}
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface-alt)', padding: '0 24px' }}>
+              {['connection', 'mapping'].map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setModalTab(tab)}
+                  style={{
+                    padding: '12px 16px',
+                    border: 'none',
+                    background: 'none',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    color: modalTab === tab ? 'var(--color-primary)' : 'var(--color-text-tertiary)',
+                    borderBottom: modalTab === tab ? '2px solid var(--color-primary)' : '2px solid transparent',
+                    cursor: 'pointer',
+                    fontFamily: 'var(--font-family-body)',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  {tab === 'connection' ? 'Connection & Auth' : 'Advanced Mapping'}
+                </button>
+              ))}
+            </div>
+
             {/* Modal Form */}
             <form onSubmit={handleSubmit} style={{ padding: '24px' }}>
-              {/* ── Section: Basic Info ── */}
-              <SectionLabel>Basic Information</SectionLabel>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-                <div style={{ gridColumn: 'span 2' }}>
-                  <label style={labelStyle}>Display Name *</label>
-                  <input
-                    required
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="e.g., FlySwift Production"
-                    style={inputStyle}
-                  />
-                </div>
-                <div>
-                  <label style={labelStyle}>Vendor Code</label>
-                  <input
-                    value={form.vendor_code}
-                    onChange={(e) => setForm({ ...form, vendor_code: e.target.value })}
-                    placeholder="e.g., flyswift"
-                    style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
-                  />
-                  <p style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
-                    Use "flyswift" for FlySwift/Trackmate+ dedicated adapter, or leave blank for generic.
-                  </p>
-                </div>
-                <div>
-                  <label style={labelStyle}>Environment</label>
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-                    {['production', 'staging'].map((env) => (
-                      <button
-                        key={env}
-                        type="button"
-                        onClick={() => setForm({ ...form, environment: env })}
-                        style={{
-                          flex: 1, padding: '8px 14px', borderRadius: '8px',
-                          border: `2px solid ${form.environment === env ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                          background: form.environment === env ? 'rgba(187, 0, 19, 0.04)' : 'var(--color-surface)',
-                          fontSize: '12px', fontWeight: 600,
-                          color: form.environment === env ? 'var(--color-primary)' : 'var(--color-text-secondary)',
-                          cursor: 'pointer', transition: 'all 0.2s',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                          fontFamily: 'var(--font-family-body)'
-                        }}
-                      >
-                        <span style={{
-                          width: '5px', height: '5px', borderRadius: '50%',
-                          background: env === 'production' ? '#F59E0B' : '#6366F1'
-                        }} />
-                        {env === 'production' ? 'Production' : 'Staging'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* ── Section: Authentication ── */}
-              <SectionLabel>Authentication</SectionLabel>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '24px' }}>
-                {/* Auth Type Selector */}
-                <div>
-                  <label style={labelStyle}>Auth Type *</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                    {AUTH_TYPES.map((at) => (
-                      <button
-                        key={at.value}
-                        type="button"
-                        onClick={() => setForm({ ...form, auth_type: at.value })}
-                        style={{
-                          padding: '10px 12px', borderRadius: '10px',
-                          border: `2px solid ${form.auth_type === at.value ? 'var(--color-primary)' : 'var(--color-border)'}`,
-                          background: form.auth_type === at.value ? 'rgba(187, 0, 19, 0.04)' : 'var(--color-surface)',
-                          cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left',
-                          fontFamily: 'var(--font-family-body)'
-                        }}
-                      >
-                        <p style={{
-                          fontSize: '12px', fontWeight: 700,
-                          color: form.auth_type === at.value ? 'var(--color-primary)' : 'var(--color-text-primary)'
-                        }}>{at.label}</p>
-                        <p style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', marginTop: '2px', lineHeight: '1.3' }}>
-                          {at.desc}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Token Auth Fields */}
-                {form.auth_type === 'token' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', animation: 'fadeIn 0.2s ease-out' }}>
+              {modalTab === 'connection' && (
+                <>
+                  {/* ── Section: Basic Info ── */}
+                  <SectionLabel>Basic Information</SectionLabel>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
                     <div style={{ gridColumn: 'span 2' }}>
-                      <label style={labelStyle}>Auth Endpoint URL *</label>
+                      <label style={labelStyle}>Display Name *</label>
                       <input
-                        value={form.auth_url}
-                        onChange={(e) => setForm({ ...form, auth_url: e.target.value })}
-                        placeholder="https://api.vendor.com/auth/get_token"
-                        style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={labelStyle}>Token Path in Response</label>
-                      <input
-                        value={form.auth_token_path}
-                        onChange={(e) => setForm({ ...form, auth_token_path: e.target.value })}
-                        placeholder="data.token"
-                        style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
-                      />
-                      <p style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
-                        Dot-notation path to extract token from auth response
-                      </p>
-                    </div>
-                    <div>
-                      <label style={labelStyle}>Customer ID</label>
-                      <input
-                        value={form.customer_id}
-                        onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
-                        placeholder="Returned from auth or pre-configured"
+                        required
+                        value={form.name}
+                        onChange={(e) => setForm({ ...form, name: e.target.value })}
+                        placeholder="e.g., FlySwift Production"
                         style={inputStyle}
                       />
                     </div>
-                  </div>
-                )}
-
-                {/* Credentials */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div>
-                    <label style={labelStyle}>Username / User ID {!editingId && '*'}</label>
-                    <input
-                      required={!editingId}
-                      value={form.user_id || form.username}
-                      onChange={(e) => setForm({ ...form, user_id: e.target.value, username: e.target.value })}
-                      placeholder={editingId ? 'Leave blank to keep current' : 'API Username'}
-                      style={inputStyle}
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Password {!editingId && '*'}</label>
-                    <div style={{ position: 'relative' }}>
+                    <div>
+                      <label style={labelStyle}>Vendor Code</label>
                       <input
-                        required={!editingId}
-                        type={showPassword ? 'text' : 'password'}
-                        value={form.password}
-                        onChange={(e) => setForm({ ...form, password: e.target.value })}
-                        placeholder={editingId ? 'Leave blank to keep current' : 'API Password'}
-                        style={{ ...inputStyle, paddingRight: '40px' }}
+                        value={form.vendor_code}
+                        onChange={(e) => setForm({ ...form, vendor_code: e.target.value })}
+                        placeholder="e.g., flyswift"
+                        style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
                       />
+                      <p style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
+                        Use "flyswift" for FlySwift/Trackmate+ dedicated adapter, or leave blank for generic.
+                      </p>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Environment</label>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                        {['production', 'staging'].map((env) => (
+                          <button
+                            key={env}
+                            type="button"
+                            onClick={() => setForm({ ...form, environment: env })}
+                            style={{
+                              flex: 1, padding: '8px 14px', borderRadius: '8px',
+                              border: `2px solid ${form.environment === env ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                              background: form.environment === env ? 'rgba(187, 0, 19, 0.04)' : 'var(--color-surface)',
+                              fontSize: '12px', fontWeight: 600,
+                              color: form.environment === env ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                              cursor: 'pointer', transition: 'all 0.2s',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
+                              fontFamily: 'var(--font-family-body)'
+                            }}
+                          >
+                            <span style={{
+                              width: '5px', height: '5px', borderRadius: '50%',
+                              background: env === 'production' ? '#F59E0B' : '#6366F1'
+                            }} />
+                            {env === 'production' ? 'Production' : 'Staging'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Section: Authentication ── */}
+                  <SectionLabel>Authentication</SectionLabel>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '24px' }}>
+                    {/* Auth Type Selector */}
+                    <div>
+                      <label style={labelStyle}>Auth Type *</label>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                        {AUTH_TYPES.map((at) => (
+                          <button
+                            key={at.value}
+                            type="button"
+                            onClick={() => setForm({ ...form, auth_type: at.value })}
+                            style={{
+                              padding: '10px 12px', borderRadius: '10px',
+                              border: `2px solid ${form.auth_type === at.value ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                              background: form.auth_type === at.value ? 'rgba(187, 0, 19, 0.04)' : 'var(--color-surface)',
+                              cursor: 'pointer', transition: 'all 0.2s', textAlign: 'left',
+                              fontFamily: 'var(--font-family-body)'
+                            }}
+                          >
+                            <p style={{
+                              fontSize: '12px', fontWeight: 700,
+                              color: form.auth_type === at.value ? 'var(--color-primary)' : 'var(--color-text-primary)'
+                            }}>{at.label}</p>
+                            <p style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', marginTop: '2px', lineHeight: '1.3' }}>
+                              {at.desc}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Token Auth Fields */}
+                    {form.auth_type === 'token' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', animation: 'fadeIn 0.2s ease-out' }}>
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <label style={labelStyle}>Auth Endpoint URL *</label>
+                          <input
+                            value={form.auth_url}
+                            onChange={(e) => setForm({ ...form, auth_url: e.target.value })}
+                            placeholder="https://api.vendor.com/auth/get_token"
+                            style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
+                          />
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Token Path in Response</label>
+                          <input
+                            value={form.auth_token_path}
+                            onChange={(e) => setForm({ ...form, auth_token_path: e.target.value })}
+                            placeholder="data.token"
+                            style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
+                          />
+                          <p style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
+                            Dot-notation path to extract token from auth response
+                          </p>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>Customer ID</label>
+                          <input
+                            value={form.customer_id}
+                            onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
+                            placeholder="Returned from auth or pre-configured"
+                            style={inputStyle}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Credentials */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                      <div>
+                        <label style={labelStyle}>Username / User ID {!editingId && '*'}</label>
+                        <input
+                          required={!editingId}
+                          value={form.user_id || form.username}
+                          onChange={(e) => setForm({ ...form, user_id: e.target.value, username: e.target.value })}
+                          placeholder={editingId ? 'Leave blank to keep current' : 'API Username'}
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Password {!editingId && '*'}</label>
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            required={!editingId}
+                            type={showPassword ? 'text' : 'password'}
+                            value={form.password}
+                            onChange={(e) => setForm({ ...form, password: e.target.value })}
+                            placeholder={editingId ? 'Leave blank to keep current' : 'API Password'}
+                            style={{ ...inputStyle, paddingRight: '40px' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            style={{
+                              position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
+                              background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)',
+                              padding: '4px', display: 'flex'
+                            }}
+                          >
+                            {showPassword ? <EyeOff style={{ width: '14px', height: '14px' }} /> : <Eye style={{ width: '14px', height: '14px' }} />}
+                          </button>
+                        </div>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Customer Code</label>
+                        <input
+                          value={form.customer_code}
+                          onChange={(e) => setForm({ ...form, customer_code: e.target.value })}
+                          placeholder="e.g., XYZ123"
+                          style={inputStyle}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Company Code</label>
+                        <input
+                          value={form.company_code}
+                          onChange={(e) => setForm({ ...form, company_code: e.target.value })}
+                          placeholder="e.g., BS"
+                          style={inputStyle}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Section: Shipment API ── */}
+                  <SectionLabel>Shipment API</SectionLabel>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '24px' }}>
+                    <div>
+                      <label style={labelStyle}>Shipment API Endpoint *</label>
+                      <input
+                        required
+                        value={form.shipment_api_url}
+                        onChange={(e) => setForm({ ...form, shipment_api_url: e.target.value })}
+                        placeholder="https://api.vendor.com/shipment/create_docket"
+                        style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+                      <div>
+                        <label style={labelStyle}>AWB/Tracking Path</label>
+                        <input
+                          value={form.response_tracking_path}
+                          onChange={(e) => setForm({ ...form, response_tracking_path: e.target.value })}
+                          placeholder="data.awb_number"
+                          style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Success Check Path</label>
+                        <input
+                          value={form.response_success_path}
+                          onChange={(e) => setForm({ ...form, response_success_path: e.target.value })}
+                          placeholder="status"
+                          style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
+                        />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Success Value</label>
+                        <input
+                          value={form.response_success_value}
+                          onChange={(e) => setForm({ ...form, response_success_value: e.target.value })}
+                          placeholder="success"
+                          style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Section: Service Codes ── */}
+                  <SectionLabel>Service Codes</SectionLabel>
+                  <div style={{ marginBottom: '24px' }}>
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginBottom: '10px' }}>
+                      Define available service types for this vendor (shown in booking dropdown).
+                    </p>
+                    {/* Existing services */}
+                    {form.available_services.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                        {form.available_services.map((svc, idx) => (
+                          <span key={idx} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '6px',
+                            padding: '5px 10px', borderRadius: '8px',
+                            background: 'var(--color-surface-alt)',
+                            border: '1px solid var(--color-border)',
+                            fontSize: '12px', fontWeight: 600, color: 'var(--color-text-primary)'
+                          }}>
+                            <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '11px', color: 'var(--color-primary)' }}>
+                              {svc.code}
+                            </code>
+                            {svc.label !== svc.code && <span style={{ color: 'var(--color-text-tertiary)' }}>— {svc.label}</span>}
+                            <button
+                              type="button"
+                              onClick={() => removeService(idx)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'var(--color-text-tertiary)', display: 'flex' }}
+                            >
+                              <X style={{ width: '12px', height: '12px' }} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {/* Add service row */}
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                      <div style={{ flex: 1 }}>
+                        <input
+                          value={newService.code}
+                          onChange={(e) => setNewService({ ...newService, code: e.target.value })}
+                          placeholder="Code (e.g., SPX)"
+                          style={{ ...inputStyle, fontSize: '12px' }}
+                        />
+                      </div>
+                      <div style={{ flex: 2 }}>
+                        <input
+                          value={newService.label}
+                          onChange={(e) => setNewService({ ...newService, label: e.target.value })}
+                          placeholder="Label (e.g., Standard Parcel Express)"
+                          style={{ ...inputStyle, fontSize: '12px' }}
+                        />
+                      </div>
                       <button
                         type="button"
-                        onClick={() => setShowPassword(!showPassword)}
+                        onClick={addService}
+                        disabled={!newService.code}
                         style={{
-                          position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)',
-                          background: 'none', border: 'none', cursor: 'pointer', color: 'var(--color-text-tertiary)',
-                          padding: '4px', display: 'flex'
+                          padding: '10px 16px', borderRadius: '10px', border: 'none',
+                          background: newService.code ? 'var(--color-primary)' : 'var(--color-surface-alt)',
+                          color: newService.code ? '#fff' : 'var(--color-text-tertiary)',
+                          fontSize: '12px', fontWeight: 700, cursor: newService.code ? 'pointer' : 'not-allowed',
+                          fontFamily: 'var(--font-family-body)', whiteSpace: 'nowrap',
+                          display: 'flex', alignItems: 'center', gap: '4px'
                         }}
                       >
-                        {showPassword ? <EyeOff style={{ width: '14px', height: '14px' }} /> : <Eye style={{ width: '14px', height: '14px' }} />}
+                        <Plus style={{ width: '14px', height: '14px' }} />
+                        Add
                       </button>
                     </div>
                   </div>
-                  <div>
-                    <label style={labelStyle}>Customer Code</label>
-                    <input
-                      value={form.customer_code}
-                      onChange={(e) => setForm({ ...form, customer_code: e.target.value })}
-                      placeholder="e.g., XYZ123"
-                      style={inputStyle}
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Company Code</label>
-                    <input
-                      value={form.company_code}
-                      onChange={(e) => setForm({ ...form, company_code: e.target.value })}
-                      placeholder="e.g., BS"
-                      style={inputStyle}
-                    />
-                  </div>
-                </div>
-              </div>
+                </>
+              )}
 
-              {/* ── Section: Shipment API ── */}
-              <SectionLabel>Shipment API</SectionLabel>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '24px' }}>
-                <div>
-                  <label style={labelStyle}>Shipment API Endpoint *</label>
-                  <input
-                    required
-                    value={form.shipment_api_url}
-                    onChange={(e) => setForm({ ...form, shipment_api_url: e.target.value })}
-                    placeholder="https://api.vendor.com/shipment/create_docket"
-                    style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
-                  />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
+              {modalTab === 'mapping' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', animation: 'fadeIn 0.2s ease-out' }}>
+                  {/* Custom Headers Template */}
                   <div>
-                    <label style={labelStyle}>AWB/Tracking Path</label>
-                    <input
-                      value={form.response_tracking_path}
-                      onChange={(e) => setForm({ ...form, response_tracking_path: e.target.value })}
-                      placeholder="data.awb_number"
-                      style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
+                    <label style={labelStyle}>Headers Template (JSON)</label>
+                    <textarea
+                      value={headersTemplateStr}
+                      onChange={(e) => setHeadersTemplateStr(e.target.value)}
+                      placeholder={`{\n  "Content-Type": "application/json",\n  "Authorization": "Bearer {{token}}"\n}`}
+                      rows={4}
+                      style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', resize: 'vertical' }}
                     />
+                    <p style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
+                      Configure request headers. Use <code>{"{{token}}"}</code> as a placeholder for token authentication.
+                    </p>
                   </div>
-                  <div>
-                    <label style={labelStyle}>Success Check Path</label>
-                    <input
-                      value={form.response_success_path}
-                      onChange={(e) => setForm({ ...form, response_success_path: e.target.value })}
-                      placeholder="status"
-                      style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Success Value</label>
-                    <input
-                      value={form.response_success_value}
-                      onChange={(e) => setForm({ ...form, response_success_value: e.target.value })}
-                      placeholder="success"
-                      style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
-                    />
-                  </div>
-                </div>
-              </div>
 
-              {/* ── Section: Service Codes ── */}
-              <SectionLabel>Service Codes</SectionLabel>
-              <div style={{ marginBottom: '24px' }}>
-                <p style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginBottom: '10px' }}>
-                  Define available service types for this vendor (shown in booking dropdown).
-                </p>
-                {/* Existing services */}
-                {form.available_services.length > 0 && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-                    {form.available_services.map((svc, idx) => (
-                      <span key={idx} style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '6px',
-                        padding: '5px 10px', borderRadius: '8px',
-                        background: 'var(--color-surface-alt)',
+                  {/* Request Payload Template */}
+                  <div>
+                    <label style={labelStyle}>Request Template (JSON)</label>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                      <textarea
+                        value={requestTemplateStr}
+                        onChange={(e) => setRequestTemplateStr(e.target.value)}
+                        placeholder={`{\n  "tracking_number": "",\n  "sender": {\n    "name": ""\n  }\n}`}
+                        rows={6}
+                        style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', resize: 'vertical', flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleParseTemplate}
+                        style={{
+                          padding: '10px 16px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          background: 'var(--color-primary)',
+                          color: '#fff',
+                          fontSize: '12px',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          fontFamily: 'var(--font-family-body)',
+                          whiteSpace: 'nowrap',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          alignSelf: 'stretch',
+                          justifyContent: 'center',
+                          flexDirection: 'column'
+                        }}
+                      >
+                        <Code2 style={{ width: '16px', height: '16px' }} />
+                        Parse Fields
+                      </button>
+                    </div>
+                    <p style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
+                      Paste the target JSON payload structure expected by the vendor's shipment creation API.
+                    </p>
+                  </div>
+
+                  {/* Field Mappings */}
+                  <div>
+                    <SectionLabel>Field Mappings</SectionLabel>
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginBottom: '12px' }}>
+                      Map parsed template JSON paths to internal shipment fields, static values, or credentials.
+                    </p>
+
+                    {Object.keys(form.field_mapping || {}).length === 0 ? (
+                      <div style={{ padding: '24px', textAlign: 'center', border: '1.5px dashed var(--color-border)', borderRadius: '12px' }}>
+                        <p style={{ fontSize: '13px', color: 'var(--color-text-tertiary)' }}>
+                          No fields mapped yet. Paste a JSON template above and click "Parse Fields" to populate fields.
+                        </p>
+                      </div>
+                    ) : (
+                      <div style={{
+                        maxHeight: '320px',
+                        overflowY: 'auto',
                         border: '1px solid var(--color-border)',
-                        fontSize: '12px', fontWeight: 600, color: 'var(--color-text-primary)'
+                        borderRadius: '12px',
+                        background: 'var(--color-surface-alt)'
                       }}>
-                        <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '11px', color: 'var(--color-primary)' }}>
-                          {svc.code}
-                        </code>
-                        {svc.label !== svc.code && <span style={{ color: 'var(--color-text-tertiary)' }}>— {svc.label}</span>}
-                        <button
-                          type="button"
-                          onClick={() => removeService(idx)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'var(--color-text-tertiary)', display: 'flex' }}
-                        >
-                          <X style={{ width: '12px', height: '12px' }} />
-                        </button>
-                      </span>
-                    ))}
+                        {Object.entries(form.field_mapping).map(([path, mappingConfig]) => (
+                          <div
+                            key={path}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1.8fr 1.2fr 2.5fr',
+                              gap: '12px',
+                              padding: '12px 16px',
+                              alignItems: 'center',
+                              borderBottom: '1px solid var(--color-border-light)'
+                            }}
+                          >
+                            {/* Path label */}
+                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={path}>
+                              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-primary)', fontFamily: "'JetBrains Mono', monospace" }}>
+                                {path}
+                              </span>
+                            </div>
+
+                            {/* Type selector */}
+                            <select
+                              value={mappingConfig.type || 'ignore'}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                setForm(prev => {
+                                  const newMapping = { ...prev.field_mapping }
+                                  newMapping[path] = { ...newMapping[path], type: val }
+                                  return { ...prev, field_mapping: newMapping }
+                                })
+                              }}
+                              style={{ ...inputStyle, padding: '6px 10px', fontSize: '12px', height: '34px' }}
+                            >
+                              <option value="ignore">Ignore / Skip</option>
+                              <option value="mapped">Internal Field</option>
+                              <option value="static">Static Value</option>
+                              <option value="credential">Credential</option>
+                            </select>
+
+                            {/* Value / Source mapping */}
+                            <div>
+                              {mappingConfig.type === 'mapped' && (
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  <select
+                                    value={mappingConfig.source || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value
+                                      setForm(prev => {
+                                        const newMapping = { ...prev.field_mapping }
+                                        newMapping[path] = { ...newMapping[path], source: val }
+                                        return { ...prev, field_mapping: newMapping }
+                                      })
+                                    }}
+                                    style={{ ...inputStyle, padding: '6px 10px', fontSize: '12px', height: '34px', flex: 1 }}
+                                  >
+                                    <option value="">-- Choose Field --</option>
+                                    {internalFields.map(f => (
+                                      <option key={f.key} value={f.key}>{f.label} ({f.group})</option>
+                                    ))}
+                                  </select>
+                                  
+                                  <select
+                                    value={mappingConfig.transform || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value
+                                      setForm(prev => {
+                                        const newMapping = { ...prev.field_mapping }
+                                        newMapping[path] = { ...newMapping[path], transform: val }
+                                        return { ...prev, field_mapping: newMapping }
+                                      })
+                                    }}
+                                    title="Apply Transform"
+                                    style={{ ...inputStyle, padding: '6px 10px', fontSize: '12px', height: '34px', width: '90px' }}
+                                  >
+                                    <option value="">None</option>
+                                    <option value="uppercase">UPPERCASE</option>
+                                    <option value="lowercase">lowercase</option>
+                                    <option value="string">To String</option>
+                                    <option value="number">To Number</option>
+                                    <option value="weight_per_piece">Wt / Piece</option>
+                                    <option value="declared_value_per_piece">Val / Piece</option>
+                                    <option value="index_1_based">Index (1..N)</option>
+                                    <option value="index_0_based">Index (0..N-1)</option>
+                                    <option value="date_yyyy_mm_dd">YYYY-MM-DD</option>
+                                    <option value="time_hh_mm_ss">HH:MM:SS</option>
+                                    <option value="date_dd_mm_yyyy">DD/MM/YYYY</option>
+                                  </select>
+                                </div>
+                              )}
+
+                              {mappingConfig.type === 'static' && (
+                                <input
+                                  value={mappingConfig.value || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setForm(prev => {
+                                      const newMapping = { ...prev.field_mapping }
+                                      newMapping[path] = { ...newMapping[path], value: val }
+                                      return { ...prev, field_mapping: newMapping }
+                                    })
+                                  }}
+                                  placeholder="Static Value"
+                                  style={{ ...inputStyle, padding: '6px 10px', fontSize: '12px', height: '34px' }}
+                                />
+                              )}
+
+                              {mappingConfig.type === 'credential' && (
+                                <select
+                                  value={mappingConfig.source || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    setForm(prev => {
+                                      const newMapping = { ...prev.field_mapping }
+                                      newMapping[path] = { ...newMapping[path], source: val }
+                                      return { ...prev, field_mapping: newMapping }
+                                    })
+                                  }}
+                                  style={{ ...inputStyle, padding: '6px 10px', fontSize: '12px', height: '34px' }}
+                                >
+                                  <option value="">-- Choose Credential --</option>
+                                  <option value="user_id">Username / User ID</option>
+                                  <option value="password">Password</option>
+                                  <option value="customer_code">Customer Code</option>
+                                  <option value="company_code">Company Code</option>
+                                  <option value="customer_id">Customer ID</option>
+                                </select>
+                              )}
+
+                              {(!mappingConfig.type || mappingConfig.type === 'ignore') && (
+                                <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', fontStyle: 'italic' }}>Field ignored</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-                {/* Add service row */}
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-                  <div style={{ flex: 1 }}>
-                    <input
-                      value={newService.code}
-                      onChange={(e) => setNewService({ ...newService, code: e.target.value })}
-                      placeholder="Code (e.g., SPX)"
-                      style={{ ...inputStyle, fontSize: '12px' }}
-                    />
-                  </div>
-                  <div style={{ flex: 2 }}>
-                    <input
-                      value={newService.label}
-                      onChange={(e) => setNewService({ ...newService, label: e.target.value })}
-                      placeholder="Label (e.g., Standard Parcel Express)"
-                      style={{ ...inputStyle, fontSize: '12px' }}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={addService}
-                    disabled={!newService.code}
-                    style={{
-                      padding: '10px 16px', borderRadius: '10px', border: 'none',
-                      background: newService.code ? 'var(--color-primary)' : 'var(--color-surface-alt)',
-                      color: newService.code ? '#fff' : 'var(--color-text-tertiary)',
-                      fontSize: '12px', fontWeight: 700, cursor: newService.code ? 'pointer' : 'not-allowed',
-                      fontFamily: 'var(--font-family-body)', whiteSpace: 'nowrap',
-                      display: 'flex', alignItems: 'center', gap: '4px'
-                    }}
-                  >
-                    <Plus style={{ width: '14px', height: '14px' }} />
-                    Add
-                  </button>
                 </div>
-              </div>
+              )}
 
               {/* Submit */}
               <div style={{

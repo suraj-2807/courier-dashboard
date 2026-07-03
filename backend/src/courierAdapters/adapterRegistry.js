@@ -1,5 +1,6 @@
 import GenericAdapter from './GenericAdapter.js'
 import FlySwiftAdapter from './FlySwiftAdapter.js'
+import PacificAdapter from './PacificAdapter.js'
 
 /**
  * Adapter Registry — resolves the correct courier adapter by vendor_code.
@@ -14,6 +15,8 @@ import FlySwiftAdapter from './FlySwiftAdapter.js'
 const ADAPTERS = {
   'flyswift': FlySwiftAdapter,
   'trackmate': FlySwiftAdapter,   // Alias — same vendor, different branding
+  'pacific': PacificAdapter,
+  'pacifc': PacificAdapter,       // Support typo variation as requested
   // 'bluedart': BlueDartAdapter,
   // 'delhivery': DelhiveryAdapter,
 }

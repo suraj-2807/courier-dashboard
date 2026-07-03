@@ -43,28 +43,79 @@ export default class GenericAdapter extends BaseAdapter {
     // Deep clone the template
     let payload = JSON.parse(JSON.stringify(template))
 
-    // Apply field mappings
-    for (const [vendorFieldPath, mappingConfig] of Object.entries(mapping)) {
-      let value
+    const initializedArrays = new Set()
+    const numPieces = parseInt(shipmentData.no_of_pieces) || 1
 
-      if (mappingConfig.type === 'static') {
-        value = mappingConfig.value
-      } else if (mappingConfig.type === 'mapped') {
-        value = this._getNestedValue(shipmentData, mappingConfig.source)
-        if (mappingConfig.transform) {
-          value = this._applyTransform(value, mappingConfig.transform)
-        }
-      } else if (mappingConfig.type === 'credential') {
-        try {
-          const credentials = JSON.parse(decrypt(this.config.auth_credentials))
-          value = credentials[mappingConfig.source]
-        } catch {
-          value = ''
+    // First, initialize/duplicate any arrays mapped with dynamic indexing
+    for (const [vendorFieldPath] of Object.entries(mapping)) {
+      if (vendorFieldPath.includes('[]')) {
+        const arrayPart = vendorFieldPath.split('[]')[0]
+        if (arrayPart && !initializedArrays.has(arrayPart)) {
+          initializedArrays.add(arrayPart)
+          let templateArray = this._getNestedValue(template, arrayPart)
+          if (!Array.isArray(templateArray)) {
+            templateArray = []
+          }
+          const templateItem = templateArray.length > 0 ? templateArray[0] : {}
+          const newArray = []
+          for (let i = 0; i < numPieces; i++) {
+            newArray.push(JSON.parse(JSON.stringify(templateItem)))
+          }
+          this._setNestedValue(payload, arrayPart, newArray)
         }
       }
+    }
 
-      if (value !== undefined) {
-        this._setNestedValue(payload, vendorFieldPath, value)
+    // Apply field mappings
+    for (const [vendorFieldPath, mappingConfig] of Object.entries(mapping)) {
+      if (vendorFieldPath.includes('[]')) {
+        // Map elements for each index of the array
+        for (let i = 0; i < numPieces; i++) {
+          let value
+
+          if (mappingConfig.type === 'static') {
+            value = mappingConfig.value
+          } else if (mappingConfig.type === 'mapped') {
+            value = this._getNestedValue(shipmentData, mappingConfig.source)
+            if (mappingConfig.transform) {
+              value = this._applyTransform(value, mappingConfig.transform, i, numPieces, shipmentData)
+            }
+          } else if (mappingConfig.type === 'credential') {
+            try {
+              const credentials = JSON.parse(decrypt(this.config.auth_credentials))
+              value = credentials[mappingConfig.source]
+            } catch {
+              value = ''
+            }
+          }
+
+          if (value !== undefined) {
+            this._setNestedValue(payload, vendorFieldPath, value, i)
+          }
+        }
+      } else {
+        // Standard mapping
+        let value
+
+        if (mappingConfig.type === 'static') {
+          value = mappingConfig.value
+        } else if (mappingConfig.type === 'mapped') {
+          value = this._getNestedValue(shipmentData, mappingConfig.source)
+          if (mappingConfig.transform) {
+            value = this._applyTransform(value, mappingConfig.transform, 0, 1, shipmentData)
+          }
+        } else if (mappingConfig.type === 'credential') {
+          try {
+            const credentials = JSON.parse(decrypt(this.config.auth_credentials))
+            value = credentials[mappingConfig.source]
+          } catch {
+            value = ''
+          }
+        }
+
+        if (value !== undefined) {
+          this._setNestedValue(payload, vendorFieldPath, value)
+        }
       }
     }
 
@@ -204,21 +255,74 @@ export default class GenericAdapter extends BaseAdapter {
     return current
   }
 
-  _setNestedValue(obj, path, value) {
+  _setNestedValue(obj, path, value, index = null) {
     if (!path) return
     const parts = path.split('.')
     let current = obj
     for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i]
-      if (!(part in current) || typeof current[part] !== 'object') {
-        current[part] = {}
+      let part = parts[i]
+      let isArray = false
+      let arrayIdx = 0
+
+      if (part.endsWith('[]')) {
+        part = part.slice(0, -2)
+        isArray = true
+        arrayIdx = index !== null ? index : 0
+      } else if (part.includes('[') && part.endsWith(']')) {
+        const openBracket = part.indexOf('[')
+        const indexStr = part.slice(openBracket + 1, -1)
+        part = part.slice(0, openBracket)
+        isArray = true
+        arrayIdx = indexStr === '' && index !== null ? index : parseInt(indexStr) || 0
       }
-      current = current[part]
+
+      if (isArray) {
+        if (!Array.isArray(current[part])) {
+          current[part] = []
+        }
+        if (!current[part][arrayIdx]) {
+          current[part][arrayIdx] = {}
+        }
+        current = current[part][arrayIdx]
+      } else {
+        if (!(part in current) || typeof current[part] !== 'object' || current[part] === null) {
+          current[part] = {}
+        }
+        current = current[part]
+      }
     }
-    current[parts[parts.length - 1]] = value
+
+    let lastPart = parts[parts.length - 1]
+    let isArray = false
+    let arrayIdx = 0
+
+    if (lastPart.endsWith('[]')) {
+      lastPart = lastPart.slice(0, -2)
+      isArray = true
+      arrayIdx = index !== null ? index : 0
+    } else if (lastPart.includes('[') && lastPart.endsWith(']')) {
+      const openBracket = lastPart.indexOf('[')
+      const indexStr = lastPart.slice(openBracket + 1, -1)
+      lastPart = lastPart.slice(0, openBracket)
+      isArray = true
+      arrayIdx = indexStr === '' && index !== null ? index : parseInt(indexStr) || 0
+    }
+
+    if (isArray) {
+      if (!Array.isArray(current[lastPart])) {
+        current[lastPart] = []
+      }
+      current[lastPart][arrayIdx] = value
+    } else {
+      current[lastPart] = value
+    }
   }
 
-  _applyTransform(value, transform) {
+  _applyTransform(value, transform, index = 0, total = 1, shipmentData = {}) {
+    const numPieces = total
+    const weight = parseFloat(shipmentData.weight) || 0
+    const declaredValue = parseFloat(shipmentData.declared_value) || parseFloat(shipmentData.total_amount) || 0
+
     switch (transform) {
       case 'uppercase': return String(value || '').toUpperCase()
       case 'lowercase': return String(value || '').toLowerCase()
@@ -229,6 +333,18 @@ export default class GenericAdapter extends BaseAdapter {
       case 'date_dd_mm_yyyy': {
         const d = new Date()
         return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+      }
+      case 'weight_per_piece': {
+        return String(Math.round((weight / numPieces) * 100) / 100)
+      }
+      case 'declared_value_per_piece': {
+        return String(Math.round((declaredValue / numPieces) * 100) / 100)
+      }
+      case 'index_1_based': {
+        return String(index + 1)
+      }
+      case 'index_0_based': {
+        return String(index)
       }
       default: return value
     }

@@ -1,4 +1,7 @@
 import crypto from 'crypto'
+import dotenv from 'dotenv'
+
+dotenv.config()
 
 const ALGORITHM = 'aes-256-cbc'
 const SECRET_KEY = process.env.ENCRYPTION_KEY || 'prince-courier-default-enc-key!!' // 32 chars

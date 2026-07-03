@@ -67,7 +67,13 @@ export const getPushLogs = (id) =>
   api.get(`/api-settings/${id}/push-logs`).then((res) => res.data)
 
 /**
- * Get internal field definitions for mapping
+ * Get available internal fields for mapping
  */
 export const getInternalFields = () =>
   api.get('/api-settings/internal-fields').then((res) => res.data)
+
+/**
+ * Extract field paths from a JSON template
+ */
+export const extractTemplatePaths = (template) =>
+  api.post('/api-settings/extract-template-paths', { template }).then((res) => res.data)

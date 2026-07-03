@@ -10,6 +10,10 @@ export default defineConfig({
     babel({ presets: [reactCompilerPreset()] }),
     tailwindcss()
   ],
+  build: {
+    outDir: '../backend/dist',
+    emptyOutDir: true
+  },
   server: {
     port: 3000,
     proxy: {

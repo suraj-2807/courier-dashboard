@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
-import supabase from '../../config/supabase.js'
+import { query, execute } from '../../config/db.js'
 
 export const register = async (req, res) => {
   try {
@@ -14,32 +14,31 @@ export const register = async (req, res) => {
     const hashedPassword =
       await bcrypt.hash(password, 10)
 
-    const { data, error } =
-      await supabase
-        .from('users')
-        .insert([
-          {
-            name,
-            email,
-            password: hashedPassword,
-            role
-          }
-        ])
-        .select()
+    const result = await execute(
+      `INSERT INTO users (name, email, password, role)
+       VALUES (?, ?, ?, ?)`,
+      [name, email, hashedPassword, role]
+    )
 
-    if (error) {
-      return res.status(400).json({
-        success: false,
-        message: error.message
-      })
-    }
+    const rows = await query(
+      'SELECT id, name, email, role, created_at FROM users WHERE id = ?',
+      [result.insertId]
+    )
 
     return res.status(201).json({
       success: true,
-      user: data[0]
+      user: rows[0]
     })
   } catch (error) {
     console.error(error)
+
+    // Handle duplicate email
+    if (error.code === 'ER_DUP_ENTRY') {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already exists'
+      })
+    }
 
     return res.status(500).json({
       success: false,
@@ -52,14 +51,14 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body
 
-    const { data, error } =
-      await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .single()
+    const rows = await query(
+      'SELECT * FROM users WHERE email = ? LIMIT 1',
+      [email]
+    )
 
-    if (error || !data) {
+    const user = rows[0]
+
+    if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User not found'
@@ -69,7 +68,7 @@ export const login = async (req, res) => {
     const isPasswordCorrect =
       await bcrypt.compare(
         password,
-        data.password
+        user.password
       )
 
     if (!isPasswordCorrect) {
@@ -81,8 +80,8 @@ export const login = async (req, res) => {
 
     const token = jwt.sign(
       {
-        id: data.id,
-        role: data.role
+        id: user.id,
+        role: user.role
       },
       process.env.JWT_SECRET,
       {
@@ -95,10 +94,10 @@ export const login = async (req, res) => {
       success: true,
       token,
       user: {
-        id: data.id,
-        name: data.name,
-        email: data.email,
-        role: data.role
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
       }
     })
   } catch (error) {

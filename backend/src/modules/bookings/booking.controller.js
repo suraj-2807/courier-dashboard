@@ -1,4 +1,4 @@
-import supabase from '../../config/supabase.js'
+import { query, execute } from '../../config/db.js'
 import generateTracking from '../../utils/generateTracking.js'
 import { pushShipmentToVendor } from '../../services/vendorApiPush.service.js'
 
@@ -41,7 +41,21 @@ export const createBooking = async (req, res) => {
       no_of_pieces,
       content_description,
       declared_value,
-      cod_amount
+      cod_amount,
+      // Pacific-specific fields
+      sender_company,
+      sender_address_2,
+      sender_gstin_type,
+      sender_gstin_no,
+      receiver_address_2,
+      receiver_gstin_type,
+      receiver_gstin_no,
+      invoice_no,
+      invoice_date,
+      invoice_currency,
+      hs_code,
+      export_reason,
+      terms_of_trade
     } = req.body
 
     const tracking_number = generateTracking()
@@ -50,86 +64,82 @@ export const createBooking = async (req, res) => {
     // ── Step 1: Upsert sender if inline fields provided ──
     let finalSenderId = sender_id
     if (!finalSenderId && sender_name) {
-      const { data: senderData, error: senderError } = await supabase
-        .from('senders')
-        .insert([{
-          name: sender_name,
-          email: sender_email || '',
-          phone: sender_phone || '',
-          address: sender_address || '',
-          city: sender_city || '',
-          pincode: sender_pincode || '',
-          state: sender_state || '',
-          country: sender_country || 'INDIA'
-        }])
-        .select()
-
-      if (senderError) throw senderError
-      finalSenderId = senderData[0].id
+      const senderResult = await execute(
+        `INSERT INTO senders (name, email, phone, address, city, pincode, state, country)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          sender_name,
+          sender_email || '',
+          sender_phone || '',
+          sender_address || '',
+          sender_city || '',
+          sender_pincode || '',
+          sender_state || '',
+          sender_country || 'INDIA'
+        ]
+      )
+      finalSenderId = senderResult.insertId
     }
 
     // ── Step 2: Upsert receiver if inline fields provided ──
     let finalReceiverId = receiver_id
     if (!finalReceiverId && receiver_name) {
-      const { data: receiverData, error: receiverError } = await supabase
-        .from('receivers')
-        .insert([{
-          name: receiver_name,
-          email: receiver_email || '',
-          phone: receiver_phone || '',
-          address: receiver_address || '',
-          city: receiver_city || '',
-          pincode: receiver_pincode || '',
-          state: receiver_state || '',
-          country: receiver_country || 'INDIA'
-        }])
-        .select()
-
-      if (receiverError) throw receiverError
-      finalReceiverId = receiverData[0].id
+      const receiverResult = await execute(
+        `INSERT INTO receivers (name, email, phone, address, city, pincode, state, country)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          receiver_name,
+          receiver_email || '',
+          receiver_phone || '',
+          receiver_address || '',
+          receiver_city || '',
+          receiver_pincode || '',
+          receiver_state || '',
+          receiver_country || 'INDIA'
+        ]
+      )
+      finalReceiverId = receiverResult.insertId
     }
 
     // ── Step 3: Create shipment record ──
-    const shipmentInsert = {
-      order_id,
-      sender_id: finalSenderId,
-      receiver_id: finalReceiverId,
-      courier_provider_id: courier_provider_id || null,
-      vendor_config_id: vendor_config_id || null,
-      service_code: service_code || '',
-      tracking_number,
-      weight,
-      length,
-      breadth,
-      height,
-      payment_mode,
-      package_type,
-      total_amount,
-      shipping_charge,
-      order_reference,
-      remarks,
-      status: 'pending',
-      vendor_push_status: vendor_config_id ? 'pending' : 'skipped'
-    }
+    const shipmentResult = await execute(
+      `INSERT INTO shipments (
+        order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
+        service_code, tracking_number, weight, \`length\`, breadth, height,
+        payment_mode, package_type, total_amount, shipping_charge,
+        order_reference, remarks, status, vendor_push_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        order_id,
+        finalSenderId || null,
+        finalReceiverId || null,
+        courier_provider_id || null,
+        vendor_config_id || null,
+        service_code || '',
+        tracking_number,
+        weight || 0,
+        length || 0,
+        breadth || 0,
+        height || 0,
+        payment_mode || 'prepaid',
+        package_type || 'parcel',
+        total_amount || 0,
+        shipping_charge || 0,
+        order_reference || '',
+        remarks || '',
+        'pending',
+        vendor_config_id ? 'pending' : 'skipped'
+      ]
+    )
 
-    const { data, error } = await supabase
-      .from('shipments')
-      .insert([shipmentInsert])
-      .select()
-
-    if (error) throw error
-
-    const shipment = data[0]
+    const shipmentId = shipmentResult.insertId
 
     // ── Step 4: Create tracking event ──
-    await supabase.from('tracking_events').insert([
-      {
-        shipment_id: shipment.id,
-        status: 'Shipment Created',
-        description: 'Shipment booked successfully',
-        location: 'System'
-      }
-    ])
+    await execute(
+      `INSERT INTO tracking_events (shipment_id, status, description, location)
+       VALUES (?, ?, ?, ?)`,
+      [shipmentId, 'Shipment Created', 'Shipment booked successfully', 'System']
+    )
 
     // ── Step 5: Push to vendor API if vendor selected ──
     let vendorResult = null
@@ -172,36 +182,53 @@ export const createBooking = async (req, res) => {
         receiver_city: receiver_city || '',
         receiver_state: receiver_state || '',
         receiver_pincode: receiver_pincode || '',
-        receiver_country: receiver_country || 'INDIA'
+        receiver_country: receiver_country || 'INDIA',
+        // Pacific-specific fields
+        sender_company: sender_company || '',
+        sender_address_2: sender_address_2 || '',
+        sender_gstin_type: sender_gstin_type || '',
+        sender_gstin_no: sender_gstin_no || '',
+        receiver_address_2: receiver_address_2 || '',
+        receiver_gstin_type: receiver_gstin_type || '',
+        receiver_gstin_no: receiver_gstin_no || '',
+        invoice_no: invoice_no || '',
+        invoice_date: invoice_date || '',
+        invoice_currency: invoice_currency || 'INR',
+        hs_code: hs_code || '',
+        export_reason: export_reason || '',
+        terms_of_trade: terms_of_trade || ''
       }
 
       vendorResult = await pushShipmentToVendor(
         vendor_config_id,
-        shipment.id,
+        shipmentId,
         shipmentDataForVendor
       )
 
       // Add tracking event for vendor push
       if (vendorResult.success) {
-        await supabase.from('tracking_events').insert([{
-          shipment_id: shipment.id,
-          status: 'AWB Assigned',
-          description: `Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`,
-          location: 'Vendor API'
-        }])
+        await execute(
+          `INSERT INTO tracking_events (shipment_id, status, description, location)
+           VALUES (?, ?, ?, ?)`,
+          [
+            shipmentId,
+            'AWB Assigned',
+            `Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`,
+            'Vendor API'
+          ]
+        )
       }
     }
 
     // ── Step 6: Refetch the shipment with updated vendor data ──
-    const { data: finalShipment } = await supabase
-      .from('shipments')
-      .select('*')
-      .eq('id', shipment.id)
-      .single()
+    const shipmentRows = await query(
+      'SELECT * FROM shipments WHERE id = ?',
+      [shipmentId]
+    )
 
     return res.status(201).json({
       success: true,
-      booking: finalShipment || shipment,
+      booking: shipmentRows[0],
       vendor_result: vendorResult
     })
   } catch (error) {
@@ -223,53 +250,83 @@ export const getBookings = async (req, res) => {
       sort_order = 'desc'
     } = req.query
 
-    const offset = (page - 1) * limit
+    const pageNum = parseInt(page)
+    const limitNum = parseInt(limit)
+    const offset = (pageNum - 1) * limitNum
 
-    let query = supabase
-      .from('shipments')
-      .select(
-        `
-        *,
-        senders(*),
-        receivers(*),
-        courier_providers(*),
-        vendor_api_configs(id, name, vendor_code)
-      `,
-        { count: 'exact' }
-      )
+    // Whitelist allowed sort columns to prevent SQL injection
+    const allowedSortColumns = ['created_at', 'order_id', 'tracking_number', 'status', 'total_amount']
+    const safeSortBy = allowedSortColumns.includes(sort_by) ? sort_by : 'created_at'
+    const safeSortOrder = sort_order === 'asc' ? 'ASC' : 'DESC'
 
-    // Search by order_id or tracking_number
+    let whereClause = ''
+    const params = []
+
     if (search) {
-      query = query.or(
-        `order_id.ilike.%${search}%,tracking_number.ilike.%${search}%`
-      )
+      whereClause += ' WHERE (s.order_id LIKE ? OR s.tracking_number LIKE ?)'
+      params.push(`%${search}%`, `%${search}%`)
     }
 
-    // Filter by status
     if (status) {
-      query = query.eq('status', status)
+      whereClause += whereClause ? ' AND s.status = ?' : ' WHERE s.status = ?'
+      params.push(status)
     }
 
-    // Sort
-    query = query.order(sort_by, {
-      ascending: sort_order === 'asc'
+    // Count query
+    const countRows = await query(
+      `SELECT COUNT(*) as total FROM shipments s${whereClause}`,
+      params
+    )
+    const total = countRows[0].total
+
+    // Main query with JOINs
+    const dataRows = await query(
+      `SELECT s.*,
+        JSON_OBJECT(
+          'id', snd.id, 'name', snd.name, 'phone', snd.phone, 'email', snd.email,
+          'address', snd.address, 'city', snd.city, 'state', snd.state, 'pincode', snd.pincode
+        ) as senders,
+        JSON_OBJECT(
+          'id', rcv.id, 'name', rcv.name, 'phone', rcv.phone, 'email', rcv.email,
+          'address', rcv.address, 'city', rcv.city, 'state', rcv.state, 'pincode', rcv.pincode
+        ) as receivers,
+        JSON_OBJECT(
+          'id', cp.id, 'name', cp.name, 'code', cp.code, 'tracking_url', cp.tracking_url
+        ) as courier_providers,
+        JSON_OBJECT(
+          'id', vac.id, 'name', vac.name, 'vendor_code', vac.vendor_code
+        ) as vendor_api_configs
+       FROM shipments s
+       LEFT JOIN senders snd ON s.sender_id = snd.id
+       LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       LEFT JOIN courier_providers cp ON s.courier_provider_id = cp.id
+       LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
+       ${whereClause}
+       ORDER BY s.${safeSortBy} ${safeSortOrder}
+       LIMIT ${limitNum} OFFSET ${offset}`,
+      params
+    )
+
+    // Parse JSON objects and handle null JOINs
+    const bookings = dataRows.map(row => {
+      const { senders, receivers, courier_providers, vendor_api_configs, ...shipment } = row
+      return {
+        ...shipment,
+        senders: senders?.id ? senders : null,
+        receivers: receivers?.id ? receivers : null,
+        courier_providers: courier_providers?.id ? courier_providers : null,
+        vendor_api_configs: vendor_api_configs?.id ? vendor_api_configs : null
+      }
     })
-
-    // Pagination
-    query = query.range(offset, offset + limit - 1)
-
-    const { data, error, count } = await query
-
-    if (error) throw error
 
     return res.json({
       success: true,
-      bookings: data,
+      bookings,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total: count,
-        totalPages: Math.ceil(count / limit)
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum)
       }
     })
   } catch (error) {
@@ -284,35 +341,56 @@ export const getBookingById = async (req, res) => {
   try {
     const { id } = req.params
 
-    const { data: booking, error } = await supabase
-      .from('shipments')
-      .select(
-        `
-        *,
-        senders(*),
-        receivers(*),
-        courier_providers(*),
-        vendor_api_configs(id, name, vendor_code, environment)
-      `
-      )
-      .eq('id', id)
-      .single()
+    // Fetch shipment with JOINs
+    const rows = await query(
+      `SELECT s.*,
+        JSON_OBJECT(
+          'id', snd.id, 'name', snd.name, 'phone', snd.phone, 'email', snd.email,
+          'address', snd.address, 'city', snd.city, 'state', snd.state, 'pincode', snd.pincode
+        ) as senders,
+        JSON_OBJECT(
+          'id', rcv.id, 'name', rcv.name, 'phone', rcv.phone, 'email', rcv.email,
+          'address', rcv.address, 'city', rcv.city, 'state', rcv.state, 'pincode', rcv.pincode
+        ) as receivers,
+        JSON_OBJECT(
+          'id', cp.id, 'name', cp.name, 'code', cp.code, 'tracking_url', cp.tracking_url
+        ) as courier_providers,
+        JSON_OBJECT(
+          'id', vac.id, 'name', vac.name, 'vendor_code', vac.vendor_code,
+          'environment', vac.environment
+        ) as vendor_api_configs
+       FROM shipments s
+       LEFT JOIN senders snd ON s.sender_id = snd.id
+       LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       LEFT JOIN courier_providers cp ON s.courier_provider_id = cp.id
+       LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
+       WHERE s.id = ?`,
+      [id]
+    )
 
-    if (error) throw error
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      })
+    }
+
+    const { senders, receivers, courier_providers, vendor_api_configs, ...shipment } = rows[0]
 
     // Get tracking events
-    const { data: trackingEvents, error: trackingError } = await supabase
-      .from('tracking_events')
-      .select('*')
-      .eq('shipment_id', id)
-      .order('event_time', { ascending: false })
-
-    if (trackingError) throw trackingError
+    const trackingEvents = await query(
+      'SELECT * FROM tracking_events WHERE shipment_id = ? ORDER BY event_time DESC',
+      [id]
+    )
 
     return res.json({
       success: true,
       booking: {
-        ...booking,
+        ...shipment,
+        senders: senders?.id ? senders : null,
+        receivers: receivers?.id ? receivers : null,
+        courier_providers: courier_providers?.id ? courier_providers : null,
+        vendor_api_configs: vendor_api_configs?.id ? vendor_api_configs : null,
         tracking_events: trackingEvents
       }
     })
@@ -330,27 +408,26 @@ export const updateBookingStatus = async (req, res) => {
     const { status, description, location } = req.body
 
     // Update shipment status
-    const { data, error } = await supabase
-      .from('shipments')
-      .update({ status })
-      .eq('id', id)
-      .select()
-
-    if (error) throw error
+    await execute(
+      'UPDATE shipments SET status = ? WHERE id = ?',
+      [status, id]
+    )
 
     // Insert tracking event
-    await supabase.from('tracking_events').insert([
-      {
-        shipment_id: id,
-        status,
-        description: description || `Status updated to ${status}`,
-        location: location || 'System'
-      }
-    ])
+    await execute(
+      `INSERT INTO tracking_events (shipment_id, status, description, location)
+       VALUES (?, ?, ?, ?)`,
+      [id, status, description || `Status updated to ${status}`, location || 'System']
+    )
+
+    const rows = await query(
+      'SELECT * FROM shipments WHERE id = ?',
+      [id]
+    )
 
     return res.json({
       success: true,
-      booking: data[0]
+      booking: rows[0]
     })
   } catch (error) {
     return res.status(500).json({

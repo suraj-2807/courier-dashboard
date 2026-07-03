@@ -15,7 +15,8 @@ import {
   User,
   ChevronDown,
   Menu,
-  X
+  X,
+  IndianRupee
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 
@@ -24,6 +25,7 @@ const navItems = [
   { label: 'Shipments', path: '/bookings', icon: Package },
   { label: 'Tracking', path: '/tracking', icon: MapPin },
   { label: 'Senders', path: '/senders', icon: Truck },
+  { label: 'Rates', path: '/rates', icon: IndianRupee },
   { label: 'Courier Integrations', path: '/integrations', icon: Link2 },
   { label: 'API Settings', path: '/api-settings', icon: Settings }
 ]

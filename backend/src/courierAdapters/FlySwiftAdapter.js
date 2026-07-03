@@ -1,5 +1,6 @@
 import BaseAdapter from './BaseAdapter.js'
 import { decrypt } from '../utils/encryption.js'
+import GenericAdapter from './GenericAdapter.js'
 
 /**
  * FlySwiftAdapter — Adapter for FlySwift / Trackmate+ courier API.
@@ -79,52 +80,122 @@ export default class FlySwiftAdapter extends BaseAdapter {
     // Otherwise, build the default FlySwift payload structure.
 
     if (this.config.request_template && Object.keys(this.config.request_template).length > 0) {
-      // Use template-based approach (same as GenericAdapter)
-      return this._buildFromTemplate(shipmentData, authContext)
+      const generic = new GenericAdapter(this.config)
+      return generic.buildPayload(shipmentData, authContext)
     }
 
-    // Default FlySwift payload structure
+    const bookingDate = shipmentData.booking_date || new Date().toISOString().split('T')[0]
+    const bookingTime = shipmentData.booking_time || new Date().toTimeString().split(' ')[0]
+    const pcs = String(parseInt(shipmentData.no_of_pieces) || 1)
+    const weight = parseFloat(shipmentData.weight) || 0.5
+    const declaredValue = parseFloat(shipmentData.declared_value) || parseFloat(shipmentData.total_amount) || 100
+    const invoiceNo = shipmentData.invoice_no || shipmentData.order_id || ''
+    const invoiceDate = shipmentData.invoice_date || bookingDate
+
+    // Build docket_items array from shipment dimensions
+    const docketItems = []
+    const numPieces = parseInt(shipmentData.no_of_pieces) || 1
+    const perPieceWeight = String(Math.round((weight / numPieces) * 100) / 100)
+    for (let i = 0; i < numPieces; i++) {
+      docketItems.push({
+        actual_weight: perPieceWeight,
+        length: String(parseFloat(shipmentData.length) || 1),
+        width: String(parseFloat(shipmentData.breadth) || 1),
+        height: String(parseFloat(shipmentData.height) || 1),
+        number_of_boxes: '1'
+      })
+    }
+
+    // Build free_form_line_items (required by FlySwift for invoice)
+    const perItemValue = String(Math.round((declaredValue / numPieces) * 100) / 100)
+    const freeFormLineItems = []
+    for (let i = 0; i < numPieces; i++) {
+      freeFormLineItems.push({
+        total: perItemValue,
+        no_of_packages: '1',
+        box_no: String(i + 1),
+        rate: perItemValue,
+        hscode: shipmentData.hs_code || '999999',
+        description: shipmentData.content_description || 'Shipment',
+        unit_of_measurement: 'Pc',
+        unit_weight: perPieceWeight,
+        igst_amount: '0.00'
+      })
+    }
+
+    // Default FlySwift create_docket payload structure
     return {
-      customer_id: authContext?.customerId || '',
-      service_code: shipmentData.service_code || 'S',
-      order_number: shipmentData.order_id || shipmentData.order_reference || '',
-      consignee_name: shipmentData.receiver_name || '',
-      consignee_phone: shipmentData.receiver_phone || '',
-      consignee_email: shipmentData.receiver_email || '',
-      consignee_address: [
-        shipmentData.receiver_address,
-        shipmentData.receiver_address_2,
-        shipmentData.receiver_address_3
-      ].filter(Boolean).join(', '),
-      consignee_city: shipmentData.receiver_city || '',
-      consignee_state: shipmentData.receiver_state || '',
-      consignee_pincode: shipmentData.receiver_pincode || '',
-      consignee_country: shipmentData.receiver_country || 'IN',
+      tracking_no: shipmentData.tracking_number || shipmentData.order_id || '',
+      reference_name: shipmentData.sender_name || shipmentData.order_reference || '',
+      origin_code: '',
+      product_code: '',
+      destination_code: '',
+      booking_date: bookingDate,
+      booking_time: bookingTime,
+      pcs: pcs,
+      shipment_value: String(declaredValue),
+      shipment_value_currency: shipmentData.invoice_currency || 'INR',
+      actual_weight: String(weight),
+      shipment_invoice_no: invoiceNo,
+      shipment_invoice_date: invoiceDate,
+      shipment_content: shipmentData.content_description || 'Shipment',
+      remark: shipmentData.remarks || '',
+      new_docket_free_form_invoice: '1',
+      free_form_currency: shipmentData.invoice_currency || 'INR',
+      terms_of_trade: shipmentData.terms_of_trade || 'FOB',
+      api_service_code: shipmentData.service_code || '',
+      api_vendor_code: '',
+
+      // Shipper (Sender)
       shipper_name: shipmentData.sender_name || '',
-      shipper_phone: shipmentData.sender_phone || '',
+      shipper_company_name: shipmentData.sender_company || shipmentData.sender_name || '',
+      shipper_contact_no: shipmentData.sender_phone || '',
       shipper_email: shipmentData.sender_email || '',
-      shipper_address: [
-        shipmentData.sender_address,
-        shipmentData.sender_address_2,
-        shipmentData.sender_address_3
-      ].filter(Boolean).join(', '),
+      shipper_address_line_1: shipmentData.sender_address || '',
+      shipper_address_line_2: shipmentData.sender_address_2 || '',
+      shipper_address_line_3: shipmentData.sender_address_3 || '',
       shipper_city: shipmentData.sender_city || '',
       shipper_state: shipmentData.sender_state || '',
-      shipper_pincode: shipmentData.sender_pincode || '',
       shipper_country: shipmentData.sender_country || 'IN',
-      weight: parseFloat(shipmentData.weight) || 0.5,
-      length: parseFloat(shipmentData.length) || 1,
-      breadth: parseFloat(shipmentData.breadth) || 1,
-      height: parseFloat(shipmentData.height) || 1,
-      pieces: parseInt(shipmentData.no_of_pieces) || 1,
-      product_type: shipmentData.package_type === 'document' ? 'DOX' : 'SPX',
-      content_description: shipmentData.content_description || 'Shipment',
-      declared_value: parseFloat(shipmentData.declared_value) || 0,
-      payment_mode: (shipmentData.payment_mode || 'prepaid').toUpperCase(),
-      cod_amount: shipmentData.payment_mode === 'cod' ? parseFloat(shipmentData.cod_amount || 0) : 0,
-      invoice_number: shipmentData.invoice_no || '',
-      invoice_date: shipmentData.invoice_date || new Date().toISOString().split('T')[0],
-      remarks: shipmentData.remarks || ''
+      shipper_zip_code: shipmentData.sender_pincode || '',
+      shipper_gstin_type: shipmentData.sender_gstin_type || '',
+      shipper_gstin_no: shipmentData.sender_gstin_no || '',
+
+      // Consignee (Receiver)
+      consignee_name: shipmentData.receiver_name || '',
+      consignee_company_name: shipmentData.receiver_company || shipmentData.receiver_name || '',
+      consignee_contact_no: shipmentData.receiver_phone || '',
+      consignee_email: shipmentData.receiver_email || '',
+      consignee_address_line_1: shipmentData.receiver_address || '',
+      consignee_address_line_2: shipmentData.receiver_address_2 || '',
+      consignee_address_line_3: shipmentData.receiver_address_3 || '',
+      consignee_city: shipmentData.receiver_city || '',
+      consignee_state: shipmentData.receiver_state || '',
+      consignee_country: shipmentData.receiver_country || 'IN',
+      consignee_zip_code: shipmentData.receiver_pincode || '',
+      consignee_gstin_type: shipmentData.receiver_gstin_type || '',
+      consignee_gstin_no: shipmentData.receiver_gstin_no || '',
+
+      // Pickup Address (same as sender by default)
+      pickup_address_name: shipmentData.sender_name || '',
+      pickup_address_code: shipmentData.sender_company || shipmentData.sender_name || '',
+      pickup_address_contact_no: shipmentData.sender_phone || '',
+      pickup_address_email: shipmentData.sender_email || '',
+      pickup_address_address_line_1: shipmentData.sender_address || '',
+      pickup_address_address_line_2: shipmentData.sender_address_2 || '',
+      pickup_address_address_line_3: shipmentData.sender_address_3 || '',
+      pickup_address_city: shipmentData.sender_city || '',
+      pickup_address_state: shipmentData.sender_state || '',
+      pickup_address_country: shipmentData.sender_country || 'IN',
+      pickup_address_zip_code: shipmentData.sender_pincode || '',
+      pickup_address_gstin_type: shipmentData.sender_gstin_type || '',
+      pickup_address_gstin_no: shipmentData.sender_gstin_no || '',
+
+      // Nested arrays
+      docket_items: docketItems,
+      free_form_line_items: freeFormLineItems,
+      kyc_details: [],
+      multiple_invoice: []
     }
   }
 
@@ -173,12 +244,19 @@ export default class FlySwiftAdapter extends BaseAdapter {
     const trackingUrl = String(data?.tracking_url || data?.track_url || '')
     const labelUrl = String(data?.label_url || data?.pdf_url || data?.label || '')
 
-    // Error message
-    const errorMessage = success ? '' : (
-      responseBody?.message || responseBody?.error || responseBody?.msg
-      || data?.message || data?.error
-      || 'FlySwift API returned failure'
-    )
+    // Error message — FlySwift returns errors as an array
+    let errorMessage = ''
+    if (!success) {
+      if (Array.isArray(responseBody?.errors) && responseBody.errors.length > 0) {
+        errorMessage = responseBody.errors.join('; ')
+      } else if (Array.isArray(data?.errors) && data.errors.length > 0) {
+        errorMessage = data.errors.join('; ')
+      } else {
+        errorMessage = responseBody?.message || responseBody?.error || responseBody?.msg
+          || data?.message || data?.error
+          || 'FlySwift API returned failure'
+      }
+    }
 
     return { success, awbNumber, trackingUrl, labelUrl, errorMessage }
   }

@@ -1,6 +1,6 @@
 import { decrypt } from '../utils/encryption.js'
 import { createAdapter } from '../courierAdapters/adapterRegistry.js'
-import supabase from '../config/supabase.js'
+import { query, execute } from '../config/db.js'
 
 /**
  * Vendor API Push Service
@@ -89,8 +89,8 @@ export const INTERNAL_FIELDS = [
  * 4. Logs the attempt to vendor_api_push_logs
  * 5. Updates the shipment row with vendor response data
  * 
- * @param {string} vendorConfigId — UUID of the vendor_api_configs row
- * @param {string} shipmentId — UUID of the shipments row
+ * @param {string} vendorConfigId — ID of the vendor_api_configs row
+ * @param {string} shipmentId — ID of the shipments row
  * @param {Object} shipmentData — Flat object of shipment field values
  * @returns {Object} { success, awbNumber, trackingUrl, labelUrl, error, ... }
  */
@@ -102,14 +102,13 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
 
   try {
     // Step 1: Fetch vendor config
-    const { data: configData, error: configError } = await supabase
-      .from('vendor_api_configs')
-      .select('*')
-      .eq('id', vendorConfigId)
-      .single()
+    const configRows = await query(
+      'SELECT * FROM vendor_api_configs WHERE id = ?',
+      [vendorConfigId]
+    )
 
-    if (configError) throw new Error(`Vendor config not found: ${configError.message}`)
-    config = configData
+    if (configRows.length === 0) throw new Error('Vendor config not found')
+    config = configRows[0]
 
     if (!config.is_active) {
       throw new Error('Vendor API is currently inactive')
@@ -160,15 +159,20 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
       vendor_tracking_url: parsed.trackingUrl,
       vendor_label_url: parsed.labelUrl,
       vendor_push_status: parsed.success ? 'success' : 'failed',
-      vendor_raw_response: responseBody
+      vendor_raw_response: JSON.stringify(responseBody)
     })
 
     // Step 10: Update vendor config last push info
-    await supabase.from('vendor_api_configs').update({
-      last_push_status: parsed.success ? 'success' : 'failed',
-      last_push_at: new Date().toISOString(),
-      last_push_response: responseBody
-    }).eq('id', vendorConfigId)
+    await execute(
+      `UPDATE vendor_api_configs 
+       SET last_push_status = ?, last_push_at = NOW(), last_push_response = ?
+       WHERE id = ?`,
+      [
+        parsed.success ? 'success' : 'failed',
+        JSON.stringify(responseBody),
+        vendorConfigId
+      ]
+    )
 
     return {
       success: parsed.success,
@@ -199,7 +203,7 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
     if (shipmentId) {
       await _updateShipmentVendorData(shipmentId, {
         vendor_push_status: 'failed',
-        vendor_raw_response: { error: error.message }
+        vendor_raw_response: JSON.stringify({ error: error.message })
       })
     }
 
@@ -318,17 +322,22 @@ export function extractFieldPaths(obj, prefix = '') {
 
 async function _logPushAttempt({ vendorConfigId, shipmentId, requestUrl, requestPayload, responseStatus, responseBody, trackingNumber, status, errorMessage }) {
   try {
-    await supabase.from('vendor_api_push_logs').insert([{
-      vendor_config_id: vendorConfigId,
-      shipment_id: shipmentId || null,
-      request_url: requestUrl || '',
-      request_payload: requestPayload || {},
-      response_status: responseStatus || 0,
-      response_body: responseBody || {},
-      tracking_number_received: trackingNumber || '',
-      status: status || 'failed',
-      error_message: errorMessage || ''
-    }])
+    await execute(
+      `INSERT INTO vendor_api_push_logs 
+       (vendor_config_id, shipment_id, request_url, request_payload, response_status, response_body, tracking_number_received, status, error_message)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        vendorConfigId || null,
+        shipmentId || null,
+        requestUrl || '',
+        JSON.stringify(requestPayload || {}),
+        responseStatus || 0,
+        JSON.stringify(responseBody || {}),
+        trackingNumber || '',
+        status || 'failed',
+        errorMessage || ''
+      ]
+    )
   } catch (logError) {
     console.error('Failed to log push attempt:', logError.message)
   }
@@ -337,10 +346,21 @@ async function _logPushAttempt({ vendorConfigId, shipmentId, requestUrl, request
 async function _updateShipmentVendorData(shipmentId, updateData) {
   try {
     if (!shipmentId) return
-    await supabase
-      .from('shipments')
-      .update(updateData)
-      .eq('id', shipmentId)
+
+    const setClauses = []
+    const values = []
+
+    for (const [key, value] of Object.entries(updateData)) {
+      setClauses.push(`${key} = ?`)
+      values.push(value)
+    }
+
+    values.push(shipmentId)
+
+    await execute(
+      `UPDATE shipments SET ${setClauses.join(', ')} WHERE id = ?`,
+      values
+    )
   } catch (updateError) {
     console.error('Failed to update shipment vendor data:', updateError.message)
   }

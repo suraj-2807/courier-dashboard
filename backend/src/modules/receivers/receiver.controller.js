@@ -1,4 +1,4 @@
-import supabase from '../../config/supabase.js'
+import { query, execute } from '../../config/db.js'
 
 export const createReceiver =
   async (req, res) => {
@@ -13,27 +13,20 @@ export const createReceiver =
         pincode
       } = req.body
 
-      const { data, error } =
-        await supabase
-          .from('receivers')
-          .insert([
-            {
-              name,
-              phone,
-              email,
-              address,
-              city,
-              state,
-              pincode
-            }
-          ])
-          .select()
+      const result = await execute(
+        `INSERT INTO receivers (name, phone, email, address, city, state, pincode)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [name, phone || '', email || '', address || '', city || '', state || '', pincode || '']
+      )
 
-      if (error) throw error
+      const rows = await query(
+        'SELECT * FROM receivers WHERE id = ?',
+        [result.insertId]
+      )
 
       return res.status(201).json({
         success: true,
-        receiver: data[0]
+        receiver: rows[0]
       })
     } catch (error) {
       return res.status(500).json({
@@ -46,16 +39,13 @@ export const createReceiver =
 export const getReceivers =
   async (req, res) => {
     try {
-      const { data, error } =
-        await supabase
-          .from('receivers')
-          .select('*')
-
-      if (error) throw error
+      const rows = await query(
+        'SELECT * FROM receivers ORDER BY created_at DESC'
+      )
 
       return res.json({
         success: true,
-        receivers: data
+        receivers: rows
       })
     } catch (error) {
       return res.status(500).json({
@@ -70,18 +60,21 @@ export const getReceiverById =
     try {
       const { id } = req.params
 
-      const { data, error } =
-        await supabase
-          .from('receivers')
-          .select('*')
-          .eq('id', id)
-          .single()
+      const rows = await query(
+        'SELECT * FROM receivers WHERE id = ?',
+        [id]
+      )
 
-      if (error) throw error
+      if (rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Receiver not found'
+        })
+      }
 
       return res.json({
         success: true,
-        receiver: data
+        receiver: rows[0]
       })
     } catch (error) {
       return res.status(500).json({
@@ -95,19 +88,30 @@ export const updateReceiver =
   async (req, res) => {
     try {
       const { id } = req.params
+      const fields = req.body
 
-      const { data, error } =
-        await supabase
-          .from('receivers')
-          .update(req.body)
-          .eq('id', id)
-          .select()
+      // Build dynamic SET clause
+      const keys = Object.keys(fields).filter(k => k !== 'id' && k !== 'created_at')
+      if (keys.length === 0) {
+        return res.status(400).json({ success: false, message: 'No fields to update' })
+      }
 
-      if (error) throw error
+      const setClause = keys.map(k => `\`${k}\` = ?`).join(', ')
+      const values = keys.map(k => fields[k])
+
+      await execute(
+        `UPDATE receivers SET ${setClause} WHERE id = ?`,
+        [...values, id]
+      )
+
+      const rows = await query(
+        'SELECT * FROM receivers WHERE id = ?',
+        [id]
+      )
 
       return res.json({
         success: true,
-        receiver: data[0]
+        receiver: rows[0]
       })
     } catch (error) {
       return res.status(500).json({
@@ -122,13 +126,10 @@ export const deleteReceiver =
     try {
       const { id } = req.params
 
-      const { error } =
-        await supabase
-          .from('receivers')
-          .delete()
-          .eq('id', id)
-
-      if (error) throw error
+      await execute(
+        'DELETE FROM receivers WHERE id = ?',
+        [id]
+      )
 
       return res.json({
         success: true,

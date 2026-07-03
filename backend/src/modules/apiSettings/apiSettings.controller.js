@@ -1,4 +1,4 @@
-import supabase from '../../config/supabase.js'
+import { query, execute } from '../../config/db.js'
 import { encrypt, decrypt, maskValue } from '../../utils/encryption.js'
 import {
   pushToVendorApi,
@@ -13,15 +13,12 @@ import { createAdapter } from '../../courierAdapters/adapterRegistry.js'
  */
 export const getApiSettings = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('vendor_api_configs')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
+    const rows = await query(
+      'SELECT * FROM vendor_api_configs ORDER BY created_at DESC'
+    )
 
     // Mask sensitive credentials before sending to client
-    const masked = (data || []).map((config) => ({
+    const masked = (rows || []).map((config) => ({
       ...config,
       auth_credentials: undefined,
       has_credentials: !!config.auth_credentials
@@ -44,17 +41,16 @@ export const getApiSettings = async (req, res) => {
  */
 export const getActiveVendors = async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .from('vendor_api_configs')
-      .select('id, name, vendor_code, available_services, environment, auth_type')
-      .eq('is_active', true)
-      .order('name', { ascending: true })
-
-    if (error) throw error
+    const rows = await query(
+      `SELECT id, name, vendor_code, available_services, environment, auth_type
+       FROM vendor_api_configs
+       WHERE is_active = TRUE
+       ORDER BY name ASC`
+    )
 
     return res.json({
       success: true,
-      vendors: data || []
+      vendors: rows || []
     })
   } catch (error) {
     return res.status(500).json({
@@ -71,19 +67,23 @@ export const getApiSettingById = async (req, res) => {
   try {
     const { id } = req.params
 
-    const { data, error } = await supabase
-      .from('vendor_api_configs')
-      .select('*')
-      .eq('id', id)
-      .single()
+    const rows = await query(
+      'SELECT * FROM vendor_api_configs WHERE id = ?',
+      [id]
+    )
 
-    if (error) throw error
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'API configuration not found'
+      })
+    }
 
     // Mask credentials
     const masked = {
-      ...data,
+      ...rows[0],
       auth_credentials: undefined,
-      has_credentials: !!data.auth_credentials
+      has_credentials: !!rows[0].auth_credentials
     }
 
     return res.json({
@@ -122,19 +122,47 @@ export const createApiSetting = async (req, res) => {
     // Build the config object
     const configData = _buildConfigFromBody(body)
 
-    const { data, error } = await supabase
-      .from('vendor_api_configs')
-      .insert([configData])
-      .select()
+    const result = await execute(
+      `INSERT INTO vendor_api_configs (
+        name, vendor_code, auth_type, auth_url, auth_payload_template,
+        auth_credentials, auth_token_path, shipment_api_url, shipment_api_method,
+        request_template, field_mapping, headers_template,
+        response_tracking_path, response_success_path, response_success_value,
+        available_services, environment, is_active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        configData.name,
+        configData.vendor_code,
+        configData.auth_type,
+        configData.auth_url,
+        JSON.stringify(configData.auth_payload_template),
+        configData.auth_credentials,
+        configData.auth_token_path,
+        configData.shipment_api_url,
+        configData.shipment_api_method,
+        JSON.stringify(configData.request_template),
+        JSON.stringify(configData.field_mapping),
+        JSON.stringify(configData.headers_template),
+        configData.response_tracking_path,
+        configData.response_success_path,
+        configData.response_success_value,
+        JSON.stringify(configData.available_services),
+        configData.environment,
+        configData.is_active
+      ]
+    )
 
-    if (error) throw error
+    const rows = await query(
+      'SELECT * FROM vendor_api_configs WHERE id = ?',
+      [result.insertId]
+    )
 
     return res.status(201).json({
       success: true,
       config: {
-        ...data[0],
+        ...rows[0],
         auth_credentials: undefined,
-        has_credentials: !!data[0].auth_credentials
+        has_credentials: !!rows[0].auth_credentials
       }
     })
   } catch (error) {
@@ -153,31 +181,42 @@ export const updateApiSetting = async (req, res) => {
     const { id } = req.params
     const body = req.body
 
-    const updateData = {
-      updated_at: new Date().toISOString()
-    }
+    const setClauses = []
+    const values = []
 
     // Map simple and advanced fields
-    if (body.name !== undefined) updateData.name = body.name
-    if (body.vendor_code !== undefined) updateData.vendor_code = body.vendor_code
-    if (body.auth_type !== undefined) updateData.auth_type = body.auth_type
-    if (body.auth_url !== undefined) updateData.auth_url = body.auth_url
-    if (body.auth_payload_template !== undefined) updateData.auth_payload_template = body.auth_payload_template
-    if (body.auth_token_path !== undefined) updateData.auth_token_path = body.auth_token_path
-    if (body.shipment_api_url !== undefined) updateData.shipment_api_url = body.shipment_api_url
-    if (body.shipment_api_method !== undefined) updateData.shipment_api_method = body.shipment_api_method
-    if (body.request_template !== undefined) updateData.request_template = body.request_template
-    if (body.field_mapping !== undefined) updateData.field_mapping = body.field_mapping
-    if (body.headers_template !== undefined) updateData.headers_template = body.headers_template
-    if (body.response_tracking_path !== undefined) updateData.response_tracking_path = body.response_tracking_path
-    if (body.response_success_path !== undefined) updateData.response_success_path = body.response_success_path
-    if (body.response_success_value !== undefined) updateData.response_success_value = body.response_success_value
-    if (body.available_services !== undefined) updateData.available_services = body.available_services
-    if (body.environment !== undefined) updateData.environment = body.environment
-    if (body.is_active !== undefined) updateData.is_active = body.is_active
+    const directFields = [
+      'name', 'vendor_code', 'auth_type', 'auth_url', 'auth_token_path',
+      'shipment_api_url', 'shipment_api_method',
+      'response_tracking_path', 'response_success_path', 'response_success_value',
+      'environment', 'is_active'
+    ]
+
+    for (const field of directFields) {
+      if (body[field] !== undefined) {
+        setClauses.push(`${field} = ?`)
+        values.push(body[field])
+      }
+    }
+
+    // JSON fields
+    const jsonFields = [
+      'auth_payload_template', 'request_template', 'field_mapping',
+      'headers_template', 'available_services'
+    ]
+
+    for (const field of jsonFields) {
+      if (body[field] !== undefined) {
+        setClauses.push(`${field} = ?`)
+        values.push(JSON.stringify(body[field]))
+      }
+    }
 
     // Handle simple form fields → auto-map to api_url / credentials
-    if (body.api_url !== undefined) updateData.shipment_api_url = body.api_url
+    if (body.api_url !== undefined) {
+      setClauses.push('shipment_api_url = ?')
+      values.push(body.api_url)
+    }
 
     // Build encrypted credentials from simple fields
     if (body.user_id || body.password || body.customer_code || body.company_code) {
@@ -187,28 +226,41 @@ export const updateApiSetting = async (req, res) => {
       if (body.customer_code) credentials.customer_code = body.customer_code
       if (body.company_code) credentials.company_code = body.company_code
       if (body.customer_id) credentials.customer_id = body.customer_id
-      updateData.auth_credentials = encrypt(JSON.stringify(credentials))
+      setClauses.push('auth_credentials = ?')
+      values.push(encrypt(JSON.stringify(credentials)))
     }
 
     // Handle advanced auth_credentials object
     if (body.auth_credentials && typeof body.auth_credentials === 'object') {
-      updateData.auth_credentials = encrypt(JSON.stringify(body.auth_credentials))
+      setClauses.push('auth_credentials = ?')
+      values.push(encrypt(JSON.stringify(body.auth_credentials)))
     }
 
-    const { data, error } = await supabase
-      .from('vendor_api_configs')
-      .update(updateData)
-      .eq('id', id)
-      .select()
+    if (setClauses.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No fields to update'
+      })
+    }
 
-    if (error) throw error
+    values.push(id)
+
+    await execute(
+      `UPDATE vendor_api_configs SET ${setClauses.join(', ')} WHERE id = ?`,
+      values
+    )
+
+    const rows = await query(
+      'SELECT * FROM vendor_api_configs WHERE id = ?',
+      [id]
+    )
 
     return res.json({
       success: true,
       config: {
-        ...data[0],
+        ...rows[0],
         auth_credentials: undefined,
-        has_credentials: !!data[0].auth_credentials
+        has_credentials: !!rows[0].auth_credentials
       }
     })
   } catch (error) {
@@ -226,12 +278,10 @@ export const deleteApiSetting = async (req, res) => {
   try {
     const { id } = req.params
 
-    const { error } = await supabase
-      .from('vendor_api_configs')
-      .delete()
-      .eq('id', id)
-
-    if (error) throw error
+    await execute(
+      'DELETE FROM vendor_api_configs WHERE id = ?',
+      [id]
+    )
 
     return res.json({
       success: true,
@@ -253,14 +303,19 @@ export const testApiConnection = async (req, res) => {
   try {
     const { id } = req.params
 
-    const { data: config, error } = await supabase
-      .from('vendor_api_configs')
-      .select('*')
-      .eq('id', id)
-      .single()
+    const rows = await query(
+      'SELECT * FROM vendor_api_configs WHERE id = ?',
+      [id]
+    )
 
-    if (error) throw error
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'API configuration not found'
+      })
+    }
 
+    const config = rows[0]
     const startTime = Date.now()
 
     try {
@@ -342,19 +397,23 @@ export const saveAuthToken = async (req, res) => {
     const { token, customer_id } = req.body
 
     // Fetch existing config to merge credentials
-    const { data: config, error: fetchError } = await supabase
-      .from('vendor_api_configs')
-      .select('auth_credentials')
-      .eq('id', id)
-      .single()
+    const rows = await query(
+      'SELECT auth_credentials FROM vendor_api_configs WHERE id = ?',
+      [id]
+    )
 
-    if (fetchError) throw fetchError
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'API configuration not found'
+      })
+    }
 
     // Decrypt existing credentials and merge
     let credentials = {}
     try {
-      if (config.auth_credentials) {
-        credentials = JSON.parse(decrypt(config.auth_credentials))
+      if (rows[0].auth_credentials) {
+        credentials = JSON.parse(decrypt(rows[0].auth_credentials))
       }
     } catch {
       // Start fresh
@@ -364,15 +423,10 @@ export const saveAuthToken = async (req, res) => {
     if (customer_id) credentials.customer_id = customer_id
     credentials._token_cached_at = new Date().toISOString()
 
-    const { error } = await supabase
-      .from('vendor_api_configs')
-      .update({
-        auth_credentials: encrypt(JSON.stringify(credentials)),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-
-    if (error) throw error
+    await execute(
+      'UPDATE vendor_api_configs SET auth_credentials = ? WHERE id = ?',
+      [encrypt(JSON.stringify(credentials)), id]
+    )
 
     return res.json({
       success: true,
@@ -393,28 +447,33 @@ export const toggleApiSetting = async (req, res) => {
   try {
     const { id } = req.params
 
-    const { data: current, error: fetchError } = await supabase
-      .from('vendor_api_configs')
-      .select('is_active')
-      .eq('id', id)
-      .single()
+    const rows = await query(
+      'SELECT is_active FROM vendor_api_configs WHERE id = ?',
+      [id]
+    )
 
-    if (fetchError) throw fetchError
-
-    const { data, error } = await supabase
-      .from('vendor_api_configs')
-      .update({
-        is_active: !current.is_active,
-        updated_at: new Date().toISOString()
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'API configuration not found'
       })
-      .eq('id', id)
-      .select()
+    }
 
-    if (error) throw error
+    const newStatus = !rows[0].is_active
+
+    await execute(
+      'UPDATE vendor_api_configs SET is_active = ? WHERE id = ?',
+      [newStatus, id]
+    )
+
+    const updatedRows = await query(
+      'SELECT * FROM vendor_api_configs WHERE id = ?',
+      [id]
+    )
 
     return res.json({
       success: true,
-      config: data[0]
+      config: updatedRows[0]
     })
   } catch (error) {
     return res.status(500).json({
@@ -432,34 +491,49 @@ export const pushTestData = async (req, res) => {
     const { id } = req.params
     const { sample_data } = req.body
 
-    const { data: config, error } = await supabase
-      .from('vendor_api_configs')
-      .select('*')
-      .eq('id', id)
-      .single()
+    const rows = await query(
+      'SELECT * FROM vendor_api_configs WHERE id = ?',
+      [id]
+    )
 
-    if (error) throw error
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'API configuration not found'
+      })
+    }
 
+    const config = rows[0]
     const result = await pushToVendorApi(config, sample_data || {})
 
     // Log the push attempt
-    await supabase.from('vendor_api_push_logs').insert([{
-      vendor_config_id: id,
-      request_url: config.shipment_api_url,
-      request_payload: result.requestPayload || {},
-      response_status: result.responseStatus,
-      response_body: result.responseBody || {},
-      tracking_number_received: result.trackingNumber,
-      status: result.success ? 'success' : 'failed',
-      error_message: result.error || ''
-    }])
+    await execute(
+      `INSERT INTO vendor_api_push_logs 
+       (vendor_config_id, request_url, request_payload, response_status, response_body, tracking_number_received, status, error_message)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        config.shipment_api_url,
+        JSON.stringify(result.requestPayload || {}),
+        result.responseStatus || 0,
+        JSON.stringify(result.responseBody || {}),
+        result.trackingNumber || '',
+        result.success ? 'success' : 'failed',
+        result.error || ''
+      ]
+    )
 
     // Update last push status
-    await supabase.from('vendor_api_configs').update({
-      last_push_status: result.success ? 'success' : 'failed',
-      last_push_at: new Date().toISOString(),
-      last_push_response: result.responseBody || {}
-    }).eq('id', id)
+    await execute(
+      `UPDATE vendor_api_configs 
+       SET last_push_status = ?, last_push_at = NOW(), last_push_response = ?
+       WHERE id = ?`,
+      [
+        result.success ? 'success' : 'failed',
+        JSON.stringify(result.responseBody || {}),
+        id
+      ]
+    )
 
     return res.json({
       success: true,
@@ -480,18 +554,17 @@ export const getPushLogs = async (req, res) => {
   try {
     const { id } = req.params
 
-    const { data, error } = await supabase
-      .from('vendor_api_push_logs')
-      .select('*')
-      .eq('vendor_config_id', id)
-      .order('pushed_at', { ascending: false })
-      .limit(50)
-
-    if (error) throw error
+    const rows = await query(
+      `SELECT * FROM vendor_api_push_logs
+       WHERE vendor_config_id = ?
+       ORDER BY pushed_at DESC
+       LIMIT 50`,
+      [id]
+    )
 
     return res.json({
       success: true,
-      logs: data || []
+      logs: rows || []
     })
   } catch (error) {
     return res.status(500).json({
