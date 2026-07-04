@@ -1,0 +1,4 @@
+DirectoryIndex disabled
+
+RewriteEngine On
+RewriteRule ^(.*)$ http://localhost:%{ENV:PORT}/$1 [P,L]
