@@ -25,7 +25,7 @@ app.use('/api', routes)
 app.use(express.static(path.join(__dirname, '../dist')))
 
 // Fallback: serve React index.html for any frontend client routes
-app.get('*', (req, res) => {
+app.get('/*splat', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'))
 })
 
