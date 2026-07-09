@@ -751,20 +751,30 @@ export default function NewBookingPage() {
                           ))}
                         </select>
                       </FormField>
-                      {form.vendor_config_id && vendorServices.length > 0 && (
+                      {form.vendor_config_id && (
                         <FormField label="Service Type">
-                          <select
-                            value={form.service_code}
-                            onChange={e => updateForm('service_code', e.target.value)}
-                            className="form-input"
-                          >
-                            <option value="">— Select Service —</option>
-                            {vendorServices.map((svc, i) => (
-                              <option key={i} value={svc.code}>
-                                {svc.label || svc.code} ({svc.code})
-                              </option>
-                            ))}
-                          </select>
+                          {vendorServices.length > 0 ? (
+                            <select
+                              value={form.service_code}
+                              onChange={e => updateForm('service_code', e.target.value)}
+                              className="form-input"
+                            >
+                              <option value="">— Select Service —</option>
+                              {vendorServices.map((svc, i) => (
+                                <option key={i} value={svc.code}>
+                                  {svc.label || svc.code} ({svc.code})
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              value={form.service_code}
+                              onChange={e => updateForm('service_code', e.target.value)}
+                              placeholder="e.g. PC-PXC-EXPRESS"
+                              className="form-input"
+                            />
+                          )}
                         </FormField>
                       )}
                     </div>

@@ -51,9 +51,11 @@ export default class PacificAdapter extends BaseAdapter {
     if (shipmentData.service_code && shipmentData.service_code.trim()) {
       const sc = shipmentData.service_code.trim()
       if (sc.includes('-')) {
-        const parts = sc.split('-')
-        if (parts[0].trim()) vendorName = parts[0].trim()
-        if (parts.length > 1 && parts[1].trim()) serviceName = parts[1].trim()
+        const dashIdx = sc.indexOf('-')
+        const parsedVendor = sc.substring(0, dashIdx).trim()
+        const parsedService = sc.substring(dashIdx + 1).trim()
+        if (parsedVendor) vendorName = parsedVendor
+        if (parsedService) serviceName = parsedService
       } else {
         // Single value without dash — use as vendorName only if no credential override
         if (!vendorName) vendorName = sc
