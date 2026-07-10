@@ -16,7 +16,12 @@ import {
   Loader2,
   Plug,
   Zap,
-  FileText
+  FileText,
+  ChevronDown,
+  DollarSign,
+  Users,
+  Shield,
+  Settings
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -71,6 +76,16 @@ const INITIAL_FORM = {
   hs_code: '',
   export_reason: '',
   terms_of_trade: 'CIF',
+  // eAWB Details
+  eawb_no: '',
+  eawb_date: '',
+  eawb_exp_date: '',
+  // Additional Charges
+  additional_discount: '',
+  additional_freight: '',
+  additional_insurance: '',
+  additional_other_charges: '',
+  additional_specify_charges: '',
   // Step 3 — Courier
   courier_provider_id: '',
   vendor_config_id: '',
@@ -83,7 +98,47 @@ const INITIAL_FORM = {
   order_reference: '',
   remarks: '',
   is_cod: false,
-  cod_amount: ''
+  cod_amount: '',
+  // Buyer Details
+  buyer_name: '',
+  buyer_person_type: 'Individual',
+  buyer_address1: '',
+  buyer_address2: '',
+  buyer_pincode: '',
+  buyer_city: '',
+  buyer_state: '',
+  buyer_telephone: '',
+  buyer_mobile: '',
+  buyer_email: '',
+  buyer_country_code: '',
+  buyer_destination_code: '',
+  buyer_iec_no: '',
+  // GST & Manifest
+  gst_invoice: '0',
+  lut_igst: 'N',
+  total_igst: '',
+  bank_ad_code: '',
+  bank_account: '',
+  bank_ifsc: '',
+  lut_number: '',
+  exchange_rate: '',
+  manifest_firm: '',
+  manifest_nfei: '1',
+  pay_of_igst: '',
+  manifest_ecommerce: '0',
+  meis_scheme: '0',
+  manifest_format: 'C2C',
+  manifest_iec_no: '',
+  lut_issue_date: '',
+  lut_till_date: '',
+  // Advanced Config
+  company_code: '',
+  is_commercial: '',
+  csb_type: '',
+  otp: '',
+  lsp_type: '',
+  required_performa: '',
+  required_label: ''
 }
 
 export default function NewBookingPage() {
@@ -97,6 +152,13 @@ export default function NewBookingPage() {
   const [customVendorMode, setCustomVendorMode] = useState(false)
   const [customServiceMode, setCustomServiceMode] = useState(false)
   const [customProductMode, setCustomProductMode] = useState(false)
+
+  // Collapsible section toggles
+  const [showEawb, setShowEawb] = useState(false)
+  const [showAdditionalCharges, setShowAdditionalCharges] = useState(false)
+  const [showBuyerDetails, setShowBuyerDetails] = useState(false)
+  const [showGstManifest, setShowGstManifest] = useState(false)
+  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false)
 
   // Fetch active vendors for Step 3 dropdown
   const { data: vendorsData } = useQuery({
@@ -172,7 +234,57 @@ export default function NewBookingPage() {
         invoice_currency: form.invoice_currency,
         hs_code: form.hs_code,
         export_reason: form.export_reason,
-        terms_of_trade: form.terms_of_trade
+        terms_of_trade: form.terms_of_trade,
+        // eAWB Details
+        eawb_no: form.eawb_no,
+        eawb_date: form.eawb_date,
+        eawb_exp_date: form.eawb_exp_date,
+        // Additional Charges
+        additional_discount: form.additional_discount,
+        additional_freight: form.additional_freight,
+        additional_insurance: form.additional_insurance,
+        additional_other_charges: form.additional_other_charges,
+        additional_specify_charges: form.additional_specify_charges,
+        // Buyer Details
+        buyer_name: form.buyer_name,
+        buyer_person_type: form.buyer_person_type,
+        buyer_address1: form.buyer_address1,
+        buyer_address2: form.buyer_address2,
+        buyer_pincode: form.buyer_pincode,
+        buyer_city: form.buyer_city,
+        buyer_state: form.buyer_state,
+        buyer_telephone: form.buyer_telephone,
+        buyer_mobile: form.buyer_mobile,
+        buyer_email: form.buyer_email,
+        buyer_country_code: form.buyer_country_code,
+        buyer_destination_code: form.buyer_destination_code,
+        buyer_iec_no: form.buyer_iec_no,
+        // GST & Manifest
+        gst_invoice: form.gst_invoice,
+        lut_igst: form.lut_igst,
+        total_igst: form.total_igst,
+        bank_ad_code: form.bank_ad_code,
+        bank_account: form.bank_account,
+        bank_ifsc: form.bank_ifsc,
+        lut_number: form.lut_number,
+        exchange_rate: form.exchange_rate,
+        manifest_firm: form.manifest_firm,
+        manifest_nfei: form.manifest_nfei,
+        pay_of_igst: form.pay_of_igst,
+        manifest_ecommerce: form.manifest_ecommerce,
+        meis_scheme: form.meis_scheme,
+        manifest_format: form.manifest_format,
+        manifest_iec_no: form.manifest_iec_no,
+        lut_issue_date: form.lut_issue_date,
+        lut_till_date: form.lut_till_date,
+        // Advanced Config
+        company_code: form.company_code,
+        is_commercial: form.is_commercial,
+        csb_type: form.csb_type,
+        otp: form.otp,
+        lsp_type: form.lsp_type,
+        required_performa: form.required_performa,
+        required_label: form.required_label
       })
 
       // Show vendor result if available
@@ -726,6 +838,100 @@ export default function NewBookingPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* eAWB Details — Collapsible */}
+                <CollapsibleSection
+                  label="eAWB Details"
+                  description="Electronic Airway Bill information"
+                  icon={FileText}
+                  isOpen={showEawb}
+                  onToggle={() => setShowEawb(!showEawb)}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="eAWB Number">
+                      <input
+                        type="text"
+                        placeholder="e.g. testeawb123"
+                        value={form.eawb_no}
+                        onChange={e => updateForm('eawb_no', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="eAWB Date">
+                      <input
+                        type="date"
+                        value={form.eawb_date}
+                        onChange={e => updateForm('eawb_date', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="eAWB Expiry Date">
+                      <input
+                        type="date"
+                        value={form.eawb_exp_date}
+                        onChange={e => updateForm('eawb_exp_date', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                  </div>
+                </CollapsibleSection>
+
+                {/* Additional Charges — Collapsible */}
+                <CollapsibleSection
+                  label="Additional Charges"
+                  description="Discount, freight, insurance & other charges"
+                  icon={DollarSign}
+                  isOpen={showAdditionalCharges}
+                  onToggle={() => setShowAdditionalCharges(!showAdditionalCharges)}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="Discount">
+                      <input
+                        type="text"
+                        placeholder="0.00"
+                        value={form.additional_discount}
+                        onChange={e => updateForm('additional_discount', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Freight Charges">
+                      <input
+                        type="text"
+                        placeholder="0.00"
+                        value={form.additional_freight}
+                        onChange={e => updateForm('additional_freight', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Insurance">
+                      <input
+                        type="text"
+                        placeholder="0.00"
+                        value={form.additional_insurance}
+                        onChange={e => updateForm('additional_insurance', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Other Charges">
+                      <input
+                        type="text"
+                        placeholder="0.00"
+                        value={form.additional_other_charges}
+                        onChange={e => updateForm('additional_other_charges', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Specify Charges">
+                      <input
+                        type="text"
+                        placeholder="0"
+                        value={form.additional_specify_charges}
+                        onChange={e => updateForm('additional_specify_charges', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                  </div>
+                </CollapsibleSection>
               </div>
             )}
 
@@ -929,6 +1135,415 @@ export default function NewBookingPage() {
                     )}
                   </div>
                 </div>
+
+                {/* Buyer Details — Collapsible */}
+                <CollapsibleSection
+                  label="Buyer Details"
+                  description="Fill if buyer is different from receiver"
+                  icon={Users}
+                  isOpen={showBuyerDetails}
+                  onToggle={() => setShowBuyerDetails(!showBuyerDetails)}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField label="Buyer Name">
+                      <input
+                        type="text"
+                        placeholder="e.g. Anurag"
+                        value={form.buyer_name}
+                        onChange={e => updateForm('buyer_name', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Person Type">
+                      <select
+                        value={form.buyer_person_type}
+                        onChange={e => updateForm('buyer_person_type', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="Individual">Individual</option>
+                        <option value="Business">Business</option>
+                      </select>
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <FormField label="Address Line 1">
+                      <input
+                        type="text"
+                        placeholder="Street / Building"
+                        value={form.buyer_address1}
+                        onChange={e => updateForm('buyer_address1', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Address Line 2">
+                      <input
+                        type="text"
+                        placeholder="Area / Landmark"
+                        value={form.buyer_address2}
+                        onChange={e => updateForm('buyer_address2', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="City">
+                      <input
+                        type="text"
+                        placeholder="City"
+                        value={form.buyer_city}
+                        onChange={e => updateForm('buyer_city', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="State">
+                      <input
+                        type="text"
+                        placeholder="State"
+                        value={form.buyer_state}
+                        onChange={e => updateForm('buyer_state', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Pincode">
+                      <input
+                        type="text"
+                        placeholder="Zip / Postal"
+                        value={form.buyer_pincode}
+                        onChange={e => updateForm('buyer_pincode', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="Telephone">
+                      <input
+                        type="tel"
+                        placeholder="Telephone"
+                        value={form.buyer_telephone}
+                        onChange={e => updateForm('buyer_telephone', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Mobile">
+                      <input
+                        type="tel"
+                        placeholder="Mobile"
+                        value={form.buyer_mobile}
+                        onChange={e => updateForm('buyer_mobile', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Email">
+                      <input
+                        type="email"
+                        placeholder="buyer@example.com"
+                        value={form.buyer_email}
+                        onChange={e => updateForm('buyer_email', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="Country Code">
+                      <input
+                        type="text"
+                        placeholder="e.g. US, GB"
+                        value={form.buyer_country_code}
+                        onChange={e => updateForm('buyer_country_code', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Destination Code">
+                      <input
+                        type="text"
+                        placeholder="e.g. GB, US"
+                        value={form.buyer_destination_code}
+                        onChange={e => updateForm('buyer_destination_code', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="IEC Number">
+                      <input
+                        type="text"
+                        placeholder="IEC No."
+                        value={form.buyer_iec_no}
+                        onChange={e => updateForm('buyer_iec_no', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                  </div>
+                </CollapsibleSection>
+
+                {/* GST & Manifest Details — Collapsible */}
+                <CollapsibleSection
+                  label="GST & Manifest Details"
+                  description="GST invoice, LUT, bank & IEC details"
+                  icon={Shield}
+                  isOpen={showGstManifest}
+                  onToggle={() => setShowGstManifest(!showGstManifest)}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="GST Invoice">
+                      <select
+                        value={form.gst_invoice}
+                        onChange={e => updateForm('gst_invoice', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="0">No</option>
+                        <option value="1">Yes</option>
+                      </select>
+                    </FormField>
+                    <FormField label="LUT IGST">
+                      <select
+                        value={form.lut_igst}
+                        onChange={e => updateForm('lut_igst', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="N">No</option>
+                        <option value="Y">Yes</option>
+                      </select>
+                    </FormField>
+                    <FormField label="Total IGST">
+                      <input
+                        type="text"
+                        placeholder="0.00"
+                        value={form.total_igst}
+                        onChange={e => updateForm('total_igst', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="Bank AD Code">
+                      <input
+                        type="text"
+                        placeholder="AD Code"
+                        value={form.bank_ad_code}
+                        onChange={e => updateForm('bank_ad_code', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Bank Account">
+                      <input
+                        type="text"
+                        placeholder="Account No."
+                        value={form.bank_account}
+                        onChange={e => updateForm('bank_account', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Bank IFSC">
+                      <input
+                        type="text"
+                        placeholder="IFSC Code"
+                        value={form.bank_ifsc}
+                        onChange={e => updateForm('bank_ifsc', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="LUT Number">
+                      <input
+                        type="text"
+                        placeholder="LUT No."
+                        value={form.lut_number}
+                        onChange={e => updateForm('lut_number', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="LUT Issue Date">
+                      <input
+                        type="date"
+                        value={form.lut_issue_date}
+                        onChange={e => updateForm('lut_issue_date', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="LUT Till Date">
+                      <input
+                        type="date"
+                        value={form.lut_till_date}
+                        onChange={e => updateForm('lut_till_date', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="Exchange Rate">
+                      <input
+                        type="text"
+                        placeholder="0.00"
+                        value={form.exchange_rate}
+                        onChange={e => updateForm('exchange_rate', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="Firm">
+                      <input
+                        type="text"
+                        placeholder="e.g. NG"
+                        value={form.manifest_firm}
+                        onChange={e => updateForm('manifest_firm', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="NFEI">
+                      <select
+                        value={form.manifest_nfei}
+                        onChange={e => updateForm('manifest_nfei', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="1">Yes (1)</option>
+                        <option value="0">No (0)</option>
+                      </select>
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="Pay of IGST">
+                      <input
+                        type="text"
+                        placeholder="0"
+                        value={form.pay_of_igst}
+                        onChange={e => updateForm('pay_of_igst', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="E-Commerce">
+                      <select
+                        value={form.manifest_ecommerce}
+                        onChange={e => updateForm('manifest_ecommerce', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="0">No (0)</option>
+                        <option value="1">Yes (1)</option>
+                      </select>
+                    </FormField>
+                    <FormField label="MEIS Scheme">
+                      <select
+                        value={form.meis_scheme}
+                        onChange={e => updateForm('meis_scheme', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="0">No (0)</option>
+                        <option value="1">Yes (1)</option>
+                      </select>
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="Format">
+                      <select
+                        value={form.manifest_format}
+                        onChange={e => updateForm('manifest_format', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="C2C">C2C</option>
+                        <option value="B2C">B2C</option>
+                        <option value="B2B">B2B</option>
+                      </select>
+                    </FormField>
+                    <FormField label="IEC Number">
+                      <input
+                        type="text"
+                        placeholder="IEC No."
+                        value={form.manifest_iec_no}
+                        onChange={e => updateForm('manifest_iec_no', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                  </div>
+                </CollapsibleSection>
+
+                {/* Advanced Shipment Config — Collapsible */}
+                <CollapsibleSection
+                  label="Advanced Configuration"
+                  description="Company code, CSB type, OTP & LSP settings"
+                  icon={Settings}
+                  isOpen={showAdvancedConfig}
+                  onToggle={() => setShowAdvancedConfig(!showAdvancedConfig)}
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="Company Code">
+                      <input
+                        type="text"
+                        placeholder="e.g. BS, PC"
+                        value={form.company_code}
+                        onChange={e => updateForm('company_code', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="CSB Type">
+                      <select
+                        value={form.csb_type}
+                        onChange={e => updateForm('csb_type', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="">— Auto from Export Reason —</option>
+                        <option value="COMMERCIAL">COMMERCIAL</option>
+                        <option value="FREE SAMPLE OF NO COMMERICAL VALUE">FREE SAMPLE</option>
+                        <option value="PERSONAL USE">PERSONAL USE</option>
+                        <option value="GIFT">GIFT</option>
+                      </select>
+                    </FormField>
+                    <FormField label="Is Commercial">
+                      <select
+                        value={form.is_commercial}
+                        onChange={e => updateForm('is_commercial', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="">— Auto-detect —</option>
+                        <option value="0">No (0)</option>
+                        <option value="1">Yes (1)</option>
+                      </select>
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="OTP">
+                      <input
+                        type="text"
+                        placeholder="123456"
+                        value={form.otp}
+                        onChange={e => updateForm('otp', e.target.value)}
+                        className="form-input"
+                      />
+                    </FormField>
+                    <FormField label="LSP Type">
+                      <select
+                        value={form.lsp_type}
+                        onChange={e => updateForm('lsp_type', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="">— Default (I) —</option>
+                        <option value="I">I — International</option>
+                        <option value="D">D — Domestic</option>
+                      </select>
+                    </FormField>
+                    <FormField label="Required Performa">
+                      <select
+                        value={form.required_performa}
+                        onChange={e => updateForm('required_performa', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="">— Default (Yes) —</option>
+                        <option value="y">Yes</option>
+                        <option value="n">No</option>
+                      </select>
+                    </FormField>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <FormField label="Required Label">
+                      <select
+                        value={form.required_label}
+                        onChange={e => updateForm('required_label', e.target.value)}
+                        className="form-input"
+                      >
+                        <option value="">— Default (Yes) —</option>
+                        <option value="y">Yes</option>
+                        <option value="n">No</option>
+                      </select>
+                    </FormField>
+                  </div>
+                </CollapsibleSection>
 
                 {/* Shipping & Payment */}
                 <div className="bg-surface border border-border rounded-2xl">
@@ -1175,6 +1790,39 @@ function FormField({ label, required, children }) {
         {required && <span className="text-primary ml-0.5">*</span>}
       </label>
       {children}
+    </div>
+  )
+}
+
+// Collapsible section with checkbox toggle
+function CollapsibleSection({ label, description, icon: Icon, isOpen, onToggle, children }) {
+  return (
+    <div className={`bg-surface border rounded-2xl overflow-hidden transition-colors ${isOpen ? 'border-primary/30' : 'border-border'}`}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full p-5 flex items-center gap-3 hover:bg-surface-hover transition-colors cursor-pointer"
+      >
+        <input
+          type="checkbox"
+          checked={isOpen}
+          readOnly
+          className="w-4 h-4 rounded border-border accent-primary flex-shrink-0 cursor-pointer"
+        />
+        {Icon && <Icon className={`w-5 h-5 flex-shrink-0 ${isOpen ? 'text-primary' : 'text-text-tertiary'}`} />}
+        <div className="text-left flex-1 min-w-0">
+          <h2 className={`text-[14px] font-bold ${isOpen ? 'text-primary' : 'text-text-primary'}`}>{label}</h2>
+          {description && <p className="text-[11px] text-text-tertiary mt-0.5">{description}</p>}
+        </div>
+        <ChevronDown className={`w-4 h-4 text-text-tertiary transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {isOpen && (
+        <div className="px-5 pb-5 border-t border-border animate-fade-in">
+          <div className="pt-4 space-y-4">
+            {children}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
