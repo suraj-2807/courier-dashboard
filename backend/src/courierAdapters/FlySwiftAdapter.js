@@ -128,7 +128,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
       tracking_no: shipmentData.tracking_number || shipmentData.order_id || '',
       reference_name: shipmentData.sender_name || shipmentData.order_reference || '',
       origin_code: '',
-      product_code: '',
+      product_code: shipmentData.product_code || '',
       destination_code: '',
       booking_date: bookingDate,
       booking_time: bookingTime,
@@ -144,7 +144,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
       free_form_currency: shipmentData.invoice_currency || 'INR',
       terms_of_trade: shipmentData.terms_of_trade || 'FOB',
       api_service_code: shipmentData.service_code || '',
-      api_vendor_code: '',
+      api_vendor_code: shipmentData.vendor_code || '',
 
       // Shipper (Sender)
       shipper_name: shipmentData.sender_name || '',

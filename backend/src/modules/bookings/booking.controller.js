@@ -9,7 +9,9 @@ export const createBooking = async (req, res) => {
       receiver_id,
       courier_provider_id,
       vendor_config_id,
+      vendor_code,
       service_code,
+      product_code,
       weight,
       length,
       breadth,
@@ -105,17 +107,19 @@ export const createBooking = async (req, res) => {
     const shipmentResult = await execute(
       `INSERT INTO shipments (
         order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
-        service_code, tracking_number, weight, \`length\`, breadth, height,
+        vendor_code, service_code, product_code, tracking_number, weight, \`length\`, breadth, height,
         payment_mode, package_type, total_amount, shipping_charge,
         order_reference, remarks, status, vendor_push_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         order_id,
         finalSenderId || null,
         finalReceiverId || null,
         courier_provider_id || null,
         vendor_config_id || null,
+        vendor_code || '',
         service_code || '',
+        product_code || '',
         tracking_number,
         weight || 0,
         length || 0,
@@ -162,7 +166,9 @@ export const createBooking = async (req, res) => {
         content_description: content_description || '',
         cod_amount: parseFloat(cod_amount) || 0,
         remarks: remarks || '',
+        vendor_code: vendor_code || '',
         service_code: service_code || '',
+        product_code: product_code || '',
         booking_date: new Date().toISOString().split('T')[0],
         booking_time: new Date().toTimeString().split(' ')[0],
         // Sender info

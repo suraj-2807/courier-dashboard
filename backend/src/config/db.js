@@ -73,4 +73,36 @@ process.on('SIGINT', async () => {
   process.exit(0)
 })
 
+/**
+ * Self-healing DB initialization.
+ * Verifies that the shipments table has the vendor_code and product_code columns,
+ * adding them dynamically if they are missing.
+ */
+export async function initializeDb() {
+  console.log('--- RUNNING DB INITIALIZATION & MIGRATIONS ---')
+  try {
+    const shipmentsColumns = await query("SHOW COLUMNS FROM shipments")
+    const columnNames = shipmentsColumns.map(col => col.Field || col.field)
+    
+    if (!columnNames.includes('vendor_code')) {
+      console.log('Adding vendor_code column to shipments table...')
+      await execute("ALTER TABLE shipments ADD COLUMN vendor_code VARCHAR(100) DEFAULT '' AFTER vendor_config_id")
+      console.log('vendor_code column successfully added.')
+    } else {
+      console.log('vendor_code column already exists.')
+    }
+    
+    if (!columnNames.includes('product_code')) {
+      console.log('Adding product_code column to shipments table...')
+      await execute("ALTER TABLE shipments ADD COLUMN product_code VARCHAR(100) DEFAULT '' AFTER service_code")
+      console.log('product_code column successfully added.')
+    } else {
+      console.log('product_code column already exists.')
+    }
+    console.log('DB initialization successfully completed!')
+  } catch (err) {
+    console.error('DB Initialization/Migration Failed:', err)
+  }
+}
+
 export default pool

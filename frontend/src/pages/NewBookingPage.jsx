@@ -74,7 +74,9 @@ const INITIAL_FORM = {
   // Step 3 — Courier
   courier_provider_id: '',
   vendor_config_id: '',
+  vendor_code: '',
   service_code: '',
+  product_code: '',
   payment_mode: 'prepaid',
   shipping_charge: '',
   total_amount: '',
@@ -90,6 +92,11 @@ export default function NewBookingPage() {
   const [step, setStep] = useState(1)
   const [form, setForm] = useState(INITIAL_FORM)
   const [submitting, setSubmitting] = useState(false)
+
+  // Custom input mode toggles for vendor, service, and product codes
+  const [customVendorMode, setCustomVendorMode] = useState(false)
+  const [customServiceMode, setCustomServiceMode] = useState(false)
+  const [customProductMode, setCustomProductMode] = useState(false)
 
   // Fetch active vendors for Step 3 dropdown
   const { data: vendorsData } = useQuery({
@@ -155,7 +162,9 @@ export default function NewBookingPage() {
         order_reference: form.order_reference,
         remarks: form.remarks,
         vendor_config_id: form.vendor_config_id || null,
+        vendor_code: form.vendor_code || '',
         service_code: form.service_code || '',
+        product_code: form.product_code || '',
         cod_amount: parseFloat(form.cod_amount) || 0,
         // Pacific-specific fields
         invoice_no: form.invoice_no,
@@ -739,7 +748,12 @@ export default function NewBookingPage() {
                           value={form.vendor_config_id}
                           onChange={e => {
                             updateForm('vendor_config_id', e.target.value)
+                            updateForm('vendor_code', '')
                             updateForm('service_code', '')
+                            updateForm('product_code', '')
+                            setCustomVendorMode(false)
+                            setCustomServiceMode(false)
+                            setCustomProductMode(false)
                           }}
                           className="form-input"
                         >
@@ -752,30 +766,155 @@ export default function NewBookingPage() {
                         </select>
                       </FormField>
                       {form.vendor_config_id && (
-                        <FormField label="Service Type">
-                          {vendorServices.length > 0 ? (
-                            <select
-                              value={form.service_code}
-                              onChange={e => updateForm('service_code', e.target.value)}
-                              className="form-input"
-                            >
-                              <option value="">— Select Service —</option>
-                              {vendorServices.map((svc, i) => (
-                                <option key={i} value={svc.code}>
-                                  {svc.label || svc.code} ({svc.code})
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              type="text"
-                              value={form.service_code}
-                              onChange={e => updateForm('service_code', e.target.value)}
-                              placeholder="e.g. PC-PXC-EXPRESS"
-                              className="form-input"
-                            />
-                          )}
-                        </FormField>
+                        <>
+                          <FormField label="Vendor Code">
+                            {customVendorMode ? (
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={form.vendor_code}
+                                  onChange={e => updateForm('vendor_code', e.target.value)}
+                                  placeholder="e.g. PC, DHL, FEDEX"
+                                  className="form-input flex-1"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCustomVendorMode(false)
+                                    updateForm('vendor_code', '')
+                                  }}
+                                  className="px-3 py-2 text-[12px] font-bold text-text-secondary border border-border rounded-xl hover:bg-surface-hover transition-colors"
+                                >
+                                  Reset
+                                </button>
+                              </div>
+                            ) : (
+                              <select
+                                value={form.vendor_code}
+                                onChange={e => {
+                                  if (e.target.value === '__custom__') {
+                                    setCustomVendorMode(true)
+                                    updateForm('vendor_code', '')
+                                  } else {
+                                    updateForm('vendor_code', e.target.value)
+                                  }
+                                }}
+                                className="form-input"
+                              >
+                                <option value="">— Select / Use Config Default —</option>
+                                <option value="PC">PC — Pacific Express</option>
+                                <option value="DHL">DHL — DHL Express</option>
+                                <option value="FEDEX">FEDEX — FedEx</option>
+                                <option value="UPS">UPS — UPS</option>
+                                <option value="TNT">TNT — TNT</option>
+                                <option value="ARAMEX">ARAMEX — Aramex</option>
+                                <option value="SELF">SELF — Self Routing</option>
+                                <option value="__custom__">Custom Vendor Code...</option>
+                              </select>
+                            )}
+                          </FormField>
+
+                          <FormField label="Product Code">
+                            {customProductMode ? (
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={form.product_code}
+                                  onChange={e => updateForm('product_code', e.target.value)}
+                                  placeholder="e.g. SPX, DOX, INTL. SPX"
+                                  className="form-input flex-1"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCustomProductMode(false)
+                                    updateForm('product_code', '')
+                                  }}
+                                  className="px-3 py-2 text-[12px] font-bold text-text-secondary border border-border rounded-xl hover:bg-surface-hover transition-colors"
+                                >
+                                  Reset
+                                </button>
+                              </div>
+                            ) : (
+                              <select
+                                value={form.product_code}
+                                onChange={e => {
+                                  if (e.target.value === '__custom__') {
+                                    setCustomProductMode(true)
+                                    updateForm('product_code', '')
+                                  } else {
+                                    updateForm('product_code', e.target.value)
+                                  }
+                                }}
+                                className="form-input"
+                              >
+                                <option value="">— Select / Auto-detect —</option>
+                                <option value="SPX">SPX — Parcel/Sample</option>
+                                <option value="DOX">DOX — Document</option>
+                                <option value="INTL. SPX">INTL. SPX — International Parcel</option>
+                                <option value="INTL. DOX">INTL. DOX — International Document</option>
+                                <option value="__custom__">Custom Product Code...</option>
+                              </select>
+                            )}
+                          </FormField>
+
+                          <FormField label="Service Type / Code">
+                            {vendorServices.length > 0 ? (
+                              <select
+                                value={form.service_code}
+                                onChange={e => updateForm('service_code', e.target.value)}
+                                className="form-input"
+                              >
+                                <option value="">— Select Service —</option>
+                                {vendorServices.map((svc, i) => (
+                                  <option key={i} value={svc.code}>
+                                    {svc.label || svc.code} ({svc.code})
+                                  </option>
+                                ))}
+                              </select>
+                            ) : customServiceMode ? (
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={form.service_code}
+                                  onChange={e => updateForm('service_code', e.target.value)}
+                                  placeholder="e.g. PC-PXC-EXPRESS"
+                                  className="form-input flex-1"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setCustomServiceMode(false)
+                                    updateForm('service_code', '')
+                                  }}
+                                  className="px-3 py-2 text-[12px] font-bold text-text-secondary border border-border rounded-xl hover:bg-surface-hover transition-colors"
+                                >
+                                  Reset
+                                </button>
+                              </div>
+                            ) : (
+                              <select
+                                value={form.service_code}
+                                onChange={e => {
+                                  if (e.target.value === '__custom__') {
+                                    setCustomServiceMode(true)
+                                    updateForm('service_code', '')
+                                  } else {
+                                    updateForm('service_code', e.target.value)
+                                  }
+                                }}
+                                className="form-input"
+                              >
+                                <option value="">— Select Service Code —</option>
+                                <option value="EXPRESS">EXPRESS — Express Service</option>
+                                <option value="ECONOMY">ECONOMY — Economy Service</option>
+                                <option value="SELF">SELF — Self Service</option>
+                                <option value="STANDARD">STANDARD — Standard Service</option>
+                                <option value="__custom__">Custom Service Code...</option>
+                              </select>
+                            )}
+                          </FormField>
+                        </>
                       )}
                     </div>
                     {form.vendor_config_id && (

@@ -31,38 +31,46 @@ export default class PacificAdapter extends BaseAdapter {
     const customerCode = this._truncate(credentials.customer_code || credentials.CustomerCode || userId, 10)
 
     // VendorName & ServiceName resolution
-    // Priority: credentials > service_code parsing > defaults
     let vendorName = ''
     let serviceName = ''
 
-    // 1. Start with credential overrides (highest priority)
-    if (credentials.vendor_name && credentials.vendor_name.trim()) {
-      vendorName = credentials.vendor_name.trim()
-    } else if (credentials.VendorName && credentials.VendorName.trim()) {
-      vendorName = credentials.VendorName.trim()
-    }
-    if (credentials.service_name && credentials.service_name.trim()) {
-      serviceName = credentials.service_name.trim()
-    } else if (credentials.ServiceName && credentials.ServiceName.trim()) {
-      serviceName = credentials.ServiceName.trim()
+    // 1. Explicitly selected vendor_code from shipment data (highest priority)
+    if (shipmentData.vendor_code && shipmentData.vendor_code.trim()) {
+      vendorName = shipmentData.vendor_code.trim()
     }
 
-    // 2. service_code from booking can override (only if non-empty after parsing)
+    // 2. Parse service_code from booking (e.g. 'DHL-EXPRESS')
     if (shipmentData.service_code && shipmentData.service_code.trim()) {
       const sc = shipmentData.service_code.trim()
       if (sc.includes('-')) {
         const dashIdx = sc.indexOf('-')
         const parsedVendor = sc.substring(0, dashIdx).trim()
         const parsedService = sc.substring(dashIdx + 1).trim()
-        if (parsedVendor) vendorName = parsedVendor
-        if (parsedService) serviceName = parsedService
+        if (!vendorName && parsedVendor) vendorName = parsedVendor
+        serviceName = parsedService
       } else {
-        // Single value without dash — use as vendorName only if no credential override
-        if (!vendorName) vendorName = sc
+        // Single value without dash — use as serviceName
+        serviceName = sc
       }
     }
 
-    // 3. Final fallbacks — NEVER send empty values (Pacific rejects them)
+    // 3. Fallback to credentials override if still not set
+    if (!vendorName) {
+      if (credentials.vendor_name && credentials.vendor_name.trim()) {
+        vendorName = credentials.vendor_name.trim()
+      } else if (credentials.VendorName && credentials.VendorName.trim()) {
+        vendorName = credentials.VendorName.trim()
+      }
+    }
+    if (!serviceName) {
+      if (credentials.service_name && credentials.service_name.trim()) {
+        serviceName = credentials.service_name.trim()
+      } else if (credentials.ServiceName && credentials.ServiceName.trim()) {
+        serviceName = credentials.ServiceName.trim()
+      }
+    }
+
+    // 4. Final fallbacks — NEVER send empty values (Pacific rejects them)
     if (!vendorName) vendorName = 'PC'
     if (!serviceName) serviceName = 'SELF'
 
@@ -143,9 +151,14 @@ export default class PacificAdapter extends BaseAdapter {
       })
     }
 
-    const packageTypeUpper = String(shipmentData.package_type || 'SPX').toUpperCase()
-    const isDoc = packageTypeUpper === 'DOCUMENT' || packageTypeUpper === 'DOX'
-    const productCode = isDoc ? 'DOX' : 'SPX'
+    let productCode = ''
+    if (shipmentData.product_code && shipmentData.product_code.trim()) {
+      productCode = shipmentData.product_code.trim()
+    } else {
+      const packageTypeUpper = String(shipmentData.package_type || 'SPX').toUpperCase()
+      const isDoc = packageTypeUpper === 'DOCUMENT' || packageTypeUpper === 'DOX'
+      productCode = isDoc ? 'DOX' : 'SPX'
+    }
 
     // Return the exact structure matching the Pacific API Awbentry spec
     return {

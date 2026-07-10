@@ -116,6 +116,8 @@ CREATE TABLE IF NOT EXISTS shipments (
   courier_provider_id INT DEFAULT NULL,
   vendor_config_id INT DEFAULT NULL,
   service_code VARCHAR(100) DEFAULT '',
+  vendor_code VARCHAR(100) DEFAULT '',
+  product_code VARCHAR(100) DEFAULT '',
   tracking_number VARCHAR(100) NOT NULL,
   weight DECIMAL(10,2) DEFAULT 0,
   length DECIMAL(10,2) DEFAULT 0,

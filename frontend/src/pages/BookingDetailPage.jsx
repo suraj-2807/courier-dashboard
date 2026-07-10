@@ -377,6 +377,22 @@ function VendorResponseCard({ booking, vendorConfig }) {
         </div>
       </div>
 
+      {/* Routing Details */}
+      <div className="mt-4 pt-4 border-t border-border-light grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+        <div>
+          <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-1">Routing Vendor Code</p>
+          <p className="text-[13px] font-bold text-text-primary">{booking.vendor_code || '—'}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-1">Routing Product Code</p>
+          <p className="text-[13px] font-bold text-text-primary">{booking.product_code || '—'}</p>
+        </div>
+        <div>
+          <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-1">Routing Service Code</p>
+          <p className="text-[13px] font-bold text-text-primary">{booking.service_code || '—'}</p>
+        </div>
+      </div>
+
       {/* Error message for failed pushes */}
       {isFailed && booking.vendor_raw_response?.error && (
         <div className="mt-4 p-3 bg-red-50 rounded-xl border border-red-100">
