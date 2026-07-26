@@ -10,6 +10,7 @@ import NewBookingPage from '../pages/NewBookingPage'
 import TrackingPage from '../pages/TrackingPage'
 import ApiSettingsPage from '../pages/ApiSettingsPage'
 import RatesPage from '../pages/RatesPage'
+import CustomerBookingPage from '../pages/CustomerBookingPage'
 
 export default function AppRoutes() {
   return (
@@ -86,6 +87,9 @@ export default function AppRoutes() {
           </ProtectedRoute>
         }
       />
+
+      {/* Customer-facing routes (public — auth handled by WP plugin) */}
+      <Route path="/customer/booking" element={<CustomerBookingPage />} />
 
       {/* Catch all */}
       <Route path="*" element={<Navigate to="/" replace />} />

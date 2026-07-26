@@ -42,7 +42,7 @@ export const getApiSettings = async (req, res) => {
 export const getActiveVendors = async (req, res) => {
   try {
     const rows = await query(
-      `SELECT id, name, vendor_code, available_services, environment, auth_type
+      `SELECT id, name, vendor_code, available_services, available_vendor_codes, available_product_codes, environment, auth_type
        FROM vendor_api_configs
        WHERE is_active = TRUE
        ORDER BY name ASC`
@@ -128,8 +128,8 @@ export const createApiSetting = async (req, res) => {
         auth_credentials, auth_token_path, shipment_api_url, shipment_api_method,
         request_template, field_mapping, headers_template,
         response_tracking_path, response_success_path, response_success_value,
-        available_services, environment, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        available_services, available_vendor_codes, available_product_codes, environment, is_active
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         configData.name,
         configData.vendor_code,
@@ -147,6 +147,8 @@ export const createApiSetting = async (req, res) => {
         configData.response_success_path,
         configData.response_success_value,
         JSON.stringify(configData.available_services),
+        JSON.stringify(configData.available_vendor_codes),
+        JSON.stringify(configData.available_product_codes),
         configData.environment,
         configData.is_active
       ]
@@ -202,7 +204,7 @@ export const updateApiSetting = async (req, res) => {
     // JSON fields
     const jsonFields = [
       'auth_payload_template', 'request_template', 'field_mapping',
-      'headers_template', 'available_services'
+      'headers_template', 'available_services', 'available_vendor_codes', 'available_product_codes'
     ]
 
     for (const field of jsonFields) {
@@ -666,6 +668,8 @@ function _buildConfigFromBody(body) {
     response_success_path: body.response_success_path || '',
     response_success_value: body.response_success_value || '',
     available_services: body.available_services || [],
+    available_vendor_codes: body.available_vendor_codes || [],
+    available_product_codes: body.available_product_codes || [],
     environment: body.environment || 'production',
     is_active: body.is_active !== undefined ? body.is_active : true
   }

@@ -99,6 +99,30 @@ export async function initializeDb() {
     } else {
       console.log('product_code column already exists.')
     }
+    // ── Vendor API Configs: add available_vendor_codes & available_product_codes ──
+    try {
+      const vendorCols = await query("SHOW COLUMNS FROM vendor_api_configs")
+      const vendorColNames = vendorCols.map(col => col.Field || col.field)
+
+      if (!vendorColNames.includes('available_vendor_codes')) {
+        console.log('Adding available_vendor_codes column to vendor_api_configs...')
+        await execute("ALTER TABLE vendor_api_configs ADD COLUMN available_vendor_codes JSON DEFAULT NULL AFTER available_services")
+        console.log('available_vendor_codes column successfully added.')
+      } else {
+        console.log('available_vendor_codes column already exists.')
+      }
+
+      if (!vendorColNames.includes('available_product_codes')) {
+        console.log('Adding available_product_codes column to vendor_api_configs...')
+        await execute("ALTER TABLE vendor_api_configs ADD COLUMN available_product_codes JSON DEFAULT NULL AFTER available_vendor_codes")
+        console.log('available_product_codes column successfully added.')
+      } else {
+        console.log('available_product_codes column already exists.')
+      }
+    } catch (vendorMigErr) {
+      console.error('Vendor API config migration failed:', vendorMigErr.message)
+    }
+
     console.log('DB initialization successfully completed!')
   } catch (err) {
     console.error('DB Initialization/Migration Failed:', err)

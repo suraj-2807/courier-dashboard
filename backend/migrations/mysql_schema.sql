@@ -87,8 +87,10 @@ CREATE TABLE IF NOT EXISTS vendor_api_configs (
   response_success_path VARCHAR(255) DEFAULT '',
   response_success_value VARCHAR(255) DEFAULT '',
 
-  -- Vendor Services
+  -- Vendor Services & Codes
   available_services JSON DEFAULT NULL,
+  available_vendor_codes JSON DEFAULT NULL,
+  available_product_codes JSON DEFAULT NULL,
 
   -- Settings
   environment ENUM('production', 'staging') DEFAULT 'production',

@@ -70,8 +70,10 @@ const EMPTY_FORM = {
   response_tracking_path: '',
   response_success_path: '',
   response_success_value: '',
-  // Services
+  // Services & Codes
   available_services: [],
+  available_vendor_codes: [],
+  available_product_codes: [],
   // Settings
   environment: 'production',
   is_active: true,
@@ -82,6 +84,7 @@ const EMPTY_FORM = {
 }
 
 const EMPTY_SERVICE = { code: '', label: '' }
+const EMPTY_CODE_ENTRY = { code: '', label: '' }
 
 export default function ApiSettingsPage() {
   const queryClient = useQueryClient()
@@ -93,6 +96,8 @@ export default function ApiSettingsPage() {
   const [testResult, setTestResult] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [newService, setNewService] = useState(EMPTY_SERVICE)
+  const [newVendorCode, setNewVendorCode] = useState(EMPTY_CODE_ENTRY)
+  const [newProductCode, setNewProductCode] = useState(EMPTY_CODE_ENTRY)
   const [expandedLogs, setExpandedLogs] = useState(null)
   const [logsData, setLogsData] = useState([])
   const [logsLoading, setLogsLoading] = useState(false)
@@ -163,6 +168,8 @@ export default function ApiSettingsPage() {
     setModalTab('connection')
     setShowPassword(false)
     setNewService(EMPTY_SERVICE)
+    setNewVendorCode(EMPTY_CODE_ENTRY)
+    setNewProductCode(EMPTY_CODE_ENTRY)
   }
 
   const openAdd = () => {
@@ -193,6 +200,8 @@ export default function ApiSettingsPage() {
       response_success_path: config.response_success_path || '',
       response_success_value: config.response_success_value || '',
       available_services: config.available_services || [],
+      available_vendor_codes: config.available_vendor_codes || [],
+      available_product_codes: config.available_product_codes || [],
       environment: config.environment || 'production',
       is_active: config.is_active,
       field_mapping: config.field_mapping || {}
@@ -284,6 +293,8 @@ export default function ApiSettingsPage() {
       response_success_path: form.response_success_path,
       response_success_value: form.response_success_value,
       available_services: form.available_services,
+      available_vendor_codes: form.available_vendor_codes,
+      available_product_codes: form.available_product_codes,
       environment: form.environment,
       is_active: form.is_active,
       request_template,
@@ -366,6 +377,44 @@ export default function ApiSettingsPage() {
     setForm(prev => ({
       ...prev,
       available_services: prev.available_services.filter((_, i) => i !== idx)
+    }))
+  }
+
+  const addVendorCode = () => {
+    if (!newVendorCode.code) return
+    setForm(prev => ({
+      ...prev,
+      available_vendor_codes: [
+        ...prev.available_vendor_codes,
+        { code: newVendorCode.code, label: newVendorCode.label || newVendorCode.code }
+      ]
+    }))
+    setNewVendorCode(EMPTY_CODE_ENTRY)
+  }
+
+  const removeVendorCode = (idx) => {
+    setForm(prev => ({
+      ...prev,
+      available_vendor_codes: prev.available_vendor_codes.filter((_, i) => i !== idx)
+    }))
+  }
+
+  const addProductCode = () => {
+    if (!newProductCode.code) return
+    setForm(prev => ({
+      ...prev,
+      available_product_codes: [
+        ...prev.available_product_codes,
+        { code: newProductCode.code, label: newProductCode.label || newProductCode.code }
+      ]
+    }))
+    setNewProductCode(EMPTY_CODE_ENTRY)
+  }
+
+  const removeProductCode = (idx) => {
+    setForm(prev => ({
+      ...prev,
+      available_product_codes: prev.available_product_codes.filter((_, i) => i !== idx)
     }))
   }
 
@@ -1107,6 +1156,140 @@ export default function ApiSettingsPage() {
                           background: newService.code ? 'var(--color-primary)' : 'var(--color-surface-alt)',
                           color: newService.code ? '#fff' : 'var(--color-text-tertiary)',
                           fontSize: '12px', fontWeight: 700, cursor: newService.code ? 'pointer' : 'not-allowed',
+                          fontFamily: 'var(--font-family-body)', whiteSpace: 'nowrap',
+                          display: 'flex', alignItems: 'center', gap: '4px'
+                        }}
+                      >
+                        <Plus style={{ width: '14px', height: '14px' }} />
+                        Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ── Section: Vendor Codes ── */}
+                  <SectionLabel>Vendor Codes</SectionLabel>
+                  <div style={{ marginBottom: '24px' }}>
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginBottom: '10px' }}>
+                      Define vendor codes available for this API (shown in booking dropdown, e.g. PC, DHL, FEDEX).
+                    </p>
+                    {form.available_vendor_codes.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                        {form.available_vendor_codes.map((vc, idx) => (
+                          <span key={idx} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '6px',
+                            padding: '5px 10px', borderRadius: '8px',
+                            background: 'var(--color-surface-alt)',
+                            border: '1px solid var(--color-border)',
+                            fontSize: '12px', fontWeight: 600, color: 'var(--color-text-primary)'
+                          }}>
+                            <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '11px', color: 'var(--color-primary)' }}>
+                              {vc.code}
+                            </code>
+                            {vc.label !== vc.code && <span style={{ color: 'var(--color-text-tertiary)' }}>— {vc.label}</span>}
+                            <button
+                              type="button"
+                              onClick={() => removeVendorCode(idx)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'var(--color-text-tertiary)', display: 'flex' }}
+                            >
+                              <X style={{ width: '12px', height: '12px' }} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                      <div style={{ flex: 1 }}>
+                        <input
+                          value={newVendorCode.code}
+                          onChange={(e) => setNewVendorCode({ ...newVendorCode, code: e.target.value.toUpperCase() })}
+                          placeholder="Code (e.g., PC)"
+                          style={{ ...inputStyle, fontSize: '12px' }}
+                        />
+                      </div>
+                      <div style={{ flex: 2 }}>
+                        <input
+                          value={newVendorCode.label}
+                          onChange={(e) => setNewVendorCode({ ...newVendorCode, label: e.target.value })}
+                          placeholder="Label (e.g., Pacific Express)"
+                          style={{ ...inputStyle, fontSize: '12px' }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addVendorCode}
+                        disabled={!newVendorCode.code}
+                        style={{
+                          padding: '10px 16px', borderRadius: '10px', border: 'none',
+                          background: newVendorCode.code ? 'var(--color-primary)' : 'var(--color-surface-alt)',
+                          color: newVendorCode.code ? '#fff' : 'var(--color-text-tertiary)',
+                          fontSize: '12px', fontWeight: 700, cursor: newVendorCode.code ? 'pointer' : 'not-allowed',
+                          fontFamily: 'var(--font-family-body)', whiteSpace: 'nowrap',
+                          display: 'flex', alignItems: 'center', gap: '4px'
+                        }}
+                      >
+                        <Plus style={{ width: '14px', height: '14px' }} />
+                        Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ── Section: Product Codes ── */}
+                  <SectionLabel>Product Codes</SectionLabel>
+                  <div style={{ marginBottom: '24px' }}>
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginBottom: '10px' }}>
+                      Define product codes available for this API (shown in booking dropdown, e.g. SPX, DOX, INTL. SPX).
+                    </p>
+                    {form.available_product_codes.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                        {form.available_product_codes.map((pc, idx) => (
+                          <span key={idx} style={{
+                            display: 'inline-flex', alignItems: 'center', gap: '6px',
+                            padding: '5px 10px', borderRadius: '8px',
+                            background: 'var(--color-surface-alt)',
+                            border: '1px solid var(--color-border)',
+                            fontSize: '12px', fontWeight: 600, color: 'var(--color-text-primary)'
+                          }}>
+                            <code style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '11px', color: '#6D28D9' }}>
+                              {pc.code}
+                            </code>
+                            {pc.label !== pc.code && <span style={{ color: 'var(--color-text-tertiary)' }}>— {pc.label}</span>}
+                            <button
+                              type="button"
+                              onClick={() => removeProductCode(idx)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', color: 'var(--color-text-tertiary)', display: 'flex' }}
+                            >
+                              <X style={{ width: '12px', height: '12px' }} />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                      <div style={{ flex: 1 }}>
+                        <input
+                          value={newProductCode.code}
+                          onChange={(e) => setNewProductCode({ ...newProductCode, code: e.target.value.toUpperCase() })}
+                          placeholder="Code (e.g., SPX)"
+                          style={{ ...inputStyle, fontSize: '12px' }}
+                        />
+                      </div>
+                      <div style={{ flex: 2 }}>
+                        <input
+                          value={newProductCode.label}
+                          onChange={(e) => setNewProductCode({ ...newProductCode, label: e.target.value })}
+                          placeholder="Label (e.g., Parcel/Sample)"
+                          style={{ ...inputStyle, fontSize: '12px' }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addProductCode}
+                        disabled={!newProductCode.code}
+                        style={{
+                          padding: '10px 16px', borderRadius: '10px', border: 'none',
+                          background: newProductCode.code ? '#6D28D9' : 'var(--color-surface-alt)',
+                          color: newProductCode.code ? '#fff' : 'var(--color-text-tertiary)',
+                          fontSize: '12px', fontWeight: 700, cursor: newProductCode.code ? 'pointer' : 'not-allowed',
                           fontFamily: 'var(--font-family-body)', whiteSpace: 'nowrap',
                           display: 'flex', alignItems: 'center', gap: '4px'
                         }}

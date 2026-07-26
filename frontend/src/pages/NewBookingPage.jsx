@@ -167,9 +167,11 @@ export default function NewBookingPage() {
   })
   const activeVendors = vendorsData?.vendors || []
 
-  // Get selected vendor's service codes
-  const selectedVendor = activeVendors.find(v => v.id === form.vendor_config_id)
+  // Get selected vendor's configured codes
+  const selectedVendor = activeVendors.find(v => String(v.id) === String(form.vendor_config_id))
   const vendorServices = selectedVendor?.available_services || []
+  const vendorVendorCodes = selectedVendor?.available_vendor_codes || []
+  const vendorProductCodes = selectedVendor?.available_product_codes || []
 
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -994,7 +996,7 @@ export default function NewBookingPage() {
                                   Reset
                                 </button>
                               </div>
-                            ) : (
+                            ) : vendorVendorCodes.length > 0 ? (
                               <select
                                 value={form.vendor_code}
                                 onChange={e => {
@@ -1008,15 +1010,23 @@ export default function NewBookingPage() {
                                 className="form-input"
                               >
                                 <option value="">— Select / Use Config Default —</option>
-                                <option value="PC">PC — Pacific Express</option>
-                                <option value="DHL">DHL — DHL Express</option>
-                                <option value="FEDEX">FEDEX — FedEx</option>
-                                <option value="UPS">UPS — UPS</option>
-                                <option value="TNT">TNT — TNT</option>
-                                <option value="ARAMEX">ARAMEX — Aramex</option>
-                                <option value="SELF">SELF — Self Routing</option>
+                                {vendorVendorCodes.map((vc, i) => (
+                                  <option key={i} value={vc.code}>
+                                    {vc.code}{vc.label && vc.label !== vc.code ? ` — ${vc.label}` : ''}
+                                  </option>
+                                ))}
                                 <option value="__custom__">Custom Vendor Code...</option>
                               </select>
+                            ) : (
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={form.vendor_code}
+                                  onChange={e => updateForm('vendor_code', e.target.value)}
+                                  placeholder="e.g. PC, DHL, FEDEX"
+                                  className="form-input flex-1"
+                                />
+                              </div>
                             )}
                           </FormField>
 
@@ -1041,7 +1051,7 @@ export default function NewBookingPage() {
                                   Reset
                                 </button>
                               </div>
-                            ) : (
+                            ) : vendorProductCodes.length > 0 ? (
                               <select
                                 value={form.product_code}
                                 onChange={e => {
@@ -1055,12 +1065,23 @@ export default function NewBookingPage() {
                                 className="form-input"
                               >
                                 <option value="">— Select / Auto-detect —</option>
-                                <option value="SPX">SPX — Parcel/Sample</option>
-                                <option value="DOX">DOX — Document</option>
-                                <option value="INTL. SPX">INTL. SPX — International Parcel</option>
-                                <option value="INTL. DOX">INTL. DOX — International Document</option>
+                                {vendorProductCodes.map((pc, i) => (
+                                  <option key={i} value={pc.code}>
+                                    {pc.code}{pc.label && pc.label !== pc.code ? ` — ${pc.label}` : ''}
+                                  </option>
+                                ))}
                                 <option value="__custom__">Custom Product Code...</option>
                               </select>
+                            ) : (
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={form.product_code}
+                                  onChange={e => updateForm('product_code', e.target.value)}
+                                  placeholder="e.g. SPX, DOX, INTL. SPX"
+                                  className="form-input flex-1"
+                                />
+                              </div>
                             )}
                           </FormField>
 
@@ -1099,25 +1120,15 @@ export default function NewBookingPage() {
                                 </button>
                               </div>
                             ) : (
-                              <select
-                                value={form.service_code}
-                                onChange={e => {
-                                  if (e.target.value === '__custom__') {
-                                    setCustomServiceMode(true)
-                                    updateForm('service_code', '')
-                                  } else {
-                                    updateForm('service_code', e.target.value)
-                                  }
-                                }}
-                                className="form-input"
-                              >
-                                <option value="">— Select Service Code —</option>
-                                <option value="EXPRESS">EXPRESS — Express Service</option>
-                                <option value="ECONOMY">ECONOMY — Economy Service</option>
-                                <option value="SELF">SELF — Self Service</option>
-                                <option value="STANDARD">STANDARD — Standard Service</option>
-                                <option value="__custom__">Custom Service Code...</option>
-                              </select>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={form.service_code}
+                                  onChange={e => updateForm('service_code', e.target.value)}
+                                  placeholder="e.g. EXPRESS, ECONOMY, SELF"
+                                  className="form-input flex-1"
+                                />
+                              </div>
                             )}
                           </FormField>
                         </>

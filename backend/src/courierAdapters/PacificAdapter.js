@@ -37,16 +37,17 @@ export default class PacificAdapter extends BaseAdapter {
     // 1. Explicitly selected vendor_code from shipment data (highest priority)
     if (shipmentData.vendor_code && shipmentData.vendor_code.trim()) {
       vendorName = shipmentData.vendor_code.trim()
+      serviceName = (shipmentData.service_code || '').trim()
     }
 
-    // 2. Parse service_code from booking (e.g. 'DHL-EXPRESS')
-    if (shipmentData.service_code && shipmentData.service_code.trim()) {
+    // 2. Parse service_code from booking for legacy/fallback (e.g. 'DHL-EXPRESS')
+    if (!vendorName && !serviceName && shipmentData.service_code && shipmentData.service_code.trim()) {
       const sc = shipmentData.service_code.trim()
       if (sc.includes('-')) {
         const dashIdx = sc.indexOf('-')
         const parsedVendor = sc.substring(0, dashIdx).trim()
         const parsedService = sc.substring(dashIdx + 1).trim()
-        if (!vendorName && parsedVendor) vendorName = parsedVendor
+        vendorName = parsedVendor
         serviceName = parsedService
       } else {
         // Single value without dash — use as serviceName

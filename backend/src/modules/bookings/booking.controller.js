@@ -323,6 +323,13 @@ export const createBooking = async (req, res) => {
             'Vendor API'
           ]
         )
+      } else {
+        // Delete the shipment row from the DB since vendor push failed
+        await execute('DELETE FROM shipments WHERE id = ?', [shipmentId])
+        return res.status(400).json({
+          success: false,
+          message: `Vendor API Push Failed: ${vendorResult.error || 'Unknown error'}`
+        })
       }
     }
 
