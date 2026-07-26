@@ -140,6 +140,7 @@ export default function CustomerBookingPage() {
   const [form, setForm] = useState(INITIAL_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [activeVendors, setActiveVendors] = useState([])
+  const [createdBooking, setCreatedBooking] = useState(null)
 
   // Custom input mode toggles for vendor, service, and product codes
   const [customVendorMode, setCustomVendorMode] = useState(false)
@@ -153,8 +154,23 @@ export default function CustomerBookingPage() {
   const [showGstManifest, setShowGstManifest] = useState(false)
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false)
 
-  // Fetch active vendors via public endpoint
+  // Fetch active vendors and check URL params via public endpoint
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const custName = params.get('cust_name') || ''
+    const custPhone = params.get('cust_phone') || ''
+    const custEmail = params.get('cust_email') || ''
+    const custCompany = params.get('cust_company') || ''
+
+    setForm(prev => ({
+      ...prev,
+      sender_name: custName || prev.sender_name,
+      sender_phone: custPhone || prev.sender_phone,
+      sender_email: custEmail || prev.sender_email,
+      sender_company: custCompany || prev.sender_company,
+      customer_name: custName || ''
+    }))
+
     fetch('/api/customer/active-vendors')
       .then(res => res.json())
       .then(data => {
@@ -284,7 +300,8 @@ export default function CustomerBookingPage() {
         otp: form.otp,
         lsp_type: form.lsp_type,
         required_performa: form.required_performa,
-        required_label: form.required_label
+        required_label: form.required_label,
+        customer_name: form.customer_name || form.sender_name || 'Portal User'
       }
 
       const res = await fetch('/api/customer/bookings', {
@@ -308,13 +325,7 @@ export default function CustomerBookingPage() {
         toast.success('Shipment created successfully!')
       }
 
-      // Notify WP Portal of success so it can redirect back or refresh
-      try {
-        window.parent.postMessage({ type: 'PE_BOOKING_SUCCESS' }, '*')
-      } catch (e) {}
-
-      setForm(INITIAL_FORM)
-      setStep(1)
+      setCreatedBooking(data.booking)
     } catch (err) {
       toast.error(err?.message || 'Failed to create shipment')
     } finally {
@@ -326,6 +337,161 @@ export default function CustomerBookingPage() {
     try {
       window.parent.postMessage({ type: 'PE_GO_BACK' }, '*')
     } catch (e) {}
+  }
+
+  if (createdBooking) {
+    const trackingNumber = createdBooking.tracking_number || '';
+    const carrierName = selectedVendor?.name || 'Local Courier';
+    return (
+      <div className="min-h-screen bg-slate-100 py-10 px-4 print:py-0 print:px-0 flex flex-col items-center w-full">
+        {/* Print Styles */}
+        <style dangerouslySetInnerHTML={{ __html: `
+          @media print {
+            body { background: #fff !important; color: #000 !important; }
+            .print\\:hidden { display: none !important; }
+            .print\\:border-none { border: none !important; }
+            .print\\:p-0 { padding: 0 !important; }
+            .print\\:w-full { width: 100% !important; max-width: 100% !important; }
+          }
+        ` }} />
+
+        {/* Action Buttons */}
+        <div className="w-full max-w-[650px] flex justify-between gap-4 mb-6 print:hidden">
+          <button
+            onClick={() => {
+              setCreatedBooking(null)
+              setForm(INITIAL_FORM)
+              setStep(1)
+              try {
+                window.parent.postMessage({ type: 'PE_BOOKING_SUCCESS' }, '*')
+              } catch (e) {}
+            }}
+            className="flex items-center gap-1.5 text-[14px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 px-6 py-2.5 rounded-xl cursor-pointer shadow-sm transition-all"
+          >
+            ← Done & Back to Portal
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 text-[14px] font-bold text-white bg-primary hover:bg-primary-dark px-6 py-2.5 rounded-xl cursor-pointer shadow-md transition-all animate-pulse"
+          >
+            Print Shipment Label
+          </button>
+        </div>
+
+        {/* Printable Shipping Label Card */}
+        <div className="w-[650px] bg-white border-[4px] border-black p-5 flex flex-col justify-between font-mono text-black print:w-full print:border-none print:p-0">
+          
+          {/* Label Header */}
+          <div className="border-b-[4px] border-black pb-4 flex justify-between items-start">
+            <div>
+              <h2 className="text-[20px] font-black tracking-tight leading-none">PRINCE EXPRESS</h2>
+              <p className="text-[10px] font-bold tracking-widest mt-1">INTERNATIONAL COURIER</p>
+              <p className="text-[9px] text-slate-500 mt-0.5">Customs CSB-IV Compliant</p>
+            </div>
+            <div className="text-right">
+              <span className="inline-block px-3 py-1 bg-black text-white font-black text-[12px] uppercase">
+                {form.package_type}
+              </span>
+              <p className="text-[10px] font-bold mt-1.5">Date: {new Date().toLocaleDateString()}</p>
+            </div>
+          </div>
+
+          {/* Barcode & AWB Display */}
+          <div className="py-4 border-b-[4px] border-black flex flex-col items-center">
+            {/* Fake Barcode Lines */}
+            <div className="w-full h-16 flex items-center justify-center gap-[2px] bg-white mb-2">
+              {[...Array(60)].map((_, i) => (
+                <div
+                  key={i}
+                  className="bg-black h-12"
+                  style={{ width: i % 3 === 0 ? '4px' : i % 5 === 0 ? '1px' : '2px' }}
+                />
+              ))}
+            </div>
+            <span className="text-[28px] font-black tracking-[4px]">{trackingNumber}</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-0.5">Prince Express AWB Number</span>
+          </div>
+
+          {/* Sender & Receiver Address Grid */}
+          <div className="grid grid-cols-2 border-b-[4px] border-black">
+            {/* Sender Column */}
+            <div className="border-r-[4px] border-black p-3 space-y-2">
+              <span className="text-[11px] font-bold text-white bg-black px-1.5 py-0.5 uppercase tracking-wider">FROM (SHIPPER)</span>
+              <div className="text-[12px] leading-tight space-y-1">
+                <p className="font-extrabold text-[13px]">{form.sender_name}</p>
+                {form.sender_company && <p className="font-bold">{form.sender_company}</p>}
+                <p>{form.sender_address}</p>
+                {form.sender_address_2 && <p>{form.sender_address_2}</p>}
+                <p className="font-bold">{form.sender_city} - {form.sender_pincode}</p>
+                <p className="font-bold">{form.sender_state}, {form.sender_country}</p>
+                <p className="pt-1 font-bold"><span className="text-[10px] text-slate-500">TEL:</span> {form.sender_phone}</p>
+              </div>
+            </div>
+
+            {/* Receiver Column */}
+            <div className="p-3 space-y-2">
+              <span className="text-[11px] font-bold text-white bg-black px-1.5 py-0.5 uppercase tracking-wider">TO (CONSIGNEE)</span>
+              <div className="text-[12px] leading-tight space-y-1">
+                <p className="font-extrabold text-[13px]">{form.receiver_name}</p>
+                <p>{form.receiver_address}</p>
+                {form.receiver_address_2 && <p>{form.receiver_address_2}</p>}
+                <p className="font-bold">{form.receiver_city} - {form.receiver_pincode}</p>
+                <p className="font-bold">{form.receiver_state}, {form.receiver_country}</p>
+                <p className="pt-1 font-bold"><span className="text-[10px] text-slate-500">TEL:</span> {form.receiver_phone}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Details & Specs Section */}
+          <div className="border-b-[4px] border-black grid grid-cols-3">
+            <div className="border-r-[4px] border-black p-2 text-center">
+              <span className="text-[9px] font-bold text-slate-500 block uppercase">Weight</span>
+              <span className="text-[16px] font-black">{form.weight || '—'} kg</span>
+            </div>
+            <div className="border-r-[4px] border-black p-2 text-center">
+              <span className="text-[9px] font-bold text-slate-500 block uppercase">Cartons / Pieces</span>
+              <span className="text-[16px] font-black">{form.no_of_pieces || '1'}</span>
+            </div>
+            <div className="p-2 text-center">
+              <span className="text-[9px] font-bold text-slate-500 block uppercase">Payment Mode</span>
+              <span className="text-[16px] font-black uppercase">{form.payment_mode || 'Prepaid'}</span>
+            </div>
+          </div>
+
+          {/* Value & Routing info */}
+          <div className="border-b-[4px] border-black p-3 space-y-1">
+            <div className="flex justify-between text-[11px]">
+              <span><strong>Content Description:</strong> {form.content_description || 'Parcel'}</span>
+              <span><strong>Declared Value:</strong> ₹{form.declared_value || '0'}</span>
+            </div>
+            {form.invoice_no && (
+              <div className="flex justify-between text-[11px] pt-1">
+                <span><strong>Invoice No:</strong> {form.invoice_no}</span>
+                <span><strong>HS Code:</strong> {form.hs_code || '—'}</span>
+              </div>
+            )}
+            <div className="text-[11px] pt-1 border-t border-dashed border-black mt-1">
+              <span><strong>Forwarder / Carrier:</strong> {carrierName} {createdBooking.vendor_awb_number ? `AWB: ${createdBooking.vendor_awb_number}` : ''}</span>
+            </div>
+          </div>
+
+          {/* Footer Terms & Signatures */}
+          <div className="p-3 grid grid-cols-2 gap-4 items-end pt-6">
+            <div className="text-[8px] leading-tight text-slate-500">
+              <p>I/We hereby declare that contents of this shipment are non-hazardous, legal, and as described. We agree to Prince Express standard carriage terms and conditions.</p>
+              <p className="mt-4 font-bold border-t border-black pt-1 w-2/3">Shipper Signature</p>
+            </div>
+            <div className="text-right">
+              <div className="w-12 h-12 bg-slate-50 border border-slate-300 rounded inline-flex items-center justify-center font-bold text-[10px] text-slate-400">
+                STAMP
+              </div>
+              <p className="mt-4 text-[8px] text-slate-500 font-bold border-t border-black pt-1 inline-block w-2/3 text-left">Receiver Signature</p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    )
   }
 
   return (
