@@ -28,4 +28,12 @@ router.use('/dashboard', dashboardRoutes)
 router.use('/api-settings', apiSettingsRoutes)
 router.use('/rates', ratesRoutes)
 
+// Public Customer endpoints (for WP Portal iframe)
+import { createBooking } from '../modules/bookings/booking.controller.js'
+import { getActiveVendors } from '../modules/apiSettings/apiSettings.controller.js'
+const customerRouter = express.Router()
+customerRouter.get('/active-vendors', getActiveVendors)
+customerRouter.post('/bookings', createBooking)
+router.use('/customer', customerRouter)
+
 export default router

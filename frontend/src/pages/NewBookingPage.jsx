@@ -340,25 +340,22 @@ export default function NewBookingPage() {
                 {STEPS.map((s, i) => (
                   <div key={s.id} className="flex items-center flex-1">
                     <div className="flex items-center gap-2.5">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold transition-all ${
-                        step > s.id
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold transition-all ${step > s.id
                           ? 'bg-success text-white'
                           : step === s.id
                             ? 'bg-primary text-white shadow-lg shadow-primary/25'
                             : 'bg-surface-alt border border-border text-text-tertiary'
-                      }`}>
+                        }`}>
                         {step > s.id ? <Check className="w-4 h-4" /> : s.id}
                       </div>
-                      <span className={`text-[12px] font-semibold hidden sm:block ${
-                        step === s.id ? 'text-text-primary' : 'text-text-tertiary'
-                      }`}>
+                      <span className={`text-[12px] font-semibold hidden sm:block ${step === s.id ? 'text-text-primary' : 'text-text-tertiary'
+                        }`}>
                         {s.label}
                       </span>
                     </div>
                     {i < STEPS.length - 1 && (
-                      <div className={`flex-1 h-px mx-4 transition-colors ${
-                        step > s.id ? 'bg-success' : 'bg-border'
-                      }`} />
+                      <div className={`flex-1 h-px mx-4 transition-colors ${step > s.id ? 'bg-success' : 'bg-border'
+                        }`} />
                     )}
                   </div>
                 ))}
