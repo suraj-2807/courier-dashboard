@@ -6,27 +6,22 @@ import {
   User,
   MapPin,
   Package,
-  Truck,
   Check,
   Loader2,
-  Zap,
-  FileText,
-  ChevronDown,
-  DollarSign,
-  Users,
-  Shield,
-  Settings
+  Copy,
+  CheckCircle2,
+  Clock,
+  ChevronDown
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 
 const STEPS = [
   { id: 1, label: 'Sender & Receiver', icon: User },
-  { id: 2, label: 'Package Specs', icon: Package },
-  { id: 3, label: 'Courier Options', icon: Truck }
+  { id: 2, label: 'Package & Submit', icon: Package }
 ]
 
 const INITIAL_FORM = {
-  // Step 1 — Sender
+  // Sender
   sender_name: '',
   sender_company: '',
   sender_email: '',
@@ -39,7 +34,7 @@ const INITIAL_FORM = {
   sender_country: 'INDIA',
   sender_gstin_type: '',
   sender_gstin_no: '',
-  // Step 1 — Receiver
+  // Receiver
   receiver_name: '',
   receiver_email: '',
   receiver_phone: '',
@@ -51,110 +46,28 @@ const INITIAL_FORM = {
   receiver_country: '',
   receiver_gstin_type: '',
   receiver_gstin_no: '',
-  // Step 2 — Package
+  // Package
   package_type: 'parcel',
   weight: '',
   length: '',
   breadth: '',
   height: '',
   no_of_pieces: '1',
-  volumetric_weight: '',
-  actual_weight: '',
   content_description: '',
   declared_value: '',
   is_fragile: false,
-  // Step 2 — Invoice / Export
-  invoice_no: '',
-  invoice_date: '',
-  invoice_currency: 'INR',
-  hs_code: '',
-  export_reason: '',
-  terms_of_trade: 'CIF',
-  // eAWB Details
-  eawb_no: '',
-  eawb_date: '',
-  eawb_exp_date: '',
-  // Additional Charges
-  additional_discount: '',
-  additional_freight: '',
-  additional_insurance: '',
-  additional_other_charges: '',
-  additional_specify_charges: '',
-  // Step 3 — Courier
-  courier_provider_id: '',
-  vendor_config_id: '',
-  vendor_code: '',
-  service_code: '',
-  product_code: '',
-  payment_mode: 'prepaid',
-  shipping_charge: '',
-  total_amount: '',
-  order_reference: '',
-  remarks: '',
-  is_cod: false,
-  cod_amount: '',
-  // Buyer Details
-  buyer_name: '',
-  buyer_person_type: 'Individual',
-  buyer_address1: '',
-  buyer_address2: '',
-  buyer_pincode: '',
-  buyer_city: '',
-  buyer_state: '',
-  buyer_telephone: '',
-  buyer_mobile: '',
-  buyer_email: '',
-  buyer_country_code: '',
-  buyer_destination_code: '',
-  buyer_iec_no: '',
-  // GST & Manifest
-  gst_invoice: '0',
-  lut_igst: 'N',
-  total_igst: '',
-  bank_ad_code: '',
-  bank_account: '',
-  bank_ifsc: '',
-  lut_number: '',
-  exchange_rate: '',
-  manifest_firm: '',
-  manifest_nfei: '1',
-  pay_of_igst: '',
-  manifest_ecommerce: '0',
-  meis_scheme: '0',
-  manifest_format: 'C2C',
-  manifest_iec_no: '',
-  lut_issue_date: '',
-  lut_till_date: '',
-  // Advanced Config
-  company_code: '',
-  is_commercial: '',
-  csb_type: '',
-  otp: '',
-  lsp_type: '',
-  required_performa: '',
-  required_label: ''
+  // Notes
+  remarks: ''
 }
 
 export default function CustomerBookingPage() {
   const [step, setStep] = useState(1)
   const [form, setForm] = useState(INITIAL_FORM)
   const [submitting, setSubmitting] = useState(false)
-  const [activeVendors, setActiveVendors] = useState([])
-  const [createdBooking, setCreatedBooking] = useState(null)
+  const [submittedAwb, setSubmittedAwb] = useState(null)
+  const [copied, setCopied] = useState(false)
 
-  // Custom input mode toggles for vendor, service, and product codes
-  const [customVendorMode, setCustomVendorMode] = useState(false)
-  const [customServiceMode, setCustomServiceMode] = useState(false)
-  const [customProductMode, setCustomProductMode] = useState(false)
-
-  // Collapsible section toggles
-  const [showEawb, setShowEawb] = useState(false)
-  const [showAdditionalCharges, setShowAdditionalCharges] = useState(false)
-  const [showBuyerDetails, setShowBuyerDetails] = useState(false)
-  const [showGstManifest, setShowGstManifest] = useState(false)
-  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false)
-
-  // Fetch active vendors and check URL params via public endpoint
+  // Pre-fill from URL params (customer portal passes these)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const custName = params.get('cust_name') || ''
@@ -168,31 +81,34 @@ export default function CustomerBookingPage() {
       sender_phone: custPhone || prev.sender_phone,
       sender_email: custEmail || prev.sender_email,
       sender_company: custCompany || prev.sender_company,
-      customer_name: custName || ''
     }))
-
-    fetch('/api/customer/active-vendors')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          setActiveVendors(data.vendors || [])
-        }
-      })
-      .catch(err => console.error('Failed to fetch vendors:', err))
   }, [])
-
-  // Get selected vendor's configured codes
-  const selectedVendor = activeVendors.find(v => String(v.id) === String(form.vendor_config_id))
-  const vendorServices = selectedVendor?.available_services || []
-  const vendorVendorCodes = selectedVendor?.available_vendor_codes || []
-  const vendorProductCodes = selectedVendor?.available_product_codes || []
 
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
   const nextStep = () => {
-    if (step < 3) setStep(step + 1)
+    // Step 1 validation
+    if (step === 1) {
+      if (!form.sender_name.trim()) {
+        toast.error('Sender name is required')
+        return
+      }
+      if (!form.sender_phone.trim()) {
+        toast.error('Sender phone is required')
+        return
+      }
+      if (!form.receiver_name.trim()) {
+        toast.error('Receiver name is required')
+        return
+      }
+      if (!form.receiver_phone.trim()) {
+        toast.error('Receiver phone is required')
+        return
+      }
+    }
+    if (step < 2) setStep(step + 1)
   }
 
   const prevStep = () => {
@@ -200,9 +116,19 @@ export default function CustomerBookingPage() {
   }
 
   const handleSubmit = async () => {
+    if (!form.weight || parseFloat(form.weight) <= 0) {
+      toast.error('Please enter the package weight')
+      return
+    }
+
     setSubmitting(true)
     try {
+      const params = new URLSearchParams(window.location.search)
       const apiPayload = {
+        customer_name: params.get('cust_name') || form.sender_name,
+        customer_email: params.get('cust_email') || form.sender_email,
+        customer_phone: params.get('cust_phone') || form.sender_phone,
+        customer_company: params.get('cust_company') || form.sender_company,
         sender_name: form.sender_name,
         sender_company: form.sender_company,
         sender_email: form.sender_email,
@@ -226,6 +152,7 @@ export default function CustomerBookingPage() {
         receiver_country: form.receiver_country,
         receiver_gstin_type: form.receiver_gstin_type,
         receiver_gstin_no: form.receiver_gstin_no,
+        package_type: form.package_type,
         weight: parseFloat(form.weight) || 0,
         length: parseFloat(form.length) || 0,
         breadth: parseFloat(form.breadth) || 0,
@@ -233,78 +160,11 @@ export default function CustomerBookingPage() {
         no_of_pieces: parseInt(form.no_of_pieces) || 1,
         content_description: form.content_description,
         declared_value: parseFloat(form.declared_value) || 0,
-        package_type: form.package_type,
-        payment_mode: form.payment_mode,
-        shipping_charge: parseFloat(form.shipping_charge) || 0,
-        total_amount: parseFloat(form.total_amount) || 0,
-        order_reference: form.order_reference,
-        remarks: form.remarks,
-        vendor_config_id: form.vendor_config_id || null,
-        vendor_code: form.vendor_code || '',
-        service_code: form.service_code || '',
-        product_code: form.product_code || '',
-        cod_amount: parseFloat(form.cod_amount) || 0,
-        // Pacific-specific fields
-        invoice_no: form.invoice_no,
-        invoice_date: form.invoice_date,
-        invoice_currency: form.invoice_currency,
-        hs_code: form.hs_code,
-        export_reason: form.export_reason,
-        terms_of_trade: form.terms_of_trade,
-        // eAWB Details
-        eawb_no: form.eawb_no,
-        eawb_date: form.eawb_date,
-        eawb_exp_date: form.eawb_exp_date,
-        // Additional Charges
-        additional_discount: form.additional_discount,
-        additional_freight: form.additional_freight,
-        additional_insurance: form.additional_insurance,
-        additional_other_charges: form.additional_other_charges,
-        additional_specify_charges: form.additional_specify_charges,
-        // Buyer Details
-        buyer_name: form.buyer_name,
-        buyer_person_type: form.buyer_person_type,
-        buyer_address1: form.buyer_address1,
-        buyer_address2: form.buyer_address2,
-        buyer_pincode: form.buyer_pincode,
-        buyer_city: form.buyer_city,
-        buyer_state: form.buyer_state,
-        buyer_telephone: form.buyer_telephone,
-        buyer_mobile: form.buyer_mobile,
-        buyer_email: form.buyer_email,
-        buyer_country_code: form.buyer_country_code,
-        buyer_destination_code: form.buyer_destination_code,
-        buyer_iec_no: form.buyer_iec_no,
-        // GST & Manifest
-        gst_invoice: form.gst_invoice,
-        lut_igst: form.lut_igst,
-        total_igst: form.total_igst,
-        bank_ad_code: form.bank_ad_code,
-        bank_account: form.bank_account,
-        bank_ifsc: form.bank_ifsc,
-        lut_number: form.lut_number,
-        exchange_rate: form.exchange_rate,
-        manifest_firm: form.manifest_firm,
-        manifest_nfei: form.manifest_nfei,
-        pay_of_igst: form.pay_of_igst,
-        manifest_ecommerce: form.manifest_ecommerce,
-        meis_scheme: form.meis_scheme,
-        manifest_format: form.manifest_format,
-        manifest_iec_no: form.manifest_iec_no,
-        lut_issue_date: form.lut_issue_date,
-        lut_till_date: form.lut_till_date,
-        // Advanced Config
-        company_code: form.company_code,
-        is_commercial: form.is_commercial,
-        csb_type: form.csb_type,
-        otp: form.otp,
-        lsp_type: form.lsp_type,
-        required_performa: form.required_performa,
-        required_label: form.required_label,
-        customer_name: form.customer_name || form.sender_name || 'Portal User'
+        is_fragile: form.is_fragile,
+        remarks: form.remarks
       }
 
-      const res = await fetch('/api/customer/bookings', {
+      const res = await fetch('/api/customer/booking-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(apiPayload)
@@ -312,22 +172,13 @@ export default function CustomerBookingPage() {
 
       const data = await res.json()
       if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Failed to create shipment')
+        throw new Error(data.message || 'Failed to submit booking request')
       }
 
-      const vendorResult = data.vendor_result
-      if (vendorResult?.success && vendorResult?.awbNumber) {
-        toast.success(`Shipment created! Vendor AWB: ${vendorResult.awbNumber}`, { duration: 5000 })
-      } else if (vendorResult && !vendorResult.success) {
-        toast.success('Shipment created locally!')
-        toast.error(`Vendor push failed: ${vendorResult.error || 'Unknown error'}`, { duration: 5000 })
-      } else {
-        toast.success('Shipment created successfully!')
-      }
-
-      setCreatedBooking(data.booking)
+      setSubmittedAwb(data.request_awb)
+      toast.success('Booking request submitted!')
     } catch (err) {
-      toast.error(err?.message || 'Failed to create shipment')
+      toast.error(err?.message || 'Failed to submit request')
     } finally {
       setSubmitting(false)
     }
@@ -339,164 +190,137 @@ export default function CustomerBookingPage() {
     } catch (e) {}
   }
 
-  if (createdBooking) {
-    const trackingNumber = createdBooking.tracking_number || '';
-    const carrierName = selectedVendor?.name || 'Local Courier';
+  const handleCopyAwb = () => {
+    if (submittedAwb) {
+      navigator.clipboard.writeText(submittedAwb).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+    }
+  }
+
+  // ═══════════════════════════════════════════
+  //  SUCCESS SCREEN
+  // ═══════════════════════════════════════════
+
+  if (submittedAwb) {
     return (
-      <div className="min-h-screen bg-slate-100 py-10 px-4 print:py-0 print:px-0 flex flex-col items-center w-full">
-        {/* Print Styles */}
-        <style dangerouslySetInnerHTML={{ __html: `
-          @media print {
-            body { background: #fff !important; color: #000 !important; }
-            .print\\:hidden { display: none !important; }
-            .print\\:border-none { border: none !important; }
-            .print\\:p-0 { padding: 0 !important; }
-            .print\\:w-full { width: 100% !important; max-width: 100% !important; }
-          }
-        ` }} />
+      <div className="min-h-screen bg-surface-alt w-full flex items-center justify-center p-4">
+        <Toaster position="top-right" />
+        <div className="bg-surface border border-border rounded-3xl p-8 max-w-[520px] w-full text-center animate-fade-in">
+          {/* Success Icon */}
+          <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle2 className="w-10 h-10 text-success" />
+          </div>
 
-        {/* Action Buttons */}
-        <div className="w-full max-w-[650px] flex justify-between gap-4 mb-6 print:hidden">
-          <button
-            onClick={() => {
-              setCreatedBooking(null)
-              setForm(INITIAL_FORM)
-              setStep(1)
-              try {
-                window.parent.postMessage({ type: 'PE_BOOKING_SUCCESS' }, '*')
-              } catch (e) {}
-            }}
-            className="flex items-center gap-1.5 text-[14px] font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 px-6 py-2.5 rounded-xl cursor-pointer shadow-sm transition-all"
-          >
-            ← Done & Back to Portal
-          </button>
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 text-[14px] font-bold text-white bg-primary hover:bg-primary-dark px-6 py-2.5 rounded-xl cursor-pointer shadow-md transition-all animate-pulse"
-          >
-            Print Shipment Label
-          </button>
-        </div>
+          <h1 className="text-[24px] font-extrabold text-text-primary mb-2">
+            Booking Request Submitted!
+          </h1>
+          <p className="text-[14px] text-text-secondary mb-8 leading-relaxed">
+            Your shipment booking request has been received and is being reviewed by our team. 
+            You'll be notified once it's confirmed.
+          </p>
 
-        {/* Printable Shipping Label Card */}
-        <div className="w-[650px] bg-white border-[4px] border-black p-5 flex flex-col justify-between font-mono text-black print:w-full print:border-none print:p-0">
-          
-          {/* Label Header */}
-          <div className="border-b-[4px] border-black pb-4 flex justify-between items-start">
-            <div>
-              <h2 className="text-[20px] font-black tracking-tight leading-none">PRINCE EXPRESS</h2>
-              <p className="text-[10px] font-bold tracking-widest mt-1">INTERNATIONAL COURIER</p>
-              <p className="text-[9px] text-slate-500 mt-0.5">Customs CSB-IV Compliant</p>
-            </div>
-            <div className="text-right">
-              <span className="inline-block px-3 py-1 bg-black text-white font-black text-[12px] uppercase">
-                {form.package_type}
+          {/* AWB Number Card */}
+          <div className="bg-surface-alt border border-border rounded-2xl p-6 mb-6">
+            <p className="text-[11px] font-bold text-text-tertiary uppercase tracking-[2px] mb-2">
+              Your AWB / Request Number
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <span className="text-[36px] font-black text-text-primary tracking-[4px] font-mono">
+                {submittedAwb}
               </span>
-              <p className="text-[10px] font-bold mt-1.5">Date: {new Date().toLocaleDateString()}</p>
+              <button
+                onClick={handleCopyAwb}
+                className="p-2 rounded-lg hover:bg-surface-hover transition-colors cursor-pointer"
+                title="Copy AWB"
+              >
+                {copied ? (
+                  <Check className="w-5 h-5 text-success" />
+                ) : (
+                  <Copy className="w-5 h-5 text-text-tertiary" />
+                )}
+              </button>
             </div>
+            <p className="text-[12px] text-text-tertiary mt-2">
+              Save this number for tracking your shipment
+            </p>
           </div>
 
-          {/* Barcode & AWB Display */}
-          <div className="py-4 border-b-[4px] border-black flex flex-col items-center">
-            {/* Fake Barcode Lines */}
-            <div className="w-full h-16 flex items-center justify-center gap-[2px] bg-white mb-2">
-              {[...Array(60)].map((_, i) => (
-                <div
-                  key={i}
-                  className="bg-black h-12"
-                  style={{ width: i % 3 === 0 ? '4px' : i % 5 === 0 ? '1px' : '2px' }}
-                />
-              ))}
-            </div>
-            <span className="text-[28px] font-black tracking-[4px]">{trackingNumber}</span>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mt-0.5">Prince Express AWB Number</span>
-          </div>
-
-          {/* Sender & Receiver Address Grid */}
-          <div className="grid grid-cols-2 border-b-[4px] border-black">
-            {/* Sender Column */}
-            <div className="border-r-[4px] border-black p-3 space-y-2">
-              <span className="text-[11px] font-bold text-white bg-black px-1.5 py-0.5 uppercase tracking-wider">FROM (SHIPPER)</span>
-              <div className="text-[12px] leading-tight space-y-1">
-                <p className="font-extrabold text-[13px]">{form.sender_name}</p>
-                {form.sender_company && <p className="font-bold">{form.sender_company}</p>}
-                <p>{form.sender_address}</p>
-                {form.sender_address_2 && <p>{form.sender_address_2}</p>}
-                <p className="font-bold">{form.sender_city} - {form.sender_pincode}</p>
-                <p className="font-bold">{form.sender_state}, {form.sender_country}</p>
-                <p className="pt-1 font-bold"><span className="text-[10px] text-slate-500">TEL:</span> {form.sender_phone}</p>
+          {/* Status Timeline */}
+          <div className="bg-surface-alt border border-border rounded-2xl p-5 mb-8 text-left">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+                <Clock className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-[13px] font-bold text-text-primary">Pending Admin Review</p>
+                <p className="text-[11px] text-text-tertiary">Our team will process your request shortly</p>
               </div>
             </div>
-
-            {/* Receiver Column */}
-            <div className="p-3 space-y-2">
-              <span className="text-[11px] font-bold text-white bg-black px-1.5 py-0.5 uppercase tracking-wider">TO (CONSIGNEE)</span>
-              <div className="text-[12px] leading-tight space-y-1">
-                <p className="font-extrabold text-[13px]">{form.receiver_name}</p>
-                <p>{form.receiver_address}</p>
-                {form.receiver_address_2 && <p>{form.receiver_address_2}</p>}
-                <p className="font-bold">{form.receiver_city} - {form.receiver_pincode}</p>
-                <p className="font-bold">{form.receiver_state}, {form.receiver_country}</p>
-                <p className="pt-1 font-bold"><span className="text-[10px] text-slate-500">TEL:</span> {form.receiver_phone}</p>
+            <div className="ml-4 border-l-2 border-border pl-6 space-y-3">
+              <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
+                <div className="w-2 h-2 rounded-full bg-border flex-shrink-0" />
+                Admin fills shipping & export details
+              </div>
+              <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
+                <div className="w-2 h-2 rounded-full bg-border flex-shrink-0" />
+                Courier vendor selected & shipment created
+              </div>
+              <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
+                <div className="w-2 h-2 rounded-full bg-border flex-shrink-0" />
+                You'll receive tracking updates
               </div>
             </div>
           </div>
 
-          {/* Details & Specs Section */}
-          <div className="border-b-[4px] border-black grid grid-cols-3">
-            <div className="border-r-[4px] border-black p-2 text-center">
-              <span className="text-[9px] font-bold text-slate-500 block uppercase">Weight</span>
-              <span className="text-[16px] font-black">{form.weight || '—'} kg</span>
-            </div>
-            <div className="border-r-[4px] border-black p-2 text-center">
-              <span className="text-[9px] font-bold text-slate-500 block uppercase">Cartons / Pieces</span>
-              <span className="text-[16px] font-black">{form.no_of_pieces || '1'}</span>
-            </div>
-            <div className="p-2 text-center">
-              <span className="text-[9px] font-bold text-slate-500 block uppercase">Payment Mode</span>
-              <span className="text-[16px] font-black uppercase">{form.payment_mode || 'Prepaid'}</span>
-            </div>
+          {/* Actions */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => {
+                setSubmittedAwb(null)
+                setForm(INITIAL_FORM)
+                setStep(1)
+                // re-fill customer info from URL
+                const params = new URLSearchParams(window.location.search)
+                setForm(prev => ({
+                  ...prev,
+                  sender_name: params.get('cust_name') || '',
+                  sender_phone: params.get('cust_phone') || '',
+                  sender_email: params.get('cust_email') || '',
+                  sender_company: params.get('cust_company') || '',
+                }))
+              }}
+              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 border border-border rounded-xl text-[13px] font-semibold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
+            >
+              <Package className="w-4 h-4" />
+              New Request
+            </button>
+            <button
+              onClick={() => {
+                try {
+                  window.parent.postMessage({ type: 'PE_BOOKING_SUCCESS' }, '*')
+                } catch (e) {}
+                handleBackToDashboard()
+              }}
+              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark text-white text-[13px] font-bold rounded-xl transition-all cursor-pointer"
+            >
+              ← Back to Dashboard
+            </button>
           </div>
-
-          {/* Value & Routing info */}
-          <div className="border-b-[4px] border-black p-3 space-y-1">
-            <div className="flex justify-between text-[11px]">
-              <span><strong>Content Description:</strong> {form.content_description || 'Parcel'}</span>
-              <span><strong>Declared Value:</strong> ₹{form.declared_value || '0'}</span>
-            </div>
-            {form.invoice_no && (
-              <div className="flex justify-between text-[11px] pt-1">
-                <span><strong>Invoice No:</strong> {form.invoice_no}</span>
-                <span><strong>HS Code:</strong> {form.hs_code || '—'}</span>
-              </div>
-            )}
-            <div className="text-[11px] pt-1 border-t border-dashed border-black mt-1">
-              <span><strong>Forwarder / Carrier:</strong> {carrierName} {createdBooking.vendor_awb_number ? `AWB: ${createdBooking.vendor_awb_number}` : ''}</span>
-            </div>
-          </div>
-
-          {/* Footer Terms & Signatures */}
-          <div className="p-3 grid grid-cols-2 gap-4 items-end pt-6">
-            <div className="text-[8px] leading-tight text-slate-500">
-              <p>I/We hereby declare that contents of this shipment are non-hazardous, legal, and as described. We agree to Prince Express standard carriage terms and conditions.</p>
-              <p className="mt-4 font-bold border-t border-black pt-1 w-2/3">Shipper Signature</p>
-            </div>
-            <div className="text-right">
-              <div className="w-12 h-12 bg-slate-50 border border-slate-300 rounded inline-flex items-center justify-center font-bold text-[10px] text-slate-400">
-                STAMP
-              </div>
-              <p className="mt-4 text-[8px] text-slate-500 font-bold border-t border-black pt-1 inline-block w-2/3 text-left">Receiver Signature</p>
-            </div>
-          </div>
-
         </div>
       </div>
     )
   }
 
+  // ═══════════════════════════════════════════
+  //  BOOKING REQUEST FORM (Simplified)
+  // ═══════════════════════════════════════════
+
   return (
     <div className="min-h-screen bg-surface-alt w-full">
       <Toaster position="top-right" />
+
       {/* Top Bar */}
       <div className="bg-surface border-b border-border sticky top-0 z-30">
         <div className="w-full px-4 lg:px-6 h-14 flex items-center justify-between">
@@ -509,7 +333,7 @@ export default function CustomerBookingPage() {
               BACK TO DASHBOARD
             </button>
             <div className="w-px h-5 bg-border" />
-            <h1 className="text-[16px] font-extrabold text-text-primary">New Shipment Booking</h1>
+            <h1 className="text-[16px] font-extrabold text-text-primary">Request Shipment Booking</h1>
           </div>
           <button className="p-2 rounded-xl hover:bg-surface-hover transition-colors cursor-pointer">
             <HelpCircle className="w-[18px] h-[18px] text-text-secondary" />
@@ -553,7 +377,21 @@ export default function CustomerBookingPage() {
               </div>
             </div>
 
-            {/* Step 1: Sender & Receiver */}
+            {/* Info Banner */}
+            <div className="bg-primary/5 border border-primary/15 rounded-2xl px-5 py-4 flex items-start gap-3">
+              <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                <HelpCircle className="w-4 h-4 text-primary" />
+              </div>
+              <div>
+                <p className="text-[13px] font-bold text-text-primary">Simplified Booking Request</p>
+                <p className="text-[12px] text-text-secondary mt-0.5">
+                  Fill in your sender, receiver, and package details. Our team will handle shipping charges, courier selection, 
+                  export documentation, and all other details. You'll receive your AWB number instantly after submitting.
+                </p>
+              </div>
+            </div>
+
+            {/* ─── Step 1: Sender & Receiver ─── */}
             {step === 1 && (
               <div className="space-y-6 animate-fade-in">
                 {/* Sender */}
@@ -804,9 +642,10 @@ export default function CustomerBookingPage() {
               </div>
             )}
 
-            {/* Step 2: Package Specs */}
+            {/* ─── Step 2: Package & Submit ─── */}
             {step === 2 && (
               <div className="space-y-6 animate-fade-in">
+                {/* Package Details */}
                 <div className="bg-surface border border-border rounded-2xl">
                   <div className="p-5 border-b border-border flex items-center gap-2.5">
                     <Package className="w-5 h-5 text-text-tertiary" />
@@ -917,7 +756,6 @@ export default function CustomerBookingPage() {
                       </FormField>
                     </div>
 
-                    {/* Volumetric weight auto-calc */}
                     {form.length && form.breadth && form.height && (
                       <div className="mt-4 p-3 bg-surface-alt rounded-xl border border-border animate-fade-in">
                         <div className="flex items-center justify-between">
@@ -943,888 +781,20 @@ export default function CustomerBookingPage() {
                   </div>
                 </div>
 
-                {/* Invoice & Export Details */}
-                <div className="bg-surface border border-border rounded-2xl">
-                  <div className="p-5 border-b border-border flex items-center gap-2.5">
-                    <FileText className="w-5 h-5 text-primary" />
-                    <div>
-                      <h2 className="text-[16px] font-bold text-text-primary">Invoice & Export Details</h2>
-                      <p className="text-[11px] text-text-tertiary mt-0.5">Required for international shipments</p>
-                    </div>
-                  </div>
-                  <div className="p-5 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <FormField label="Invoice Number">
-                        <input
-                          type="text"
-                          placeholder="e.g. INV-2026-001"
-                          value={form.invoice_no}
-                          onChange={e => updateForm('invoice_no', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Invoice Date">
-                        <input
-                          type="date"
-                          value={form.invoice_date}
-                          onChange={e => updateForm('invoice_date', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Currency">
-                        <select
-                          value={form.invoice_currency}
-                          onChange={e => updateForm('invoice_currency', e.target.value)}
-                          className="form-input"
-                        >
-                          <option value="INR">INR — Indian Rupee</option>
-                          <option value="USD">USD — US Dollar</option>
-                          <option value="GBP">GBP — British Pound</option>
-                          <option value="EUR">EUR — Euro</option>
-                          <option value="AED">AED — UAE Dirham</option>
-                          <option value="SGD">SGD — Singapore Dollar</option>
-                          <option value="AUD">AUD — Australian Dollar</option>
-                        </select>
-                      </FormField>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <FormField label="HS Code">
-                        <input
-                          type="text"
-                          placeholder="e.g. 854231"
-                          value={form.hs_code}
-                          onChange={e => updateForm('hs_code', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Export Reason">
-                        <select
-                          value={form.export_reason}
-                          onChange={e => updateForm('export_reason', e.target.value)}
-                          className="form-input"
-                        >
-                          <option value="">— Select —</option>
-                          <option value="COMMERCIAL">Commercial</option>
-                          <option value="FREE SAMPLE OF NO COMMERICAL VALUE">Free Sample</option>
-                          <option value="PERSONAL USE">Personal Use</option>
-                          <option value="GIFT">Gift</option>
-                          <option value="REPAIR AND RETURN">Repair & Return</option>
-                          <option value="EXHIBITION">Exhibition</option>
-                        </select>
-                      </FormField>
-                      <FormField label="Terms of Trade">
-                        <select
-                          value={form.terms_of_trade}
-                          onChange={e => updateForm('terms_of_trade', e.target.value)}
-                          className="form-input"
-                        >
-                          <option value="CIF">CIF — Cost, Insurance & Freight</option>
-                          <option value="FOB">FOB — Free on Board</option>
-                          <option value="EXW">EXW — Ex Works</option>
-                          <option value="DAP">DAP — Delivered at Place</option>
-                          <option value="DDP">DDP — Delivered Duty Paid</option>
-                        </select>
-                      </FormField>
-                    </div>
-                  </div>
-                </div>
-
-                {/* eAWB Details — Collapsible */}
-                <CollapsibleSection
-                  label="eAWB Details"
-                  description="Electronic Airway Bill information"
-                  icon={FileText}
-                  isOpen={showEawb}
-                  onToggle={() => setShowEawb(!showEawb)}
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="eAWB Number">
-                      <input
-                        type="text"
-                        placeholder="e.g. testeawb123"
-                        value={form.eawb_no}
-                        onChange={e => updateForm('eawb_no', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="eAWB Date">
-                      <input
-                        type="date"
-                        value={form.eawb_date}
-                        onChange={e => updateForm('eawb_date', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="eAWB Expiry Date">
-                      <input
-                        type="date"
-                        value={form.eawb_exp_date}
-                        onChange={e => updateForm('eawb_exp_date', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                  </div>
-                </CollapsibleSection>
-
-                {/* Additional Charges — Collapsible */}
-                <CollapsibleSection
-                  label="Additional Charges"
-                  description="Discount, freight, insurance & other charges"
-                  icon={DollarSign}
-                  isOpen={showAdditionalCharges}
-                  onToggle={() => setShowAdditionalCharges(!showAdditionalCharges)}
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="Discount">
-                      <input
-                        type="text"
-                        placeholder="0.00"
-                        value={form.additional_discount}
-                        onChange={e => updateForm('additional_discount', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Freight Charges">
-                      <input
-                        type="text"
-                        placeholder="0.00"
-                        value={form.additional_freight}
-                        onChange={e => updateForm('additional_freight', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Insurance">
-                      <input
-                        type="text"
-                        placeholder="0.00"
-                        value={form.additional_insurance}
-                        onChange={e => updateForm('additional_insurance', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Other Charges">
-                      <input
-                        type="text"
-                        placeholder="0.00"
-                        value={form.additional_other_charges}
-                        onChange={e => updateForm('additional_other_charges', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Specify Charges">
-                      <input
-                        type="text"
-                        placeholder="0"
-                        value={form.additional_specify_charges}
-                        onChange={e => updateForm('additional_specify_charges', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                  </div>
-                </CollapsibleSection>
-              </div>
-            )}
-
-            {/* Step 3: Courier Options */}
-            {step === 3 && (
-              <div className="space-y-6 animate-fade-in">
-                {/* Vendor API Selection */}
-                <div className="bg-surface border border-border rounded-2xl">
-                  <div className="p-5 border-b border-border flex items-center gap-2.5">
-                    <Truck className="w-5 h-5 text-text-tertiary" />
-                    <div>
-                      <h2 className="text-[16px] font-bold text-text-primary">Vendor API</h2>
-                      <p className="text-[11px] text-text-tertiary mt-0.5">Select a courier vendor to auto-push shipment via API</p>
-                    </div>
-                  </div>
-                  <div className="p-5 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Courier Vendor">
-                        <select
-                          value={form.vendor_config_id}
-                          onChange={e => {
-                            updateForm('vendor_config_id', e.target.value)
-                            updateForm('vendor_code', '')
-                            updateForm('service_code', '')
-                            updateForm('product_code', '')
-                            setCustomVendorMode(false)
-                            setCustomServiceMode(false)
-                            setCustomProductMode(false)
-                          }}
-                          className="form-input"
-                        >
-                          <option value="">— None (Local only) —</option>
-                          {activeVendors.map(v => (
-                            <option key={v.id} value={v.id}>
-                              {v.name} {v.vendor_code ? `(${v.vendor_code})` : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </FormField>
-                      {form.vendor_config_id && (
-                        <>
-                          <FormField label="Vendor Code">
-                            {customVendorMode ? (
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  value={form.vendor_code}
-                                  onChange={e => updateForm('vendor_code', e.target.value)}
-                                  placeholder="e.g. PC, DHL, FEDEX"
-                                  className="form-input flex-1"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setCustomVendorMode(false)
-                                    updateForm('vendor_code', '')
-                                  }}
-                                  className="px-3 py-2 text-[12px] font-bold text-text-secondary border border-border rounded-xl hover:bg-surface-hover transition-colors"
-                                >
-                                  Reset
-                                </button>
-                              </div>
-                            ) : vendorVendorCodes.length > 0 ? (
-                              <select
-                                value={form.vendor_code}
-                                onChange={e => {
-                                  if (e.target.value === '__custom__') {
-                                    setCustomVendorMode(true)
-                                    updateForm('vendor_code', '')
-                                  } else {
-                                    updateForm('vendor_code', e.target.value)
-                                  }
-                                }}
-                                className="form-input"
-                              >
-                                <option value="">— Select / Use Config Default —</option>
-                                {vendorVendorCodes.map((vc, i) => (
-                                  <option key={i} value={vc.code}>
-                                    {vc.code}{vc.label && vc.label !== vc.code ? ` — ${vc.label}` : ''}
-                                  </option>
-                                ))}
-                                <option value="__custom__">Custom Vendor Code...</option>
-                              </select>
-                            ) : (
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  value={form.vendor_code}
-                                  onChange={e => updateForm('vendor_code', e.target.value)}
-                                  placeholder="e.g. PC, DHL, FEDEX"
-                                  className="form-input flex-1"
-                                />
-                              </div>
-                            )}
-                          </FormField>
-
-                          <FormField label="Product Code">
-                            {customProductMode ? (
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  value={form.product_code}
-                                  onChange={e => updateForm('product_code', e.target.value)}
-                                  placeholder="e.g. SPX, DOX, INTL. SPX"
-                                  className="form-input flex-1"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setCustomProductMode(false)
-                                    updateForm('product_code', '')
-                                  }}
-                                  className="px-3 py-2 text-[12px] font-bold text-text-secondary border border-border rounded-xl hover:bg-surface-hover transition-colors"
-                                >
-                                  Reset
-                                </button>
-                              </div>
-                            ) : vendorProductCodes.length > 0 ? (
-                              <select
-                                value={form.product_code}
-                                onChange={e => {
-                                  if (e.target.value === '__custom__') {
-                                    setCustomProductMode(true)
-                                    updateForm('product_code', '')
-                                  } else {
-                                    updateForm('product_code', e.target.value)
-                                  }
-                                }}
-                                className="form-input"
-                              >
-                                <option value="">— Select / Auto-detect —</option>
-                                {vendorProductCodes.map((pc, i) => (
-                                  <option key={i} value={pc.code}>
-                                    {pc.code}{pc.label && pc.label !== pc.code ? ` — ${pc.label}` : ''}
-                                  </option>
-                                ))}
-                                <option value="__custom__">Custom Product Code...</option>
-                              </select>
-                            ) : (
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  value={form.product_code}
-                                  onChange={e => updateForm('product_code', e.target.value)}
-                                  placeholder="e.g. SPX, DOX, INTL. SPX"
-                                  className="form-input flex-1"
-                                />
-                              </div>
-                            )}
-                          </FormField>
-
-                          <FormField label="Service Type / Code">
-                            {vendorServices.length > 0 ? (
-                              <select
-                                value={form.service_code}
-                                onChange={e => updateForm('service_code', e.target.value)}
-                                className="form-input"
-                              >
-                                <option value="">— Select Service —</option>
-                                {vendorServices.map((svc, i) => (
-                                  <option key={i} value={svc.code}>
-                                    {svc.label || svc.code} ({svc.code})
-                                  </option>
-                                ))}
-                              </select>
-                            ) : customServiceMode ? (
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  value={form.service_code}
-                                  onChange={e => updateForm('service_code', e.target.value)}
-                                  placeholder="e.g. PC-PXC-EXPRESS"
-                                  className="form-input flex-1"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setCustomServiceMode(false)
-                                    updateForm('service_code', '')
-                                  }}
-                                  className="px-3 py-2 text-[12px] font-bold text-text-secondary border border-border rounded-xl hover:bg-surface-hover transition-colors"
-                                >
-                                  Reset
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  value={form.service_code}
-                                  onChange={e => updateForm('service_code', e.target.value)}
-                                  placeholder="e.g. EXPRESS, ECONOMY, SELF"
-                                  className="form-input flex-1"
-                                />
-                              </div>
-                            )}
-                          </FormField>
-                        </>
-                      )}
-                    </div>
-                    {form.vendor_config_id && (
-                      <div className="p-3 bg-surface-alt rounded-xl border border-border-light animate-fade-in">
-                        <div className="flex items-center gap-2">
-                          <Zap className="w-3.5 h-3.5 text-primary" />
-                          <span className="text-[12px] font-semibold text-text-secondary">
-                            Shipment will be auto-pushed to {selectedVendor?.name || 'vendor'} API after booking
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Buyer Details — Collapsible */}
-                <CollapsibleSection
-                  label="Buyer Details"
-                  description="Fill if buyer is different from receiver"
-                  icon={Users}
-                  isOpen={showBuyerDetails}
-                  onToggle={() => setShowBuyerDetails(!showBuyerDetails)}
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <FormField label="Buyer Name">
-                      <input
-                        type="text"
-                        placeholder="e.g. Anurag"
-                        value={form.buyer_name}
-                        onChange={e => updateForm('buyer_name', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Person Type">
-                      <select
-                        value={form.buyer_person_type}
-                        onChange={e => updateForm('buyer_person_type', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="Individual">Individual</option>
-                        <option value="Business">Business</option>
-                      </select>
-                    </FormField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <FormField label="Address Line 1">
-                      <input
-                        type="text"
-                        placeholder="Street / Building"
-                        value={form.buyer_address1}
-                        onChange={e => updateForm('buyer_address1', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Address Line 2">
-                      <input
-                        type="text"
-                        placeholder="Area / Landmark"
-                        value={form.buyer_address2}
-                        onChange={e => updateForm('buyer_address2', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="City">
-                      <input
-                        type="text"
-                        placeholder="City"
-                        value={form.buyer_city}
-                        onChange={e => updateForm('buyer_city', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="State">
-                      <input
-                        type="text"
-                        placeholder="State"
-                        value={form.buyer_state}
-                        onChange={e => updateForm('buyer_state', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Pincode">
-                      <input
-                        type="text"
-                        placeholder="Zip / Postal"
-                        value={form.buyer_pincode}
-                        onChange={e => updateForm('buyer_pincode', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="Telephone">
-                      <input
-                        type="tel"
-                        placeholder="Telephone"
-                        value={form.buyer_telephone}
-                        onChange={e => updateForm('buyer_telephone', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Mobile">
-                      <input
-                        type="tel"
-                        placeholder="Mobile"
-                        value={form.buyer_mobile}
-                        onChange={e => updateForm('buyer_mobile', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Email">
-                      <input
-                        type="email"
-                        placeholder="buyer@example.com"
-                        value={form.buyer_email}
-                        onChange={e => updateForm('buyer_email', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="Country Code">
-                      <input
-                        type="text"
-                        placeholder="e.g. US, GB"
-                        value={form.buyer_country_code}
-                        onChange={e => updateForm('buyer_country_code', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Destination Code">
-                      <input
-                        type="text"
-                        placeholder="e.g. GB, US"
-                        value={form.buyer_destination_code}
-                        onChange={e => updateForm('buyer_destination_code', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="IEC Number">
-                      <input
-                        type="text"
-                        placeholder="IEC No."
-                        value={form.buyer_iec_no}
-                        onChange={e => updateForm('buyer_iec_no', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                  </div>
-                </CollapsibleSection>
-
-                {/* GST & Manifest Details — Collapsible */}
-                <CollapsibleSection
-                  label="GST & Manifest Details"
-                  description="GST invoice, LUT, bank & IEC details"
-                  icon={Shield}
-                  isOpen={showGstManifest}
-                  onToggle={() => setShowGstManifest(!showGstManifest)}
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="GST Invoice">
-                      <select
-                        value={form.gst_invoice}
-                        onChange={e => updateForm('gst_invoice', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="0">No</option>
-                        <option value="1">Yes</option>
-                      </select>
-                    </FormField>
-                    <FormField label="LUT IGST">
-                      <select
-                        value={form.lut_igst}
-                        onChange={e => updateForm('lut_igst', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="N">No</option>
-                        <option value="Y">Yes</option>
-                      </select>
-                    </FormField>
-                    <FormField label="Total IGST">
-                      <input
-                        type="text"
-                        placeholder="0.00"
-                        value={form.total_igst}
-                        onChange={e => updateForm('total_igst', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="Bank AD Code">
-                      <input
-                        type="text"
-                        placeholder="AD Code"
-                        value={form.bank_ad_code}
-                        onChange={e => updateForm('bank_ad_code', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Bank Account">
-                      <input
-                        type="text"
-                        placeholder="Account No."
-                        value={form.bank_account}
-                        onChange={e => updateForm('bank_account', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Bank IFSC">
-                      <input
-                        type="text"
-                        placeholder="IFSC Code"
-                        value={form.bank_ifsc}
-                        onChange={e => updateForm('bank_ifsc', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="LUT Number">
-                      <input
-                        type="text"
-                        placeholder="LUT No."
-                        value={form.lut_number}
-                        onChange={e => updateForm('lut_number', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="LUT Issue Date">
-                      <input
-                        type="date"
-                        value={form.lut_issue_date}
-                        onChange={e => updateForm('lut_issue_date', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="LUT Till Date">
-                      <input
-                        type="date"
-                        value={form.lut_till_date}
-                        onChange={e => updateForm('lut_till_date', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="Exchange Rate">
-                      <input
-                        type="text"
-                        placeholder="0.00"
-                        value={form.exchange_rate}
-                        onChange={e => updateForm('exchange_rate', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Firm">
-                      <input
-                        type="text"
-                        placeholder="e.g. NG"
-                        value={form.manifest_firm}
-                        onChange={e => updateForm('manifest_firm', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="NFEI">
-                      <select
-                        value={form.manifest_nfei}
-                        onChange={e => updateForm('manifest_nfei', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="1">Yes (1)</option>
-                        <option value="0">No (0)</option>
-                      </select>
-                    </FormField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="Pay of IGST">
-                      <input
-                        type="text"
-                        placeholder="0"
-                        value={form.pay_of_igst}
-                        onChange={e => updateForm('pay_of_igst', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="E-Commerce">
-                      <select
-                        value={form.manifest_ecommerce}
-                        onChange={e => updateForm('manifest_ecommerce', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="0">No (0)</option>
-                        <option value="1">Yes (1)</option>
-                      </select>
-                    </FormField>
-                    <FormField label="MEIS Scheme">
-                      <select
-                        value={form.meis_scheme}
-                        onChange={e => updateForm('meis_scheme', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="0">No (0)</option>
-                        <option value="1">Yes (1)</option>
-                      </select>
-                    </FormField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="Format">
-                      <select
-                        value={form.manifest_format}
-                        onChange={e => updateForm('manifest_format', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="C2C">C2C</option>
-                        <option value="B2C">B2C</option>
-                        <option value="B2B">B2B</option>
-                      </select>
-                    </FormField>
-                    <FormField label="IEC Number">
-                      <input
-                        type="text"
-                        placeholder="IEC No."
-                        value={form.manifest_iec_no}
-                        onChange={e => updateForm('manifest_iec_no', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                  </div>
-                </CollapsibleSection>
-
-                {/* Advanced Shipment Config — Collapsible */}
-                <CollapsibleSection
-                  label="Advanced Configuration"
-                  description="Company code, CSB type, OTP & LSP settings"
-                  icon={Settings}
-                  isOpen={showAdvancedConfig}
-                  onToggle={() => setShowAdvancedConfig(!showAdvancedConfig)}
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="Company Code">
-                      <input
-                        type="text"
-                        placeholder="e.g. BS, PC"
-                        value={form.company_code}
-                        onChange={e => updateForm('company_code', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="CSB Type">
-                      <select
-                        value={form.csb_type}
-                        onChange={e => updateForm('csb_type', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="">— Auto from Export Reason —</option>
-                        <option value="COMMERCIAL">COMMERCIAL</option>
-                        <option value="FREE SAMPLE OF NO COMMERICAL VALUE">FREE SAMPLE</option>
-                        <option value="PERSONAL USE">PERSONAL USE</option>
-                        <option value="GIFT">GIFT</option>
-                      </select>
-                    </FormField>
-                    <FormField label="Is Commercial">
-                      <select
-                        value={form.is_commercial}
-                        onChange={e => updateForm('is_commercial', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="">— Auto-detect —</option>
-                        <option value="0">No (0)</option>
-                        <option value="1">Yes (1)</option>
-                      </select>
-                    </FormField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="OTP">
-                      <input
-                        type="text"
-                        placeholder="123456"
-                        value={form.otp}
-                        onChange={e => updateForm('otp', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="LSP Type">
-                      <select
-                        value={form.lsp_type}
-                        onChange={e => updateForm('lsp_type', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="">— Default (I) —</option>
-                        <option value="I">I — International</option>
-                        <option value="D">D — Domestic</option>
-                      </select>
-                    </FormField>
-                    <FormField label="Required Performa">
-                      <select
-                        value={form.required_performa}
-                        onChange={e => updateForm('required_performa', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="">— Default (Yes) —</option>
-                        <option value="y">Yes</option>
-                        <option value="n">No</option>
-                      </select>
-                    </FormField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <FormField label="Required Label">
-                      <select
-                        value={form.required_label}
-                        onChange={e => updateForm('required_label', e.target.value)}
-                        className="form-input"
-                      >
-                        <option value="">— Default (Yes) —</option>
-                        <option value="y">Yes</option>
-                        <option value="n">No</option>
-                      </select>
-                    </FormField>
-                  </div>
-                </CollapsibleSection>
-
-                {/* Shipping & Payment */}
-                <div className="bg-surface border border-border rounded-2xl">
-                  <div className="p-5 border-b border-border flex items-center gap-2.5">
-                    <Truck className="w-5 h-5 text-text-tertiary" />
-                    <h2 className="text-[16px] font-bold text-text-primary">Shipping & Payment</h2>
-                  </div>
-                  <div className="p-5 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Payment Mode" required>
-                        <select
-                          value={form.payment_mode}
-                          onChange={e => updateForm('payment_mode', e.target.value)}
-                          className="form-input"
-                        >
-                          <option value="prepaid">Prepaid</option>
-                          <option value="cod">Cash on Delivery (COD)</option>
-                          <option value="to_pay">To Pay</option>
-                        </select>
-                      </FormField>
-                      <FormField label="Shipping Charge (₹)">
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="0.00"
-                          value={form.shipping_charge}
-                          onChange={e => updateForm('shipping_charge', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-
-                    {form.payment_mode === 'cod' && (
-                      <FormField label="COD Amount (₹)" required>
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="0.00"
-                          value={form.cod_amount}
-                          onChange={e => updateForm('cod_amount', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    )}
-
-                    <FormField label="Total Amount (₹)" required>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="0.00"
-                        value={form.total_amount}
-                        onChange={e => updateForm('total_amount', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                  </div>
-                </div>
-
-                {/* Additional Info */}
+                {/* Special Instructions */}
                 <div className="bg-surface border border-border rounded-2xl">
                   <div className="p-5 border-b border-border">
-                    <h2 className="text-[16px] font-bold text-text-primary">Additional Information</h2>
+                    <h2 className="text-[16px] font-bold text-text-primary">Special Instructions</h2>
+                    <p className="text-[12px] text-text-tertiary mt-0.5">Any notes for our shipping team (optional)</p>
                   </div>
-                  <div className="p-5 space-y-4">
-                    <FormField label="Order Reference">
-                      <input
-                        type="text"
-                        placeholder="e.g. PO-12345 or Invoice number"
-                        value={form.order_reference}
-                        onChange={e => updateForm('order_reference', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <FormField label="Special Instructions">
-                      <textarea
-                        rows={3}
-                        placeholder="Any special handling or delivery instructions..."
-                        value={form.remarks}
-                        onChange={e => updateForm('remarks', e.target.value)}
-                        className="form-input resize-none"
-                      />
-                    </FormField>
+                  <div className="p-5">
+                    <textarea
+                      rows={3}
+                      placeholder="Any special handling or delivery instructions..."
+                      value={form.remarks}
+                      onChange={e => updateForm('remarks', e.target.value)}
+                      className="form-input resize-none"
+                    />
                   </div>
                 </div>
               </div>
@@ -1842,7 +812,7 @@ export default function CustomerBookingPage() {
                   Back
                 </button>
               )}
-              {step < 3 ? (
+              {step < 2 ? (
                 <button
                   type="button"
                   onClick={nextStep}
@@ -1861,12 +831,12 @@ export default function CustomerBookingPage() {
                   {submitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Creating...
+                      Submitting...
                     </>
                   ) : (
                     <>
                       <Check className="w-4 h-4" />
-                      Create Shipment
+                      Request Booking
                     </>
                   )}
                 </button>
@@ -1943,7 +913,7 @@ export default function CustomerBookingPage() {
                     </div>
                   </div>
 
-                  {/* Summary on step 2+ */}
+                  {/* Summary on step 2 */}
                   {step >= 2 && form.weight && (
                     <div className="mt-3 pt-3 border-t border-border animate-fade-in">
                       <div className="flex items-center justify-between mb-2">
@@ -1953,15 +923,6 @@ export default function CustomerBookingPage() {
                       <div className="flex-1 flex justify-between">
                         <span className="text-[12px] text-text-secondary">Weight</span>
                         <span className="text-[13px] font-bold text-text-primary">{form.weight} kg</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {step >= 3 && form.total_amount && (
-                    <div className="mt-3 pt-3 border-t border-border animate-fade-in">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[12px] text-text-secondary font-semibold">Total Amount</span>
-                        <span className="text-[15px] font-extrabold text-primary">₹{form.total_amount}</span>
                       </div>
                     </div>
                   )}
@@ -1983,38 +944,6 @@ function FormField({ label, required, children }) {
         {required && <span className="text-primary ml-0.5">*</span>}
       </label>
       {children}
-    </div>
-  )
-}
-
-function CollapsibleSection({ label, description, icon: Icon, isOpen, onToggle, children }) {
-  return (
-    <div className={`bg-surface border rounded-2xl overflow-hidden transition-colors ${isOpen ? 'border-primary/30' : 'border-border'}`}>
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full p-5 flex items-center gap-3 hover:bg-surface-hover transition-colors cursor-pointer"
-      >
-        <input
-          type="checkbox"
-          checked={isOpen}
-          readOnly
-          className="w-4 h-4 rounded border-border accent-primary flex-shrink-0 cursor-pointer"
-        />
-        {Icon && <Icon className={`w-5 h-5 flex-shrink-0 ${isOpen ? 'text-primary' : 'text-text-tertiary'}`} />}
-        <div className="text-left flex-1 min-w-0">
-          <h2 className={`text-[14px] font-bold ${isOpen ? 'text-primary' : 'text-text-primary'}`}>{label}</h2>
-          {description && <p className="text-[11px] text-text-tertiary mt-0.5">{description}</p>}
-        </div>
-        <ChevronDown className={`w-4 h-4 text-text-tertiary transition-transform flex-shrink-0 ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-      {isOpen && (
-        <div className="px-5 pb-5 border-t border-border animate-fade-in">
-          <div className="pt-4 space-y-4">
-            {children}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

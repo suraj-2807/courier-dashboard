@@ -1,0 +1,235 @@
+import { query, execute } from '../../config/db.js'
+
+/**
+ * Generate a 7-digit random AWB number for booking requests.
+ * Checks uniqueness in the booking_requests table.
+ */
+async function generateRequestAwb() {
+  let awb
+  let exists = true
+  while (exists) {
+    awb = String(Math.floor(1000000 + Math.random() * 9000000)) // 7 digits
+    const rows = await query('SELECT id FROM booking_requests WHERE request_awb = ?', [awb])
+    exists = rows.length > 0
+  }
+  return awb
+}
+
+// ═══════════════════════════════════════════════
+//  PUBLIC: Customer submits booking request
+// ═══════════════════════════════════════════════
+
+export const createBookingRequest = async (req, res) => {
+  try {
+    const {
+      customer_name, customer_email, customer_phone, customer_company,
+      sender_name, sender_company, sender_email, sender_phone,
+      sender_address, sender_address_2, sender_city, sender_pincode,
+      sender_state, sender_country,
+      sender_gstin_type, sender_gstin_no,
+      receiver_name, receiver_email, receiver_phone,
+      receiver_address, receiver_address_2, receiver_city, receiver_pincode,
+      receiver_state, receiver_country,
+      receiver_gstin_type, receiver_gstin_no,
+      package_type, weight, length, breadth, height, no_of_pieces,
+      content_description, declared_value, is_fragile,
+      remarks
+    } = req.body
+
+    // Basic validation
+    if (!sender_name || !sender_phone) {
+      return res.status(400).json({ success: false, message: 'Sender name and phone are required' })
+    }
+    if (!receiver_name || !receiver_phone) {
+      return res.status(400).json({ success: false, message: 'Receiver name and phone are required' })
+    }
+
+    const request_awb = await generateRequestAwb()
+
+    await execute(
+      `INSERT INTO booking_requests (
+        request_awb, customer_name, customer_email, customer_phone, customer_company,
+        sender_name, sender_company, sender_email, sender_phone,
+        sender_address, sender_address_2, sender_city, sender_pincode,
+        sender_state, sender_country, sender_gstin_type, sender_gstin_no,
+        receiver_name, receiver_email, receiver_phone,
+        receiver_address, receiver_address_2, receiver_city, receiver_pincode,
+        receiver_state, receiver_country, receiver_gstin_type, receiver_gstin_no,
+        package_type, weight, \`length\`, breadth, height, no_of_pieces,
+        content_description, declared_value, is_fragile, remarks, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        request_awb,
+        customer_name || sender_name || '',
+        customer_email || sender_email || '',
+        customer_phone || sender_phone || '',
+        customer_company || sender_company || '',
+        sender_name || '', sender_company || '',
+        sender_email || '', sender_phone || '',
+        sender_address || '', sender_address_2 || '',
+        sender_city || '', sender_pincode || '',
+        sender_state || '', sender_country || 'INDIA',
+        sender_gstin_type || '', sender_gstin_no || '',
+        receiver_name || '', receiver_email || '',
+        receiver_phone || '',
+        receiver_address || '', receiver_address_2 || '',
+        receiver_city || '', receiver_pincode || '',
+        receiver_state || '', receiver_country || '',
+        receiver_gstin_type || '', receiver_gstin_no || '',
+        package_type || 'parcel',
+        parseFloat(weight) || 0,
+        parseFloat(length) || 0,
+        parseFloat(breadth) || 0,
+        parseFloat(height) || 0,
+        parseInt(no_of_pieces) || 1,
+        content_description || '',
+        parseFloat(declared_value) || 0,
+        is_fragile ? 1 : 0,
+        remarks || '',
+        'pending'
+      ]
+    )
+
+    return res.status(201).json({
+      success: true,
+      message: 'Booking request submitted successfully!',
+      request_awb
+    })
+  } catch (error) {
+    console.error('createBookingRequest error:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  ADMIN: List all booking requests
+// ═══════════════════════════════════════════════
+
+export const getBookingRequests = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 15,
+      status = '',
+      search = '',
+      sort_by = 'created_at',
+      sort_order = 'desc'
+    } = req.query
+
+    const pageNum = parseInt(page)
+    const limitNum = parseInt(limit)
+    const offset = (pageNum - 1) * limitNum
+
+    const allowedSortColumns = ['created_at', 'request_awb', 'status', 'customer_name']
+    const safeSortBy = allowedSortColumns.includes(sort_by) ? sort_by : 'created_at'
+    const safeSortOrder = sort_order === 'asc' ? 'ASC' : 'DESC'
+
+    let whereClauses = []
+    const params = []
+
+    if (status) {
+      whereClauses.push('status = ?')
+      params.push(status)
+    }
+    if (search) {
+      whereClauses.push('(request_awb LIKE ? OR customer_name LIKE ? OR sender_name LIKE ? OR receiver_name LIKE ? OR sender_city LIKE ? OR receiver_city LIKE ?)')
+      const like = `%${search}%`
+      params.push(like, like, like, like, like, like)
+    }
+
+    const whereStr = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : ''
+
+    const countRows = await query(
+      `SELECT COUNT(*) as total FROM booking_requests ${whereStr}`,
+      params
+    )
+    const total = countRows[0].total
+
+    // Status counts
+    const countPending = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'pending'`))[0].c
+    const countProcessing = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'processing'`))[0].c
+    const countConfirmed = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'confirmed'`))[0].c
+    const countRejected = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'rejected'`))[0].c
+
+    const rows = await query(
+      `SELECT * FROM booking_requests ${whereStr} ORDER BY ${safeSortBy} ${safeSortOrder} LIMIT ${limitNum} OFFSET ${offset}`,
+      params
+    )
+
+    return res.json({
+      success: true,
+      requests: rows,
+      counts: {
+        all: total,
+        pending: countPending,
+        processing: countProcessing,
+        confirmed: countConfirmed,
+        rejected: countRejected
+      },
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    })
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  ADMIN: Get single booking request
+// ═══════════════════════════════════════════════
+
+export const getBookingRequestById = async (req, res) => {
+  try {
+    const { id } = req.params
+    const rows = await query('SELECT * FROM booking_requests WHERE id = ?', [id])
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking request not found' })
+    }
+
+    return res.json({ success: true, request: rows[0] })
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  ADMIN: Update booking request status
+// ═══════════════════════════════════════════════
+
+export const updateBookingRequestStatus = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { status, admin_notes, shipment_id } = req.body
+
+    const validStatuses = ['pending', 'processing', 'confirmed', 'rejected']
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status' })
+    }
+
+    const updates = ['status = ?']
+    const params = [status]
+
+    if (admin_notes !== undefined) {
+      updates.push('admin_notes = ?')
+      params.push(admin_notes)
+    }
+    if (shipment_id !== undefined) {
+      updates.push('shipment_id = ?')
+      params.push(shipment_id)
+    }
+
+    params.push(id)
+    await execute(`UPDATE booking_requests SET ${updates.join(', ')} WHERE id = ?`, params)
+
+    const rows = await query('SELECT * FROM booking_requests WHERE id = ?', [id])
+
+    return res.json({ success: true, request: rows[0] })
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}

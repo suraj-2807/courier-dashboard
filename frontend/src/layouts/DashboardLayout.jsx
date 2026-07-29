@@ -16,13 +16,15 @@ import {
   ChevronDown,
   Menu,
   X,
-  IndianRupee
+  IndianRupee,
+  ClipboardList
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 
 const navItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
   { label: 'Shipments', path: '/bookings', icon: Package },
+  { label: 'Customer Requests', path: '/booking-requests', icon: ClipboardList },
   { label: 'Tracking', path: '/tracking', icon: MapPin },
   { label: 'Senders', path: '/senders', icon: Truck },
   { label: 'Rates', path: '/rates', icon: IndianRupee },

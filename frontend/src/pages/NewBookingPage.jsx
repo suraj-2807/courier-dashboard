@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useCreateBooking } from '../hooks/useBookings'
 import { getActiveVendors } from '../api/apiSettings.api'
+import api from '../api/axios'
 import {
   ArrowLeft,
   ArrowRight,
@@ -167,6 +168,34 @@ export default function NewBookingPage() {
   })
   const activeVendors = vendorsData?.vendors || []
 
+  // ── Pre-fill from booking request URL params ──
+  const [searchParams] = useSearchParams()
+  const fromRequestId = searchParams.get('from_request')
+  const requestAwb = searchParams.get('request_awb')
+
+  useEffect(() => {
+    if (!fromRequestId) return
+    // Read all pre-fill params from URL
+    const prefillFields = [
+      'sender_name', 'sender_company', 'sender_email', 'sender_phone',
+      'sender_address', 'sender_address_2', 'sender_city', 'sender_pincode',
+      'sender_state', 'sender_country', 'sender_gstin_type', 'sender_gstin_no',
+      'receiver_name', 'receiver_email', 'receiver_phone',
+      'receiver_address', 'receiver_address_2', 'receiver_city', 'receiver_pincode',
+      'receiver_state', 'receiver_country', 'receiver_gstin_type', 'receiver_gstin_no',
+      'package_type', 'weight', 'length', 'breadth', 'height', 'no_of_pieces',
+      'content_description', 'declared_value', 'remarks', 'customer_name'
+    ]
+    const updates = {}
+    prefillFields.forEach(field => {
+      const val = searchParams.get(field)
+      if (val) updates[field] = val
+    })
+    if (Object.keys(updates).length > 0) {
+      setForm(prev => ({ ...prev, ...updates }))
+    }
+  }, [fromRequestId])
+
   // Get selected vendor's configured codes
   const selectedVendor = activeVendors.find(v => String(v.id) === String(form.vendor_config_id))
   const vendorServices = selectedVendor?.available_services || []
@@ -299,6 +328,19 @@ export default function NewBookingPage() {
       } else {
         toast.success('Shipment created successfully!')
       }
+
+      // If this booking was from a customer request, update its status to confirmed
+      if (fromRequestId) {
+        try {
+          await api.patch(`/booking-requests/${fromRequestId}/status`, {
+            status: 'confirmed',
+            shipment_id: result?.booking?.id || null
+          })
+        } catch (e) {
+          console.error('Failed to update booking request status:', e)
+        }
+      }
+
       navigate('/bookings')
     } catch (err) {
       toast.error(err?.message || 'Failed to create shipment')
@@ -321,7 +363,9 @@ export default function NewBookingPage() {
               CANCEL
             </Link>
             <div className="w-px h-5 bg-border" />
-            <h1 className="text-[16px] font-extrabold text-text-primary">New Shipment</h1>
+            <h1 className="text-[16px] font-extrabold text-text-primary">
+              {fromRequestId ? `Process Request #${requestAwb || fromRequestId}` : 'New Shipment'}
+            </h1>
           </div>
           <button className="p-2 rounded-xl hover:bg-surface-hover transition-colors cursor-pointer">
             <HelpCircle className="w-[18px] h-[18px] text-text-secondary" />
@@ -361,6 +405,21 @@ export default function NewBookingPage() {
                 ))}
               </div>
             </div>
+
+            {/* Customer Request Banner */}
+            {fromRequestId && (
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-start gap-3 animate-fade-in">
+                <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Package className="w-4 h-4 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-[13px] font-bold text-amber-800">Processing Customer Request #{requestAwb || fromRequestId}</p>
+                  <p className="text-[12px] text-amber-700 mt-0.5">
+                    Customer data has been pre-filled. Complete the Invoice, Vendor, GST, and Shipping details below, then create the shipment.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Step 1: Sender & Receiver */}
             {step === 1 && (

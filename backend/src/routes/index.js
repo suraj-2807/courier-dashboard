@@ -9,6 +9,7 @@ import trackingRoutes from '../modules/tracking/tracking.routes.js'
 import dashboardRoutes from '../modules/dashboard/dashboard.routes.js'
 import apiSettingsRoutes from '../modules/apiSettings/apiSettings.routes.js'
 import ratesRoutes from '../modules/rates/rates.routes.js'
+import bookingRequestRoutes from '../modules/bookingRequests/bookingRequest.routes.js'
 
 const router = express.Router()
 
@@ -27,13 +28,16 @@ router.use('/tracking', trackingRoutes)
 router.use('/dashboard', dashboardRoutes)
 router.use('/api-settings', apiSettingsRoutes)
 router.use('/rates', ratesRoutes)
+router.use('/booking-requests', bookingRequestRoutes)
 
 // Public Customer endpoints (for WP Portal iframe)
 import { createBooking } from '../modules/bookings/booking.controller.js'
 import { getActiveVendors } from '../modules/apiSettings/apiSettings.controller.js'
+import { createBookingRequest } from '../modules/bookingRequests/bookingRequest.controller.js'
 const customerRouter = express.Router()
 customerRouter.get('/active-vendors', getActiveVendors)
 customerRouter.post('/bookings', createBooking)
+customerRouter.post('/booking-requests', createBookingRequest)
 router.use('/customer', customerRouter)
 
 export default router

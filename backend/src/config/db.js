@@ -123,6 +123,65 @@ export async function initializeDb() {
       console.error('Vendor API config migration failed:', vendorMigErr.message)
     }
 
+    // ── Booking Requests table (customer → admin approval flow) ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS booking_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        request_awb VARCHAR(20) NOT NULL,
+        customer_id INT DEFAULT NULL,
+        customer_name VARCHAR(100) DEFAULT '',
+        customer_email VARCHAR(150) DEFAULT '',
+        customer_phone VARCHAR(20) DEFAULT '',
+        customer_company VARCHAR(150) DEFAULT '',
+        sender_name VARCHAR(100) DEFAULT '',
+        sender_company VARCHAR(150) DEFAULT '',
+        sender_email VARCHAR(150) DEFAULT '',
+        sender_phone VARCHAR(20) DEFAULT '',
+        sender_address VARCHAR(255) DEFAULT '',
+        sender_address_2 VARCHAR(255) DEFAULT '',
+        sender_city VARCHAR(100) DEFAULT '',
+        sender_pincode VARCHAR(20) DEFAULT '',
+        sender_state VARCHAR(100) DEFAULT '',
+        sender_country VARCHAR(100) DEFAULT 'INDIA',
+        sender_gstin_type VARCHAR(50) DEFAULT '',
+        sender_gstin_no VARCHAR(50) DEFAULT '',
+        receiver_name VARCHAR(100) DEFAULT '',
+        receiver_email VARCHAR(150) DEFAULT '',
+        receiver_phone VARCHAR(20) DEFAULT '',
+        receiver_address VARCHAR(255) DEFAULT '',
+        receiver_address_2 VARCHAR(255) DEFAULT '',
+        receiver_city VARCHAR(100) DEFAULT '',
+        receiver_pincode VARCHAR(20) DEFAULT '',
+        receiver_state VARCHAR(100) DEFAULT '',
+        receiver_country VARCHAR(100) DEFAULT '',
+        receiver_gstin_type VARCHAR(50) DEFAULT '',
+        receiver_gstin_no VARCHAR(50) DEFAULT '',
+        package_type VARCHAR(50) DEFAULT 'parcel',
+        weight DECIMAL(10,2) DEFAULT 0,
+        \`length\` DECIMAL(10,2) DEFAULT 0,
+        breadth DECIMAL(10,2) DEFAULT 0,
+        height DECIMAL(10,2) DEFAULT 0,
+        no_of_pieces INT DEFAULT 1,
+        content_description TEXT,
+        declared_value DECIMAL(10,2) DEFAULT 0,
+        is_fragile TINYINT DEFAULT 0,
+        remarks TEXT,
+        status ENUM('pending','processing','confirmed','rejected') DEFAULT 'pending',
+        admin_notes TEXT,
+        shipment_id INT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY idx_request_awb (request_awb)
+      )`)
+      console.log('booking_requests table ready.')
+    } catch (brErr) {
+      if (brErr.code === 'ER_TABLE_EXISTS_ERROR') {
+        console.log('booking_requests table already exists.')
+      } else {
+        console.error('booking_requests migration failed:', brErr.message)
+      }
+    }
+
     console.log('DB initialization successfully completed!')
   } catch (err) {
     console.error('DB Initialization/Migration Failed:', err)
