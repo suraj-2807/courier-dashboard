@@ -33,11 +33,13 @@ router.use('/booking-requests', bookingRequestRoutes)
 // Public Customer endpoints (for WP Portal iframe)
 import { createBooking } from '../modules/bookings/booking.controller.js'
 import { getActiveVendors } from '../modules/apiSettings/apiSettings.controller.js'
-import { createBookingRequest } from '../modules/bookingRequests/bookingRequest.controller.js'
+import { createBookingRequest, getCustomerRequests, getCustomerRequest } from '../modules/bookingRequests/bookingRequest.controller.js'
 const customerRouter = express.Router()
 customerRouter.get('/active-vendors', getActiveVendors)
 customerRouter.post('/bookings', createBooking)
 customerRouter.post('/booking-requests', createBookingRequest)
+customerRouter.get('/my-requests', getCustomerRequests)
+customerRouter.get('/my-requests/:request_awb', getCustomerRequest)
 router.use('/customer', customerRouter)
 
 export default router

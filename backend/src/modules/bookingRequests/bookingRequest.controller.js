@@ -46,7 +46,7 @@ export const createBookingRequest = async (req, res) => {
 
     const request_awb = await generateRequestAwb()
 
-    await execute(
+    const insertResult = await execute(
       `INSERT INTO booking_requests (
         request_awb, customer_name, customer_email, customer_phone, customer_company,
         sender_name, sender_company, sender_email, sender_phone,
@@ -89,6 +89,19 @@ export const createBookingRequest = async (req, res) => {
         'pending'
       ]
     )
+
+    // Insert initial request_updates timeline record
+    if (insertResult && insertResult.insertId) {
+      await execute(
+        `INSERT INTO request_updates (request_id, update_type, title, description) VALUES (?, ?, ?, ?)`,
+        [
+          insertResult.insertId,
+          'info',
+          'Request Submitted',
+          'Your booking request has been submitted successfully and is awaiting review.'
+        ]
+      )
+    }
 
     return res.status(201).json({
       success: true,
@@ -211,6 +224,12 @@ export const updateBookingRequestStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid status' })
     }
 
+    const existingRows = await query('SELECT * FROM booking_requests WHERE id = ?', [id])
+    if (existingRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking request not found' })
+    }
+    const oldRequest = existingRows[0]
+
     const updates = ['status = ?']
     const params = [status]
 
@@ -218,17 +237,139 @@ export const updateBookingRequestStatus = async (req, res) => {
       updates.push('admin_notes = ?')
       params.push(admin_notes)
     }
+
+    let resolvedTrackingNumber = null
     if (shipment_id !== undefined) {
       updates.push('shipment_id = ?')
       params.push(shipment_id)
+
+      if (shipment_id) {
+        // Fetch tracking number from shipments
+        const shipmentRows = await query('SELECT tracking_number FROM shipments WHERE id = ?', [shipment_id])
+        if (shipmentRows.length > 0) {
+          resolvedTrackingNumber = shipmentRows[0].tracking_number
+          updates.push('tracking_number = ?')
+          params.push(resolvedTrackingNumber)
+        }
+      }
     }
 
     params.push(id)
     await execute(`UPDATE booking_requests SET ${updates.join(', ')} WHERE id = ?`, params)
 
     const rows = await query('SELECT * FROM booking_requests WHERE id = ?', [id])
+    const newRequest = rows[0]
 
-    return res.json({ success: true, request: rows[0] })
+    // Log status change update
+    if (oldRequest.status !== status) {
+      const title = `Status updated to ${status.charAt(0).toUpperCase() + status.slice(1)}`
+      const description = `Booking request status was changed from "${oldRequest.status}" to "${status}".`
+      await execute(
+        `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
+        [id, 'status_change', title, description, JSON.stringify({ old_status: oldRequest.status, new_status: status })]
+      )
+    }
+
+    // Log shipment created update
+    if (shipment_id && !oldRequest.shipment_id) {
+      const trNum = resolvedTrackingNumber || newRequest.tracking_number || ''
+      const title = 'Shipment Created'
+      const description = `Your shipment has been confirmed and booked. Tracking Number: ${trNum}`
+      await execute(
+        `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
+        [id, 'shipment_created', title, description, JSON.stringify({ shipment_id, tracking_number: trNum })]
+      )
+    }
+
+    // Log admin note update
+    if (admin_notes !== undefined && admin_notes !== null && admin_notes !== '' && oldRequest.admin_notes !== admin_notes) {
+      await execute(
+        `INSERT INTO request_updates (request_id, update_type, title, description) VALUES (?, ?, ?, ?)`,
+        [id, 'admin_note', 'Admin Note Added', admin_notes]
+      )
+    }
+
+    return res.json({ success: true, request: newRequest })
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  PUBLIC: Customer view request details and timeline
+// ═══════════════════════════════════════════════
+
+export const getCustomerRequest = async (req, res) => {
+  try {
+    const { request_awb } = req.params
+    const rows = await query('SELECT * FROM booking_requests WHERE request_awb = ?', [request_awb])
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking request not found' })
+    }
+
+    const request = rows[0]
+
+    // Fetch request updates timeline
+    const updates = await query(
+      'SELECT * FROM request_updates WHERE request_id = ? ORDER BY created_at DESC',
+      [request.id]
+    )
+
+    // Fetch shipment tracking if confirmed
+    let tracking_events = []
+    if (request.shipment_id) {
+      tracking_events = await query(
+        'SELECT * FROM tracking_events WHERE shipment_id = ? ORDER BY event_time DESC',
+        [request.shipment_id]
+      )
+    }
+
+    return res.json({
+      success: true,
+      request,
+      updates,
+      tracking_events
+    })
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export const getCustomerRequests = async (req, res) => {
+  try {
+    const { email, phone } = req.query
+
+    if (!email && !phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer email or phone is required to fetch requests'
+      })
+    }
+
+    let whereClauses = []
+    const params = []
+
+    if (email) {
+      whereClauses.push('customer_email = ? OR sender_email = ?')
+      params.push(email, email)
+    }
+    if (phone) {
+      whereClauses.push('customer_phone = ? OR sender_phone = ?')
+      params.push(phone, phone)
+    }
+
+    const whereStr = whereClauses.length > 0 ? 'WHERE (' + whereClauses.join(') OR (') + ')' : ''
+
+    const requests = await query(
+      `SELECT * FROM booking_requests ${whereStr} ORDER BY created_at DESC`,
+      params
+    )
+
+    return res.json({
+      success: true,
+      requests
+    })
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message })
   }

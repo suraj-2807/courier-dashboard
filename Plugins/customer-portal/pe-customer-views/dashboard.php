@@ -23,6 +23,15 @@ $new_booking_url = esc_url(add_query_arg([
     'cust_phone' => $cust['phone'],
     'cust_company' => $cust['company'] ?? ''
 ], home_url('/new-booking/')));
+
+// Count pending requests for sidebar badge
+$cust_email_for_req = $cust['email'] ?? '';
+$cust_phone_for_req = $cust['phone'] ?? '';
+$where_requests = $wpdb->prepare(
+    "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s)",
+    $cust_email_for_req, $cust_email_for_req, $cust_phone_for_req, $cust_phone_for_req
+);
+$pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE status = 'pending' AND ($where_requests)"));
 ?>
 <style>
 #wpadminbar{display:none!important}html{margin-top:0!important}
@@ -204,6 +213,23 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
   .cp-sidebar-brand h3{display:none}
   .cp-stats{grid-template-columns:1fr}
 }
+
+/* ── REQUEST STATUS STYLES ── */
+.st-pending { color: var(--cpamber); font-weight: 700; }
+.st-processing { color: var(--cpblue); font-weight: 700; }
+.st-confirmed { color: var(--cpgreen); font-weight: 700; }
+.st-rejected { color: var(--cpred); font-weight: 700; }
+
+.bg-pending { background: var(--cpamber) !important; }
+.bg-processing { background: var(--cpblue) !important; }
+.bg-confirmed { background: var(--cpgreen) !important; }
+.bg-rejected { background: var(--cpred) !important; }
+
+.cp-status-tab.active {
+  background: #fff !important;
+  color: var(--cptext) !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
 </style>
 
 <div class="cp-app" id="cp-app">
@@ -221,6 +247,12 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
     <nav class="cp-sidebar-nav">
       <button class="cp-nav-item active" onclick="cpSwitchTab('shipments', this)">
         <i class="fa-solid fa-boxes-stacked"></i> My Shipments
+      </button>
+      <button class="cp-nav-item" onclick="cpSwitchTab('requests', this)">
+        <i class="fa-solid fa-clipboard-list"></i> My Requests
+        <?php if ($pending_requests_count > 0): ?>
+          <span class="cp-nav-badge" style="background:var(--cpamber);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:auto"><?php echo $pending_requests_count; ?></span>
+        <?php endif; ?>
       </button>
       <a class="cp-nav-item" href="<?php echo $new_booking_url; ?>" target="_self">
         <i class="fa-solid fa-plus"></i> Request Booking
@@ -278,6 +310,29 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
         <div class="cp-fs"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="cp-search" placeholder="Search AWB, consignee, destination..." onkeydown="if(event.key==='Enter')cpLoadShipments(1);"></div>
       </div>
       <div id="cp-shipments-container"></div>
+    </div>
+
+    <!-- TAB 2: REQUESTS -->
+    <div class="cp-main-content" id="tab-requests">
+      <div class="cp-hdr-wrap">
+        <h1 class="cp-page-title">Booking Requests</h1>
+        <p class="cp-page-sub">Track progress and status updates for your submitted booking requests.</p>
+      </div>
+
+      <!-- Filters & Search -->
+      <div class="cp-fb" style="flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
+        <div class="cp-fs" style="min-width: 250px;"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="cp-req-search" placeholder="Search AWB, consignee, city..." onkeydown="if(event.key==='Enter')cpLoadRequests(1);"></div>
+        
+        <!-- Status Tabs for Requests -->
+        <div class="cp-status-tabs" style="display: flex; gap: 6px; background: rgba(0,0,0,0.03); padding: 4px; border-radius: 8px; border: 1px solid var(--cpbdr);">
+          <button class="cp-status-tab active" onclick="cpSetRequestStatusFilter('', this)" style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">All</button>
+          <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('pending', this)" style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">Pending</button>
+          <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('processing', this)" style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">Processing</button>
+          <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('confirmed', this)" style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">Confirmed</button>
+          <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('rejected', this)" style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">Rejected</button>
+        </div>
+      </div>
+      <div id="cp-requests-container"></div>
     </div>
 
     <!-- TAB 3: MY PROFILE -->
@@ -350,6 +405,16 @@ function cpSwitchTab(tabId, btn) {
     document.querySelectorAll('.cp-main-content').forEach(c => c.classList.remove('active'));
     document.querySelectorAll('.cp-nav-item').forEach(i => i.classList.remove('active'));
     
+    if (!btn) {
+        var items = document.querySelectorAll('.cp-nav-item');
+        items.forEach(item => {
+            var onclickAttr = item.getAttribute('onclick') || '';
+            if (onclickAttr.indexOf("'" + tabId + "'") >= 0) {
+                btn = item;
+            }
+        });
+    }
+    
     document.getElementById('tab-' + tabId).classList.add('active');
     if (btn) btn.classList.add('active');
     
@@ -358,6 +423,151 @@ function cpSwitchTab(tabId, btn) {
         var frame = document.getElementById('pe-booking-iframe');
         if (frame) frame.src = frame.src;
     }
+    if (tabId === 'requests') {
+        cpLoadRequests(1);
+    }
+}
+
+var cpReqPage=1, cpReqSearch='', cpReqStatus='';
+
+function cpSetRequestStatusFilter(st, btn) {
+    document.querySelectorAll('.cp-status-tab').forEach(t => t.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    cpReqStatus = st;
+    cpLoadRequests(1);
+}
+
+function cpLoadRequests(p) {
+    cpReqPage = p || 1;
+    cpReqSearch = document.getElementById('cp-req-search').value;
+    document.getElementById('cp-requests-container').innerHTML = cpSkeleton();
+    cpAjax('pe_cp_my_requests', { page: cpReqPage, search: cpReqSearch, status: cpReqStatus }, function(d) {
+        if (!d.success) return;
+        var r = d.data, h = '';
+        h += '<div class="cp-tc"><div class="cp-th"><h3><i class="fa-solid fa-clipboard-list"></i> Booking Requests <span class="badge">' + r.total + '</span></h3></div>';
+        h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>Request AWB</th><th>Date Submitted</th><th>Receiver</th><th>Destination</th><th>Package</th><th>Status</th></tr></thead><tbody>';
+        if (!r.rows.length) h += '<tr><td colspan="6" style="text-align:center;padding:50px;color:var(--cptext3)"><i class="fa-solid fa-inbox" style="font-size:28px;display:block;margin-bottom:10px;opacity:.2"></i>No booking requests found</td></tr>';
+        
+        r.rows.forEach(function(rw) {
+            var stLabel = rw.status.charAt(0).toUpperCase() + rw.status.slice(1);
+            var stClass = 'st-' + rw.status;
+            var dotClass = 'bg-' + rw.status;
+            
+            var formattedDate = rw.created_at ? new Date(rw.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+            
+            h += '<tr onclick="cpShowRequestDetail(\'' + rw.request_awb + '\')">';
+            h += '<td class="awbc">' + rw.request_awb + '</td>';
+            h += '<td style="font-weight:600;color:var(--cptext2)">' + formattedDate + '</td>';
+            h += '<td class="nmc">' + (rw.receiver_name || '—') + '</td>';
+            h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + (rw.receiver_city || '—') + '</td>';
+            h += '<td style="font-weight:600">' + (rw.weight || '—') + ' kg (' + (rw.package_type || 'parcel') + ')</td>';
+            h += '<td><div class="cp-st"><span class="cp-dot ' + dotClass + '"></span><span class="' + stClass + '">' + stLabel + '</span></div></td></tr>';
+        });
+        h += '</tbody></table></div>';
+        h += '<div class="cp-pg"><div class="cp-pi">Showing <strong>' + r.rows.length + '</strong> of <strong>' + r.total + '</strong> · Page ' + r.page + '/' + r.pages + '</div><div class="cp-pbs">';
+        h += '<button class="cp-pb" onclick="cpLoadRequests(' + (r.page - 1) + ')" ' + (r.page <= 1 ? 'disabled' : '') + '><i class="fa-solid fa-chevron-left" style="font-size:10px"></i></button>';
+        for (var i = Math.max(1, r.page - 2); i <= Math.min(r.pages, r.page + 2); i++) h += '<button class="cp-pb' + (i === r.page ? ' on' : '') + '" onclick="cpLoadRequests(' + i + ')">' + i + '</button>';
+        h += '<button class="cp-pb" onclick="cpLoadRequests(' + (r.page + 1) + ')" ' + (r.page >= r.pages ? 'disabled' : '') + '><i class="fa-solid fa-chevron-right" style="font-size:10px"></i></button>';
+        h += '</div></div></div>';
+        document.getElementById('cp-requests-container').innerHTML = h;
+    });
+}
+
+function cpShowRequestDetail(awb) {
+    var panel = document.getElementById('cp-detail-panel');
+    panel.innerHTML = '<div style="padding:40px;text-align:center"><div style="width:30px;height:30px;border:3px solid #e5e7eb;border-top-color:#bb0013;border-radius:50%;animation:cp-spin .6s linear infinite;margin:0 auto 16px"></div><p style="color:#94a3b8;font-size:14px">Loading request details...</p></div>';
+    document.getElementById('cp-detail-overlay').classList.add('show');
+    cpAjax('pe_cp_request_detail', { request_awb: awb }, function(d) {
+        if (!d.success) { panel.innerHTML = '<div style="padding:40px;text-align:center;color:#dc2626">Failed to load details</div>'; return; }
+        var r = d.data.request, tl = d.data.timeline;
+        var stLabel = r.status.charAt(0).toUpperCase() + r.status.slice(1);
+        var dotClass = 'bg-' + r.status;
+        var stClass = 'st-' + r.status;
+        
+        var formattedDate = r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+        
+        var h = '';
+        h += '<div class="cp-dh"><h3><i class="fa-solid fa-clipboard-list"></i> Request ' + r.request_awb + '</h3><button class="cp-dc" onclick="cpCloseDetail()"><i class="fa-solid fa-xmark"></i></button></div>';
+        h += '<div class="cp-db-body">';
+        
+        // Status & Link to Shipment
+        h += '<div class="cp-ds"><h4><i class="fa-solid fa-circle-info"></i> Current Status</h4>';
+        h += '<div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0">';
+        h += '  <div style="display:flex; align-items:center; gap:8px;">';
+        h += '    <span class="cp-dot ' + dotClass + '" style="width:10px;height:10px"></span>';
+        h += '    <span class="' + stClass + '" style="font-size:15px;font-weight:800">' + stLabel + '</span>';
+        h += '  </div>';
+        
+        if (r.tracking_number) {
+            h += '  <button onclick="cpCloseDetail(); cpSwitchTab(\'shipments\'); document.getElementById(\'cp-search\').value=\'' + r.tracking_number + '\'; cpLoadShipments(1);" style="border:1px solid var(--cpbdr); background:#fff; padding:6px 12px; border-radius:8px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">';
+            h += '    <i class="fa-solid fa-truck-ramp-box" style="margin-right:4px;"></i> Track Shipment ' + r.tracking_number;
+            h += '  </button>';
+        }
+        h += '</div></div>';
+        
+        // Sender/Receiver Details
+        h += '<div class="cp-ds"><h4><i class="fa-solid fa-route"></i> Route Details</h4><div class="cp-dg">';
+        h += '<div class="cp-df"><div class="l">Sender Name</div><div class="v">' + (r.sender_name || '—') + '</div></div>';
+        h += '<div class="cp-df"><div class="l">Receiver Name</div><div class="v">' + (r.receiver_name || '—') + '</div></div>';
+        h += '<div class="cp-df"><div class="l">Sender City</div><div class="v">' + (r.sender_city || '—') + '</div></div>';
+        h += '<div class="cp-df"><div class="l">Receiver City</div><div class="v">' + (r.receiver_city || '—') + '</div></div>';
+        h += '<div class="cp-df fl"><div class="l">Sender Address</div><div class="v">' + [r.sender_address, r.sender_address_2, r.sender_city, r.sender_pincode, r.sender_state].filter(Boolean).join(', ') + '</div></div>';
+        h += '<div class="cp-df fl"><div class="l">Receiver Address</div><div class="v">' + [r.receiver_address, r.receiver_address_2, r.receiver_city, r.receiver_pincode, r.receiver_state, r.receiver_country].filter(Boolean).join(', ') + '</div></div>';
+        h += '</div></div>';
+        
+        // Package Details
+        h += '<div class="cp-ds"><h4><i class="fa-solid fa-box"></i> Package Details</h4><div class="cp-dg">';
+        h += '<div class="cp-df"><div class="l">Package Type</div><div class="v" style="text-transform:capitalize;">' + (r.package_type || '—') + '</div></div>';
+        h += '<div class="cp-df"><div class="l">Weight</div><div class="v">' + (r.weight || '—') + ' kg</div></div>';
+        h += '<div class="cp-df"><div class="l">No. of Pieces</div><div class="v">' + (r.no_of_pieces || '1') + '</div></div>';
+        h += '<div class="cp-df"><div class="l">Declared Value</div><div class="v">₹' + (r.declared_value || '0') + '</div></div>';
+        if (r.content_description) h += '<div class="cp-df fl"><div class="l">Content Description</div><div class="v">' + r.content_description + '</div></div>';
+        if (r.remarks) h += '<div class="cp-df fl"><div class="l">Special Instructions / Remarks</div><div class="v">' + r.remarks + '</div></div>';
+        if (r.admin_notes) h += '<div class="cp-df fl" style="border-color:rgba(187,0,19,.15); background:rgba(187,0,19,.02);"><div class="l" style="color:var(--cpred)">Admin Notes</div><div class="v">' + r.admin_notes + '</div></div>';
+        h += '</div></div>';
+        
+        // Timeline Section (Merges Status Changes + Shipping Events)
+        h += '<div class="cp-ds"><h4><i class="fa-solid fa-clock-rotate-left"></i> Progress Timeline</h4>';
+        if (tl.length) {
+            h += '<ul class="cp-tl">';
+            tl.forEach(function(t, i) {
+                var iconHtml = '<i class="fa-solid fa-circle-dot"></i>';
+                var borderStyle = '';
+                var dotColorClass = 'bg-pending';
+                
+                if (t.type === 'status_change') {
+                    if (t.description.indexOf('confirmed') >= 0) {
+                        dotColorClass = 'bg-confirmed';
+                        iconHtml = '<i class="fa-solid fa-circle-check"></i>';
+                    } else if (t.description.indexOf('rejected') >= 0) {
+                        dotColorClass = 'bg-rejected';
+                        iconHtml = '<i class="fa-solid fa-circle-xmark"></i>';
+                    } else {
+                        dotColorClass = 'bg-processing';
+                        iconHtml = '<i class="fa-solid fa-circle-dot"></i>';
+                    }
+                } else if (t.type === 'shipment_created') {
+                    dotColorClass = 'bg-confirmed';
+                    iconHtml = '<i class="fa-solid fa-truck-fast"></i>';
+                } else if (t.type === 'tracking_update') {
+                    dotColorClass = 'bg-processing';
+                    iconHtml = '<i class="fa-solid fa-location-arrow"></i>';
+                    if (t.title.toLowerCase().indexOf('deliver') >= 0) {
+                        dotColorClass = 'bg-confirmed';
+                        iconHtml = '<i class="fa-solid fa-house-chimney-check"></i>';
+                    }
+                }
+                
+                h += '<li style="animation-delay:' + (.03 * i) + 's; border-left-color: ' + (i === 0 ? 'var(--cpgreen)' : 'var(--cpbdr)') + ';"><div class="cp-tl-card"><div class="cp-tla" style="display:flex; align-items:center; gap:6px;">' + iconHtml + t.title + '</div><div style="font-size:12px; color:var(--cptext2); margin:4px 0;">' + t.description + '</div><div class="cp-tlm"><i class="fa-solid fa-calendar"></i> ' + t.date + '</div></div></li>';
+            });
+            h += '</ul>';
+        } else {
+            h += '<div class="cp-tl-empty"><i class="fa-solid fa-route"></i><p>No timeline updates yet</p></div>';
+        }
+        h += '</div></div>';
+        
+        panel.innerHTML = h;
+    });
 }
 
 // AJAX request wrapper
@@ -490,10 +700,10 @@ window.addEventListener('message', function(event) {
         cpSwitchTab('shipments', document.querySelectorAll('.cp-nav-item')[0]);
     }
     if (event.data && event.data.type === 'PE_BOOKING_SUCCESS') {
-        cpLoadShipments(1); // refresh list
-        // Switch back to dashboard after brief delay
+        cpLoadRequests(1); // refresh requests list
+        // Switch to requests tab after brief delay
         setTimeout(function() {
-            cpSwitchTab('shipments', document.querySelectorAll('.cp-nav-item')[0]);
+            cpSwitchTab('requests');
         }, 1500);
     }
 });

@@ -428,6 +428,182 @@ add_action('wp_ajax_pe_cp_shipment_detail', 'pe_cp_ajax_shipment_detail');
 add_action('wp_ajax_nopriv_pe_cp_shipment_detail', 'pe_cp_ajax_shipment_detail');
 
 // ══════════════════════════════════════
+//  AJAX: CUSTOMER REQUESTS
+// ══════════════════════════════════════
+
+function pe_cp_ajax_my_requests()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+
+    $cust = pe_cp_get_user();
+    $page = max(1, intval($_POST['page'] ?? 1));
+    $per = 15;
+    $offset = ($page - 1) * $per;
+    $search = sanitize_text_field($_POST['search'] ?? '');
+    $status = sanitize_text_field($_POST['status'] ?? '');
+
+    $cust_email = $cust['email'] ?? '';
+    $cust_phone = $cust['phone'] ?? '';
+
+    // Match by email or phone
+    $where = $wpdb->prepare(
+        "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s)",
+        $cust_email, $cust_email, $cust_phone, $cust_phone
+    );
+
+    if ($status) {
+        $where .= $wpdb->prepare(" AND status = %s", $status);
+    }
+
+    if ($search) {
+        $like = '%' . $wpdb->esc_like($search) . '%';
+        $where .= $wpdb->prepare(
+            " AND (request_awb LIKE %s OR receiver_name LIKE %s OR sender_city LIKE %s OR receiver_city LIKE %s)",
+            $like, $like, $like, $like
+        );
+    }
+
+    $total = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where"));
+
+    $rows = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM booking_requests 
+         WHERE $where 
+         ORDER BY id DESC 
+         LIMIT %d OFFSET %d",
+        $per, $offset
+    ));
+
+    $data = [];
+    foreach ($rows as $r) {
+        $data[] = [
+            'id' => $r->id,
+            'request_awb' => $r->request_awb,
+            'created_at' => $r->created_at,
+            'sender_name' => $r->sender_name,
+            'sender_city' => $r->sender_city,
+            'receiver_name' => $r->receiver_name,
+            'receiver_city' => $r->receiver_city,
+            'package_type' => $r->package_type,
+            'weight' => $r->weight,
+            'status' => $r->status,
+            'shipment_id' => $r->shipment_id,
+            'tracking_number' => $r->tracking_number,
+        ];
+    }
+
+    // Get count breakdown for requests
+    $where_base = $wpdb->prepare(
+        "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s)",
+        $cust_email, $cust_email, $cust_phone, $cust_phone
+    );
+    if ($search) {
+        $like = '%' . $wpdb->esc_like($search) . '%';
+        $where_base .= $wpdb->prepare(
+            " AND (request_awb LIKE %s OR receiver_name LIKE %s OR sender_city LIKE %s OR receiver_city LIKE %s)",
+            $like, $like, $like, $like
+        );
+    }
+
+    $count_all = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base"));
+    $count_pending = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'pending'"));
+    $count_processing = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'processing'"));
+    $count_confirmed = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'confirmed'"));
+    $count_rejected = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'rejected'"));
+
+    wp_send_json_success([
+        'rows' => $data,
+        'total' => $total,
+        'pages' => max(1, ceil($total / $per)),
+        'page' => $page,
+        'counts' => [
+            'all' => $count_all,
+            'pending' => $count_pending,
+            'processing' => $count_processing,
+            'confirmed' => $count_confirmed,
+            'rejected' => $count_rejected,
+        ],
+    ]);
+}
+add_action('wp_ajax_pe_cp_my_requests', 'pe_cp_ajax_my_requests');
+add_action('wp_ajax_nopriv_pe_cp_my_requests', 'pe_cp_ajax_my_requests');
+
+function pe_cp_ajax_request_detail()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+
+    $request_awb = sanitize_text_field($_POST['request_awb'] ?? '');
+    if (!$request_awb) {
+        wp_send_json_error(['message' => 'Request AWB number required']);
+    }
+
+    $cust = pe_cp_get_user();
+    $cust_email = $cust['email'] ?? '';
+    $cust_phone = $cust['phone'] ?? '';
+
+    // Fetch the request and make sure it belongs to the customer
+    $request = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM booking_requests 
+         WHERE request_awb = %s 
+           AND (customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s)",
+        $request_awb, $cust_email, $cust_email, $cust_phone, $cust_phone
+    ));
+
+    if (!$request) {
+        wp_send_json_error(['message' => 'Booking request not found']);
+    }
+
+    // Fetch request_updates
+    $updates = $wpdb->get_results($wpdb->prepare(
+        "SELECT * FROM request_updates WHERE request_id = %d ORDER BY created_at DESC",
+        $request->id
+    ));
+
+    $timeline = [];
+    foreach ($updates as $up) {
+        $timeline[] = [
+            'type' => $up->update_type,
+            'title' => $up->title,
+            'description' => $up->description,
+            'date' => date('d M Y, h:i A', strtotime($up->created_at)),
+            'timestamp' => strtotime($up->created_at)
+        ];
+    }
+
+    // Fetch physical parcel tracking history if tracking number is linked
+    if (!empty($request->tracking_number)) {
+        $awb_no = intval($request->tracking_number);
+        $history = $wpdb->get_results($wpdb->prepare(
+            "SELECT activity, date, time, location FROM parcel_history WHERE AWBNO = %d ORDER BY date DESC, time DESC",
+            $awb_no
+        ));
+        foreach ($history as $h) {
+            $dt_str = $h->date . ' ' . $h->time;
+            $timeline[] = [
+                'type' => 'tracking_update',
+                'title' => $h->activity,
+                'description' => 'Location: ' . ($h->location ?: 'Origin/In Transit'),
+                'date' => date('d M Y, h:i A', strtotime($dt_str)),
+                'timestamp' => strtotime($dt_str)
+            ];
+        }
+    }
+
+    // Sort timeline by timestamp DESC
+    usort($timeline, function ($a, $b) {
+        return $b['timestamp'] - $a['timestamp'];
+    });
+
+    wp_send_json_success([
+        'request' => $request,
+        'timeline' => $timeline
+    ]);
+}
+add_action('wp_ajax_pe_cp_request_detail', 'pe_cp_ajax_request_detail');
+add_action('wp_ajax_nopriv_pe_cp_request_detail', 'pe_cp_ajax_request_detail');
+
+// ══════════════════════════════════════
 //  AJAX: UPDATE PROFILE
 // ══════════════════════════════════════
 

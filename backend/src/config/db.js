@@ -182,6 +182,43 @@ export async function initializeDb() {
       }
     }
 
+    // ── Add tracking_number column to booking_requests if missing ──
+    try {
+      const brCols = await query("SHOW COLUMNS FROM booking_requests")
+      const brColNames = brCols.map(col => col.Field || col.field)
+
+      if (!brColNames.includes('tracking_number')) {
+        console.log('Adding tracking_number column to booking_requests...')
+        await execute("ALTER TABLE booking_requests ADD COLUMN tracking_number VARCHAR(50) DEFAULT NULL AFTER shipment_id")
+        console.log('tracking_number column successfully added.')
+      } else {
+        console.log('booking_requests.tracking_number column already exists.')
+      }
+    } catch (brColErr) {
+      console.error('booking_requests column migration failed:', brColErr.message)
+    }
+
+    // ── Request Updates table (timeline of events for each booking request) ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS request_updates (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        request_id INT NOT NULL,
+        update_type ENUM('status_change','shipment_created','tracking_update','admin_note','info') DEFAULT 'info',
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        metadata JSON DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_request_id (request_id)
+      )`)
+      console.log('request_updates table ready.')
+    } catch (ruErr) {
+      if (ruErr.code === 'ER_TABLE_EXISTS_ERROR') {
+        console.log('request_updates table already exists.')
+      } else {
+        console.error('request_updates migration failed:', ruErr.message)
+      }
+    }
+
     console.log('DB initialization successfully completed!')
   } catch (err) {
     console.error('DB Initialization/Migration Failed:', err)
