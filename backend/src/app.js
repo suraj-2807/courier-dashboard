@@ -4,6 +4,7 @@ import morgan from 'morgan'
 
 import path from 'path'
 import { fileURLToPath } from 'url'
+import fs from 'fs'
 
 import routes from './routes/index.js'
 
@@ -33,8 +34,6 @@ app.use((req, res, next) => {
 
 app.use('/api', routes)
 
-import fs from 'fs'
-
 const distIndexPath = path.join(__dirname, '../dist/index.html')
 console.log('--- SPA DIST INDEX CHECK ---')
 console.log('Target index.html path:', distIndexPath)
@@ -43,15 +42,14 @@ console.log('index.html exists:', fs.existsSync(distIndexPath))
 // Serve static files from React dist folder
 app.use(express.static(path.join(__dirname, '../dist')))
 
-// Catch-all SPA route for any non-API GET request (Hostinger Node Web App recommendation)
-app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api')) {
-    return next()
+// Catch-all SPA route for any non-API GET request (Express 5 compatible middleware)
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    if (fs.existsSync(distIndexPath)) {
+      return res.sendFile(distIndexPath)
+    }
   }
-  if (fs.existsSync(distIndexPath)) {
-    return res.sendFile(distIndexPath)
-  }
-  res.status(404).send('index.html not found on server')
+  next()
 })
 
 export default app
