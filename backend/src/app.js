@@ -36,9 +36,13 @@ app.use('/api', routes)
 // Serve static files from React dist folder
 app.use(express.static(path.join(__dirname, '../dist')))
 
-// Fallback: serve React index.html for any frontend client routes
-app.get('/*splat', (req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'))
+// Fallback: serve React index.html for any frontend client routes (SPA)
+app.use((req, res, next) => {
+  // Only serve index.html for GET requests that aren't API calls or static files
+  if (req.method === 'GET' && !req.path.startsWith('/api/')) {
+    return res.sendFile(path.join(__dirname, '../dist/index.html'))
+  }
+  next()
 })
 
 export default app
