@@ -33,16 +33,25 @@ app.use((req, res, next) => {
 
 app.use('/api', routes)
 
+import fs from 'fs'
+
+const distIndexPath = path.join(__dirname, '../dist/index.html')
+console.log('--- SPA DIST INDEX CHECK ---')
+console.log('Target index.html path:', distIndexPath)
+console.log('index.html exists:', fs.existsSync(distIndexPath))
+
 // Serve static files from React dist folder
 app.use(express.static(path.join(__dirname, '../dist')))
 
-// Fallback: serve React index.html for any frontend client routes (SPA)
-app.use((req, res, next) => {
-  // Only serve index.html for GET requests that aren't API calls or static files
-  if (req.method === 'GET' && !req.path.startsWith('/api/')) {
-    return res.sendFile(path.join(__dirname, '../dist/index.html'))
+// Catch-all SPA route for any non-API GET request (Hostinger Node Web App recommendation)
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return next()
   }
-  next()
+  if (fs.existsSync(distIndexPath)) {
+    return res.sendFile(distIndexPath)
+  }
+  res.status(404).send('index.html not found on server')
 })
 
 export default app
