@@ -17,12 +17,12 @@ $ts = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust")
 $dc = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust AND LOWER(COALESCE($_st, '')) LIKE '%delivered%'"));
 $tc = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust AND (LOWER(COALESCE($_st, '')) LIKE '%transit%' OR LOWER(COALESCE($_st, '')) LIKE '%departed%')"));
 
-$new_booking_url = esc_url(add_query_arg([
+$iframe_booking_url = esc_url(add_query_arg([
     'cust_name' => $cust['name'],
     'cust_email' => $cust['email'],
     'cust_phone' => $cust['phone'],
     'cust_company' => $cust['company'] ?? ''
-], home_url('/new-booking/')));
+], PE_ADMIN_PORTAL_URL));
 
 // Count pending requests for sidebar badge
 $cust_email_for_req = $cust['email'] ?? '';
@@ -42,6 +42,7 @@ $pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_re
 @keyframes cp-slideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
 @keyframes cp-shimmer{0%{background-position:-400px 0}100%{background-position:400px 0}}
 @keyframes cp-spin{to{transform:rotate(360deg)}}
+@keyframes cp-pulse-live{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
 
 :root{
   --cpbg:#f8fafc;
@@ -230,6 +231,12 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
   color: var(--cptext) !important;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
+
+/* ── LIVE INDICATOR ── */
+.cp-live-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:14px;background:rgba(16,185,129,.08);font-size:10px;font-weight:800;color:var(--cpgreen);letter-spacing:.5px;margin-left:8px;text-transform:uppercase;transition:opacity .3s}
+.cp-live-dot{width:6px;height:6px;border-radius:50%;background:var(--cpgreen);animation:cp-pulse-live 1.5s ease-in-out infinite}
+.cp-live-badge.paused{opacity:.3}
+.cp-live-badge.paused .cp-live-dot{animation:none}
 </style>
 
 <div class="cp-app" id="cp-app">
@@ -254,9 +261,9 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
           <span class="cp-nav-badge" style="background:var(--cpamber);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:auto"><?php echo $pending_requests_count; ?></span>
         <?php endif; ?>
       </button>
-      <a class="cp-nav-item" href="<?php echo $new_booking_url; ?>" target="_self">
+      <button class="cp-nav-item" onclick="cpSwitchTab('new-booking', this)">
         <i class="fa-solid fa-plus"></i> Request Booking
-      </a>
+      </button>
       <button class="cp-nav-item" onclick="cpSwitchTab('profile', this)">
         <i class="fa-solid fa-user-gear"></i> My Profile
       </button>
@@ -300,9 +307,9 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
           <h3>Need to ship a package? 📦</h3>
           <p>Fill in your shipment details and our team will handle the rest. You'll receive your AWB number instantly.</p>
         </div>
-        <a class="cp-cta-btn-link" href="<?php echo $new_booking_url; ?>" target="_self">
+        <button class="cp-cta-btn-link" onclick="cpSwitchTab('new-booking')" style="border:none;cursor:pointer;">
           <i class="fa-solid fa-plus"></i> Request Booking
-        </a>
+        </button>
       </div>
 
       <!-- Search & Filters -->
@@ -315,7 +322,7 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
     <!-- TAB 2: REQUESTS -->
     <div class="cp-main-content" id="tab-requests">
       <div class="cp-hdr-wrap">
-        <h1 class="cp-page-title">Booking Requests</h1>
+        <h1 class="cp-page-title">Booking Requests <span class="cp-live-badge" id="cp-live-badge"><span class="cp-live-dot"></span>Live</span></h1>
         <p class="cp-page-sub">Track progress and status updates for your submitted booking requests.</p>
       </div>
 
@@ -389,6 +396,17 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
       </div>
     </div>
 
+    <!-- TAB 4: NEW BOOKING -->
+    <div class="cp-main-content" id="tab-new-booking">
+      <div class="cp-hdr-wrap" style="margin-bottom:16px;">
+        <h1 class="cp-page-title">Submit Booking Request</h1>
+        <p class="cp-page-sub">Fill out the details below to submit a shipment booking request.</p>
+      </div>
+      <div style="background:var(--cpcard); border-radius:16px; border:1px solid var(--cpbdr); overflow:hidden; box-shadow:var(--cpsh);">
+        <iframe id="pe-booking-iframe" src="<?php echo $iframe_booking_url; ?>" style="width:100%; height:calc(100vh - 180px); border:none;" title="Booking Request Form"></iframe>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -437,13 +455,18 @@ function cpSetRequestStatusFilter(st, btn) {
     cpLoadRequests(1);
 }
 
-function cpLoadRequests(p) {
+function cpLoadRequests(p, silent) {
     cpReqPage = p || 1;
     cpReqSearch = document.getElementById('cp-req-search').value;
-    document.getElementById('cp-requests-container').innerHTML = cpSkeleton();
+    if (!silent) document.getElementById('cp-requests-container').innerHTML = cpSkeleton();
     cpAjax('pe_cp_my_requests', { page: cpReqPage, search: cpReqSearch, status: cpReqStatus }, function(d) {
         if (!d.success) return;
-        var r = d.data, h = '';
+        var r = d.data;
+        // Store hash to detect changes for polling
+        var newHash = JSON.stringify(r.rows.map(function(rw){return rw.request_awb+':'+rw.status}));
+        if (silent && newHash === cpReqLastHash) return; // No change, skip re-render
+        cpReqLastHash = newHash;
+        var h = '';
         h += '<div class="cp-tc"><div class="cp-th"><h3><i class="fa-solid fa-clipboard-list"></i> Booking Requests <span class="badge">' + r.total + '</span></h3></div>';
         h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>Request AWB</th><th>Date Submitted</th><th>Receiver</th><th>Destination</th><th>Package</th><th>Status</th></tr></thead><tbody>';
         if (!r.rows.length) h += '<tr><td colspan="6" style="text-align:center;padding:50px;color:var(--cptext3)"><i class="fa-solid fa-inbox" style="font-size:28px;display:block;margin-bottom:10px;opacity:.2"></i>No booking requests found</td></tr>';
@@ -455,7 +478,7 @@ function cpLoadRequests(p) {
             
             var formattedDate = rw.created_at ? new Date(rw.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
             
-            h += '<tr onclick="cpShowRequestDetail(\'' + rw.request_awb + '\')">';
+            h += '<tr onclick="cpShowRequestDetail(\'' + rw.request_awb + '\')">'; 
             h += '<td class="awbc">' + rw.request_awb + '</td>';
             h += '<td style="font-weight:600;color:var(--cptext2)">' + formattedDate + '</td>';
             h += '<td class="nmc">' + (rw.receiver_name || '—') + '</td>';
@@ -474,12 +497,23 @@ function cpLoadRequests(p) {
 }
 
 function cpShowRequestDetail(awb) {
+    cpDetailOpenAwb = awb; // Track which detail is open for polling
     var panel = document.getElementById('cp-detail-panel');
     panel.innerHTML = '<div style="padding:40px;text-align:center"><div style="width:30px;height:30px;border:3px solid #e5e7eb;border-top-color:#bb0013;border-radius:50%;animation:cp-spin .6s linear infinite;margin:0 auto 16px"></div><p style="color:#94a3b8;font-size:14px">Loading request details...</p></div>';
     document.getElementById('cp-detail-overlay').classList.add('show');
+    cpRenderRequestDetail(awb, false);
+    cpStartDetailPolling();
+}
+
+function cpRenderRequestDetail(awb, silent) {
+    var panel = document.getElementById('cp-detail-panel');
     cpAjax('pe_cp_request_detail', { request_awb: awb }, function(d) {
-        if (!d.success) { panel.innerHTML = '<div style="padding:40px;text-align:center;color:#dc2626">Failed to load details</div>'; return; }
+        if (!d.success) { if (!silent) panel.innerHTML = '<div style="padding:40px;text-align:center;color:#dc2626">Failed to load details</div>'; return; }
         var r = d.data.request, tl = d.data.timeline;
+        // Hash check for silent updates
+        var newHash = r.status + ':' + tl.length + ':' + (tl.length ? tl[0].title : '');
+        if (silent && newHash === cpDetailLastHash) return;
+        cpDetailLastHash = newHash;
         var stLabel = r.status.charAt(0).toUpperCase() + r.status.slice(1);
         var dotClass = 'bg-' + r.status;
         var stClass = 'st-' + r.status;
@@ -487,7 +521,7 @@ function cpShowRequestDetail(awb) {
         var formattedDate = r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
         
         var h = '';
-        h += '<div class="cp-dh"><h3><i class="fa-solid fa-clipboard-list"></i> Request ' + r.request_awb + '</h3><button class="cp-dc" onclick="cpCloseDetail()"><i class="fa-solid fa-xmark"></i></button></div>';
+        h += '<div class="cp-dh"><h3><i class="fa-solid fa-clipboard-list"></i> Request ' + r.request_awb + ' <span class="cp-live-badge" style="font-size:9px"><span class="cp-live-dot"></span>Live</span></h3><button class="cp-dc" onclick="cpCloseDetail()"><i class="fa-solid fa-xmark"></i></button></div>';
         h += '<div class="cp-db-body">';
         
         // Status & Link to Shipment
@@ -692,6 +726,9 @@ function cpShowDetail(awb) {
 
 function cpCloseDetail() {
     document.getElementById('cp-detail-overlay').classList.remove('show');
+    cpDetailOpenAwb = null;
+    cpDetailLastHash = null;
+    cpStopDetailPolling();
 }
 
 // listen to iframe events (e.g. successful booking or cancelled back click)
@@ -753,6 +790,81 @@ document.getElementById('cp-password-form').addEventListener('submit', function(
             alert(res.data.message || 'Failed to update password');
         }
     });
+});
+
+// ══════════════════════════════════════
+//  AUTO-POLLING ENGINE (Real-Time Updates)
+// ══════════════════════════════════════
+var cpReqLastHash = null;
+var cpDetailOpenAwb = null;
+var cpDetailLastHash = null;
+var cpReqPollTimer = null;
+var cpDetailPollTimer = null;
+var cpActiveTab = 'shipments';
+var CP_REQ_POLL_MS = 15000;  // 15 seconds
+var CP_DETAIL_POLL_MS = 10000; // 10 seconds
+
+function cpStartReqPolling() {
+    cpStopReqPolling();
+    cpReqPollTimer = setInterval(function() {
+        if (document.hidden) return; // skip if tab not visible
+        cpLoadRequests(cpReqPage, true); // silent refresh
+    }, CP_REQ_POLL_MS);
+    cpUpdateLiveBadge(true);
+}
+
+function cpStopReqPolling() {
+    if (cpReqPollTimer) { clearInterval(cpReqPollTimer); cpReqPollTimer = null; }
+    cpUpdateLiveBadge(false);
+}
+
+function cpStartDetailPolling() {
+    cpStopDetailPolling();
+    if (!cpDetailOpenAwb) return;
+    cpDetailPollTimer = setInterval(function() {
+        if (document.hidden) return;
+        if (!cpDetailOpenAwb) { cpStopDetailPolling(); return; }
+        cpRenderRequestDetail(cpDetailOpenAwb, true);
+    }, CP_DETAIL_POLL_MS);
+}
+
+function cpStopDetailPolling() {
+    if (cpDetailPollTimer) { clearInterval(cpDetailPollTimer); cpDetailPollTimer = null; }
+}
+
+function cpUpdateLiveBadge(active) {
+    var badge = document.getElementById('cp-live-badge');
+    if (badge) {
+        badge.classList.toggle('paused', !active);
+    }
+}
+
+// Hook into tab switching to start/stop polling
+var _origCpSwitchTab = cpSwitchTab;
+cpSwitchTab = function(tabId, btn) {
+    _origCpSwitchTab(tabId, btn);
+    cpActiveTab = tabId;
+    if (tabId === 'requests') {
+        cpStartReqPolling();
+    } else {
+        cpStopReqPolling();
+        cpReqLastHash = null;
+    }
+};
+
+// Pause/resume polling on tab visibility change
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+        cpUpdateLiveBadge(false);
+    } else {
+        if (cpActiveTab === 'requests') {
+            cpUpdateLiveBadge(true);
+            cpLoadRequests(cpReqPage, true); // immediate refresh on return
+        }
+        if (cpDetailOpenAwb) {
+            cpRenderRequestDetail(cpDetailOpenAwb, true);
+        }
+    }
 });
 
 // Init
