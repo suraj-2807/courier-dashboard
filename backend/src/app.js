@@ -34,20 +34,32 @@ app.use((req, res, next) => {
 
 app.use('/api', routes)
 
-const distIndexPath = path.join(__dirname, '../dist/index.html')
+const distPath = path.resolve(__dirname, '..', 'dist')
+const distIndexPath = path.resolve(distPath, 'index.html')
 console.log('--- SPA DIST INDEX CHECK ---')
 console.log('Target index.html path:', distIndexPath)
 console.log('index.html exists:', fs.existsSync(distIndexPath))
 
 // Serve static files from React dist folder
-app.use(express.static(path.join(__dirname, '../dist')))
+app.use(express.static(distPath))
 
-// Catch-all SPA route for any non-API GET request (Express 5 compatible middleware)
+// Catch-all SPA route for any non-API GET request (Express 5 compatible)
 app.use((req, res, next) => {
   if (req.method === 'GET' && !req.path.startsWith('/api')) {
-    if (fs.existsSync(distIndexPath)) {
-      return res.sendFile(distIndexPath)
-    }
+    // Try sendFile first, with error handling fallback
+    res.sendFile(distIndexPath, (err) => {
+      if (err) {
+        // Fallback: read the file and send it manually
+        try {
+          const html = fs.readFileSync(distIndexPath, 'utf-8')
+          res.type('html').send(html)
+        } catch (readErr) {
+          console.error('SPA fallback failed:', readErr.message)
+          next()
+        }
+      }
+    })
+    return
   }
   next()
 })
