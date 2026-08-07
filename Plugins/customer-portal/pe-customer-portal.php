@@ -29,6 +29,11 @@ if (!defined('PE_CP_COOKIE_NAME')) {
     define('PE_CP_COOKIE_NAME', 'pe_customer_sid');
 }
 
+// Sync API key (must match WP_SYNC_KEY in Node.js .env)
+if (!defined('PE_CP_SYNC_KEY')) {
+    define('PE_CP_SYNC_KEY', 'pe_sync_2026_prince_express_secret');
+}
+
 // Secret key for customer session encryption
 if (!defined('PE_CP_SESSION_SECRET')) {
     define('PE_CP_SESSION_SECRET', defined('AUTH_KEY') ? AUTH_KEY . 'PE_CUSTOMER_V1' : 'pe_cust_default_secret_change_me_2026');
@@ -445,11 +450,16 @@ function pe_cp_ajax_my_requests()
 
     $cust_email = $cust['email'] ?? '';
     $cust_phone = $cust['phone'] ?? '';
+    $cust_id = $cust['customer_id'] ?? 0;
 
-    // Match by email or phone
+    // Match by email, phone, OR customer_id
     $where = $wpdb->prepare(
-        "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s)",
-        $cust_email, $cust_email, $cust_phone, $cust_phone
+        "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s" .
+        ($cust_id ? " OR customer_id = %d" : "") . ")",
+        ...array_merge(
+            [$cust_email, $cust_email, $cust_phone, $cust_phone],
+            $cust_id ? [$cust_id] : []
+        )
     );
 
     if ($status) {
@@ -494,8 +504,12 @@ function pe_cp_ajax_my_requests()
 
     // Get count breakdown for requests
     $where_base = $wpdb->prepare(
-        "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s)",
-        $cust_email, $cust_email, $cust_phone, $cust_phone
+        "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s" .
+        ($cust_id ? " OR customer_id = %d" : "") . ")",
+        ...array_merge(
+            [$cust_email, $cust_email, $cust_phone, $cust_phone],
+            $cust_id ? [$cust_id] : []
+        )
     );
     if ($search) {
         $like = '%' . $wpdb->esc_like($search) . '%';
@@ -541,14 +555,18 @@ function pe_cp_ajax_request_detail()
     $cust = pe_cp_get_user();
     $cust_email = $cust['email'] ?? '';
     $cust_phone = $cust['phone'] ?? '';
+    $cust_id = $cust['customer_id'] ?? 0;
 
     // Fetch the request and make sure it belongs to the customer
-    $request = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM booking_requests 
-         WHERE request_awb = %s 
-           AND (customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s)",
-        $request_awb, $cust_email, $cust_email, $cust_phone, $cust_phone
-    ));
+    $owner_where = $wpdb->prepare(
+        "request_awb = %s AND (customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s" .
+        ($cust_id ? " OR customer_id = %d" : "") . ")",
+        ...array_merge(
+            [$request_awb, $cust_email, $cust_email, $cust_phone, $cust_phone],
+            $cust_id ? [$cust_id] : []
+        )
+    );
+    $request = $wpdb->get_row("SELECT * FROM booking_requests WHERE $owner_where");
 
     if (!$request) {
         wp_send_json_error(['message' => 'Booking request not found']);
@@ -723,7 +741,9 @@ add_shortcode('pe_customer_portal', 'pe_cp_shortcode');
 register_activation_hook(__FILE__, function () {
     global $wpdb;
     $charset = $wpdb->get_charset_collate();
-    $sql = "CREATE TABLE IF NOT EXISTS tbl_customers (
+
+    // Customer accounts table
+    $sql_customers = "CREATE TABLE IF NOT EXISTS tbl_customers (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
         email VARCHAR(150) NOT NULL,
@@ -736,6 +756,318 @@ register_activation_hook(__FILE__, function () {
         UNIQUE KEY idx_email (email)
     ) $charset;";
 
+    // Booking requests table (synced from Node.js backend)
+    $sql_booking_requests = "CREATE TABLE IF NOT EXISTS booking_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        request_awb VARCHAR(20) NOT NULL,
+        customer_id INT DEFAULT NULL,
+        customer_name VARCHAR(100) DEFAULT '',
+        customer_email VARCHAR(150) DEFAULT '',
+        customer_phone VARCHAR(20) DEFAULT '',
+        customer_company VARCHAR(150) DEFAULT '',
+        sender_name VARCHAR(100) DEFAULT '',
+        sender_company VARCHAR(150) DEFAULT '',
+        sender_email VARCHAR(150) DEFAULT '',
+        sender_phone VARCHAR(20) DEFAULT '',
+        sender_address VARCHAR(255) DEFAULT '',
+        sender_address_2 VARCHAR(255) DEFAULT '',
+        sender_city VARCHAR(100) DEFAULT '',
+        sender_pincode VARCHAR(20) DEFAULT '',
+        sender_state VARCHAR(100) DEFAULT '',
+        sender_country VARCHAR(100) DEFAULT 'INDIA',
+        sender_gstin_type VARCHAR(50) DEFAULT '',
+        sender_gstin_no VARCHAR(50) DEFAULT '',
+        receiver_name VARCHAR(100) DEFAULT '',
+        receiver_email VARCHAR(150) DEFAULT '',
+        receiver_phone VARCHAR(20) DEFAULT '',
+        receiver_address VARCHAR(255) DEFAULT '',
+        receiver_address_2 VARCHAR(255) DEFAULT '',
+        receiver_city VARCHAR(100) DEFAULT '',
+        receiver_pincode VARCHAR(20) DEFAULT '',
+        receiver_state VARCHAR(100) DEFAULT '',
+        receiver_country VARCHAR(100) DEFAULT '',
+        receiver_gstin_type VARCHAR(50) DEFAULT '',
+        receiver_gstin_no VARCHAR(50) DEFAULT '',
+        package_type VARCHAR(50) DEFAULT 'parcel',
+        weight DECIMAL(10,2) DEFAULT 0,
+        length_cm DECIMAL(10,2) DEFAULT 0,
+        breadth DECIMAL(10,2) DEFAULT 0,
+        height DECIMAL(10,2) DEFAULT 0,
+        no_of_pieces INT DEFAULT 1,
+        content_description TEXT,
+        declared_value DECIMAL(10,2) DEFAULT 0,
+        is_fragile TINYINT DEFAULT 0,
+        remarks TEXT,
+        status VARCHAR(20) DEFAULT 'pending',
+        admin_notes TEXT,
+        shipment_id INT DEFAULT NULL,
+        tracking_number VARCHAR(50) DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY idx_request_awb (request_awb),
+        KEY idx_customer_id (customer_id),
+        KEY idx_customer_email (customer_email),
+        KEY idx_status (status)
+    ) $charset;";
+
+    // Request updates / timeline table (synced from Node.js backend)
+    $sql_request_updates = "CREATE TABLE IF NOT EXISTS request_updates (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        request_id INT NOT NULL,
+        update_type VARCHAR(30) DEFAULT 'info',
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        metadata LONGTEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_request_id (request_id)
+    ) $charset;";
+
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-    dbDelta($sql);
+    dbDelta($sql_customers);
+    dbDelta($sql_booking_requests);
+    dbDelta($sql_request_updates);
 });
+
+// ══════════════════════════════════════
+//  SELF-HEALING TABLE CREATION ON INIT
+// ══════════════════════════════════════
+
+add_action('init', function () {
+    global $wpdb;
+    // Only run once per day (use transient to avoid repeated checks)
+    if (get_transient('pe_cp_tables_checked')) return;
+
+    $charset = $wpdb->get_charset_collate();
+
+    // Check if booking_requests table exists
+    if (!$wpdb->get_var("SHOW TABLES LIKE 'booking_requests'")) {
+        $wpdb->query("CREATE TABLE IF NOT EXISTS booking_requests (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            request_awb VARCHAR(20) NOT NULL,
+            customer_id INT DEFAULT NULL,
+            customer_name VARCHAR(100) DEFAULT '',
+            customer_email VARCHAR(150) DEFAULT '',
+            customer_phone VARCHAR(20) DEFAULT '',
+            customer_company VARCHAR(150) DEFAULT '',
+            sender_name VARCHAR(100) DEFAULT '',
+            sender_company VARCHAR(150) DEFAULT '',
+            sender_email VARCHAR(150) DEFAULT '',
+            sender_phone VARCHAR(20) DEFAULT '',
+            sender_address VARCHAR(255) DEFAULT '',
+            sender_address_2 VARCHAR(255) DEFAULT '',
+            sender_city VARCHAR(100) DEFAULT '',
+            sender_pincode VARCHAR(20) DEFAULT '',
+            sender_state VARCHAR(100) DEFAULT '',
+            sender_country VARCHAR(100) DEFAULT 'INDIA',
+            sender_gstin_type VARCHAR(50) DEFAULT '',
+            sender_gstin_no VARCHAR(50) DEFAULT '',
+            receiver_name VARCHAR(100) DEFAULT '',
+            receiver_email VARCHAR(150) DEFAULT '',
+            receiver_phone VARCHAR(20) DEFAULT '',
+            receiver_address VARCHAR(255) DEFAULT '',
+            receiver_address_2 VARCHAR(255) DEFAULT '',
+            receiver_city VARCHAR(100) DEFAULT '',
+            receiver_pincode VARCHAR(20) DEFAULT '',
+            receiver_state VARCHAR(100) DEFAULT '',
+            receiver_country VARCHAR(100) DEFAULT '',
+            receiver_gstin_type VARCHAR(50) DEFAULT '',
+            receiver_gstin_no VARCHAR(50) DEFAULT '',
+            package_type VARCHAR(50) DEFAULT 'parcel',
+            weight DECIMAL(10,2) DEFAULT 0,
+            length_cm DECIMAL(10,2) DEFAULT 0,
+            breadth DECIMAL(10,2) DEFAULT 0,
+            height DECIMAL(10,2) DEFAULT 0,
+            no_of_pieces INT DEFAULT 1,
+            content_description TEXT,
+            declared_value DECIMAL(10,2) DEFAULT 0,
+            is_fragile TINYINT DEFAULT 0,
+            remarks TEXT,
+            status VARCHAR(20) DEFAULT 'pending',
+            admin_notes TEXT,
+            shipment_id INT DEFAULT NULL,
+            tracking_number VARCHAR(50) DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY idx_request_awb (request_awb),
+            KEY idx_customer_id (customer_id),
+            KEY idx_customer_email (customer_email),
+            KEY idx_status (status)
+        ) $charset");
+    }
+
+    if (!$wpdb->get_var("SHOW TABLES LIKE 'request_updates'")) {
+        $wpdb->query("CREATE TABLE IF NOT EXISTS request_updates (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            request_id INT NOT NULL,
+            update_type VARCHAR(30) DEFAULT 'info',
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            metadata LONGTEXT DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_request_id (request_id)
+        ) $charset");
+    }
+
+    set_transient('pe_cp_tables_checked', 1, DAY_IN_SECONDS);
+}, 5);
+
+// ══════════════════════════════════════
+//  REST API: SYNC ENDPOINTS (Node.js → WP)
+// ══════════════════════════════════════
+
+add_action('rest_api_init', function () {
+    // Sync a new booking request from Node.js backend
+    register_rest_route('pe-cp/v1', '/sync-booking', [
+        'methods' => 'POST',
+        'callback' => 'pe_cp_rest_sync_booking',
+        'permission_callback' => 'pe_cp_rest_verify_sync_key',
+    ]);
+
+    // Sync a status update from Node.js backend
+    register_rest_route('pe-cp/v1', '/sync-status', [
+        'methods' => 'POST',
+        'callback' => 'pe_cp_rest_sync_status',
+        'permission_callback' => 'pe_cp_rest_verify_sync_key',
+    ]);
+});
+
+/**
+ * Verify the sync API key from the request header.
+ */
+function pe_cp_rest_verify_sync_key($request)
+{
+    $key = $request->get_header('X-Sync-Key');
+    if (!$key || !defined('PE_CP_SYNC_KEY')) return false;
+    return hash_equals(PE_CP_SYNC_KEY, $key);
+}
+
+/**
+ * REST: Sync a new booking request into the WP database.
+ * Called by Node.js backend after creating a booking request.
+ */
+function pe_cp_rest_sync_booking($request)
+{
+    global $wpdb;
+    $d = $request->get_json_params();
+
+    $awb = sanitize_text_field($d['request_awb'] ?? '');
+    if (!$awb) {
+        return new WP_REST_Response(['success' => false, 'message' => 'request_awb required'], 400);
+    }
+
+    // Check if already exists (idempotent)
+    $exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM booking_requests WHERE request_awb = %s", $awb));
+    if ($exists) {
+        return new WP_REST_Response(['success' => true, 'message' => 'Already synced']);
+    }
+
+    $wpdb->insert('booking_requests', [
+        'request_awb'         => $awb,
+        'customer_id'         => intval($d['customer_id'] ?? 0) ?: null,
+        'customer_name'       => sanitize_text_field($d['customer_name'] ?? ''),
+        'customer_email'      => sanitize_email($d['customer_email'] ?? ''),
+        'customer_phone'      => sanitize_text_field($d['customer_phone'] ?? ''),
+        'customer_company'    => sanitize_text_field($d['customer_company'] ?? ''),
+        'sender_name'         => sanitize_text_field($d['sender_name'] ?? ''),
+        'sender_company'      => sanitize_text_field($d['sender_company'] ?? ''),
+        'sender_email'        => sanitize_email($d['sender_email'] ?? ''),
+        'sender_phone'        => sanitize_text_field($d['sender_phone'] ?? ''),
+        'sender_address'      => sanitize_text_field($d['sender_address'] ?? ''),
+        'sender_address_2'    => sanitize_text_field($d['sender_address_2'] ?? ''),
+        'sender_city'         => sanitize_text_field($d['sender_city'] ?? ''),
+        'sender_pincode'      => sanitize_text_field($d['sender_pincode'] ?? ''),
+        'sender_state'        => sanitize_text_field($d['sender_state'] ?? ''),
+        'sender_country'      => sanitize_text_field($d['sender_country'] ?? 'INDIA'),
+        'sender_gstin_type'   => sanitize_text_field($d['sender_gstin_type'] ?? ''),
+        'sender_gstin_no'     => sanitize_text_field($d['sender_gstin_no'] ?? ''),
+        'receiver_name'       => sanitize_text_field($d['receiver_name'] ?? ''),
+        'receiver_email'      => sanitize_email($d['receiver_email'] ?? ''),
+        'receiver_phone'      => sanitize_text_field($d['receiver_phone'] ?? ''),
+        'receiver_address'    => sanitize_text_field($d['receiver_address'] ?? ''),
+        'receiver_address_2'  => sanitize_text_field($d['receiver_address_2'] ?? ''),
+        'receiver_city'       => sanitize_text_field($d['receiver_city'] ?? ''),
+        'receiver_pincode'    => sanitize_text_field($d['receiver_pincode'] ?? ''),
+        'receiver_state'      => sanitize_text_field($d['receiver_state'] ?? ''),
+        'receiver_country'    => sanitize_text_field($d['receiver_country'] ?? ''),
+        'receiver_gstin_type' => sanitize_text_field($d['receiver_gstin_type'] ?? ''),
+        'receiver_gstin_no'   => sanitize_text_field($d['receiver_gstin_no'] ?? ''),
+        'package_type'        => sanitize_text_field($d['package_type'] ?? 'parcel'),
+        'weight'              => floatval($d['weight'] ?? 0),
+        'length_cm'           => floatval($d['length'] ?? 0),
+        'breadth'             => floatval($d['breadth'] ?? 0),
+        'height'              => floatval($d['height'] ?? 0),
+        'no_of_pieces'        => intval($d['no_of_pieces'] ?? 1),
+        'content_description' => sanitize_textarea_field($d['content_description'] ?? ''),
+        'declared_value'      => floatval($d['declared_value'] ?? 0),
+        'is_fragile'          => intval($d['is_fragile'] ?? 0),
+        'remarks'             => sanitize_textarea_field($d['remarks'] ?? ''),
+        'status'              => sanitize_text_field($d['status'] ?? 'pending'),
+    ]);
+
+    $local_id = $wpdb->insert_id;
+
+    // Insert initial timeline entry
+    if ($local_id) {
+        $wpdb->insert('request_updates', [
+            'request_id'  => $local_id,
+            'update_type' => 'info',
+            'title'       => 'Request Submitted',
+            'description' => 'Your booking request has been submitted successfully and is awaiting review.',
+        ]);
+    }
+
+    return new WP_REST_Response(['success' => true, 'wp_id' => $local_id]);
+}
+
+/**
+ * REST: Sync a status update into the WP database.
+ * Called by Node.js backend after admin changes booking request status.
+ */
+function pe_cp_rest_sync_status($request)
+{
+    global $wpdb;
+    $d = $request->get_json_params();
+
+    $awb = sanitize_text_field($d['request_awb'] ?? '');
+    if (!$awb) {
+        return new WP_REST_Response(['success' => false, 'message' => 'request_awb required'], 400);
+    }
+
+    // Find local booking request by AWB
+    $local = $wpdb->get_row($wpdb->prepare(
+        "SELECT id FROM booking_requests WHERE request_awb = %s", $awb
+    ));
+
+    if (!$local) {
+        return new WP_REST_Response(['success' => false, 'message' => 'Booking request not found in WP DB'], 404);
+    }
+
+    // Update the booking request fields
+    $update_data = ['status' => sanitize_text_field($d['status'] ?? 'pending')];
+
+    if (isset($d['admin_notes'])) {
+        $update_data['admin_notes'] = sanitize_textarea_field($d['admin_notes']);
+    }
+    if (isset($d['shipment_id'])) {
+        $update_data['shipment_id'] = intval($d['shipment_id']) ?: null;
+    }
+    if (isset($d['tracking_number'])) {
+        $update_data['tracking_number'] = sanitize_text_field($d['tracking_number']);
+    }
+
+    $wpdb->update('booking_requests', $update_data, ['id' => $local->id]);
+
+    // Insert timeline entries
+    $updates = $d['updates'] ?? [];
+    foreach ($updates as $upd) {
+        $wpdb->insert('request_updates', [
+            'request_id'  => $local->id,
+            'update_type' => sanitize_text_field($upd['type'] ?? 'info'),
+            'title'       => sanitize_text_field($upd['title'] ?? ''),
+            'description' => sanitize_textarea_field($upd['description'] ?? ''),
+            'metadata'    => isset($upd['metadata']) ? wp_json_encode($upd['metadata']) : null,
+        ]);
+    }
+
+    return new WP_REST_Response(['success' => true, 'synced_updates' => count($updates)]);
+}

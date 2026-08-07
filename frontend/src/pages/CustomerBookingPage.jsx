@@ -125,6 +125,7 @@ export default function CustomerBookingPage() {
     try {
       const params = new URLSearchParams(window.location.search)
       const apiPayload = {
+        customer_id: params.get('cust_id') ? parseInt(params.get('cust_id')) : null,
         customer_name: params.get('cust_name') || form.sender_name,
         customer_email: params.get('cust_email') || form.sender_email,
         customer_phone: params.get('cust_phone') || form.sender_phone,

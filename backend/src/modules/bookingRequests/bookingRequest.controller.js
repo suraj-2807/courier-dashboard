@@ -1,4 +1,5 @@
 import { query, execute } from '../../config/db.js'
+import { syncBookingToWP, syncStatusToWP } from '../../utils/wpSync.js'
 
 /**
  * Generate a 7-digit random AWB number for booking requests.
@@ -22,6 +23,7 @@ async function generateRequestAwb() {
 export const createBookingRequest = async (req, res) => {
   try {
     const {
+      customer_id,
       customer_name, customer_email, customer_phone, customer_company,
       sender_name, sender_company, sender_email, sender_phone,
       sender_address, sender_address_2, sender_city, sender_pincode,
@@ -46,9 +48,11 @@ export const createBookingRequest = async (req, res) => {
 
     const request_awb = await generateRequestAwb()
 
+    const resolvedCustomerId = customer_id ? parseInt(customer_id) : null
+
     const insertResult = await execute(
       `INSERT INTO booking_requests (
-        request_awb, customer_name, customer_email, customer_phone, customer_company,
+        request_awb, customer_id, customer_name, customer_email, customer_phone, customer_company,
         sender_name, sender_company, sender_email, sender_phone,
         sender_address, sender_address_2, sender_city, sender_pincode,
         sender_state, sender_country, sender_gstin_type, sender_gstin_no,
@@ -57,9 +61,10 @@ export const createBookingRequest = async (req, res) => {
         receiver_state, receiver_country, receiver_gstin_type, receiver_gstin_no,
         package_type, weight, \`length\`, breadth, height, no_of_pieces,
         content_description, declared_value, is_fragile, remarks, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         request_awb,
+        resolvedCustomerId,
         customer_name || sender_name || '',
         customer_email || sender_email || '',
         customer_phone || sender_phone || '',
@@ -102,6 +107,39 @@ export const createBookingRequest = async (req, res) => {
         ]
       )
     }
+
+    // ── Fire-and-forget sync to WordPress DB ──
+    syncBookingToWP({
+      request_awb,
+      customer_id: resolvedCustomerId,
+      customer_name: customer_name || sender_name || '',
+      customer_email: customer_email || sender_email || '',
+      customer_phone: customer_phone || sender_phone || '',
+      customer_company: customer_company || sender_company || '',
+      sender_name: sender_name || '', sender_company: sender_company || '',
+      sender_email: sender_email || '', sender_phone: sender_phone || '',
+      sender_address: sender_address || '', sender_address_2: sender_address_2 || '',
+      sender_city: sender_city || '', sender_pincode: sender_pincode || '',
+      sender_state: sender_state || '', sender_country: sender_country || 'INDIA',
+      sender_gstin_type: sender_gstin_type || '', sender_gstin_no: sender_gstin_no || '',
+      receiver_name: receiver_name || '', receiver_email: receiver_email || '',
+      receiver_phone: receiver_phone || '',
+      receiver_address: receiver_address || '', receiver_address_2: receiver_address_2 || '',
+      receiver_city: receiver_city || '', receiver_pincode: receiver_pincode || '',
+      receiver_state: receiver_state || '', receiver_country: receiver_country || '',
+      receiver_gstin_type: receiver_gstin_type || '', receiver_gstin_no: receiver_gstin_no || '',
+      package_type: package_type || 'parcel',
+      weight: parseFloat(weight) || 0,
+      length: parseFloat(length) || 0,
+      breadth: parseFloat(breadth) || 0,
+      height: parseFloat(height) || 0,
+      no_of_pieces: parseInt(no_of_pieces) || 1,
+      content_description: content_description || '',
+      declared_value: parseFloat(declared_value) || 0,
+      is_fragile: is_fragile ? 1 : 0,
+      remarks: remarks || '',
+      status: 'pending'
+    }).catch(() => {}) // never throw
 
     return res.status(201).json({
       success: true,
@@ -260,6 +298,9 @@ export const updateBookingRequestStatus = async (req, res) => {
     const rows = await query('SELECT * FROM booking_requests WHERE id = ?', [id])
     const newRequest = rows[0]
 
+    // Collect timeline updates to sync to WP
+    const wpUpdates = []
+
     // Log status change update
     if (oldRequest.status !== status) {
       const title = `Status updated to ${status.charAt(0).toUpperCase() + status.slice(1)}`
@@ -268,6 +309,7 @@ export const updateBookingRequestStatus = async (req, res) => {
         `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
         [id, 'status_change', title, description, JSON.stringify({ old_status: oldRequest.status, new_status: status })]
       )
+      wpUpdates.push({ type: 'status_change', title, description, metadata: JSON.stringify({ old_status: oldRequest.status, new_status: status }) })
     }
 
     // Log shipment created update
@@ -279,6 +321,7 @@ export const updateBookingRequestStatus = async (req, res) => {
         `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
         [id, 'shipment_created', title, description, JSON.stringify({ shipment_id, tracking_number: trNum })]
       )
+      wpUpdates.push({ type: 'shipment_created', title, description, metadata: JSON.stringify({ shipment_id, tracking_number: trNum }) })
     }
 
     // Log admin note update
@@ -287,7 +330,18 @@ export const updateBookingRequestStatus = async (req, res) => {
         `INSERT INTO request_updates (request_id, update_type, title, description) VALUES (?, ?, ?, ?)`,
         [id, 'admin_note', 'Admin Note Added', admin_notes]
       )
+      wpUpdates.push({ type: 'admin_note', title: 'Admin Note Added', description: admin_notes })
     }
+
+    // ── Fire-and-forget sync to WordPress DB ──
+    syncStatusToWP({
+      request_awb: newRequest.request_awb,
+      status: newRequest.status,
+      admin_notes: newRequest.admin_notes,
+      shipment_id: newRequest.shipment_id,
+      tracking_number: newRequest.tracking_number,
+      updates: wpUpdates
+    }).catch(() => {}) // never throw
 
     return res.json({ success: true, request: newRequest })
   } catch (error) {

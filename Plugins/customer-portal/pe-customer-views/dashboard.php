@@ -21,15 +21,21 @@ $iframe_booking_url = esc_url(add_query_arg([
     'cust_name' => $cust['name'],
     'cust_email' => $cust['email'],
     'cust_phone' => $cust['phone'],
-    'cust_company' => $cust['company'] ?? ''
+    'cust_company' => $cust['company'] ?? '',
+    'cust_id' => $cust['customer_id'] ?? ''
 ], PE_ADMIN_PORTAL_URL));
 
 // Count pending requests for sidebar badge
 $cust_email_for_req = $cust['email'] ?? '';
 $cust_phone_for_req = $cust['phone'] ?? '';
+$cust_id_for_req = $cust['customer_id'] ?? 0;
 $where_requests = $wpdb->prepare(
-    "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s)",
-    $cust_email_for_req, $cust_email_for_req, $cust_phone_for_req, $cust_phone_for_req
+    "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s" .
+    ($cust_id_for_req ? " OR customer_id = %d" : "") . ")",
+    ...array_merge(
+        [$cust_email_for_req, $cust_email_for_req, $cust_phone_for_req, $cust_phone_for_req],
+        $cust_id_for_req ? [$cust_id_for_req] : []
+    )
 );
 $pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE status = 'pending' AND ($where_requests)"));
 ?>
@@ -237,6 +243,25 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
 .cp-live-dot{width:6px;height:6px;border-radius:50%;background:var(--cpgreen);animation:cp-pulse-live 1.5s ease-in-out infinite}
 .cp-live-badge.paused{opacity:.3}
 .cp-live-badge.paused .cp-live-dot{animation:none}
+
+/* ── TOAST NOTIFICATIONS ── */
+.cp-toast-container{position:fixed;top:20px;right:20px;z-index:200000;display:flex;flex-direction:column;gap:10px;pointer-events:none}
+.cp-toast{pointer-events:auto;display:flex;align-items:center;gap:12px;padding:14px 20px;border-radius:12px;background:#fff;border:1px solid var(--cpbdr);box-shadow:0 12px 40px rgba(0,0,0,.12),0 4px 12px rgba(0,0,0,.06);min-width:300px;max-width:420px;animation:cp-toast-in .4s ease;font-size:13px;font-weight:600;color:var(--cptext)}
+.cp-toast.removing{animation:cp-toast-out .3s ease forwards}
+.cp-toast-icon{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.cp-toast-icon.success{background:rgba(16,185,129,.1);color:var(--cpgreen)}
+.cp-toast-icon.info{background:rgba(59,130,246,.1);color:var(--cpblue)}
+.cp-toast-icon.warning{background:rgba(245,158,11,.1);color:var(--cpamber)}
+.cp-toast-icon.error{background:rgba(187,0,19,.1);color:var(--cpred)}
+.cp-toast-body{flex:1;min-width:0}
+.cp-toast-title{font-weight:700;margin-bottom:2px}
+.cp-toast-desc{font-size:11px;color:var(--cptext2);font-weight:500}
+@keyframes cp-toast-in{from{opacity:0;transform:translateX(40px) scale(.95)}to{opacity:1;transform:translateX(0) scale(1)}}
+@keyframes cp-toast-out{to{opacity:0;transform:translateX(40px) scale(.95)}}
+
+/* ── ROW HIGHLIGHT ON CHANGE ── */
+@keyframes cp-row-highlight{0%{background:rgba(16,185,129,.12)}100%{background:transparent}}
+.cp-t tbody tr.cp-row-changed{animation:cp-row-highlight 2s ease-out}
 </style>
 
 <div class="cp-app" id="cp-app">
@@ -415,6 +440,9 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
   <div class="cp-dp" id="cp-detail-panel"></div>
 </div>
 
+<!-- TOAST CONTAINER -->
+<div class="cp-toast-container" id="cp-toast-container"></div>
+
 <script>
 var cpPage=1, cpSearch='';
 
@@ -464,7 +492,31 @@ function cpLoadRequests(p, silent) {
         var r = d.data;
         // Store hash to detect changes for polling
         var newHash = JSON.stringify(r.rows.map(function(rw){return rw.request_awb+':'+rw.status}));
+        
+        // Detect status changes and show toast notifications
+        if (silent && cpReqLastHash && newHash !== cpReqLastHash) {
+            try {
+                var oldItems = JSON.parse(cpReqLastHash);
+                var newItems = JSON.parse(newHash);
+                var oldMap = {};
+                oldItems.forEach(function(item) {
+                    var parts = item.split(':');
+                    oldMap[parts[0]] = parts[1];
+                });
+                newItems.forEach(function(item) {
+                    var parts = item.split(':');
+                    var awb = parts[0], st = parts[1];
+                    if (oldMap[awb] && oldMap[awb] !== st) {
+                        var stLabel = st.charAt(0).toUpperCase() + st.slice(1);
+                        var iconType = st === 'confirmed' ? 'success' : st === 'rejected' ? 'error' : st === 'processing' ? 'info' : 'warning';
+                        cpShowToast(iconType, 'Status Updated', 'Request ' + awb + ' is now ' + stLabel);
+                    }
+                });
+            } catch(e) {}
+        }
+        
         if (silent && newHash === cpReqLastHash) return; // No change, skip re-render
+        var prevHash = cpReqLastHash;
         cpReqLastHash = newHash;
         var h = '';
         h += '<div class="cp-tc"><div class="cp-th"><h3><i class="fa-solid fa-clipboard-list"></i> Booking Requests <span class="badge">' + r.total + '</span></h3></div>';
@@ -630,6 +682,28 @@ function cpAjax(action, params, callback, retried) {
             if (callback) callback(d);
         })
         .catch(err => console.error('CP AJAX Error:', action, err));
+}
+
+// Toast Notification System
+function cpShowToast(type, title, desc) {
+    var container = document.getElementById('cp-toast-container');
+    if (!container) return;
+    var iconMap = {
+        success: 'fa-circle-check',
+        info: 'fa-circle-info',
+        warning: 'fa-triangle-exclamation',
+        error: 'fa-circle-xmark'
+    };
+    var toast = document.createElement('div');
+    toast.className = 'cp-toast';
+    toast.innerHTML = '<div class="cp-toast-icon ' + type + '"><i class="fa-solid ' + (iconMap[type] || 'fa-circle-info') + '"></i></div>'
+        + '<div class="cp-toast-body"><div class="cp-toast-title">' + title + '</div><div class="cp-toast-desc">' + desc + '</div></div>';
+    container.appendChild(toast);
+    // Auto-remove after 5 seconds
+    setTimeout(function() {
+        toast.classList.add('removing');
+        setTimeout(function() { toast.remove(); }, 300);
+    }, 5000);
 }
 
 function cpLogout() {
