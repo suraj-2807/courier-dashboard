@@ -1,6 +1,7 @@
 import { query, execute } from '../../config/db.js'
 import generateTracking from '../../utils/generateTracking.js'
 import { pushShipmentToVendor } from '../../services/vendorApiPush.service.js'
+import { syncAwbToWP } from '../../utils/wpSync.js'
 
 export const createBooking = async (req, res) => {
   try {
@@ -255,6 +256,34 @@ export const createBooking = async (req, res) => {
           sender_city || 'Origin'
         ]
       )
+
+      // ── Fire-and-forget sync to WordPress AWBENTRY/parcel_history ──
+      syncAwbToWP({
+        awb_no: parsedAwb,
+        awb_date: currentDate,
+        awb_time: currentTime,
+        service: vendor_config_id ? 1007 : 0,
+        receiver_name: receiver_name || '',
+        receiver_phone: receiver_phone || '',
+        receiver_address: receiver_address || '',
+        receiver_address_2: receiver_address_2 || '',
+        receiver_city: receiver_city || '',
+        receiver_pincode: receiver_pincode || '',
+        receiver_country: receiver_country || '',
+        sender_name: sender_name || '',
+        sender_address: sender_address || '',
+        sender_address_2: sender_address_2 || '',
+        sender_city: sender_city || '',
+        sender_pincode: sender_pincode || '',
+        sender_phone: sender_phone || '',
+        weight: parseFloat(weight) || 0,
+        no_of_pieces: parseInt(no_of_pieces) || 1,
+        payment_mode: payment_mode || 'prepaid',
+        customer_name: req.body.customer_name || sender_name || 'Portal User',
+        remarks: remarks || '',
+        vendor_name: vendName,
+        vendor_code: vendor_code || ''
+      }).catch(() => {})
     } catch (dbSyncErr) {
       console.error('Failed to sync booking to AWBENTRY/parcel_history:', dbSyncErr.message)
     }
