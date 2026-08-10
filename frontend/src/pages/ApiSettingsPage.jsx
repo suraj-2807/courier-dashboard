@@ -70,10 +70,11 @@ const EMPTY_FORM = {
   response_tracking_path: '',
   response_success_path: '',
   response_success_value: '',
-  // Services & Codes
   available_services: [],
   available_vendor_codes: [],
   available_product_codes: [],
+  required_fields: null,
+  product_code_restrictions: null,
   // Settings
   environment: 'production',
   is_active: true,
@@ -85,6 +86,20 @@ const EMPTY_FORM = {
 
 const EMPTY_SERVICE = { code: '', label: '' }
 const EMPTY_CODE_ENTRY = { code: '', label: '' }
+const EMPTY_RESTRICTION = { code: '', label: '', countries: '', min_weight: '', max_weight: '', package_types: '' }
+
+// All configurable form sections for required_fields
+const ALL_FORM_SECTIONS = [
+  { key: 'vendor_code', label: 'Vendor Code' },
+  { key: 'product_code', label: 'Product Code' },
+  { key: 'service_code', label: 'Service Code' },
+  { key: 'invoice', label: 'Invoice & Export Details' },
+  { key: 'eawb', label: 'eAWB Details' },
+  { key: 'additional_charges', label: 'Additional Charges' },
+  { key: 'buyer_details', label: 'Buyer Details' },
+  { key: 'gst_manifest', label: 'GST & Manifest' },
+  { key: 'advanced_config', label: 'Advanced Configuration' }
+]
 
 export default function ApiSettingsPage() {
   const queryClient = useQueryClient()
@@ -98,6 +113,7 @@ export default function ApiSettingsPage() {
   const [newService, setNewService] = useState(EMPTY_SERVICE)
   const [newVendorCode, setNewVendorCode] = useState(EMPTY_CODE_ENTRY)
   const [newProductCode, setNewProductCode] = useState(EMPTY_CODE_ENTRY)
+  const [newRestriction, setNewRestriction] = useState(EMPTY_RESTRICTION)
   const [expandedLogs, setExpandedLogs] = useState(null)
   const [logsData, setLogsData] = useState([])
   const [logsLoading, setLogsLoading] = useState(false)
@@ -202,6 +218,8 @@ export default function ApiSettingsPage() {
       available_services: config.available_services || [],
       available_vendor_codes: config.available_vendor_codes || [],
       available_product_codes: config.available_product_codes || [],
+      required_fields: config.required_fields || null,
+      product_code_restrictions: config.product_code_restrictions || null,
       environment: config.environment || 'production',
       is_active: config.is_active,
       field_mapping: config.field_mapping || {}
@@ -295,6 +313,8 @@ export default function ApiSettingsPage() {
       available_services: form.available_services,
       available_vendor_codes: form.available_vendor_codes,
       available_product_codes: form.available_product_codes,
+      required_fields: form.required_fields,
+      product_code_restrictions: form.product_code_restrictions,
       environment: form.environment,
       is_active: form.is_active,
       request_template,
@@ -415,6 +435,58 @@ export default function ApiSettingsPage() {
     setForm(prev => ({
       ...prev,
       available_product_codes: prev.available_product_codes.filter((_, i) => i !== idx)
+    }))
+  }
+
+  // Toggle a field in required_fields. If required_fields is null (show all), clicking a field
+  // initializes it with all sections except the toggled one. Toggling all ON returns to null.
+  const toggleRequiredField = (fieldKey) => {
+    setForm(prev => {
+      const current = prev.required_fields
+      if (current === null) {
+        // Currently showing all → turn off this one field
+        const allKeys = ALL_FORM_SECTIONS.map(s => s.key)
+        return { ...prev, required_fields: allKeys.filter(k => k !== fieldKey) }
+      }
+      if (current.includes(fieldKey)) {
+        // Remove it
+        const updated = current.filter(k => k !== fieldKey)
+        return { ...prev, required_fields: updated.length === 0 ? [] : updated }
+      } else {
+        // Add it
+        const updated = [...current, fieldKey]
+        // If all fields are selected, set to null (show all / backward compat)
+        if (updated.length === ALL_FORM_SECTIONS.length) {
+          return { ...prev, required_fields: null }
+        }
+        return { ...prev, required_fields: updated }
+      }
+    })
+  }
+
+  const addRestriction = () => {
+    if (!newRestriction.code) return
+    const restriction = {
+      code: newRestriction.code.toUpperCase(),
+      label: newRestriction.label || newRestriction.code.toUpperCase(),
+      countries: newRestriction.countries ? newRestriction.countries.split(',').map(c => c.trim().toUpperCase()).filter(Boolean) : ['*'],
+      min_weight: newRestriction.min_weight ? parseFloat(newRestriction.min_weight) : undefined,
+      max_weight: newRestriction.max_weight ? parseFloat(newRestriction.max_weight) : undefined,
+      package_types: newRestriction.package_types ? newRestriction.package_types.split(',').map(t => t.trim().toUpperCase()).filter(Boolean) : undefined
+    }
+    // Clean undefined values
+    Object.keys(restriction).forEach(k => restriction[k] === undefined && delete restriction[k])
+    setForm(prev => ({
+      ...prev,
+      product_code_restrictions: [...(prev.product_code_restrictions || []), restriction]
+    }))
+    setNewRestriction(EMPTY_RESTRICTION)
+  }
+
+  const removeRestriction = (idx) => {
+    setForm(prev => ({
+      ...prev,
+      product_code_restrictions: (prev.product_code_restrictions || []).filter((_, i) => i !== idx)
     }))
   }
 
@@ -1296,6 +1368,150 @@ export default function ApiSettingsPage() {
                       >
                         <Plus style={{ width: '14px', height: '14px' }} />
                         Add
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ── Section: Required Form Fields ── */}
+                  <SectionLabel>Required Booking Form Fields</SectionLabel>
+                  <div style={{ marginBottom: '24px' }}>
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginBottom: '10px' }}>
+                      Select which form sections are shown when this vendor is selected in the booking form.
+                      If all are selected or none specified (default), all fields will be visible.
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
+                      {ALL_FORM_SECTIONS.map(s => {
+                        const isChecked = form.required_fields === null || form.required_fields.includes(s.key)
+                        return (
+                          <label
+                            key={s.key}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '8px',
+                              padding: '8px 12px', borderRadius: '10px',
+                              background: isChecked ? 'rgba(109, 40, 217, 0.06)' : 'var(--color-surface-alt)',
+                              border: `1px solid ${isChecked ? 'rgba(109, 40, 217, 0.3)' : 'var(--color-border)'}`,
+                              cursor: 'pointer', fontSize: '12px', fontWeight: 600,
+                              color: isChecked ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => toggleRequiredField(s.key)}
+                              style={{ accentColor: 'var(--color-primary)', cursor: 'pointer' }}
+                            />
+                            <span>{s.label}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* ── Section: Product Code Restrictions ── */}
+                  <SectionLabel>Product Code Restrictions</SectionLabel>
+                  <div style={{ marginBottom: '24px' }}>
+                    <p style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginBottom: '10px' }}>
+                      Add country/weight restrictions to product codes. Ineligible codes will be disabled or show warnings in booking.
+                    </p>
+
+                    {(form.product_code_restrictions || []).length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                        {(form.product_code_restrictions || []).map((r, idx) => (
+                          <div
+                            key={idx}
+                            style={{
+                              display: 'flex', alignItems: 'center', justifyBetween: 'space-between', gap: '10px',
+                              padding: '8px 12px', borderRadius: '10px',
+                              background: 'var(--color-surface-alt)',
+                              border: '1px solid var(--color-border)',
+                              fontSize: '12px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, flexWrap: 'wrap' }}>
+                              <code style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: '#6D28D9', fontSize: '12px' }}>
+                                {r.code}
+                              </code>
+                              <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>{r.label}</span>
+                              <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)' }}>
+                                Countries: {r.countries ? r.countries.join(', ') : 'All (*)'}
+                              </span>
+                              {(r.min_weight !== undefined || r.max_weight !== undefined) && (
+                                <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)' }}>
+                                  Weight: {r.min_weight ?? 0}kg – {r.max_weight ?? '∞'}kg
+                                </span>
+                              )}
+                              {r.package_types && (
+                                <span style={{ fontSize: '11px', color: 'var(--color-text-tertiary)' }}>
+                                  Pkg: {r.package_types.join(', ')}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeRestriction(idx)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: 'var(--color-text-tertiary)' }}
+                            >
+                              <X style={{ width: '14px', height: '14px' }} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                      <input
+                        value={newRestriction.code}
+                        onChange={(e) => setNewRestriction({ ...newRestriction, code: e.target.value.toUpperCase() })}
+                        placeholder="Product Code (e.g. SPX)"
+                        style={{ ...inputStyle, fontSize: '12px' }}
+                      />
+                      <input
+                        value={newRestriction.label}
+                        onChange={(e) => setNewRestriction({ ...newRestriction, label: e.target.value })}
+                        placeholder="Label (e.g. Express Parcel)"
+                        style={{ ...inputStyle, fontSize: '12px' }}
+                      />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                      <input
+                        value={newRestriction.countries}
+                        onChange={(e) => setNewRestriction({ ...newRestriction, countries: e.target.value })}
+                        placeholder="Countries (e.g. US, UK, IN or * for all)"
+                        style={{ ...inputStyle, fontSize: '12px' }}
+                      />
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={newRestriction.min_weight}
+                        onChange={(e) => setNewRestriction({ ...newRestriction, min_weight: e.target.value })}
+                        placeholder="Min Wt (kg)"
+                        style={{ ...inputStyle, fontSize: '12px' }}
+                      />
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={newRestriction.max_weight}
+                        onChange={(e) => setNewRestriction({ ...newRestriction, max_weight: e.target.value })}
+                        placeholder="Max Wt (kg)"
+                        style={{ ...inputStyle, fontSize: '12px' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        onClick={addRestriction}
+                        disabled={!newRestriction.code}
+                        style={{
+                          padding: '8px 16px', borderRadius: '10px', border: 'none',
+                          background: newRestriction.code ? '#6D28D9' : 'var(--color-surface-alt)',
+                          color: newRestriction.code ? '#fff' : 'var(--color-text-tertiary)',
+                          fontSize: '12px', fontWeight: 700, cursor: newRestriction.code ? 'pointer' : 'not-allowed',
+                          fontFamily: 'var(--font-family-body)', display: 'flex', alignItems: 'center', gap: '4px'
+                        }}
+                      >
+                        <Plus style={{ width: '14px', height: '14px' }} />
+                        Add Restriction Rule
                       </button>
                     </div>
                   </div>

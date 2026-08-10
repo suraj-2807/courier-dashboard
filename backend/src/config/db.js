@@ -119,6 +119,22 @@ export async function initializeDb() {
       } else {
         console.log('available_product_codes column already exists.')
       }
+
+      if (!vendorColNames.includes('required_fields')) {
+        console.log('Adding required_fields column to vendor_api_configs...')
+        await execute("ALTER TABLE vendor_api_configs ADD COLUMN required_fields JSON DEFAULT NULL AFTER available_product_codes")
+        console.log('required_fields column successfully added.')
+      } else {
+        console.log('required_fields column already exists.')
+      }
+
+      if (!vendorColNames.includes('product_code_restrictions')) {
+        console.log('Adding product_code_restrictions column to vendor_api_configs...')
+        await execute("ALTER TABLE vendor_api_configs ADD COLUMN product_code_restrictions JSON DEFAULT NULL AFTER required_fields")
+        console.log('product_code_restrictions column successfully added.')
+      } else {
+        console.log('product_code_restrictions column already exists.')
+      }
     } catch (vendorMigErr) {
       console.error('Vendor API config migration failed:', vendorMigErr.message)
     }

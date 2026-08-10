@@ -189,103 +189,107 @@ export const createBooking = async (req, res) => {
 
     const shipmentId = shipmentResult.insertId
 
-    // ── Step 3.5: Sync to AWBENTRY & parcel_history (for WP Admin & Customer Dashboard) ──
-    try {
-      let vendName = ''
-      if (vendor_config_id) {
+    // ── Prepare common AWB data (used by both vendor and non-vendor flows) ──
+    const parsedAwb = parseInt(tracking_number) || 0
+    const currentDate = new Date().toISOString().split('T')[0]
+    const currentTime = new Date().toTimeString().split(' ')[0]
+
+    let vendName = ''
+    if (vendor_config_id) {
+      try {
         const vendRows = await query('SELECT name FROM vendor_api_configs WHERE id = ?', [vendor_config_id])
-        if (vendRows.length > 0) {
-          vendName = vendRows[0].name
-        }
+        if (vendRows.length > 0) vendName = vendRows[0].name
+      } catch (_) {}
+    }
+
+    /**
+     * Helper: Insert AWBENTRY + parcel_history + WP sync.
+     * Called AFTER vendor push succeeds (or immediately for non-vendor bookings).
+     * This prevents orphaned AWBENTRY rows when vendor push fails.
+     */
+    const syncToAwbEntry = async (vendorAwbOverride) => {
+      try {
+        await execute(
+          `INSERT INTO AWBENTRY (
+            AWBNO, AWBDATE, SERVICE, CNEENAME, CNEEPHONE1,
+            CNEEADDRESS1, CNEEADDRESS2, CNEECITY, CNEEPINCODE, DESTNAME,
+            SNAME, SADDRESS1, SADDRESS2, SCITY, SPINCODE, SPHONE1,
+            CHARGEWEIGHT, ACTUALWEIGHT, CARTONS, PAYMENTTYPE, CUSTNAME, REMARKS,
+            VENDNAME, VENDORAWB1
+          ) VALUES (?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?,
+                    ?, ?)`,
+          [
+            parsedAwb,
+            currentDate,
+            vendor_config_id ? 1007 : 0,
+            receiver_name || '',
+            receiver_phone || '',
+            receiver_address || '',
+            receiver_address_2 || '',
+            receiver_city || '',
+            receiver_pincode || '',
+            receiver_country || '',
+            sender_name || '',
+            sender_address || '',
+            sender_address_2 || '',
+            sender_city || '',
+            sender_pincode || '',
+            sender_phone || '',
+            parseFloat(weight) || 0,
+            parseFloat(weight) || 0,
+            parseInt(no_of_pieces) || 1,
+            payment_mode || 'prepaid',
+            req.body.customer_name || sender_name || 'Portal User',
+            remarks || '',
+            vendName,
+            vendorAwbOverride || vendor_code || ''
+          ]
+        )
+
+        await execute(
+          `INSERT INTO parcel_history (AWBNO, date, time, activity, location)
+           VALUES (?, ?, ?, ?, ?)`,
+          [parsedAwb, currentDate, currentTime, 'SHIPMENT BOOKED', sender_city || 'Origin']
+        )
+
+        // Fire-and-forget sync to WordPress
+        syncAwbToWP({
+          awb_no: parsedAwb,
+          awb_date: currentDate,
+          awb_time: currentTime,
+          service: vendor_config_id ? 1007 : 0,
+          receiver_name: receiver_name || '',
+          receiver_phone: receiver_phone || '',
+          receiver_address: receiver_address || '',
+          receiver_address_2: receiver_address_2 || '',
+          receiver_city: receiver_city || '',
+          receiver_pincode: receiver_pincode || '',
+          receiver_country: receiver_country || '',
+          sender_name: sender_name || '',
+          sender_address: sender_address || '',
+          sender_address_2: sender_address_2 || '',
+          sender_city: sender_city || '',
+          sender_pincode: sender_pincode || '',
+          sender_phone: sender_phone || '',
+          weight: parseFloat(weight) || 0,
+          no_of_pieces: parseInt(no_of_pieces) || 1,
+          payment_mode: payment_mode || 'prepaid',
+          customer_name: req.body.customer_name || sender_name || 'Portal User',
+          remarks: remarks || '',
+          vendor_name: vendName,
+          vendor_code: vendorAwbOverride || vendor_code || ''
+        }).catch(() => {})
+      } catch (dbSyncErr) {
+        console.error('Failed to sync booking to AWBENTRY/parcel_history:', dbSyncErr.message)
       }
+    }
 
-      const parsedAwb = parseInt(tracking_number) || 0
-      const currentDate = new Date().toISOString().split('T')[0]
-      const currentTime = new Date().toTimeString().split(' ')[0]
-
-      // Insert into AWBENTRY
-      await execute(
-        `INSERT INTO AWBENTRY (
-          AWBNO, AWBDATE, SERVICE, CNEENAME, CNEEPHONE1,
-          CNEEADDRESS1, CNEEADDRESS2, CNEECITY, CNEEPINCODE, DESTNAME,
-          SNAME, SADDRESS1, SADDRESS2, SCITY, SPINCODE, SPHONE1,
-          CHARGEWEIGHT, ACTUALWEIGHT, CARTONS, PAYMENTTYPE, CUSTNAME, REMARKS,
-          VENDNAME, VENDORAWB1
-        ) VALUES (?, ?, ?, ?, ?,
-                  ?, ?, ?, ?, ?,
-                  ?, ?, ?, ?, ?, ?,
-                  ?, ?, ?, ?, ?, ?,
-                  ?, ?)`,
-        [
-          parsedAwb,
-          currentDate,
-          vendor_config_id ? 1007 : 0, // 1007 represents PE Global (default active vendor service)
-          receiver_name || '',
-          receiver_phone || '',
-          receiver_address || '',
-          receiver_address_2 || '',
-          receiver_city || '',
-          receiver_pincode || '',
-          receiver_country || '',
-          sender_name || '',
-          sender_address || '',
-          sender_address_2 || '',
-          sender_city || '',
-          sender_pincode || '',
-          sender_phone || '',
-          parseFloat(weight) || 0,
-          parseFloat(weight) || 0,
-          parseInt(no_of_pieces) || 1,
-          payment_mode || 'prepaid',
-          req.body.customer_name || sender_name || 'Portal User',
-          remarks || '',
-          vendName,
-          vendor_code || ''
-        ]
-      )
-
-      // Insert initial history event
-      await execute(
-        `INSERT INTO parcel_history (AWBNO, date, time, activity, location)
-         VALUES (?, ?, ?, ?, ?)`,
-        [
-          parsedAwb,
-          currentDate,
-          currentTime,
-          'SHIPMENT BOOKED',
-          sender_city || 'Origin'
-        ]
-      )
-
-      // ── Fire-and-forget sync to WordPress AWBENTRY/parcel_history ──
-      syncAwbToWP({
-        awb_no: parsedAwb,
-        awb_date: currentDate,
-        awb_time: currentTime,
-        service: vendor_config_id ? 1007 : 0,
-        receiver_name: receiver_name || '',
-        receiver_phone: receiver_phone || '',
-        receiver_address: receiver_address || '',
-        receiver_address_2: receiver_address_2 || '',
-        receiver_city: receiver_city || '',
-        receiver_pincode: receiver_pincode || '',
-        receiver_country: receiver_country || '',
-        sender_name: sender_name || '',
-        sender_address: sender_address || '',
-        sender_address_2: sender_address_2 || '',
-        sender_city: sender_city || '',
-        sender_pincode: sender_pincode || '',
-        sender_phone: sender_phone || '',
-        weight: parseFloat(weight) || 0,
-        no_of_pieces: parseInt(no_of_pieces) || 1,
-        payment_mode: payment_mode || 'prepaid',
-        customer_name: req.body.customer_name || sender_name || 'Portal User',
-        remarks: remarks || '',
-        vendor_name: vendName,
-        vendor_code: vendor_code || ''
-      }).catch(() => {})
-    } catch (dbSyncErr) {
-      console.error('Failed to sync booking to AWBENTRY/parcel_history:', dbSyncErr.message)
+    // ── Step 3.5: For NON-VENDOR bookings, sync to AWBENTRY immediately ──
+    if (!vendor_config_id) {
+      await syncToAwbEntry(null)
     }
 
     // ── Step 4: Create tracking event ──
@@ -319,8 +323,8 @@ export const createBooking = async (req, res) => {
         vendor_code: vendor_code || '',
         service_code: service_code || '',
         product_code: product_code || '',
-        booking_date: new Date().toISOString().split('T')[0],
-        booking_time: new Date().toTimeString().split(' ')[0],
+        booking_date: currentDate,
+        booking_time: currentTime,
         // Sender info
         sender_name: sender_name || '',
         sender_email: sender_email || '',
@@ -411,8 +415,8 @@ export const createBooking = async (req, res) => {
         shipmentDataForVendor
       )
 
-      // Add tracking event for vendor push
       if (vendorResult.success) {
+        // Vendor push succeeded → now sync to AWBENTRY with vendor AWB
         await execute(
           `INSERT INTO tracking_events (shipment_id, status, description, location)
            VALUES (?, ?, ?, ?)`,
@@ -423,9 +427,15 @@ export const createBooking = async (req, res) => {
             'Vendor API'
           ]
         )
+
+        // Now it's safe to create the AWBENTRY (vendor push confirmed)
+        await syncToAwbEntry(vendorResult.awbNumber || vendor_code || '')
       } else {
-        // Delete the shipment row from the DB since vendor push failed
+        // Vendor push failed → clean up everything (no orphaned AWBENTRY)
         await execute('DELETE FROM shipments WHERE id = ?', [shipmentId])
+        // Safety: also clean up any AWBENTRY/parcel_history that may have been created
+        await execute('DELETE FROM AWBENTRY WHERE AWBNO = ?', [parsedAwb]).catch(() => {})
+        await execute('DELETE FROM parcel_history WHERE AWBNO = ?', [parsedAwb]).catch(() => {})
         return res.status(400).json({
           success: false,
           message: `Vendor API Push Failed: ${vendorResult.error || 'Unknown error'}`

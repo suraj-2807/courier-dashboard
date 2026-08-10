@@ -42,7 +42,8 @@ export const getApiSettings = async (req, res) => {
 export const getActiveVendors = async (req, res) => {
   try {
     const rows = await query(
-      `SELECT id, name, vendor_code, available_services, available_vendor_codes, available_product_codes, environment, auth_type
+      `SELECT id, name, vendor_code, available_services, available_vendor_codes, available_product_codes,
+              required_fields, product_code_restrictions, environment, auth_type
        FROM vendor_api_configs
        WHERE is_active = TRUE
        ORDER BY name ASC`
@@ -204,7 +205,8 @@ export const updateApiSetting = async (req, res) => {
     // JSON fields
     const jsonFields = [
       'auth_payload_template', 'request_template', 'field_mapping',
-      'headers_template', 'available_services', 'available_vendor_codes', 'available_product_codes'
+      'headers_template', 'available_services', 'available_vendor_codes', 'available_product_codes',
+      'required_fields', 'product_code_restrictions'
     ]
 
     for (const field of jsonFields) {
@@ -670,6 +672,8 @@ function _buildConfigFromBody(body) {
     available_services: body.available_services || [],
     available_vendor_codes: body.available_vendor_codes || [],
     available_product_codes: body.available_product_codes || [],
+    required_fields: body.required_fields || null,
+    product_code_restrictions: body.product_code_restrictions || null,
     environment: body.environment || 'production',
     is_active: body.is_active !== undefined ? body.is_active : true
   }

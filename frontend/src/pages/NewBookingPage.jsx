@@ -201,6 +201,75 @@ export default function NewBookingPage() {
   const vendorServices = selectedVendor?.available_services || []
   const vendorVendorCodes = selectedVendor?.available_vendor_codes || []
   const vendorProductCodes = selectedVendor?.available_product_codes || []
+  const vendorRequiredFields = selectedVendor?.required_fields || null
+  const vendorProductRestrictions = selectedVendor?.product_code_restrictions || null
+
+  /**
+   * Check if a form section/field is required by the selected vendor.
+   * If vendor has no required_fields config (null), show ALL sections (backward compat).
+   * Supported field keys:
+   *   vendor_code, product_code, service_code, invoice, eawb,
+   *   buyer_details, gst_manifest, advanced_config
+   */
+  const vendorRequiresField = (fieldKey) => {
+    if (!form.vendor_config_id) return true       // No vendor selected → show all
+    if (!vendorRequiredFields) return true         // Vendor has no config → show all (backward compat)
+    return vendorRequiredFields.includes(fieldKey)
+  }
+
+  /**
+   * Filter product codes based on destination country, weight, and package type restrictions.
+   * If vendor has product_code_restrictions, only show codes matching current form values.
+   */
+  const filteredProductCodes = (() => {
+    if (!vendorProductRestrictions || vendorProductRestrictions.length === 0) {
+      return vendorProductCodes // No restrictions → show all configured product codes
+    }
+
+    const destCountry = (form.receiver_country || '').toUpperCase().trim()
+    const shipWeight = parseFloat(form.weight) || 0
+    const pkgType = (form.package_type || '').toUpperCase().trim()
+
+    return vendorProductRestrictions.map(rule => {
+      let eligible = true
+      let reason = ''
+
+      // Country check
+      if (rule.countries && Array.isArray(rule.countries) && !rule.countries.includes('*')) {
+        const countryCodes = rule.countries.map(c => c.toUpperCase().trim())
+        if (destCountry && !countryCodes.includes(destCountry)) {
+          eligible = false
+          reason = `Not available for ${destCountry}`
+        }
+      }
+
+      // Weight range check
+      if (eligible && rule.min_weight !== undefined && shipWeight > 0 && shipWeight < rule.min_weight) {
+        eligible = false
+        reason = `Min weight: ${rule.min_weight} kg`
+      }
+      if (eligible && rule.max_weight !== undefined && shipWeight > 0 && shipWeight > rule.max_weight) {
+        eligible = false
+        reason = `Max weight: ${rule.max_weight} kg`
+      }
+
+      // Package type check
+      if (eligible && rule.package_types && Array.isArray(rule.package_types) && rule.package_types.length > 0) {
+        const allowedTypes = rule.package_types.map(t => t.toUpperCase().trim())
+        if (pkgType && !allowedTypes.includes(pkgType)) {
+          eligible = false
+          reason = `Only for: ${rule.package_types.join(', ')}`
+        }
+      }
+
+      return {
+        code: rule.code,
+        label: rule.label || rule.code,
+        eligible,
+        reason
+      }
+    })
+  })()
 
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -811,7 +880,8 @@ export default function NewBookingPage() {
                   </div>
                 </div>
 
-                {/* Invoice & Export Details */}
+                {/* Invoice & Export Details (only if vendor requires it) */}
+                {vendorRequiresField('invoice') && (
                 <div className="bg-surface border border-border rounded-2xl">
                   <div className="p-5 border-b border-border flex items-center gap-2.5">
                     <FileText className="w-5 h-5 text-primary" />
@@ -896,8 +966,10 @@ export default function NewBookingPage() {
                     </div>
                   </div>
                 </div>
+                )}
 
-                {/* eAWB Details — Collapsible */}
+                {/* eAWB Details — Collapsible (only if vendor requires it) */}
+                {vendorRequiresField('eawb') && (
                 <CollapsibleSection
                   label="eAWB Details"
                   description="Electronic Airway Bill information"
@@ -933,8 +1005,10 @@ export default function NewBookingPage() {
                     </FormField>
                   </div>
                 </CollapsibleSection>
+                )}
 
-                {/* Additional Charges — Collapsible */}
+                {/* Additional Charges — Collapsible (only if vendor requires it) */}
+                {vendorRequiresField('additional_charges') && (
                 <CollapsibleSection
                   label="Additional Charges"
                   description="Discount, freight, insurance & other charges"
@@ -990,6 +1064,7 @@ export default function NewBookingPage() {
                     </FormField>
                   </div>
                 </CollapsibleSection>
+                )}
               </div>
             )}
 
@@ -1031,6 +1106,7 @@ export default function NewBookingPage() {
                       </FormField>
                       {form.vendor_config_id && (
                         <>
+                          {vendorRequiresField('vendor_code') && (
                           <FormField label="Vendor Code">
                             {customVendorMode ? (
                               <div className="flex gap-2">
@@ -1085,7 +1161,9 @@ export default function NewBookingPage() {
                               </div>
                             )}
                           </FormField>
+                          )}
 
+                          {vendorRequiresField('product_code') && (
                           <FormField label="Product Code">
                             {customProductMode ? (
                               <div className="flex gap-2">
@@ -1107,6 +1185,40 @@ export default function NewBookingPage() {
                                   Reset
                                 </button>
                               </div>
+                            ) : filteredProductCodes.length > 0 ? (
+                              <>
+                                <select
+                                  value={form.product_code}
+                                  onChange={e => {
+                                    if (e.target.value === '__custom__') {
+                                      setCustomProductMode(true)
+                                      updateForm('product_code', '')
+                                    } else {
+                                      updateForm('product_code', e.target.value)
+                                    }
+                                  }}
+                                  className="form-input"
+                                >
+                                  <option value="">— Select / Auto-detect —</option>
+                                  {filteredProductCodes.map((pc, i) => (
+                                    <option key={i} value={pc.code} disabled={!pc.eligible}>
+                                      {pc.code}{pc.label && pc.label !== pc.code ? ` — ${pc.label}` : ''}{!pc.eligible ? ` (${pc.reason})` : ''}
+                                    </option>
+                                  ))}
+                                  <option value="__custom__">Custom Product Code...</option>
+                                </select>
+                                {vendorProductRestrictions && form.product_code && (() => {
+                                  const selected = filteredProductCodes.find(pc => pc.code === form.product_code)
+                                  if (selected && !selected.eligible) {
+                                    return (
+                                      <p className="text-[11px] text-warning font-medium mt-1">
+                                        ⚠ {selected.reason} — this code may not work for this shipment
+                                      </p>
+                                    )
+                                  }
+                                  return null
+                                })()}
+                              </>
                             ) : vendorProductCodes.length > 0 ? (
                               <select
                                 value={form.product_code}
@@ -1140,7 +1252,9 @@ export default function NewBookingPage() {
                               </div>
                             )}
                           </FormField>
+                          )}
 
+                          {vendorRequiresField('service_code') && (
                           <FormField label="Service Type / Code">
                             {vendorServices.length > 0 ? (
                               <select
@@ -1187,6 +1301,7 @@ export default function NewBookingPage() {
                               </div>
                             )}
                           </FormField>
+                          )}
                         </>
                       )}
                     </div>
@@ -1203,7 +1318,8 @@ export default function NewBookingPage() {
                   </div>
                 </div>
 
-                {/* Buyer Details — Collapsible */}
+                {/* Buyer Details — Collapsible (only if vendor requires it) */}
+                {vendorRequiresField('buyer_details') && (
                 <CollapsibleSection
                   label="Buyer Details"
                   description="Fill if buyer is different from receiver"
@@ -1341,7 +1457,10 @@ export default function NewBookingPage() {
                   </div>
                 </CollapsibleSection>
 
-                {/* GST & Manifest Details — Collapsible */}
+                )}
+
+                {/* GST & Manifest Details — Collapsible (only if vendor requires it) */}
+                {vendorRequiresField('gst_manifest') && (
                 <CollapsibleSection
                   label="GST & Manifest Details"
                   description="GST invoice, LUT, bank & IEC details"
@@ -1521,7 +1640,10 @@ export default function NewBookingPage() {
                   </div>
                 </CollapsibleSection>
 
-                {/* Advanced Shipment Config — Collapsible */}
+                )}
+
+                {/* Advanced Shipment Config — Collapsible (only if vendor requires it) */}
+                {vendorRequiresField('advanced_config') && (
                 <CollapsibleSection
                   label="Advanced Configuration"
                   description="Company code, CSB type, OTP & LSP settings"
@@ -1611,6 +1733,7 @@ export default function NewBookingPage() {
                     </FormField>
                   </div>
                 </CollapsibleSection>
+                )}
 
                 {/* Shipping & Payment */}
                 <div className="bg-surface border border-border rounded-2xl">
