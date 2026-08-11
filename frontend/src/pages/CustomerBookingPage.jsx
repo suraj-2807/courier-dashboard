@@ -224,7 +224,7 @@ export default function CustomerBookingPage() {
             <CheckCircle2 className="w-10 h-10 text-green-600" />
           </div>
 
-          <h2 className="text-xl font-extrabold text-[#0D2132] mb-1">
+          <h2 className="text-xl font-extrabold text-[#BB0013] mb-1">
             Request Submitted!
           </h2>
           <p className="text-xs text-gray-500 mb-6">
@@ -236,7 +236,7 @@ export default function CustomerBookingPage() {
               Request AWB Number
             </span>
             <div className="flex items-center justify-center gap-2">
-              <code className="text-lg font-mono font-bold text-[#0D2132]">
+              <code className="text-lg font-mono font-bold text-[#BB0013]">
                 {submittedAwb}
               </code>
               <button
@@ -256,7 +256,7 @@ export default function CustomerBookingPage() {
                 setSubmittedAwb(null)
                 setForm(INITIAL_FORM)
               }}
-              className="w-full py-2.5 bg-[#0D2132] hover:bg-[#142D42] text-white font-bold text-xs rounded-xl shadow-xs"
+              className="w-full py-2.5 bg-[#BB0013] hover:bg-[#990010] text-white font-bold text-xs rounded-xl shadow-xs"
             >
               Submit Another Request
             </button>
@@ -274,16 +274,16 @@ export default function CustomerBookingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f6f9] p-3 text-[#0D2132] animate-fade-in font-sans">
+    <div className="min-h-screen bg-[#f4f6f9] p-3 text-[#1a202c] animate-fade-in font-sans">
       <Toaster position="top-center" />
 
       {/* ── Top Header ── */}
       <div className="bg-white rounded-lg border border-[#dce1e7] p-3 mb-3 shadow-xs flex items-center justify-between">
         <div>
-          <h1 className="text-base font-extrabold text-[#0D2132]">New Booking Request</h1>
+          <h1 className="text-base font-extrabold text-[#BB0013]">New Booking Request</h1>
           <p className="text-xs text-gray-500">Fill in details on a single page to submit your courier request</p>
         </div>
-        <span className="bg-[#0D2132] text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase">
+        <span className="bg-[#BB0013] text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase">
           Single Page Form
         </span>
       </div>
@@ -294,7 +294,7 @@ export default function CustomerBookingPage() {
 
           {/* ── Column 1: Shipper Details ── */}
           <div className="bg-white rounded-lg border border-[#dce1e7] p-3 shadow-xs">
-            <NavyBadge title="Shipper Details" icon={User} />
+            <RedBadge title="Shipper Details" icon={User} />
 
             <div className="space-y-2.5">
               <CompactField label="Sender Full Name" required>
@@ -395,7 +395,7 @@ export default function CustomerBookingPage() {
                     placeholder="Country"
                     value={form.sender_country}
                     onChange={e => updateForm('sender_country', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase"
+                    className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase text-[#BB0013]"
                   />
                 </CompactField>
               </div>
@@ -430,7 +430,7 @@ export default function CustomerBookingPage() {
 
           {/* ── Column 2: Consignee Details ── */}
           <div className="bg-white rounded-lg border border-[#dce1e7] p-3 shadow-xs">
-            <NavyBadge title="Consignee Details" icon={MapPin} />
+            <RedBadge title="Consignee Details" icon={MapPin} />
 
             <div className="space-y-2.5">
               <CompactField label="Receiver Full Name" required highlight={!form.receiver_name && !form.receiver_company}>
@@ -531,7 +531,7 @@ export default function CustomerBookingPage() {
                     placeholder="e.g. US, GB, AE"
                     value={form.receiver_country}
                     onChange={e => updateForm('receiver_country', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase text-red-600 placeholder-red-300"
+                    className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase text-[#BB0013] placeholder-red-300"
                   />
                 </CompactField>
               </div>
@@ -564,7 +564,7 @@ export default function CustomerBookingPage() {
 
           {/* ── Column 3: Package Specs ── */}
           <div className="bg-white rounded-lg border border-[#dce1e7] p-3 shadow-xs">
-            <NavyBadge title="Package & Specs" icon={Package} />
+            <RedBadge title="Package & Specs" icon={Package} />
 
             <div className="space-y-2.5">
               <div className="grid grid-cols-2 gap-2">
@@ -599,7 +599,7 @@ export default function CustomerBookingPage() {
                   placeholder="0.00"
                   value={form.weight}
                   onChange={e => updateForm('weight', e.target.value)}
-                  className="w-full bg-transparent focus:outline-none text-xs font-extrabold text-right text-[#0D2132]"
+                  className="w-full bg-transparent focus:outline-none text-xs font-extrabold text-right text-[#BB0013]"
                 />
               </CompactField>
 
@@ -689,7 +689,7 @@ export default function CustomerBookingPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="px-6 py-2.5 rounded-full bg-[#0D2132] hover:bg-[#142D42] text-white text-xs font-extrabold shadow-md transition-all flex items-center gap-2"
+            className="px-6 py-2.5 rounded-full bg-[#BB0013] hover:bg-[#990010] text-white text-xs font-extrabold shadow-md transition-all flex items-center gap-2"
           >
             {submitting ? (
               <>
@@ -709,10 +709,10 @@ export default function CustomerBookingPage() {
   )
 }
 
-function NavyBadge({ title, icon: Icon }) {
+function RedBadge({ title, icon: Icon }) {
   return (
     <div className="flex items-center gap-2 mb-3">
-      <span className="bg-[#0D2132] text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-2xs flex items-center gap-1.5">
+      <span className="bg-[#BB0013] text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-2xs flex items-center gap-1.5">
         {Icon && <Icon className="w-3.5 h-3.5" />}
         {title}
       </span>
@@ -726,7 +726,7 @@ function CompactField({ label, required, children, className = '', highlight = f
       className={`relative border ${
         highlight
           ? 'border-red-500 ring-1 ring-red-200'
-          : 'border-[#cfd8dc] focus-within:border-[#0D2132] focus-within:ring-1 focus-within:ring-[#0D2132]'
+          : 'border-[#cfd8dc] focus-within:border-[#BB0013] focus-within:ring-1 focus-within:ring-[#BB0013]'
       } rounded bg-white px-2.5 py-1.5 transition-all ${className}`}
     >
       <label className="absolute -top-2.5 left-2 px-1 bg-white text-[9px] font-extrabold text-[#455a64] uppercase tracking-tighter whitespace-nowrap z-10">

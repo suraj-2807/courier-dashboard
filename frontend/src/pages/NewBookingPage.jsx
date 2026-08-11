@@ -452,18 +452,18 @@ export default function NewBookingPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f6f9] p-3 text-[#0D2132] animate-fade-in font-sans">
+    <div className="min-h-screen bg-[#f4f6f9] p-3 text-[#1a202c] animate-fade-in font-sans">
       {/* ── Page Top Header ── */}
       <div className="bg-white rounded-lg border border-[#dce1e7] p-3 mb-3 shadow-xs flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <Link
             to="/bookings"
-            className="p-1.5 text-gray-500 hover:text-[#0D2132] hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-1.5 text-gray-500 hover:text-[#BB0013] hover:bg-red-50 rounded-lg transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <h1 className="text-lg font-extrabold text-[#0D2132] tracking-tight">
+            <h1 className="text-lg font-extrabold text-[#BB0013] tracking-tight">
               Create New Booking
             </h1>
             <p className="text-xs text-gray-500">
@@ -473,7 +473,7 @@ export default function NewBookingPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="bg-[#0D2132] text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase">
+          <span className="bg-[#BB0013] text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-xs">
             Single Page Form
           </span>
         </div>
@@ -486,7 +486,7 @@ export default function NewBookingPage() {
           {/* ── Column 1: Sender / Shipper Details ── */}
           <div className="bg-white rounded-lg border border-[#dce1e7] p-3 shadow-xs flex flex-col justify-between">
             <div>
-              <NavyBadge title="Shipper Details" icon={User} />
+              <RedBadge title="Shipper Details" icon={User} />
 
               <div className="space-y-2.5">
                 <CompactField label="Sender Full Name" required>
@@ -495,7 +495,7 @@ export default function NewBookingPage() {
                     placeholder="Sender Full Name"
                     value={form.sender_name}
                     onChange={e => updateForm('sender_name', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs font-semibold"
+                    className="w-full bg-transparent focus:outline-none text-xs font-semibold text-[#1a202c]"
                   />
                 </CompactField>
 
@@ -587,7 +587,7 @@ export default function NewBookingPage() {
                       placeholder="Country"
                       value={form.sender_country}
                       onChange={e => updateForm('sender_country', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase"
+                      className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase text-[#BB0013]"
                     />
                   </CompactField>
                 </div>
@@ -625,7 +625,7 @@ export default function NewBookingPage() {
           {/* ── Column 2: Receiver / Consignee Details ── */}
           <div className="bg-white rounded-lg border border-[#dce1e7] p-3 shadow-xs flex flex-col justify-between">
             <div>
-              <NavyBadge title="Consignee Details" icon={MapPin} />
+              <RedBadge title="Consignee Details" icon={MapPin} />
 
               <div className="space-y-2.5">
                 <CompactField label="Receiver Full Name" required highlight={!form.receiver_name && !form.receiver_company}>
@@ -726,7 +726,7 @@ export default function NewBookingPage() {
                       placeholder="e.g. US, GB, AE"
                       value={form.receiver_country}
                       onChange={e => updateForm('receiver_country', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase text-red-600 placeholder-red-300"
+                      className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase text-[#BB0013] placeholder-red-300"
                     />
                   </CompactField>
                 </div>
@@ -761,7 +761,7 @@ export default function NewBookingPage() {
           {/* ── Column 3: Courier & Vendor API Details ── */}
           <div className="bg-white rounded-lg border border-[#dce1e7] p-3 shadow-xs flex flex-col justify-between">
             <div>
-              <NavyBadge title="Courier & Vendor API" icon={Plug} />
+              <RedBadge title="Courier & Vendor API" icon={Plug} />
 
               <div className="space-y-2.5">
                 {/* Vendor API Config Selection */}
@@ -777,7 +777,7 @@ export default function NewBookingPage() {
                       setCustomServiceMode(false)
                       setCustomProductMode(false)
                     }}
-                    className="w-full bg-transparent focus:outline-none text-xs font-bold text-[#0D2132] cursor-pointer"
+                    className="w-full bg-transparent focus:outline-none text-xs font-bold text-[#BB0013] cursor-pointer"
                   >
                     <option value="">— None (Local Only) —</option>
                     {activeVendors.map(v => (
@@ -1003,7 +1003,7 @@ export default function NewBookingPage() {
                       placeholder="0.00"
                       value={form.cod_amount}
                       onChange={e => updateForm('cod_amount', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-bold text-red-600 text-right"
+                      className="w-full bg-transparent focus:outline-none text-xs font-bold text-[#BB0013] text-right"
                     />
                   </CompactField>
                 )}
@@ -1036,7 +1036,7 @@ export default function NewBookingPage() {
 
         {/* ── Main Section 2: Package & Weight Specs ── */}
         <div className="bg-white rounded-lg border border-[#dce1e7] p-3 mb-3 shadow-xs">
-          <NavyBadge title="Package & Weight Specifications" icon={Package} />
+          <RedBadge title="Package & Weight Specifications" icon={Package} />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 mb-2.5">
             <CompactField label="Package Type">
@@ -1091,7 +1091,7 @@ export default function NewBookingPage() {
                 placeholder="0.00"
                 value={form.weight}
                 onChange={e => updateForm('weight', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-xs font-extrabold text-right text-[#0D2132]"
+                className="w-full bg-transparent focus:outline-none text-xs font-extrabold text-right text-[#BB0013]"
               />
             </CompactField>
 
@@ -1528,7 +1528,7 @@ export default function NewBookingPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="px-6 py-2.5 rounded-full bg-gradient-to-r from-[#0D2132] to-[#BB0013] text-white text-xs font-extrabold shadow-md hover:opacity-95 transition-all flex items-center gap-2"
+              className="px-6 py-2.5 rounded-full bg-[#BB0013] hover:bg-[#990010] text-white text-xs font-extrabold shadow-md transition-all flex items-center gap-2"
             >
               {submitting ? (
                 <>
@@ -1551,10 +1551,10 @@ export default function NewBookingPage() {
 
 // ── Shared Helper Components ──
 
-function NavyBadge({ title, icon: Icon }) {
+function RedBadge({ title, icon: Icon }) {
   return (
     <div className="flex items-center gap-2 mb-3">
-      <span className="bg-[#0D2132] text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-2xs flex items-center gap-1.5">
+      <span className="bg-[#BB0013] text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-2xs flex items-center gap-1.5">
         {Icon && <Icon className="w-3.5 h-3.5" />}
         {title}
       </span>
@@ -1568,7 +1568,7 @@ function CompactField({ label, required, children, className = '', highlight = f
       className={`relative border ${
         highlight
           ? 'border-red-500 ring-1 ring-red-200'
-          : 'border-[#cfd8dc] focus-within:border-[#0D2132] focus-within:ring-1 focus-within:ring-[#0D2132]'
+          : 'border-[#cfd8dc] focus-within:border-[#BB0013] focus-within:ring-1 focus-within:ring-[#BB0013]'
       } rounded bg-white px-2.5 py-1.5 transition-all ${className}`}
     >
       <label className="absolute -top-2.5 left-2 px-1 bg-white text-[9px] font-extrabold text-[#455a64] uppercase tracking-tighter whitespace-nowrap z-10">
@@ -1584,7 +1584,7 @@ function AccordionBanner({ title, isOpen, onToggle }) {
     <button
       type="button"
       onClick={onToggle}
-      className="w-full bg-[#e0e4e8] hover:bg-[#d5dadf] text-[#0D2132] font-extrabold text-xs py-2.5 px-4 rounded flex items-center justify-between transition-colors shadow-2xs my-1"
+      className="w-full bg-[#e0e4e8] hover:bg-[#d5dadf] text-[#BB0013] font-extrabold text-xs py-2.5 px-4 rounded flex items-center justify-between transition-colors shadow-2xs my-1"
     >
       <span>{title}</span>
       <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
