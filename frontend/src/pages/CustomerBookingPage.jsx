@@ -1,8 +1,5 @@
 import { useState, useEffect } from 'react'
 import {
-  ArrowLeft,
-  ArrowRight,
-  HelpCircle,
   User,
   MapPin,
   Package,
@@ -11,19 +8,29 @@ import {
   Copy,
   CheckCircle2,
   Clock,
-  ChevronDown
+  ChevronDown,
+  Search,
+  Filter,
+  Edit2,
+  DollarSign,
+  Plus,
+  Trash2
 } from 'lucide-react'
 import toast, { Toaster } from 'react-hot-toast'
 
-const STEPS = [
-  { id: 1, label: 'Sender & Receiver', icon: User },
-  { id: 2, label: 'Package & Submit', icon: Package }
-]
-
 const INITIAL_FORM = {
+  book_date: new Date().toISOString().split('T')[0],
+  book_code: '2231',
+  client_name: '',
+  client_code: 'P0503',
+  search_awb: '',
+  active_tab: 'AWB',
+
   // Sender
-  sender_name: '',
+  sender_origin: 'MUMBAI',
+  sender_origin_code: 'BOM',
   sender_company: '',
+  sender_name: '',
   sender_email: '',
   sender_phone: '',
   sender_address: '',
@@ -32,9 +39,13 @@ const INITIAL_FORM = {
   sender_pincode: '',
   sender_state: '',
   sender_country: 'INDIA',
-  sender_gstin_type: '',
+  sender_gstin_type: 'Select',
   sender_gstin_no: '',
+
   // Receiver
+  receiver_destination: '',
+  receiver_destination_code: '',
+  receiver_company: '',
   receiver_name: '',
   receiver_email: '',
   receiver_phone: '',
@@ -44,30 +55,53 @@ const INITIAL_FORM = {
   receiver_pincode: '',
   receiver_state: '',
   receiver_country: '',
-  receiver_gstin_type: '',
+  receiver_gstin_type: 'Select',
   receiver_gstin_no: '',
-  // Package
-  package_type: 'parcel',
+
+  // Package & Services
+  product_code: 'SPX',
+  vendor_code: 'PC',
+  service_code: 'SELF',
+  declared_value: '',
+  invoice_currency: 'INR',
+  no_of_pieces: '1',
+  package_type: 'DOX',
   weight: '',
+  weight_unit: 'Kgs',
   length: '',
   breadth: '',
   height: '',
-  no_of_pieces: '1',
+  volumetric_weight: '0',
+  charge_weight: '0',
+
+  // Options
+  is_commercial: false,
+  is_oda: false,
+  is_medical: false,
+
+  // Invoice / Performa details
+  invoice_no: '',
+  invoice_date: '',
+  hs_code: '',
+  export_reason: '',
+  terms_of_trade: 'CIF',
   content_description: '',
-  declared_value: '',
-  is_fragile: false,
+
   // Notes
   remarks: ''
 }
 
 export default function CustomerBookingPage() {
-  const [step, setStep] = useState(1)
   const [form, setForm] = useState(INITIAL_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [submittedAwb, setSubmittedAwb] = useState(null)
   const [copied, setCopied] = useState(false)
 
-  // Pre-fill from URL params (customer portal passes these)
+  // Accordions
+  const [openPiecesAccordion, setOpenPiecesAccordion] = useState(false)
+  const [openPerformaAccordion, setOpenPerformaAccordion] = useState(false)
+
+  // Pre-fill from URL params
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const custName = params.get('cust_name') || ''
@@ -81,43 +115,52 @@ export default function CustomerBookingPage() {
       sender_phone: custPhone || prev.sender_phone,
       sender_email: custEmail || prev.sender_email,
       sender_company: custCompany || prev.sender_company,
+      client_name: custCompany || custName || 'CUSTOMER'
     }))
   }, [])
+
+  // Auto-calculate Volumetric & Charge Weight
+  useEffect(() => {
+    const l = parseFloat(form.length) || 0
+    const b = parseFloat(form.breadth) || 0
+    const h = parseFloat(form.height) || 0
+    const pcs = parseInt(form.no_of_pieces) || 1
+    const actWeight = parseFloat(form.weight) || 0
+
+    let vol = 0
+    if (l > 0 && b > 0 && h > 0) {
+      vol = Math.round(((l * b * h) / 5000) * pcs * 100) / 100
+    }
+
+    const chgWeight = Math.max(actWeight, vol)
+    setForm(prev => ({
+      ...prev,
+      volumetric_weight: String(vol),
+      charge_weight: String(chgWeight)
+    }))
+  }, [form.length, form.breadth, form.height, form.weight, form.no_of_pieces])
 
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
-  const nextStep = () => {
-    // Step 1 validation
-    if (step === 1) {
-      if (!form.sender_name.trim()) {
-        toast.error('Sender name is required')
-        return
-      }
-      if (!form.sender_phone.trim()) {
-        toast.error('Sender phone is required')
-        return
-      }
-      if (!form.receiver_name.trim()) {
-        toast.error('Receiver name is required')
-        return
-      }
-      if (!form.receiver_phone.trim()) {
-        toast.error('Receiver phone is required')
-        return
-      }
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault()
+
+    if (!form.sender_name && !form.sender_company) {
+      toast.error('Sender name or company is required')
+      return
     }
-    if (step < 2) setStep(step + 1)
-  }
-
-  const prevStep = () => {
-    if (step > 1) setStep(step - 1)
-  }
-
-  const handleSubmit = async () => {
-    if (!form.weight || parseFloat(form.weight) <= 0) {
-      toast.error('Please enter the package weight')
+    if (!form.sender_phone) {
+      toast.error('Sender phone is required')
+      return
+    }
+    if (!form.receiver_name && !form.receiver_company) {
+      toast.error('Receiver name or company is required')
+      return
+    }
+    if (!form.receiver_destination && !form.receiver_country) {
+      toast.error('Destination country/city is required')
       return
     }
 
@@ -130,38 +173,40 @@ export default function CustomerBookingPage() {
         customer_email: params.get('cust_email') || form.sender_email,
         customer_phone: params.get('cust_phone') || form.sender_phone,
         customer_company: params.get('cust_company') || form.sender_company,
-        sender_name: form.sender_name,
+        sender_name: form.sender_name || form.sender_company,
         sender_company: form.sender_company,
         sender_email: form.sender_email,
         sender_phone: form.sender_phone,
-        sender_address: form.sender_address,
+        sender_address: form.sender_address || `${form.sender_origin} ${form.sender_city}`,
         sender_address_2: form.sender_address_2,
-        sender_city: form.sender_city,
+        sender_city: form.sender_city || form.sender_origin,
         sender_pincode: form.sender_pincode,
         sender_state: form.sender_state,
-        sender_country: form.sender_country,
+        sender_country: form.sender_country || 'INDIA',
         sender_gstin_type: form.sender_gstin_type,
         sender_gstin_no: form.sender_gstin_no,
-        receiver_name: form.receiver_name,
+
+        receiver_name: form.receiver_name || form.receiver_company,
+        receiver_company: form.receiver_company,
         receiver_email: form.receiver_email,
         receiver_phone: form.receiver_phone,
-        receiver_address: form.receiver_address,
+        receiver_address: form.receiver_address || form.receiver_destination,
         receiver_address_2: form.receiver_address_2,
-        receiver_city: form.receiver_city,
+        receiver_city: form.receiver_city || form.receiver_destination,
         receiver_pincode: form.receiver_pincode,
         receiver_state: form.receiver_state,
-        receiver_country: form.receiver_country,
+        receiver_country: form.receiver_country || form.receiver_destination,
         receiver_gstin_type: form.receiver_gstin_type,
         receiver_gstin_no: form.receiver_gstin_no,
+
         package_type: form.package_type,
         weight: parseFloat(form.weight) || 0,
         length: parseFloat(form.length) || 0,
         breadth: parseFloat(form.breadth) || 0,
         height: parseFloat(form.height) || 0,
         no_of_pieces: parseInt(form.no_of_pieces) || 1,
-        content_description: form.content_description,
+        content_description: form.content_description || 'General Goods',
         declared_value: parseFloat(form.declared_value) || 0,
-        is_fragile: form.is_fragile,
         remarks: form.remarks
       }
 
@@ -177,18 +222,12 @@ export default function CustomerBookingPage() {
       }
 
       setSubmittedAwb(data.request_awb)
-      toast.success('Booking request submitted!')
+      toast.success('Booking request submitted successfully!')
     } catch (err) {
       toast.error(err?.message || 'Failed to submit request')
     } finally {
       setSubmitting(false)
     }
-  }
-
-  const handleBackToDashboard = () => {
-    try {
-      window.parent.postMessage({ type: 'PE_GO_BACK' }, '*')
-    } catch (e) {}
   }
 
   const handleCopyAwb = () => {
@@ -200,113 +239,65 @@ export default function CustomerBookingPage() {
     }
   }
 
-  // ═══════════════════════════════════════════
-  //  SUCCESS SCREEN
-  // ═══════════════════════════════════════════
+  const handleBackToDashboard = () => {
+    try {
+      window.parent.postMessage({ type: 'PE_GO_BACK' }, '*')
+    } catch (e) {}
+  }
 
+  // Submitted Success View
   if (submittedAwb) {
     return (
-      <div className="min-h-screen bg-surface-alt w-full flex items-center justify-center p-4">
-        <Toaster position="top-right" />
-        <div className="bg-surface border border-border rounded-3xl p-8 max-w-[520px] w-full text-center animate-fade-in">
-          {/* Success Icon */}
-          <div className="w-20 h-20 bg-success/10 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle2 className="w-10 h-10 text-success" />
+      <div className="min-h-screen bg-[#f4f6f9] p-4 flex items-center justify-center animate-fade-in font-sans">
+        <Toaster position="top-center" />
+        <div className="bg-white border border-[#dce1e7] rounded-2xl p-6 sm:p-8 max-w-md w-full text-center shadow-lg">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <CheckCircle2 className="w-10 h-10 text-green-600" />
           </div>
 
-          <h1 className="text-[24px] font-extrabold text-text-primary mb-2">
+          <h2 className="text-xl font-extrabold text-[#0D2132] mb-1">
             Booking Request Submitted!
-          </h1>
-          <p className="text-[14px] text-text-secondary mb-8 leading-relaxed">
-            Your shipment booking request has been received and is being reviewed by our team. 
-            You'll be notified once it's confirmed.
+          </h2>
+          <p className="text-xs text-gray-500 mb-6">
+            Your request has been received. Track status using your request AWB.
           </p>
 
-          {/* AWB Number Card */}
-          <div className="bg-surface-alt border border-border rounded-2xl p-6 mb-6">
-            <p className="text-[11px] font-bold text-text-tertiary uppercase tracking-[2px] mb-2">
-              Your AWB / Request Number
-            </p>
-            <div className="flex items-center justify-center gap-3">
-              <span className="text-[36px] font-black text-text-primary tracking-[4px] font-mono">
+          <div className="bg-[#f8f9fa] border border-[#dce1e7] rounded-xl p-4 mb-6">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-1">
+              Request AWB Number
+            </span>
+            <div className="flex items-center justify-center gap-2">
+              <code className="text-lg font-mono font-bold text-[#0D2132] tracking-wider">
                 {submittedAwb}
-              </span>
+              </code>
               <button
+                type="button"
                 onClick={handleCopyAwb}
-                className="p-2 rounded-lg hover:bg-surface-hover transition-colors cursor-pointer"
+                className="p-1.5 hover:bg-gray-200 rounded text-gray-600 transition-colors"
                 title="Copy AWB"
               >
-                {copied ? (
-                  <Check className="w-5 h-5 text-success" />
-                ) : (
-                  <Copy className="w-5 h-5 text-text-tertiary" />
-                )}
+                {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
-            <p className="text-[12px] text-text-tertiary mt-2">
-              Save this number for tracking your shipment
-            </p>
           </div>
 
-          {/* Status Timeline */}
-          <div className="bg-surface-alt border border-border rounded-2xl p-5 mb-8 text-left">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
-                <Clock className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-[13px] font-bold text-text-primary">Pending Admin Review</p>
-                <p className="text-[11px] text-text-tertiary">Our team will process your request shortly</p>
-              </div>
-            </div>
-            <div className="ml-4 border-l-2 border-border pl-6 space-y-3">
-              <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
-                <div className="w-2 h-2 rounded-full bg-border flex-shrink-0" />
-                Admin fills shipping & export details
-              </div>
-              <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
-                <div className="w-2 h-2 rounded-full bg-border flex-shrink-0" />
-                Courier vendor selected & shipment created
-              </div>
-              <div className="flex items-center gap-2 text-[12px] text-text-tertiary">
-                <div className="w-2 h-2 rounded-full bg-border flex-shrink-0" />
-                You'll receive tracking updates
-              </div>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-3">
+          <div className="space-y-2">
             <button
+              type="button"
               onClick={() => {
                 setSubmittedAwb(null)
                 setForm(INITIAL_FORM)
-                setStep(1)
-                // re-fill customer info from URL
-                const params = new URLSearchParams(window.location.search)
-                setForm(prev => ({
-                  ...prev,
-                  sender_name: params.get('cust_name') || '',
-                  sender_phone: params.get('cust_phone') || '',
-                  sender_email: params.get('cust_email') || '',
-                  sender_company: params.get('cust_company') || '',
-                }))
               }}
-              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 border border-border rounded-xl text-[13px] font-semibold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
+              className="w-full py-2.5 bg-[#0D2132] hover:bg-[#142D42] text-white font-bold text-xs rounded-xl shadow-xs transition-all"
             >
-              <Package className="w-4 h-4" />
-              New Request
+              Submit Another Request
             </button>
             <button
-              onClick={() => {
-                try {
-                  window.parent.postMessage({ type: 'PE_BOOKING_SUCCESS' }, '*')
-                } catch (e) {}
-                handleBackToDashboard()
-              }}
-              className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark text-white text-[13px] font-bold rounded-xl transition-all cursor-pointer"
+              type="button"
+              onClick={handleBackToDashboard}
+              className="w-full py-2 bg-transparent text-xs text-gray-600 font-semibold hover:text-[#0D2132]"
             >
-              ← Back to Dashboard
+              Back to Dashboard
             </button>
           </div>
         </div>
@@ -314,637 +305,578 @@ export default function CustomerBookingPage() {
     )
   }
 
-  // ═══════════════════════════════════════════
-  //  BOOKING REQUEST FORM (Simplified)
-  // ═══════════════════════════════════════════
-
   return (
-    <div className="min-h-screen bg-surface-alt w-full">
-      <Toaster position="top-right" />
+    <div className="min-h-screen bg-[#f4f6f9] p-3 text-[#1a202c] animate-fade-in font-sans">
+      <Toaster position="top-center" />
 
-      {/* Top Bar */}
-      <div className="bg-surface border-b border-border sticky top-0 z-30">
-        <div className="w-full px-4 lg:px-6 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleBackToDashboard}
-              className="flex items-center gap-1.5 text-[13px] font-medium text-text-secondary hover:text-text-primary transition-colors bg-transparent border-none cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              BACK TO DASHBOARD
-            </button>
-            <div className="w-px h-5 bg-border" />
-            <h1 className="text-[16px] font-extrabold text-text-primary">Request Shipment Booking</h1>
-          </div>
-          <button className="p-2 rounded-xl hover:bg-surface-hover transition-colors cursor-pointer">
-            <HelpCircle className="w-[18px] h-[18px] text-text-secondary" />
+      {/* ── Top Toolbar ── */}
+      <div className="bg-white rounded-lg border border-[#dce1e7] p-2.5 mb-3 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            className="px-3 py-1 rounded-full text-[11px] font-bold tracking-tight bg-[#0D2132] text-white shadow-xs"
+          >
+            AWB Request
+          </button>
+          <button
+            type="button"
+            className="px-3 py-1 rounded-full text-[11px] font-bold tracking-tight bg-[#e9ecef] text-[#495057]"
+          >
+            KYC
           </button>
         </div>
+
+        <div className="flex items-center gap-1.5">
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search By AWB No."
+              value={form.search_awb}
+              onChange={e => updateForm('search_awb', e.target.value)}
+              className="w-48 sm:w-64 pl-2.5 pr-8 py-1 text-xs border border-[#cfd8dc] rounded bg-white focus:outline-none focus:border-[#0D2132]"
+            />
+            <button
+              type="button"
+              className="absolute right-0 top-0 bottom-0 px-2 bg-[#0D2132] text-white rounded-r flex items-center justify-center"
+            >
+              <Search className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="w-full px-4 lg:px-6 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
-          {/* Left Column */}
-          <div className="space-y-6">
-            {/* Stepper */}
-            <div className="bg-surface border border-border rounded-2xl p-6">
-              <div className="flex items-center justify-between">
-                {STEPS.map((s, i) => (
-                  <div key={s.id} className="flex items-center flex-1">
-                    <div className="flex items-center gap-2.5">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-bold transition-all ${
-                        step > s.id
-                          ? 'bg-success text-white'
-                          : step === s.id
-                            ? 'bg-primary text-white shadow-lg shadow-primary/25'
-                            : 'bg-surface-alt border border-border text-text-tertiary'
-                      }`}>
-                        {step > s.id ? <Check className="w-4 h-4" /> : s.id}
-                      </div>
-                      <span className={`text-[12px] font-semibold hidden sm:block ${
-                        step === s.id ? 'text-text-primary' : 'text-text-tertiary'
-                      }`}>
-                        {s.label}
-                      </span>
-                    </div>
-                    {i < STEPS.length - 1 && (
-                      <div className={`flex-1 h-px mx-4 transition-colors ${
-                        step > s.id ? 'bg-success' : 'bg-border'
-                      }`} />
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
+      {/* ── Account Details Header ── */}
+      <div className="bg-white rounded-lg border border-[#dce1e7] p-2.5 mb-3 shadow-xs">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="bg-[#0D2132] text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+            Account Details
+          </span>
+        </div>
 
-            {/* Info Banner */}
-            <div className="bg-primary/5 border border-primary/15 rounded-2xl px-5 py-4 flex items-start gap-3">
-              <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                <HelpCircle className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-[13px] font-bold text-text-primary">Simplified Booking Request</p>
-                <p className="text-[12px] text-text-secondary mt-0.5">
-                  Fill in your sender, receiver, and package details. Our team will handle shipping charges, courier selection, 
-                  export documentation, and all other details. You'll receive your AWB number instantly after submitting.
-                </p>
-              </div>
-            </div>
-
-            {/* ─── Step 1: Sender & Receiver ─── */}
-            {step === 1 && (
-              <div className="space-y-6 animate-fade-in">
-                {/* Sender */}
-                <div className="bg-surface border border-border rounded-2xl">
-                  <div className="p-5 border-b border-border flex items-center gap-2.5">
-                    <User className="w-5 h-5 text-text-tertiary" />
-                    <h2 className="text-[16px] font-bold text-text-primary">Sender Information</h2>
-                  </div>
-                  <div className="p-5 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Contact Name" required>
-                        <input
-                          type="text"
-                          placeholder="e.g. Rachit Shah"
-                          value={form.sender_name}
-                          onChange={e => updateForm('sender_name', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Company Name">
-                        <input
-                          type="text"
-                          placeholder="e.g. Acme Corp Pvt Ltd"
-                          value={form.sender_company}
-                          onChange={e => updateForm('sender_company', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Email Address">
-                        <input
-                          type="email"
-                          placeholder="sender@example.com"
-                          value={form.sender_email}
-                          onChange={e => updateForm('sender_email', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Phone Number" required>
-                        <input
-                          type="tel"
-                          placeholder="+91 99999 99999"
-                          value={form.sender_phone}
-                          onChange={e => updateForm('sender_phone', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Address Line 1" required>
-                        <input
-                          type="text"
-                          placeholder="Street / Building"
-                          value={form.sender_address}
-                          onChange={e => updateForm('sender_address', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Address Line 2">
-                        <input
-                          type="text"
-                          placeholder="Area / Landmark"
-                          value={form.sender_address_2}
-                          onChange={e => updateForm('sender_address_2', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <FormField label="City" required>
-                        <input
-                          type="text"
-                          placeholder="City"
-                          value={form.sender_city}
-                          onChange={e => updateForm('sender_city', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Pincode" required>
-                        <input
-                          type="text"
-                          placeholder="Zip / Postal"
-                          value={form.sender_pincode}
-                          onChange={e => updateForm('sender_pincode', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="State">
-                        <input
-                          type="text"
-                          placeholder="State"
-                          value={form.sender_state}
-                          onChange={e => updateForm('sender_state', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Document Type">
-                        <select
-                          value={form.sender_gstin_type}
-                          onChange={e => updateForm('sender_gstin_type', e.target.value)}
-                          className="form-input"
-                        >
-                          <option value="">— Select —</option>
-                          <option value="Aadhaar Number">Aadhaar Number</option>
-                          <option value="Pan Number">PAN Number</option>
-                          <option value="Passport">Passport</option>
-                          <option value="Voter ID">Voter ID</option>
-                          <option value="Driving License">Driving License</option>
-                        </select>
-                      </FormField>
-                      <FormField label="Document Number">
-                        <input
-                          type="text"
-                          placeholder="e.g. 1234 5678 9012"
-                          value={form.sender_gstin_no}
-                          onChange={e => updateForm('sender_gstin_no', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Receiver */}
-                <div className="bg-surface border border-border rounded-2xl">
-                  <div className="p-5 border-b border-border flex items-center gap-2.5">
-                    <MapPin className="w-5 h-5 text-primary" />
-                    <h2 className="text-[16px] font-bold text-text-primary">Receiver Information</h2>
-                  </div>
-                  <div className="p-5 space-y-4">
-                    <FormField label="Full Name / Company" required>
-                      <input
-                        type="text"
-                        placeholder="Receiver Name"
-                        value={form.receiver_name}
-                        onChange={e => updateForm('receiver_name', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Email Address">
-                        <input
-                          type="email"
-                          placeholder="receiver@example.com"
-                          value={form.receiver_email}
-                          onChange={e => updateForm('receiver_email', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Phone Number" required>
-                        <input
-                          type="tel"
-                          placeholder="+1 999 999 9999"
-                          value={form.receiver_phone}
-                          onChange={e => updateForm('receiver_phone', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Address Line 1" required>
-                        <input
-                          type="text"
-                          placeholder="Street / Building"
-                          value={form.receiver_address}
-                          onChange={e => updateForm('receiver_address', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Address Line 2">
-                        <input
-                          type="text"
-                          placeholder="Apt / Suite / Floor"
-                          value={form.receiver_address_2}
-                          onChange={e => updateForm('receiver_address_2', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="City" required>
-                        <input
-                          type="text"
-                          placeholder="City"
-                          value={form.receiver_city}
-                          onChange={e => updateForm('receiver_city', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Country" required>
-                        <input
-                          type="text"
-                          placeholder="e.g. US, GB, AE"
-                          value={form.receiver_country}
-                          onChange={e => updateForm('receiver_country', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Pincode" required>
-                        <input
-                          type="text"
-                          placeholder="Zip / Postal"
-                          value={form.receiver_pincode}
-                          onChange={e => updateForm('receiver_pincode', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="State">
-                        <input
-                          type="text"
-                          placeholder="State"
-                          value={form.receiver_state}
-                          onChange={e => updateForm('receiver_state', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Document Type">
-                        <select
-                          value={form.receiver_gstin_type}
-                          onChange={e => updateForm('receiver_gstin_type', e.target.value)}
-                          className="form-input"
-                        >
-                          <option value="">— Select —</option>
-                          <option value="Pan Number">PAN Number</option>
-                          <option value="Passport">Passport</option>
-                          <option value="Tax ID">Tax ID</option>
-                        </select>
-                      </FormField>
-                      <FormField label="Document Number">
-                        <input
-                          type="text"
-                          placeholder="e.g. ABCDE1234F"
-                          value={form.receiver_gstin_no}
-                          onChange={e => updateForm('receiver_gstin_no', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ─── Step 2: Package & Submit ─── */}
-            {step === 2 && (
-              <div className="space-y-6 animate-fade-in">
-                {/* Package Details */}
-                <div className="bg-surface border border-border rounded-2xl">
-                  <div className="p-5 border-b border-border flex items-center gap-2.5">
-                    <Package className="w-5 h-5 text-text-tertiary" />
-                    <h2 className="text-[16px] font-bold text-text-primary">Package Details</h2>
-                  </div>
-                  <div className="p-5 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Package Type" required>
-                        <select
-                          value={form.package_type}
-                          onChange={e => updateForm('package_type', e.target.value)}
-                          className="form-input"
-                        >
-                          <option value="document">Document</option>
-                          <option value="parcel">Parcel</option>
-                          <option value="fragile">Fragile</option>
-                          <option value="heavy">Heavy</option>
-                        </select>
-                      </FormField>
-                      <FormField label="No. of Pieces" required>
-                        <input
-                          type="number"
-                          min="1"
-                          placeholder="1"
-                          value={form.no_of_pieces}
-                          onChange={e => updateForm('no_of_pieces', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-
-                    <FormField label="Content Description">
-                      <input
-                        type="text"
-                        placeholder="e.g. Electronics, Clothing, Documents..."
-                        value={form.content_description}
-                        onChange={e => updateForm('content_description', e.target.value)}
-                        className="form-input"
-                      />
-                    </FormField>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <FormField label="Actual Weight (kg)" required>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          placeholder="0.0"
-                          value={form.weight}
-                          onChange={e => updateForm('weight', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Declared Value (₹)">
-                        <input
-                          type="number"
-                          min="0"
-                          placeholder="0"
-                          value={form.declared_value}
-                          onChange={e => updateForm('declared_value', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Dimensions */}
-                <div className="bg-surface border border-border rounded-2xl">
-                  <div className="p-5 border-b border-border">
-                    <h2 className="text-[16px] font-bold text-text-primary">Dimensions (cm)</h2>
-                    <p className="text-[12px] text-text-tertiary mt-0.5">Used for volumetric weight calculation</p>
-                  </div>
-                  <div className="p-5">
-                    <div className="grid grid-cols-3 gap-4">
-                      <FormField label="Length">
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          placeholder="0"
-                          value={form.length}
-                          onChange={e => updateForm('length', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Width">
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          placeholder="0"
-                          value={form.breadth}
-                          onChange={e => updateForm('breadth', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                      <FormField label="Height">
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0"
-                          placeholder="0"
-                          value={form.height}
-                          onChange={e => updateForm('height', e.target.value)}
-                          className="form-input"
-                        />
-                      </FormField>
-                    </div>
-
-                    {form.length && form.breadth && form.height && (
-                      <div className="mt-4 p-3 bg-surface-alt rounded-xl border border-border animate-fade-in">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[12px] text-text-secondary font-medium">Volumetric Weight</span>
-                          <span className="text-[14px] font-bold text-text-primary">
-                            {((form.length * form.breadth * form.height) / 5000).toFixed(2)} kg
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex items-center gap-6 mt-4 pt-4 border-t border-border">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={form.is_fragile}
-                          onChange={e => updateForm('is_fragile', e.target.checked)}
-                          className="w-4 h-4 rounded border-border accent-primary"
-                        />
-                        <span className="text-[13px] text-text-secondary">Fragile / Handle with care</span>
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Special Instructions */}
-                <div className="bg-surface border border-border rounded-2xl">
-                  <div className="p-5 border-b border-border">
-                    <h2 className="text-[16px] font-bold text-text-primary">Special Instructions</h2>
-                    <p className="text-[12px] text-text-tertiary mt-0.5">Any notes for our shipping team (optional)</p>
-                  </div>
-                  <div className="p-5">
-                    <textarea
-                      rows={3}
-                      placeholder="Any special handling or delivery instructions..."
-                      value={form.remarks}
-                      onChange={e => updateForm('remarks', e.target.value)}
-                      className="form-input resize-none"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Bottom Actions */}
-            <div className="flex items-center justify-center gap-3 py-4">
-              {step > 1 && (
-                <button
-                  type="button"
-                  onClick={prevStep}
-                  className="flex items-center gap-2 px-6 py-2.5 border border-border rounded-xl text-[13px] font-semibold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back
-                </button>
-              )}
-              {step < 2 ? (
-                <button
-                  type="button"
-                  onClick={nextStep}
-                  className="flex items-center gap-2 px-8 py-2.5 bg-primary hover:bg-primary-dark text-white text-[13px] font-bold rounded-xl transition-all hover:shadow-lg hover:shadow-primary/25 active:scale-[0.99] cursor-pointer"
-                >
-                  Next Step
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="flex items-center gap-2 px-8 py-2.5 bg-primary hover:bg-primary-dark text-white text-[13px] font-bold rounded-xl transition-all hover:shadow-lg hover:shadow-primary/25 active:scale-[0.99] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Submitting...
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-4 h-4" />
-                      Request Booking
-                    </>
-                  )}
-                </button>
-              )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="flex gap-1.5 items-center">
+            <CompactField label="Book Date" required className="flex-1">
+              <input
+                type="date"
+                value={form.book_date}
+                onChange={e => updateForm('book_date', e.target.value)}
+                className="w-full bg-transparent focus:outline-none text-xs font-semibold"
+              />
+            </CompactField>
+            <div className="w-24 border border-[#cfd8dc] bg-[#f8f9fa] rounded px-2 py-1.5 text-center text-xs font-mono font-bold text-[#37474f]">
+              {form.book_code}
             </div>
           </div>
 
-          {/* Right Column — Route Estimation Sidebar */}
-          <div className="hidden lg:block">
-            <div className="sticky top-20">
-              <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-                {/* Map placeholder */}
-                <div className="h-32 bg-gradient-to-br from-navy to-navy-light relative">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="flex items-center w-full px-6">
-                      <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-lg z-10">
-                        <Package className="w-4 h-4 text-primary" />
-                      </div>
-                      <div className="flex-1 h-[3px] bg-primary/80 relative">
-                        <div
-                          className="absolute inset-0 bg-white/30"
-                          style={{
-                            animation: 'shimmer 2s infinite',
-                            backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)',
-                            backgroundSize: '200% 100%'
-                          }}
-                        />
-                      </div>
-                      <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center shadow-lg z-10">
-                        <MapPin className="w-4 h-4 text-primary" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-5">
-                  <h3 className="text-[15px] font-bold text-text-primary mb-4">Route Estimation</h3>
-
-                  <div className="space-y-3">
-                    {/* Origin */}
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5">
-                        <div className="w-3 h-3 rounded-full bg-navy-lighter border-2 border-navy" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px]">Origin</p>
-                        <p className="text-[13px] font-medium text-text-primary mt-0.5">
-                          {form.sender_city || 'Pending Input'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Connector */}
-                    <div className="ml-[5px] w-px h-4 bg-border" />
-
-                    {/* Destination */}
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5">
-                        <div className="w-3 h-3 rounded-full bg-primary/20 border-2 border-primary" />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-[10px] font-bold text-primary uppercase tracking-[1px]">Destination</p>
-                        <p className="text-[13px] font-medium text-text-primary mt-0.5">
-                          {form.receiver_city || 'Pending Input'}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 pt-4 border-t border-border">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[12px] text-text-secondary">Est. Distance</span>
-                      <span className="text-[13px] font-bold text-text-primary">-- km</span>
-                    </div>
-                  </div>
-
-                  {/* Summary on step 2 */}
-                  {step >= 2 && form.weight && (
-                    <div className="mt-3 pt-3 border-t border-border animate-fade-in">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[12px] text-text-secondary">Package</span>
-                        <span className="text-[13px] font-bold text-text-primary capitalize">{form.package_type}</span>
-                      </div>
-                      <div className="flex-1 flex justify-between">
-                        <span className="text-[12px] text-text-secondary">Weight</span>
-                        <span className="text-[13px] font-bold text-text-primary">{form.weight} kg</span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+          <div className="flex gap-1.5 items-center">
+            <CompactField label="Client Name" required className="flex-1">
+              <input
+                type="text"
+                value={form.client_name || form.sender_name || 'CUSTOMER'}
+                onChange={e => updateForm('client_name', e.target.value)}
+                className="w-full bg-transparent focus:outline-none text-xs font-bold text-[#0D2132]"
+              />
+            </CompactField>
+            <div className="w-24 border border-[#cfd8dc] bg-[#f8f9fa] rounded px-2 py-1.5 text-center text-xs font-mono font-bold text-[#37474f]">
+              {form.client_code}
             </div>
           </div>
         </div>
       </div>
+
+      {/* ── Main 3 Columns ── */}
+      <form onSubmit={handleSubmit}>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-3">
+          
+          {/* Column 1: Shipper */}
+          <div className="bg-white rounded-lg border border-[#dce1e7] p-3 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="bg-[#0D2132] text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  Shipper Details
+                </span>
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="flex gap-1">
+                  <CompactField label="Origin" required className="flex-1">
+                    <input
+                      type="text"
+                      value={form.sender_origin}
+                      onChange={e => {
+                        updateForm('sender_origin', e.target.value)
+                        updateForm('sender_city', e.target.value)
+                      }}
+                      className="w-full bg-transparent focus:outline-none font-bold uppercase text-xs"
+                    />
+                  </CompactField>
+                  <div className="w-16 border border-[#cfd8dc] bg-[#f8f9fa] rounded px-1.5 py-1 text-center font-mono font-bold text-xs flex items-center justify-center">
+                    {form.sender_origin_code}
+                  </div>
+                </div>
+
+                <CompactField label="Company Name">
+                  <input
+                    type="text"
+                    value={form.sender_company}
+                    onChange={e => updateForm('sender_company', e.target.value)}
+                    className="w-full bg-transparent focus:outline-none uppercase text-xs font-semibold"
+                  />
+                </CompactField>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <CompactField label="Contact Name" required>
+                    <input
+                      type="text"
+                      value={form.sender_name}
+                      onChange={e => updateForm('sender_name', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs"
+                    />
+                  </CompactField>
+                  <CompactField label="Address 1" required>
+                    <input
+                      type="text"
+                      value={form.sender_address}
+                      onChange={e => updateForm('sender_address', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs"
+                    />
+                  </CompactField>
+                </div>
+
+                <CompactField label="Address 2">
+                  <input
+                    type="text"
+                    value={form.sender_address_2}
+                    onChange={e => updateForm('sender_address_2', e.target.value)}
+                    className="w-full bg-transparent focus:outline-none text-xs"
+                  />
+                </CompactField>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <CompactField label="Pincode" required>
+                    <input
+                      type="text"
+                      value={form.sender_pincode}
+                      onChange={e => updateForm('sender_pincode', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
+                    />
+                  </CompactField>
+                  <CompactField label="City" required>
+                    <input
+                      type="text"
+                      value={form.sender_city}
+                      onChange={e => updateForm('sender_city', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs"
+                    />
+                  </CompactField>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <CompactField label="State">
+                    <input
+                      type="text"
+                      value={form.sender_state}
+                      onChange={e => updateForm('sender_state', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                    />
+                  </CompactField>
+                  <CompactField label="Mobile No." required>
+                    <input
+                      type="text"
+                      value={form.sender_phone}
+                      onChange={e => updateForm('sender_phone', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
+                    />
+                  </CompactField>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <CompactField label="E-Mail">
+                    <input
+                      type="email"
+                      value={form.sender_email}
+                      onChange={e => updateForm('sender_email', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs"
+                    />
+                  </CompactField>
+                  <CompactField label="Country">
+                    <input
+                      type="text"
+                      value={form.sender_country}
+                      onChange={e => updateForm('sender_country', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase"
+                    />
+                  </CompactField>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Column 2: Consignee */}
+          <div className="bg-white rounded-lg border border-[#dce1e7] p-3 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="bg-[#0D2132] text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  Consignee Details
+                </span>
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="flex gap-1">
+                  <CompactField label="Destination" required className="flex-1" highlight={!form.receiver_destination}>
+                    <input
+                      type="text"
+                      value={form.receiver_destination}
+                      onChange={e => {
+                        updateForm('receiver_destination', e.target.value)
+                        updateForm('receiver_country', e.target.value)
+                        updateForm('receiver_city', e.target.value)
+                      }}
+                      placeholder="Destination / Country"
+                      className="w-full bg-transparent focus:outline-none uppercase font-bold text-xs text-red-600 placeholder-red-300"
+                    />
+                  </CompactField>
+                  <div className="w-16 border border-[#cfd8dc] bg-[#f8f9fa] rounded px-1.5 py-1 text-center font-mono font-bold text-xs flex items-center justify-center">
+                    {(form.receiver_country || '').slice(0, 3).toUpperCase() || 'DEST'}
+                  </div>
+                </div>
+
+                <CompactField label="Company Name">
+                  <input
+                    type="text"
+                    value={form.receiver_company}
+                    onChange={e => updateForm('receiver_company', e.target.value)}
+                    className="w-full bg-transparent focus:outline-none uppercase text-xs font-semibold"
+                  />
+                </CompactField>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <CompactField label="Contact Name" required>
+                    <input
+                      type="text"
+                      value={form.receiver_name}
+                      onChange={e => updateForm('receiver_name', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs"
+                    />
+                  </CompactField>
+                  <CompactField label="Address 1" required>
+                    <input
+                      type="text"
+                      value={form.receiver_address}
+                      onChange={e => updateForm('receiver_address', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs"
+                    />
+                  </CompactField>
+                </div>
+
+                <CompactField label="Address 2">
+                  <input
+                    type="text"
+                    value={form.receiver_address_2}
+                    onChange={e => updateForm('receiver_address_2', e.target.value)}
+                    className="w-full bg-transparent focus:outline-none text-xs"
+                  />
+                </CompactField>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <CompactField label="Pincode" required>
+                    <input
+                      type="text"
+                      value={form.receiver_pincode}
+                      onChange={e => updateForm('receiver_pincode', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
+                    />
+                  </CompactField>
+                  <CompactField label="City" required>
+                    <input
+                      type="text"
+                      value={form.receiver_city}
+                      onChange={e => updateForm('receiver_city', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs"
+                    />
+                  </CompactField>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <CompactField label="State">
+                    <input
+                      type="text"
+                      value={form.receiver_state}
+                      onChange={e => updateForm('receiver_state', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                    />
+                  </CompactField>
+                  <CompactField label="Mobile No." required>
+                    <input
+                      type="text"
+                      value={form.receiver_phone}
+                      onChange={e => updateForm('receiver_phone', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
+                    />
+                  </CompactField>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <CompactField label="E-Mail">
+                    <input
+                      type="email"
+                      value={form.receiver_email}
+                      onChange={e => updateForm('receiver_email', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs"
+                    />
+                  </CompactField>
+                  <CompactField label="Country">
+                    <input
+                      type="text"
+                      value={form.receiver_country}
+                      onChange={e => updateForm('receiver_country', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase"
+                    />
+                  </CompactField>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Column 3: Services */}
+          <div className="bg-white rounded-lg border border-[#dce1e7] p-3 shadow-xs flex flex-col justify-between">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="bg-[#0D2132] text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  Services Details
+                </span>
+              </div>
+
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-2 gap-2">
+                  <CompactField label="Product">
+                    <select
+                      value={form.product_code}
+                      onChange={e => updateForm('product_code', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs font-bold cursor-pointer"
+                    >
+                      <option value="SPX">SPX</option>
+                      <option value="DOX">DOX</option>
+                      <option value="SAMPLE">SAMPLE</option>
+                    </select>
+                  </CompactField>
+                  <CompactField label="Type">
+                    <select
+                      value={form.package_type}
+                      onChange={e => updateForm('package_type', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs font-bold cursor-pointer"
+                    >
+                      <option value="DOX">DOX</option>
+                      <option value="SPX">SPX</option>
+                      <option value="PARCEL">PARCEL</option>
+                    </select>
+                  </CompactField>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <CompactField label="Pieces" required>
+                    <input
+                      type="number"
+                      min="1"
+                      value={form.no_of_pieces}
+                      onChange={e => updateForm('no_of_pieces', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs font-bold"
+                    />
+                  </CompactField>
+                  <CompactField label="Actual Weight (kg)" required>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={form.weight}
+                      onChange={e => updateForm('weight', e.target.value)}
+                      placeholder="0"
+                      className="w-full bg-transparent focus:outline-none text-xs font-bold text-right"
+                    />
+                  </CompactField>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <CompactField label="Length (cm)">
+                    <input
+                      type="number"
+                      value={form.length}
+                      onChange={e => updateForm('length', e.target.value)}
+                      placeholder="L"
+                      className="w-full bg-transparent focus:outline-none text-xs"
+                    />
+                  </CompactField>
+                  <CompactField label="Breadth (cm)">
+                    <input
+                      type="number"
+                      value={form.breadth}
+                      onChange={e => updateForm('breadth', e.target.value)}
+                      placeholder="B"
+                      className="w-full bg-transparent focus:outline-none text-xs"
+                    />
+                  </CompactField>
+                  <CompactField label="Height (cm)">
+                    <input
+                      type="number"
+                      value={form.height}
+                      onChange={e => updateForm('height', e.target.value)}
+                      placeholder="H"
+                      className="w-full bg-transparent focus:outline-none text-xs"
+                    />
+                  </CompactField>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <CompactField label="Volumetric Wt">
+                    <input
+                      type="text"
+                      readOnly
+                      value={form.volumetric_weight}
+                      className="w-full bg-transparent focus:outline-none text-xs font-mono text-right font-bold text-gray-600"
+                    />
+                  </CompactField>
+                  <CompactField label="Charge Wt">
+                    <input
+                      type="text"
+                      readOnly
+                      value={form.charge_weight}
+                      className="w-full bg-transparent focus:outline-none text-xs font-mono text-right font-bold text-[#0D2132]"
+                    />
+                  </CompactField>
+                </div>
+
+                <CompactField label="Declared Value & Currency">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={form.declared_value}
+                      onChange={e => updateForm('declared_value', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-xs font-semibold"
+                    />
+                    <select
+                      value={form.invoice_currency}
+                      onChange={e => updateForm('invoice_currency', e.target.value)}
+                      className="bg-transparent focus:outline-none text-xs font-bold"
+                    >
+                      <option value="INR">INR</option>
+                      <option value="USD">USD</option>
+                      <option value="EUR">EUR</option>
+                    </select>
+                  </div>
+                </CompactField>
+
+                <CompactField label="Content Description">
+                  <input
+                    type="text"
+                    placeholder="Goods description"
+                    value={form.content_description}
+                    onChange={e => updateForm('content_description', e.target.value)}
+                    className="w-full bg-transparent focus:outline-none text-xs"
+                  />
+                </CompactField>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        {/* ── Collapsible Accordions ── */}
+        <div className="space-y-1 mb-4">
+          <AccordionBar
+            title="Click here to enter Performa details"
+            isOpen={openPerformaAccordion}
+            onToggle={() => setOpenPerformaAccordion(!openPerformaAccordion)}
+          />
+          {openPerformaAccordion && (
+            <div className="bg-white border border-[#dce1e7] rounded p-3 my-1 grid grid-cols-1 sm:grid-cols-3 gap-2.5 animate-slide-down">
+              <CompactField label="Invoice No">
+                <input
+                  type="text"
+                  value={form.invoice_no}
+                  onChange={e => updateForm('invoice_no', e.target.value)}
+                  className="w-full bg-transparent focus:outline-none text-xs"
+                />
+              </CompactField>
+              <CompactField label="Invoice Date">
+                <input
+                  type="date"
+                  value={form.invoice_date}
+                  onChange={e => updateForm('invoice_date', e.target.value)}
+                  className="w-full bg-transparent focus:outline-none text-xs"
+                />
+              </CompactField>
+              <CompactField label="Remarks / Special Instructions">
+                <input
+                  type="text"
+                  placeholder="Remarks"
+                  value={form.remarks}
+                  onChange={e => updateForm('remarks', e.target.value)}
+                  className="w-full bg-transparent focus:outline-none text-xs"
+                />
+              </CompactField>
+            </div>
+          )}
+        </div>
+
+        {/* ── Footer Action Bar ── */}
+        <div className="bg-white rounded-lg border border-[#dce1e7] p-3 shadow-sm flex items-center justify-between flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleBackToDashboard}
+            className="px-4 py-1.5 rounded border border-[#cfd8dc] bg-[#f8f9fa] text-xs font-bold text-[#455a64] hover:bg-[#eceff1]"
+          >
+            Back to Dashboard
+          </button>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-6 py-2 rounded-full bg-[#0D2132] hover:bg-[#142D42] text-white text-xs font-extrabold shadow-md transition-all flex items-center gap-2"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Submitting Request...
+              </>
+            ) : (
+              <>
+                <Check className="w-4 h-4" />
+                Submit Booking Request
+              </>
+            )}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
 
-function FormField({ label, required, children }) {
+function CompactField({ label, required, children, className = '', highlight = false }) {
   return (
-    <div>
-      <label className="block text-[12px] font-bold text-text-secondary mb-1.5">
-        {label}
-        {required && <span className="text-primary ml-0.5">*</span>}
+    <div
+      className={`relative border ${
+        highlight
+          ? 'border-red-500 ring-1 ring-red-200'
+          : 'border-[#cfd8dc] focus-within:border-[#0D2132] focus-within:ring-1 focus-within:ring-[#0D2132]'
+      } rounded bg-white px-2 py-1 transition-all ${className}`}
+    >
+      <label className="absolute -top-2 left-2 px-1 bg-white text-[9px] font-extrabold text-[#455a64] uppercase tracking-tighter whitespace-nowrap z-10">
+        {label} {required && <span className="text-red-600">*</span>}
       </label>
-      {children}
+      <div className="pt-0.5">{children}</div>
     </div>
+  )
+}
+
+function AccordionBar({ title, isOpen, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="w-full bg-[#e0e4e8] hover:bg-[#d5dadf] text-[#0D2132] font-extrabold text-xs py-2 px-4 rounded flex items-center justify-between transition-colors shadow-2xs"
+    >
+      <span>{title}</span>
+      <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+    </button>
   )
 }
