@@ -8,6 +8,38 @@ import {
 } from '../../services/vendorApiPush.service.js'
 import { createAdapter } from '../../courierAdapters/adapterRegistry.js'
 
+function safeJsonParse(val, fallback = null) {
+  if (val === null || val === undefined) return fallback
+  if (typeof val === 'object') return val
+  if (typeof val === 'string' && val.trim() !== '') {
+    try {
+      const parsed = JSON.parse(val)
+      return parsed !== null ? parsed : fallback
+    } catch {
+      return fallback
+    }
+  }
+  return fallback
+}
+
+export const formatConfigRow = (config) => {
+  if (!config) return null
+  return {
+    ...config,
+    auth_payload_template: safeJsonParse(config.auth_payload_template, {}),
+    request_template: safeJsonParse(config.request_template, {}),
+    field_mapping: safeJsonParse(config.field_mapping, {}),
+    headers_template: safeJsonParse(config.headers_template, {}),
+    available_services: safeJsonParse(config.available_services, []),
+    available_vendor_codes: safeJsonParse(config.available_vendor_codes, []),
+    available_product_codes: safeJsonParse(config.available_product_codes, []),
+    required_fields: safeJsonParse(config.required_fields, null),
+    product_code_restrictions: safeJsonParse(config.product_code_restrictions, null),
+    auth_credentials: undefined,
+    has_credentials: !!config.auth_credentials
+  }
+}
+
 /**
  * Get all vendor API configurations
  */
@@ -17,12 +49,8 @@ export const getApiSettings = async (req, res) => {
       'SELECT * FROM vendor_api_configs ORDER BY created_at DESC'
     )
 
-    // Mask sensitive credentials before sending to client
-    const masked = (rows || []).map((config) => ({
-      ...config,
-      auth_credentials: undefined,
-      has_credentials: !!config.auth_credentials
-    }))
+    // Mask sensitive credentials and format JSON fields before sending to client
+    const masked = (rows || []).map((config) => formatConfigRow(config))
 
     return res.json({
       success: true,
@@ -49,9 +77,18 @@ export const getActiveVendors = async (req, res) => {
        ORDER BY name ASC`
     )
 
+    const formatted = (rows || []).map((config) => ({
+      ...config,
+      available_services: safeJsonParse(config.available_services, []),
+      available_vendor_codes: safeJsonParse(config.available_vendor_codes, []),
+      available_product_codes: safeJsonParse(config.available_product_codes, []),
+      required_fields: safeJsonParse(config.required_fields, null),
+      product_code_restrictions: safeJsonParse(config.product_code_restrictions, null)
+    }))
+
     return res.json({
       success: true,
-      vendors: rows || []
+      vendors: formatted
     })
   } catch (error) {
     return res.status(500).json({
@@ -80,16 +117,9 @@ export const getApiSettingById = async (req, res) => {
       })
     }
 
-    // Mask credentials
-    const masked = {
-      ...rows[0],
-      auth_credentials: undefined,
-      has_credentials: !!rows[0].auth_credentials
-    }
-
     return res.json({
       success: true,
-      config: masked
+      config: formatConfigRow(rows[0])
     })
   } catch (error) {
     return res.status(500).json({
@@ -162,11 +192,7 @@ export const createApiSetting = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      config: {
-        ...rows[0],
-        auth_credentials: undefined,
-        has_credentials: !!rows[0].auth_credentials
-      }
+      config: formatConfigRow(rows[0])
     })
   } catch (error) {
     return res.status(500).json({
@@ -261,11 +287,7 @@ export const updateApiSetting = async (req, res) => {
 
     return res.json({
       success: true,
-      config: {
-        ...rows[0],
-        auth_credentials: undefined,
-        has_credentials: !!rows[0].auth_credentials
-      }
+      config: formatConfigRow(rows[0])
     })
   } catch (error) {
     return res.status(500).json({

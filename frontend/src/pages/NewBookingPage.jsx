@@ -196,13 +196,35 @@ export default function NewBookingPage() {
     }
   }, [fromRequestId])
 
+  const safeArr = (val) => {
+    if (Array.isArray(val)) return val
+    if (typeof val === 'string' && val.trim() !== '') {
+      try {
+        const p = JSON.parse(val)
+        if (Array.isArray(p)) return p
+      } catch {}
+    }
+    return []
+  }
+  const safeNullableArr = (val) => {
+    if (val === null || val === undefined) return null
+    if (Array.isArray(val)) return val
+    if (typeof val === 'string' && val.trim() !== '') {
+      try {
+        const p = JSON.parse(val)
+        if (Array.isArray(p)) return p
+      } catch {}
+    }
+    return null
+  }
+
   // Get selected vendor's configured codes
   const selectedVendor = activeVendors.find(v => String(v.id) === String(form.vendor_config_id))
-  const vendorServices = selectedVendor?.available_services || []
-  const vendorVendorCodes = selectedVendor?.available_vendor_codes || []
-  const vendorProductCodes = selectedVendor?.available_product_codes || []
-  const vendorRequiredFields = selectedVendor?.required_fields || null
-  const vendorProductRestrictions = selectedVendor?.product_code_restrictions || null
+  const vendorServices = safeArr(selectedVendor?.available_services)
+  const vendorVendorCodes = safeArr(selectedVendor?.available_vendor_codes)
+  const vendorProductCodes = safeArr(selectedVendor?.available_product_codes)
+  const vendorRequiredFields = safeNullableArr(selectedVendor?.required_fields)
+  const vendorProductRestrictions = safeNullableArr(selectedVendor?.product_code_restrictions)
 
   /**
    * Check if a form section/field is required by the selected vendor.
@@ -213,7 +235,7 @@ export default function NewBookingPage() {
    */
   const vendorRequiresField = (fieldKey) => {
     if (!form.vendor_config_id) return true       // No vendor selected → show all
-    if (!vendorRequiredFields) return true         // Vendor has no config → show all (backward compat)
+    if (!vendorRequiredFields || !Array.isArray(vendorRequiredFields)) return true // Vendor has no config → show all (backward compat)
     return vendorRequiredFields.includes(fieldKey)
   }
 
@@ -222,7 +244,7 @@ export default function NewBookingPage() {
    * If vendor has product_code_restrictions, only show codes matching current form values.
    */
   const filteredProductCodes = (() => {
-    if (!vendorProductRestrictions || vendorProductRestrictions.length === 0) {
+    if (!vendorProductRestrictions || !Array.isArray(vendorProductRestrictions) || vendorProductRestrictions.length === 0) {
       return vendorProductCodes // No restrictions → show all configured product codes
     }
 

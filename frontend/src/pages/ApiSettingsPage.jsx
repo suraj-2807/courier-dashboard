@@ -51,6 +51,40 @@ const AUTH_TYPES = [
   { value: 'api_key', label: 'API Key (Header)', desc: 'API key sent as a custom header' }
 ]
 
+function safeArray(val) {
+  if (Array.isArray(val)) return val
+  if (typeof val === 'string' && val.trim() !== '') {
+    try {
+      const parsed = JSON.parse(val)
+      if (Array.isArray(parsed)) return parsed
+    } catch {}
+  }
+  return []
+}
+
+function safeNullableArray(val) {
+  if (val === null || val === undefined) return null
+  if (Array.isArray(val)) return val
+  if (typeof val === 'string' && val.trim() !== '') {
+    try {
+      const parsed = JSON.parse(val)
+      if (Array.isArray(parsed)) return parsed
+    } catch {}
+  }
+  return null
+}
+
+function safeObject(val) {
+  if (val && typeof val === 'object' && !Array.isArray(val)) return val
+  if (typeof val === 'string' && val.trim() !== '') {
+    try {
+      const parsed = JSON.parse(val)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed
+    } catch {}
+  }
+  return {}
+}
+
 const EMPTY_FORM = {
   name: '',
   vendor_code: '',
@@ -215,17 +249,17 @@ export default function ApiSettingsPage() {
       response_tracking_path: config.response_tracking_path || '',
       response_success_path: config.response_success_path || '',
       response_success_value: config.response_success_value || '',
-      available_services: config.available_services || [],
-      available_vendor_codes: config.available_vendor_codes || [],
-      available_product_codes: config.available_product_codes || [],
-      required_fields: config.required_fields || null,
-      product_code_restrictions: config.product_code_restrictions || null,
+      available_services: safeArray(config.available_services),
+      available_vendor_codes: safeArray(config.available_vendor_codes),
+      available_product_codes: safeArray(config.available_product_codes),
+      required_fields: safeNullableArray(config.required_fields),
+      product_code_restrictions: safeNullableArray(config.product_code_restrictions),
       environment: config.environment || 'production',
       is_active: config.is_active,
-      field_mapping: config.field_mapping || {}
+      field_mapping: safeObject(config.field_mapping)
     })
-    setRequestTemplateStr(JSON.stringify(config.request_template || {}, null, 2))
-    setHeadersTemplateStr(JSON.stringify(config.headers_template || { "Content-Type": "application/json" }, null, 2))
+    setRequestTemplateStr(JSON.stringify(safeObject(config.request_template), null, 2))
+    setHeadersTemplateStr(JSON.stringify(safeObject(config.headers_template) || { "Content-Type": "application/json" }, null, 2))
     setModalTab('connection')
     setEditingId(config.id)
     setShowModal(true)
@@ -386,7 +420,7 @@ export default function ApiSettingsPage() {
     setForm(prev => ({
       ...prev,
       available_services: [
-        ...prev.available_services,
+        ...safeArray(prev.available_services),
         { code: newService.code, label: newService.label || newService.code }
       ]
     }))
@@ -396,7 +430,7 @@ export default function ApiSettingsPage() {
   const removeService = (idx) => {
     setForm(prev => ({
       ...prev,
-      available_services: prev.available_services.filter((_, i) => i !== idx)
+      available_services: safeArray(prev.available_services).filter((_, i) => i !== idx)
     }))
   }
 
@@ -405,7 +439,7 @@ export default function ApiSettingsPage() {
     setForm(prev => ({
       ...prev,
       available_vendor_codes: [
-        ...prev.available_vendor_codes,
+        ...safeArray(prev.available_vendor_codes),
         { code: newVendorCode.code, label: newVendorCode.label || newVendorCode.code }
       ]
     }))
@@ -415,7 +449,7 @@ export default function ApiSettingsPage() {
   const removeVendorCode = (idx) => {
     setForm(prev => ({
       ...prev,
-      available_vendor_codes: prev.available_vendor_codes.filter((_, i) => i !== idx)
+      available_vendor_codes: safeArray(prev.available_vendor_codes).filter((_, i) => i !== idx)
     }))
   }
 
@@ -424,7 +458,7 @@ export default function ApiSettingsPage() {
     setForm(prev => ({
       ...prev,
       available_product_codes: [
-        ...prev.available_product_codes,
+        ...safeArray(prev.available_product_codes),
         { code: newProductCode.code, label: newProductCode.label || newProductCode.code }
       ]
     }))
@@ -434,7 +468,7 @@ export default function ApiSettingsPage() {
   const removeProductCode = (idx) => {
     setForm(prev => ({
       ...prev,
-      available_product_codes: prev.available_product_codes.filter((_, i) => i !== idx)
+      available_product_codes: safeArray(prev.available_product_codes).filter((_, i) => i !== idx)
     }))
   }
 
@@ -442,7 +476,7 @@ export default function ApiSettingsPage() {
   // initializes it with all sections except the toggled one. Toggling all ON returns to null.
   const toggleRequiredField = (fieldKey) => {
     setForm(prev => {
-      const current = prev.required_fields
+      const current = safeNullableArray(prev.required_fields)
       if (current === null) {
         // Currently showing all → turn off this one field
         const allKeys = ALL_FORM_SECTIONS.map(s => s.key)
@@ -478,7 +512,7 @@ export default function ApiSettingsPage() {
     Object.keys(restriction).forEach(k => restriction[k] === undefined && delete restriction[k])
     setForm(prev => ({
       ...prev,
-      product_code_restrictions: [...(prev.product_code_restrictions || []), restriction]
+      product_code_restrictions: [...safeArray(prev.product_code_restrictions), restriction]
     }))
     setNewRestriction(EMPTY_RESTRICTION)
   }
@@ -486,7 +520,7 @@ export default function ApiSettingsPage() {
   const removeRestriction = (idx) => {
     setForm(prev => ({
       ...prev,
-      product_code_restrictions: (prev.product_code_restrictions || []).filter((_, i) => i !== idx)
+      product_code_restrictions: safeArray(prev.product_code_restrictions).filter((_, i) => i !== idx)
     }))
   }
 
@@ -1176,9 +1210,9 @@ export default function ApiSettingsPage() {
                       Define available service types for this vendor (shown in booking dropdown).
                     </p>
                     {/* Existing services */}
-                    {form.available_services.length > 0 && (
+                    {safeArray(form.available_services).length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-                        {form.available_services.map((svc, idx) => (
+                        {safeArray(form.available_services).map((svc, idx) => (
                           <span key={idx} style={{
                             display: 'inline-flex', alignItems: 'center', gap: '6px',
                             padding: '5px 10px', borderRadius: '8px',
@@ -1244,9 +1278,9 @@ export default function ApiSettingsPage() {
                     <p style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginBottom: '10px' }}>
                       Define vendor codes available for this API (shown in booking dropdown, e.g. PC, DHL, FEDEX).
                     </p>
-                    {form.available_vendor_codes.length > 0 && (
+                    {safeArray(form.available_vendor_codes).length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-                        {form.available_vendor_codes.map((vc, idx) => (
+                        {safeArray(form.available_vendor_codes).map((vc, idx) => (
                           <span key={idx} style={{
                             display: 'inline-flex', alignItems: 'center', gap: '6px',
                             padding: '5px 10px', borderRadius: '8px',
@@ -1311,9 +1345,9 @@ export default function ApiSettingsPage() {
                     <p style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginBottom: '10px' }}>
                       Define product codes available for this API (shown in booking dropdown, e.g. SPX, DOX, INTL. SPX).
                     </p>
-                    {form.available_product_codes.length > 0 && (
+                    {safeArray(form.available_product_codes).length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-                        {form.available_product_codes.map((pc, idx) => (
+                        {safeArray(form.available_product_codes).map((pc, idx) => (
                           <span key={idx} style={{
                             display: 'inline-flex', alignItems: 'center', gap: '6px',
                             padding: '5px 10px', borderRadius: '8px',
@@ -1381,7 +1415,8 @@ export default function ApiSettingsPage() {
                     </p>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
                       {ALL_FORM_SECTIONS.map(s => {
-                        const isChecked = form.required_fields === null || form.required_fields.includes(s.key)
+                        const reqFields = safeNullableArray(form.required_fields)
+                        const isChecked = reqFields === null || (Array.isArray(reqFields) && reqFields.includes(s.key))
                         return (
                           <label
                             key={s.key}
@@ -1415,9 +1450,9 @@ export default function ApiSettingsPage() {
                       Add country/weight restrictions to product codes. Ineligible codes will be disabled or show warnings in booking.
                     </p>
 
-                    {(form.product_code_restrictions || []).length > 0 && (
+                    {safeArray(form.product_code_restrictions).length > 0 && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
-                        {(form.product_code_restrictions || []).map((r, idx) => (
+                        {safeArray(form.product_code_restrictions).map((r, idx) => (
                           <div
                             key={idx}
                             style={{
