@@ -443,6 +443,55 @@ export const createBooking = async (req, res) => {
       }
     }
 
+    // ── Step 5.5: Link & confirm booking request if created from a request ──
+    const fromRequestId = req.body.from_request || req.body.booking_request_id
+    const requestAwb = req.body.request_awb
+
+    if (fromRequestId || requestAwb) {
+      try {
+        let reqRow = null
+        if (fromRequestId) {
+          const reqRows = await query('SELECT * FROM booking_requests WHERE id = ?', [fromRequestId])
+          if (reqRows.length > 0) reqRow = reqRows[0]
+        }
+        if (!reqRow && requestAwb) {
+          const reqRows = await query('SELECT * FROM booking_requests WHERE request_awb = ?', [requestAwb])
+          if (reqRows.length > 0) reqRow = reqRows[0]
+        }
+
+        if (reqRow) {
+          const effectiveTracking = vendorResult?.awbNumber || tracking_number
+          await execute(
+            `UPDATE booking_requests SET status = 'confirmed', shipment_id = ?, tracking_number = ? WHERE id = ?`,
+            [shipmentId, effectiveTracking, reqRow.id]
+          )
+
+          const updateTitle = 'Shipment Confirmed'
+          const updateDesc = `Your booking request has been confirmed. Tracking Number: ${effectiveTracking}`
+          const wpUpdates = [
+            { type: 'status_change', title: 'Status Updated to Confirmed', description: 'Booking request status was changed to confirmed.' },
+            { type: 'shipment_created', title: updateTitle, description: updateDesc }
+          ]
+
+          await execute(
+            `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
+            [reqRow.id, 'shipment_created', updateTitle, updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking })]
+          )
+
+          // Sync status update to WordPress
+          syncStatusToWP({
+            request_awb: reqRow.request_awb,
+            status: 'confirmed',
+            shipment_id: shipmentId,
+            tracking_number: effectiveTracking,
+            updates: wpUpdates
+          }).catch(() => {})
+        }
+      } catch (reqSyncErr) {
+        console.error('Failed to update booking request on booking creation:', reqSyncErr.message)
+      }
+    }
+
     // ── Step 6: Refetch the shipment with updated vendor data ──
     const shipmentRows = await query(
       'SELECT * FROM shipments WHERE id = ?',

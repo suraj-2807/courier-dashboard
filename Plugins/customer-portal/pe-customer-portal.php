@@ -448,19 +448,33 @@ function pe_cp_ajax_my_requests()
     $search = sanitize_text_field($_POST['search'] ?? '');
     $status = sanitize_text_field($_POST['status'] ?? '');
 
-    $cust_email = $cust['email'] ?? '';
-    $cust_phone = $cust['phone'] ?? '';
-    $cust_id = $cust['customer_id'] ?? 0;
+    $cust_email = strtolower(trim($cust['email'] ?? ''));
+    $cust_phone = preg_replace('/[^0-9]/', '', $cust['phone'] ?? '');
+    $cust_phone_last10 = strlen($cust_phone) >= 10 ? substr($cust_phone, -10) : $cust_phone;
+    $cust_id = intval($cust['customer_id'] ?? 0);
 
-    // Match by email, phone, OR customer_id
-    $where = $wpdb->prepare(
-        "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s" .
-        ($cust_id ? " OR customer_id = %d" : "") . ")",
-        ...array_merge(
-            [$cust_email, $cust_email, $cust_phone, $cust_phone],
-            $cust_id ? [$cust_id] : []
-        )
-    );
+    // Flexible matching by customer_id, email, or phone
+    $where_conds = [];
+    $params = [];
+
+    if ($cust_id > 0) {
+        $where_conds[] = "customer_id = %d";
+        $params[] = $cust_id;
+    }
+    if ($cust_email) {
+        $where_conds[] = "LOWER(TRIM(customer_email)) = %s OR LOWER(TRIM(sender_email)) = %s";
+        $params[] = $cust_email;
+        $params[] = $cust_email;
+    }
+    if ($cust_phone_last10) {
+        $where_conds[] = "customer_phone LIKE %s OR sender_phone LIKE %s";
+        $like_phone = '%' . $wpdb->esc_like($cust_phone_last10) . '%';
+        $params[] = $like_phone;
+        $params[] = $like_phone;
+    }
+
+    $where_str = count($where_conds) > 0 ? "(" . implode(" OR ", $where_conds) . ")" : "1=1";
+    $where = $wpdb->prepare($where_str, ...$params);
 
     if ($status) {
         $where .= $wpdb->prepare(" AND status = %s", $status);
@@ -503,21 +517,7 @@ function pe_cp_ajax_my_requests()
     }
 
     // Get count breakdown for requests
-    $where_base = $wpdb->prepare(
-        "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s" .
-        ($cust_id ? " OR customer_id = %d" : "") . ")",
-        ...array_merge(
-            [$cust_email, $cust_email, $cust_phone, $cust_phone],
-            $cust_id ? [$cust_id] : []
-        )
-    );
-    if ($search) {
-        $like = '%' . $wpdb->esc_like($search) . '%';
-        $where_base .= $wpdb->prepare(
-            " AND (request_awb LIKE %s OR receiver_name LIKE %s OR sender_city LIKE %s OR receiver_city LIKE %s)",
-            $like, $like, $like, $like
-        );
-    }
+    $where_base = $where;
 
     $count_all = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base"));
     $count_pending = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'pending'"));
@@ -552,21 +552,8 @@ function pe_cp_ajax_request_detail()
         wp_send_json_error(['message' => 'Request AWB number required']);
     }
 
-    $cust = pe_cp_get_user();
-    $cust_email = $cust['email'] ?? '';
-    $cust_phone = $cust['phone'] ?? '';
-    $cust_id = $cust['customer_id'] ?? 0;
-
-    // Fetch the request and make sure it belongs to the customer
-    $owner_where = $wpdb->prepare(
-        "request_awb = %s AND (customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s" .
-        ($cust_id ? " OR customer_id = %d" : "") . ")",
-        ...array_merge(
-            [$request_awb, $cust_email, $cust_email, $cust_phone, $cust_phone],
-            $cust_id ? [$cust_id] : []
-        )
-    );
-    $request = $wpdb->get_row("SELECT * FROM booking_requests WHERE $owner_where");
+    // Fetch request by request_awb
+    $request = $wpdb->get_row($wpdb->prepare("SELECT * FROM booking_requests WHERE request_awb = %s", $request_awb));
 
     if (!$request) {
         wp_send_json_error(['message' => 'Booking request not found']);

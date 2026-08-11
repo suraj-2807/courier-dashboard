@@ -193,6 +193,9 @@ export default function CustomerBookingPage() {
 
       setSubmittedAwb(data.request_awb)
       toast.success('Booking request submitted successfully!')
+      try {
+        window.parent.postMessage({ type: 'PE_BOOKING_SUCCESS', awb: data.request_awb }, '*')
+      } catch (e) {}
     } catch (err) {
       toast.error(err?.message || 'Failed to submit request')
     } finally {

@@ -435,13 +435,20 @@ export default function NewBookingPage() {
         otp: form.otp,
         lsp_type: form.lsp_type,
         required_performa: form.required_performa,
-        required_label: form.required_label
+        required_label: form.required_label,
+
+        // Linked Request params (if converted from booking request)
+        from_request: fromRequestId || undefined,
+        request_awb: requestAwb || undefined
       })
 
+      const trackingNo = result?.vendor_result?.awbNumber || result?.booking?.tracking_number || result?.booking?.order_id || 'N/A'
+      const vendorPushed = result?.vendor_result?.success
+
       toast.success(
-        result?.push_result?.pushed
-          ? `Booking created & auto-pushed to API! AWB: ${result.booking?.awb_number}`
-          : `Booking created successfully! AWB: ${result.booking?.awb_number}`
+        vendorPushed
+          ? `Booking created & auto-pushed to API! Tracking AWB: ${trackingNo}`
+          : `Booking created successfully! Tracking AWB: ${trackingNo}`
       )
       navigate('/bookings')
     } catch (err) {
