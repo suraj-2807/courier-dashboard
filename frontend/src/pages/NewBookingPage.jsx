@@ -1185,7 +1185,7 @@ export default function NewBookingPage() {
                                   Reset
                                 </button>
                               </div>
-                            ) : filteredProductCodes.length > 0 ? (
+                            ) : vendorProductRestrictions && filteredProductCodes.length > 0 ? (
                               <>
                                 <select
                                   value={form.product_code}

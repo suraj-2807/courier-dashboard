@@ -45,7 +45,7 @@ app.use(express.static(distPath))
 
 // Catch-all SPA route for any non-API GET request (Express 5 compatible)
 app.use((req, res, next) => {
-  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+  if (req.method === 'GET' && !req.path.startsWith('/api/')) {
     // Try sendFile first, with error handling fallback
     res.sendFile(distIndexPath, (err) => {
       if (err) {
