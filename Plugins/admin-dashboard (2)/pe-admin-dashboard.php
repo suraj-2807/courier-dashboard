@@ -243,18 +243,8 @@ function pe_sync_awbentry_parcel_history()
          WHERE ph.HISTORYID IS NULL
          LIMIT 50"
     );
+    // Writes to parcel_history are DISABLED by user directive
     $count = 0;
-    foreach ($new_entries as $entry) {
-        $res = $wpdb->insert('parcel_history', [
-            'AWBNO' => intval($entry->AWBNO),
-            'date' => !empty($entry->AWBDATE) ? $entry->AWBDATE : current_time('Y-m-d'),
-            'time' => current_time('H:i:s'),
-            'activity' => 'SHIPMENT BOOKED',
-            'location' => pe_origin_city(trim($entry->ORIGIN ?: '')),
-        ]);
-        if ($res !== false)
-            $count++;
-    }
 
     // 2. Proactive Sync: Fetch status for entries that only have "SHIPMENT BOOKED" but have AUTOTRACK enabled
     // We only process a few at a time to avoid slowing down the cron
@@ -311,14 +301,7 @@ add_filter('cron_schedules', function ($schedules) {
     return $schedules;
 });
 
-// ── One-time: Add index on parcel_history for speed ──
-add_action('init', function () {
-    if (get_option('pe_ph_index_created'))
-        return;
-    global $wpdb;
-    $wpdb->query("ALTER TABLE parcel_history ADD INDEX idx_ph_awbno_date (AWBNO, date DESC, time DESC)");
-    update_option('pe_ph_index_created', 1);
-}, 99);
+// ── One-time: Add index on parcel_history (DISABLED BY USER DIRECTIVE) ──
 
 // ══════════════════════════════════════
 //  SECURITY: IP Whitelist
@@ -998,14 +981,8 @@ function pe_cache_tracking_status($awb_int, $status, $tracking_data = [])
     if (strtolower(trim($existing ?? '')) === strtolower(trim($status)))
         return;
 
-    // Insert new status record
-    $wpdb->insert('parcel_history', [
-        'AWBNO' => $awb_int,
-        'date' => current_time('Y-m-d'),
-        'time' => current_time('H:i:s'),
-        'activity' => strtoupper($status),
-        'location' => '',
-    ]);
+    // Writes to parcel_history are DISABLED by user directive
+    return;
 }
 
 function pe_admin_ajax_shipment_detail()

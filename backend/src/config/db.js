@@ -234,56 +234,8 @@ export async function initializeDb() {
         console.error('request_updates migration failed:', ruErr.message)
       }
     }
-    // ── AWBENTRY table (local cache if needed) ──
-    try {
-      await execute(`CREATE TABLE IF NOT EXISTS AWBENTRY (
-        AWBID INT AUTO_INCREMENT PRIMARY KEY,
-        AWBNO BIGINT NOT NULL,
-        AWBDATE DATE DEFAULT NULL,
-        SERVICE INT DEFAULT 0,
-        CNEENAME VARCHAR(100) DEFAULT '',
-        CNEEPHONE1 VARCHAR(50) DEFAULT '',
-        CNEEADDRESS1 VARCHAR(255) DEFAULT '',
-        CNEEADDRESS2 VARCHAR(255) DEFAULT '',
-        CNEECITY VARCHAR(100) DEFAULT '',
-        CNEEPINCODE VARCHAR(20) DEFAULT '',
-        DESTNAME VARCHAR(100) DEFAULT '',
-        SNAME VARCHAR(100) DEFAULT '',
-        SADDRESS1 VARCHAR(255) DEFAULT '',
-        SADDRESS2 VARCHAR(255) DEFAULT '',
-        SCITY VARCHAR(100) DEFAULT '',
-        SPINCODE VARCHAR(20) DEFAULT '',
-        SPHONE1 VARCHAR(50) DEFAULT '',
-        CHARGEWEIGHT DECIMAL(10,2) DEFAULT 0,
-        ACTUALWEIGHT DECIMAL(10,2) DEFAULT 0,
-        CARTONS INT DEFAULT 1,
-        PAYMENTTYPE VARCHAR(50) DEFAULT 'prepaid',
-        CUSTNAME VARCHAR(100) DEFAULT '',
-        REMARKS TEXT DEFAULT NULL,
-        VENDNAME VARCHAR(100) DEFAULT '',
-        VENDORAWB1 VARCHAR(100) DEFAULT '',
-        UNIQUE KEY idx_awbno (AWBNO)
-      )`)
-      console.log('AWBENTRY table ready.')
-    } catch (aeErr) {
-      console.error('AWBENTRY migration failed:', aeErr.message)
-    }
-
-    // ── parcel_history table (local cache if needed) ──
-    try {
-      await execute(`CREATE TABLE IF NOT EXISTS parcel_history (
-        HISTORYID INT AUTO_INCREMENT PRIMARY KEY,
-        AWBNO BIGINT NOT NULL,
-        date DATE DEFAULT NULL,
-        time TIME DEFAULT NULL,
-        activity VARCHAR(100) DEFAULT '',
-        location VARCHAR(100) DEFAULT '',
-        KEY idx_awbno (AWBNO)
-      )`)
-      console.log('parcel_history table ready.')
-    } catch (phErr) {
-      console.error('parcel_history migration failed:', phErr.message)
-    }
+    // ── AWBENTRY & parcel_history tables (WRITES DISABLED BY USER DIRECTIVE) ──
+    console.log('AWBENTRY & parcel_history table writes/migrations are completely disabled.')
 
     console.log('DB initialization successfully completed!')
   } catch (err) {

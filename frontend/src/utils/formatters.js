@@ -39,27 +39,35 @@ export const formatTime = (dateString) => {
 export const getStatusLabel = (status) => {
   const map = {
     pending: 'Pending',
+    requested: 'Requested',
+    processing: 'Processing',
     booked: 'Booked',
+    confirmed: 'Confirmed',
     picked_up: 'Picked Up',
     in_transit: 'In Transit',
     out_for_delivery: 'Out for Delivery',
     delivered: 'Delivered',
     failed: 'Failed',
-    cancelled: 'Cancelled'
+    cancelled: 'Cancelled',
+    rejected: 'Rejected'
   }
-  return map[status] || status
+  return map[status] || (status ? status.charAt(0).toUpperCase() + status.slice(1) : '—')
 }
 
 export const getStatusColor = (status) => {
   const map = {
     pending: 'bg-amber-50 text-amber-700 border-amber-200',
-    booked: 'bg-blue-50 text-blue-700 border-blue-200',
+    requested: 'bg-amber-50 text-amber-700 border-amber-200',
+    processing: 'bg-blue-50 text-blue-700 border-blue-200',
+    booked: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    confirmed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     picked_up: 'bg-cyan-50 text-cyan-700 border-cyan-200',
     in_transit: 'bg-indigo-50 text-indigo-700 border-indigo-200',
     out_for_delivery: 'bg-orange-50 text-orange-700 border-orange-200',
     delivered: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     failed: 'bg-red-50 text-red-700 border-red-200',
-    cancelled: 'bg-gray-100 text-gray-600 border-gray-200'
+    cancelled: 'bg-gray-100 text-gray-600 border-gray-200',
+    rejected: 'bg-red-50 text-red-700 border-red-200'
   }
   return map[status] || 'bg-gray-100 text-gray-600 border-gray-200'
 }

@@ -921,50 +921,8 @@ add_action('init', function () {
         ) $charset");
     }
 
-    // Check and create AWBENTRY table if missing
-    if (!$wpdb->get_var("SHOW TABLES LIKE 'AWBENTRY'")) {
-        $wpdb->query("CREATE TABLE IF NOT EXISTS AWBENTRY (
-            AWBID INT AUTO_INCREMENT PRIMARY KEY,
-            AWBNO BIGINT NOT NULL,
-            AWBDATE DATE DEFAULT NULL,
-            SERVICE INT DEFAULT 0,
-            CNEENAME VARCHAR(100) DEFAULT '',
-            CNEEPHONE1 VARCHAR(50) DEFAULT '',
-            CNEEADDRESS1 VARCHAR(255) DEFAULT '',
-            CNEEADDRESS2 VARCHAR(255) DEFAULT '',
-            CNEECITY VARCHAR(100) DEFAULT '',
-            CNEEPINCODE VARCHAR(20) DEFAULT '',
-            DESTNAME VARCHAR(100) DEFAULT '',
-            SNAME VARCHAR(100) DEFAULT '',
-            SADDRESS1 VARCHAR(255) DEFAULT '',
-            SADDRESS2 VARCHAR(255) DEFAULT '',
-            SCITY VARCHAR(100) DEFAULT '',
-            SPINCODE VARCHAR(20) DEFAULT '',
-            SPHONE1 VARCHAR(50) DEFAULT '',
-            CHARGEWEIGHT DECIMAL(10,2) DEFAULT 0,
-            ACTUALWEIGHT DECIMAL(10,2) DEFAULT 0,
-            CARTONS INT DEFAULT 1,
-            PAYMENTTYPE VARCHAR(50) DEFAULT 'prepaid',
-            CUSTNAME VARCHAR(100) DEFAULT '',
-            REMARKS TEXT DEFAULT NULL,
-            VENDNAME VARCHAR(100) DEFAULT '',
-            VENDORAWB1 VARCHAR(100) DEFAULT '',
-            UNIQUE KEY idx_awbno (AWBNO)
-        ) $charset");
-    }
-
-    // Check and create parcel_history table if missing
-    if (!$wpdb->get_var("SHOW TABLES LIKE 'parcel_history'")) {
-        $wpdb->query("CREATE TABLE IF NOT EXISTS parcel_history (
-            HISTORYID INT AUTO_INCREMENT PRIMARY KEY,
-            AWBNO BIGINT NOT NULL,
-            date DATE DEFAULT NULL,
-            time TIME DEFAULT NULL,
-            activity VARCHAR(100) DEFAULT '',
-            location VARCHAR(100) DEFAULT '',
-            KEY idx_awbno (AWBNO)
-        ) $charset");
-    }
+    // AWBENTRY & parcel_history table checks (DISABLED BY USER DIRECTIVE: NO SCHEMA OR DATA WRITES)
+    // Table creation and column alterations for AWBENTRY and parcel_history are completely disabled.
 
     set_transient('pe_cp_tables_checked', 1, DAY_IN_SECONDS);
 }, 5);
@@ -1122,43 +1080,8 @@ function pe_cp_rest_sync_status($request)
 
     $wpdb->update('booking_requests', $update_data, ['id' => $local->id]);
 
-    // If confirmed, sync to AWBENTRY & parcel_history
-    if (sanitize_text_field($d['status'] ?? '') === 'confirmed' && !empty($d['tracking_number'])) {
-        $wpdb->replace('AWBENTRY', [
-            'AWBNO'         => intval($d['tracking_number']),
-            'AWBDATE'       => current_time('Y-m-d'),
-            'SERVICE'       => 1007,
-            'CNEENAME'      => $local->receiver_name,
-            'CNEEPHONE1'    => $local->receiver_phone,
-            'CNEEADDRESS1'  => $local->receiver_address,
-            'CNEEADDRESS2'  => $local->receiver_address_2,
-            'CNEECITY'      => $local->receiver_city,
-            'CNEEPINCODE'   => $local->receiver_pincode,
-            'DESTNAME'      => $local->receiver_country,
-            'SNAME'         => $local->sender_name,
-            'SADDRESS1'     => $local->sender_address,
-            'SADDRESS2'     => $local->sender_address_2,
-            'SCITY'         => $local->sender_city,
-            'SPINCODE'      => $local->sender_pincode,
-            'SPHONE1'       => $local->sender_phone,
-            'CHARGEWEIGHT'  => $local->weight,
-            'ACTUALWEIGHT'  => $local->weight,
-            'CARTONS'       => $local->no_of_pieces,
-            'PAYMENTTYPE'   => 'prepaid',
-            'CUSTNAME'      => $local->customer_name ?: $local->sender_name,
-            'REMARKS'       => $local->remarks,
-            'VENDNAME'      => '',
-            'VENDORAWB1'    => ''
-        ]);
-
-        $wpdb->replace('parcel_history', [
-            'AWBNO'    => intval($d['tracking_number']),
-            'date'     => current_time('Y-m-d'),
-            'time'     => current_time('H:i:s'),
-            'activity' => 'SHIPMENT BOOKED',
-            'location' => $local->sender_city ?: 'Origin'
-        ]);
-    }
+    // Sync to AWBENTRY & parcel_history (DISABLED BY USER DIRECTIVE)
+    // No writes permitted to AWBENTRY or parcel_history.
 
     // Insert timeline entries
     $updates = $d['updates'] ?? [];
@@ -1189,46 +1112,8 @@ function pe_cp_rest_sync_awb($request)
         return new WP_REST_Response(['success' => false, 'message' => 'awb_no required and must be an integer'], 400);
     }
 
-    // Insert/Replace into AWBENTRY
-    $res1 = $wpdb->replace('AWBENTRY', [
-        'AWBNO'        => $awb_no,
-        'AWBDATE'      => sanitize_text_field($d['awb_date'] ?? current_time('Y-m-d')),
-        'SERVICE'      => intval($d['service'] ?? 1007),
-        'CNEENAME'     => sanitize_text_field($d['receiver_name'] ?? ''),
-        'CNEEPHONE1'   => sanitize_text_field($d['receiver_phone'] ?? ''),
-        'CNEEADDRESS1' => sanitize_text_field($d['receiver_address'] ?? ''),
-        'CNEEADDRESS2' => sanitize_text_field($d['receiver_address_2'] ?? ''),
-        'CNEECITY'     => sanitize_text_field($d['receiver_city'] ?? ''),
-        'CNEEPINCODE'  => sanitize_text_field($d['receiver_pincode'] ?? ''),
-        'DESTNAME'     => sanitize_text_field($d['receiver_country'] ?? ''),
-        'SNAME'        => sanitize_text_field($d['sender_name'] ?? ''),
-        'SADDRESS1'    => sanitize_text_field($d['sender_address'] ?? ''),
-        'SADDRESS2'    => sanitize_text_field($d['sender_address_2'] ?? ''),
-        'SCITY'        => sanitize_text_field($d['sender_city'] ?? ''),
-        'SPINCODE'     => sanitize_text_field($d['sender_pincode'] ?? ''),
-        'SPHONE1'      => sanitize_text_field($d['sender_phone'] ?? ''),
-        'CHARGEWEIGHT' => floatval($d['weight'] ?? 0),
-        'ACTUALWEIGHT' => floatval($d['weight'] ?? 0),
-        'CARTONS'      => intval($d['no_of_pieces'] ?? 1),
-        'PAYMENTTYPE'  => sanitize_text_field($d['payment_mode'] ?? 'prepaid'),
-        'CUSTNAME'     => sanitize_text_field($d['customer_name'] ?? $d['sender_name'] ?? ''),
-        'REMARKS'      => sanitize_textarea_field($d['remarks'] ?? ''),
-        'VENDNAME'     => sanitize_text_field($d['vendor_name'] ?? ''),
-        'VENDORAWB1'   => sanitize_text_field($d['vendor_code'] ?? '')
-    ]);
-
-    // Insert initial history event
-    $res2 = $wpdb->replace('parcel_history', [
-        'AWBNO'    => $awb_no,
-        'date'     => sanitize_text_field($d['awb_date'] ?? current_time('Y-m-d')),
-        'time'     => sanitize_text_field($d['awb_time'] ?? current_time('H:i:s')),
-        'activity' => 'SHIPMENT BOOKED',
-        'location' => sanitize_text_field($d['sender_city'] ?? 'Origin')
-    ]);
-
-    if ($res1 === false || $res2 === false) {
-        return new WP_REST_Response(['success' => false, 'message' => 'Failed to insert into WP DB tables'], 500);
-    }
+    // Writes to AWBENTRY and parcel_history are DISABLED by user directive
+    return new WP_REST_Response(['success' => true, 'message' => 'Sync received (AWBENTRY & parcel_history writes disabled)'], 200);
 
     return new WP_REST_Response(['success' => true, 'message' => 'AWB entry synced successfully']);
 }

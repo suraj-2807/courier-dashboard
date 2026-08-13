@@ -161,6 +161,7 @@ export default function NewBookingPage() {
   // Pre-fill from booking request URL params
   const [searchParams] = useSearchParams()
   const fromRequestId = searchParams.get('from_request')
+  const requestAwb = searchParams.get('request_awb')
 
   useEffect(() => {
     if (!fromRequestId) return
