@@ -27,6 +27,27 @@ export const useCreateBooking = () => {
   })
 }
 
+export const useSaveBooking = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data) => bookingsApi.save(data).then((res) => res.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
+    }
+  })
+}
+
+export const usePushBookingToApi = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id) => bookingsApi.pushToApi(id).then((res) => res.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['booking'] })
+    }
+  })
+}
+
 export const useUpdateBookingStatus = () => {
   const queryClient = useQueryClient()
   return useMutation({

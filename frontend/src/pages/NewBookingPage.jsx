@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useCreateBooking } from '../hooks/useBookings'
+import { useCreateBooking, useSaveBooking, usePushBookingToApi } from '../hooks/useBookings'
 import { getActiveVendors } from '../api/apiSettings.api'
 import {
   ArrowLeft,
@@ -18,7 +18,11 @@ import {
   Shield,
   Settings,
   HelpCircle,
-  Check
+  Check,
+  Send,
+  Plus,
+  Trash2,
+  Receipt
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -135,8 +139,11 @@ const INITIAL_FORM = {
 export default function NewBookingPage() {
   const navigate = useNavigate()
   const createBooking = useCreateBooking()
+  const saveBookingMutation = useSaveBooking()
+  const pushToApiMutation = usePushBookingToApi()
   const [form, setForm] = useState(INITIAL_FORM)
   const [submitting, setSubmitting] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
 
   // Custom input mode toggles for vendor, service, and product codes
   const [customVendorMode, setCustomVendorMode] = useState(false)
@@ -150,6 +157,41 @@ export default function NewBookingPage() {
   const [showBuyerDetails, setShowBuyerDetails] = useState(false)
   const [showGstManifest, setShowGstManifest] = useState(false)
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false)
+  const [showShipmentInvoice, setShowShipmentInvoice] = useState(false)
+
+  // Invoice items state
+  const [invoiceItems, setInvoiceItems] = useState([
+    { sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }
+  ])
+
+  const addInvoiceItem = () => {
+    setInvoiceItems(prev => [
+      ...prev,
+      { sr_no: prev.length + 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }
+    ])
+  }
+
+  const removeInvoiceItem = (index) => {
+    if (invoiceItems.length <= 1) return
+    setInvoiceItems(prev => prev.filter((_, i) => i !== index).map((item, i) => ({ ...item, sr_no: i + 1 })))
+  }
+
+  const updateInvoiceItem = (index, field, value) => {
+    setInvoiceItems(prev => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], [field]: value }
+      // Auto-calculate amount = quantity * unit_rates
+      if (field === 'quantity' || field === 'unit_rates') {
+        const qty = parseFloat(field === 'quantity' ? value : updated[index].quantity) || 0
+        const rate = parseFloat(field === 'unit_rates' ? value : updated[index].unit_rates) || 0
+        updated[index].amount = (qty * rate).toFixed(2)
+      }
+      return updated
+    })
+  }
+
+  const invoiceTotalWeight = invoiceItems.reduce((sum, item) => sum + (parseFloat(item.unit_weight) || 0) * (parseFloat(item.quantity) || 0), 0)
+  const invoiceTotalAmount = invoiceItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
 
   // Fetch active vendors for vendor API selection
   const { data: vendorsData } = useQuery({
@@ -294,162 +336,193 @@ export default function NewBookingPage() {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
-  const handleSubmit = async (e) => {
-    if (e) e.preventDefault()
+  // Build the common payload used by both save and push
+  const buildPayload = () => ({
+    sender_name: form.sender_name || form.sender_company,
+    sender_company: form.sender_company,
+    sender_email: form.sender_email,
+    sender_phone: form.sender_phone,
+    sender_address: form.sender_address,
+    sender_address_2: form.sender_address_2,
+    sender_city: form.sender_city,
+    sender_pincode: form.sender_pincode,
+    sender_state: form.sender_state,
+    sender_country: form.sender_country,
+    sender_gstin_type: form.sender_gstin_type,
+    sender_gstin_no: form.sender_gstin_no,
 
+    receiver_name: form.receiver_name || form.receiver_company,
+    receiver_company: form.receiver_company,
+    receiver_email: form.receiver_email,
+    receiver_phone: form.receiver_phone,
+    receiver_address: form.receiver_address,
+    receiver_address_2: form.receiver_address_2,
+    receiver_city: form.receiver_city,
+    receiver_pincode: form.receiver_pincode,
+    receiver_state: form.receiver_state,
+    receiver_country: form.receiver_country,
+    receiver_gstin_type: form.receiver_gstin_type,
+    receiver_gstin_no: form.receiver_gstin_no,
+
+    weight: parseFloat(form.weight) || 0,
+    length: parseFloat(form.length) || 0,
+    breadth: parseFloat(form.breadth) || 0,
+    height: parseFloat(form.height) || 0,
+    no_of_pieces: parseInt(form.no_of_pieces) || 1,
+    content_description: form.content_description || 'General Goods',
+    declared_value: parseFloat(form.declared_value) || 0,
+    package_type: form.package_type,
+    payment_mode: form.payment_mode,
+    shipping_charge: parseFloat(form.shipping_charge) || 0,
+    total_amount: parseFloat(form.total_amount) || parseFloat(form.shipping_charge) || 0,
+    order_reference: form.order_reference,
+    remarks: form.remarks,
+
+    vendor_config_id: form.vendor_config_id || null,
+    vendor_code: form.vendor_code || '',
+    service_code: form.service_code || '',
+    product_code: form.product_code || '',
+    cod_amount: parseFloat(form.cod_amount) || 0,
+
+    // Invoice & export
+    invoice_no: form.invoice_no,
+    invoice_date: form.invoice_date,
+    invoice_currency: form.invoice_currency,
+    hs_code: form.hs_code,
+    export_reason: form.export_reason,
+    terms_of_trade: form.terms_of_trade,
+    invoice_type: form.invoice_type || 'INVOICE',
+    invoice_note: form.invoice_note || '',
+    invoice_items: invoiceItems.filter(item => item.description),
+
+    eawb_no: form.eawb_no,
+    eawb_date: form.eawb_date,
+    eawb_exp_date: form.eawb_exp_date,
+    additional_discount: form.additional_discount,
+    additional_freight: form.additional_freight,
+    additional_insurance: form.additional_insurance,
+    additional_other_charges: form.additional_other_charges,
+    additional_specify_charges: form.additional_specify_charges,
+
+    buyer_name: form.buyer_name,
+    buyer_person_type: form.buyer_person_type,
+    buyer_address1: form.buyer_address1,
+    buyer_address2: form.buyer_address2,
+    buyer_pincode: form.buyer_pincode,
+    buyer_city: form.buyer_city,
+    buyer_state: form.buyer_state,
+    buyer_telephone: form.buyer_telephone,
+    buyer_mobile: form.buyer_mobile,
+    buyer_email: form.buyer_email,
+    buyer_country_code: form.buyer_country_code,
+    buyer_destination_code: form.buyer_destination_code,
+    buyer_iec_no: form.buyer_iec_no,
+
+    gst_invoice: form.gst_invoice,
+    lut_igst: form.lut_igst,
+    total_igst: form.total_igst,
+    bank_ad_code: form.bank_ad_code,
+    bank_account: form.bank_account,
+    bank_ifsc: form.bank_ifsc,
+    lut_number: form.lut_number,
+    exchange_rate: form.exchange_rate,
+    manifest_firm: form.manifest_firm,
+    manifest_nfei: form.manifest_nfei,
+    pay_of_igst: form.pay_of_igst,
+    manifest_ecommerce: form.manifest_ecommerce,
+    meis_scheme: form.meis_scheme,
+    manifest_format: form.manifest_format,
+    manifest_iec_no: form.manifest_iec_no,
+    lut_issue_date: form.lut_issue_date,
+    lut_till_date: form.lut_till_date,
+
+    company_code: form.company_code,
+    is_commercial: form.is_commercial,
+    csb_type: form.csb_type,
+    otp: form.otp,
+    lsp_type: form.lsp_type,
+    required_performa: form.required_performa,
+    required_label: form.required_label,
+
+    from_request: fromRequestId || undefined,
+    request_awb: requestAwb || undefined
+  })
+
+  const validateForm = () => {
     if (!form.sender_name && !form.sender_company) {
       toast.error('Sender Name or Company is required')
-      return
+      return false
     }
     if (!form.sender_phone) {
       toast.error('Sender Phone is required')
-      return
+      return false
     }
     if (!form.receiver_name && !form.receiver_company) {
       toast.error('Receiver Name or Company is required')
-      return
+      return false
     }
     if (!form.receiver_phone) {
       toast.error('Receiver Phone is required')
-      return
+      return false
     }
     if (!form.receiver_address) {
       toast.error('Receiver Address Line 1 is required')
-      return
+      return false
     }
     if (!form.receiver_city) {
       toast.error('Receiver City is required')
-      return
+      return false
     }
     if (!form.receiver_country) {
       toast.error('Receiver Country is required')
-      return
+      return false
     }
     if (!form.weight || parseFloat(form.weight) <= 0) {
       toast.error('Please enter the shipment weight')
+      return false
+    }
+    return true
+  }
+
+  // SAVE BOOKING — draft, no vendor API push
+  const handleSaveBooking = async () => {
+    if (!validateForm()) return
+
+    setSavingDraft(true)
+    try {
+      const result = await saveBookingMutation.mutateAsync(buildPayload())
+      const awb = result?.awb_number || result?.booking?.tracking_number || 'N/A'
+      toast.success(`Booking saved as draft! AWB: ${awb}`)
+      navigate('/bookings')
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err.message || 'Failed to save booking')
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
+  // PUSH TO API — saves + pushes to vendor API in one step, locks the booking
+  const handleSubmit = async (e) => {
+    if (e) e.preventDefault()
+    if (!validateForm()) return
+
+    if (!form.vendor_config_id) {
+      toast.error('Please select a Vendor API to push to')
       return
     }
 
     setSubmitting(true)
     try {
-      const result = await createBooking.mutateAsync({
-        sender_name: form.sender_name || form.sender_company,
-        sender_company: form.sender_company,
-        sender_email: form.sender_email,
-        sender_phone: form.sender_phone,
-        sender_address: form.sender_address,
-        sender_address_2: form.sender_address_2,
-        sender_city: form.sender_city,
-        sender_pincode: form.sender_pincode,
-        sender_state: form.sender_state,
-        sender_country: form.sender_country,
-        sender_gstin_type: form.sender_gstin_type,
-        sender_gstin_no: form.sender_gstin_no,
+      const result = await createBooking.mutateAsync(buildPayload())
 
-        receiver_name: form.receiver_name || form.receiver_company,
-        receiver_company: form.receiver_company,
-        receiver_email: form.receiver_email,
-        receiver_phone: form.receiver_phone,
-        receiver_address: form.receiver_address,
-        receiver_address_2: form.receiver_address_2,
-        receiver_city: form.receiver_city,
-        receiver_pincode: form.receiver_pincode,
-        receiver_state: form.receiver_state,
-        receiver_country: form.receiver_country,
-        receiver_gstin_type: form.receiver_gstin_type,
-        receiver_gstin_no: form.receiver_gstin_no,
-
-        weight: parseFloat(form.weight) || 0,
-        length: parseFloat(form.length) || 0,
-        breadth: parseFloat(form.breadth) || 0,
-        height: parseFloat(form.height) || 0,
-        no_of_pieces: parseInt(form.no_of_pieces) || 1,
-        content_description: form.content_description || 'General Goods',
-        declared_value: parseFloat(form.declared_value) || 0,
-        package_type: form.package_type,
-        payment_mode: form.payment_mode,
-        shipping_charge: parseFloat(form.shipping_charge) || 0,
-        total_amount: parseFloat(form.total_amount) || parseFloat(form.shipping_charge) || 0,
-        order_reference: form.order_reference,
-        remarks: form.remarks,
-
-        vendor_config_id: form.vendor_config_id || null,
-        vendor_code: form.vendor_code || '',
-        service_code: form.service_code || '',
-        product_code: form.product_code || '',
-        cod_amount: parseFloat(form.cod_amount) || 0,
-
-        // Specifications
-        invoice_no: form.invoice_no,
-        invoice_date: form.invoice_date,
-        invoice_currency: form.invoice_currency,
-        hs_code: form.hs_code,
-        export_reason: form.export_reason,
-        terms_of_trade: form.terms_of_trade,
-        eawb_no: form.eawb_no,
-        eawb_date: form.eawb_date,
-        eawb_exp_date: form.eawb_exp_date,
-        additional_discount: form.additional_discount,
-        additional_freight: form.additional_freight,
-        additional_insurance: form.additional_insurance,
-        additional_other_charges: form.additional_other_charges,
-        additional_specify_charges: form.additional_specify_charges,
-
-        // Buyer details
-        buyer_name: form.buyer_name,
-        buyer_person_type: form.buyer_person_type,
-        buyer_address1: form.buyer_address1,
-        buyer_address2: form.buyer_address2,
-        buyer_pincode: form.buyer_pincode,
-        buyer_city: form.buyer_city,
-        buyer_state: form.buyer_state,
-        buyer_telephone: form.buyer_telephone,
-        buyer_mobile: form.buyer_mobile,
-        buyer_email: form.buyer_email,
-        buyer_country_code: form.buyer_country_code,
-        buyer_destination_code: form.buyer_destination_code,
-        buyer_iec_no: form.buyer_iec_no,
-
-        // GST & Manifest
-        gst_invoice: form.gst_invoice,
-        lut_igst: form.lut_igst,
-        total_igst: form.total_igst,
-        bank_ad_code: form.bank_ad_code,
-        bank_account: form.bank_account,
-        bank_ifsc: form.bank_ifsc,
-        lut_number: form.lut_number,
-        exchange_rate: form.exchange_rate,
-        manifest_firm: form.manifest_firm,
-        manifest_nfei: form.manifest_nfei,
-        pay_of_igst: form.pay_of_igst,
-        manifest_ecommerce: form.manifest_ecommerce,
-        meis_scheme: form.meis_scheme,
-        manifest_format: form.manifest_format,
-        manifest_iec_no: form.manifest_iec_no,
-        lut_issue_date: form.lut_issue_date,
-        lut_till_date: form.lut_till_date,
-
-        // Advanced
-        company_code: form.company_code,
-        is_commercial: form.is_commercial,
-        csb_type: form.csb_type,
-        otp: form.otp,
-        lsp_type: form.lsp_type,
-        required_performa: form.required_performa,
-        required_label: form.required_label,
-
-        // Linked Request params (if converted from booking request)
-        from_request: fromRequestId || undefined,
-        request_awb: requestAwb || undefined
-      })
-
-      const trackingNo = result?.vendor_result?.awbNumber || result?.booking?.tracking_number || result?.booking?.order_id || 'N/A'
+      const ourAwb = result?.booking?.tracking_number || 'N/A'
+      const vendorAwb = result?.vendor_result?.awbNumber || 'N/A'
       const vendorPushed = result?.vendor_result?.success
 
       toast.success(
         vendorPushed
-          ? `Booking created & auto-pushed to API! Tracking AWB: ${trackingNo}`
-          : `Booking created successfully! Tracking AWB: ${trackingNo}`
+          ? `Booking created & pushed! Our AWB: ${ourAwb} | Vendor AWB: ${vendorAwb}`
+          : `Booking created! Our AWB: ${ourAwb}`
       )
       navigate('/bookings')
     } catch (err) {
@@ -1144,6 +1217,164 @@ export default function NewBookingPage() {
           </div>
         </div>
 
+        {/* ── Create Shipment Invoice Section ── */}
+        <div className="bg-white rounded-lg border border-[#dce1e7] p-3 mb-3 shadow-xs">
+          <button
+            type="button"
+            onClick={() => setShowShipmentInvoice(!showShipmentInvoice)}
+            className="w-full flex items-center justify-between"
+          >
+            <RedBadge title="Create Shipment Invoice" icon={Receipt} />
+            <ChevronDown className={`w-4 h-4 text-[#BB0013] transition-transform duration-200 ${showShipmentInvoice ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showShipmentInvoice && (
+            <div className="mt-3 animate-slide-down">
+              {/* Invoice Meta Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 mb-3">
+                <CompactField label="Invoice Type">
+                  <select
+                    value={form.invoice_type || 'INVOICE'}
+                    onChange={e => updateForm('invoice_type', e.target.value)}
+                    className="w-full bg-transparent focus:outline-none text-xs font-bold cursor-pointer"
+                  >
+                    <option value="INVOICE">Invoice</option>
+                    <option value="PROFORMA">Proforma Invoice</option>
+                  </select>
+                </CompactField>
+                <CompactField label="Currency">
+                  <select
+                    value={form.invoice_currency}
+                    onChange={e => updateForm('invoice_currency', e.target.value)}
+                    className="w-full bg-transparent focus:outline-none text-xs font-bold cursor-pointer"
+                  >
+                    <option value="INR">INR</option>
+                    <option value="USD">USD</option>
+                    <option value="EUR">EUR</option>
+                    <option value="GBP">GBP</option>
+                    <option value="AED">AED</option>
+                  </select>
+                </CompactField>
+                <CompactField label="Incoterms">
+                  <select
+                    value={form.terms_of_trade}
+                    onChange={e => updateForm('terms_of_trade', e.target.value)}
+                    className="w-full bg-transparent focus:outline-none text-xs font-bold cursor-pointer"
+                  >
+                    <option value="CIF">CIF</option>
+                    <option value="FOB">FOB</option>
+                    <option value="DDP">DDP</option>
+                    <option value="DDU">DDU</option>
+                  </select>
+                </CompactField>
+                <CompactField label="Note / Export Reason">
+                  <input
+                    type="text"
+                    placeholder="e.g. Gift, Commercial, Personal Use"
+                    value={form.invoice_note || ''}
+                    onChange={e => updateForm('invoice_note', e.target.value)}
+                    className="w-full bg-transparent focus:outline-none text-xs"
+                  />
+                </CompactField>
+              </div>
+
+              {/* Invoice Items Table */}
+              <div className="border border-[#1a237e] rounded overflow-hidden">
+                {/* Table Header */}
+                <div className="bg-[#1a237e] text-white grid grid-cols-[40px_40px_1fr_90px_60px_60px_70px_60px_70px_70px_50px] text-[9px] font-extrabold uppercase tracking-tight">
+                  <div className="px-1.5 py-2 text-center">SR</div>
+                  <div className="px-1.5 py-2 text-center">Box</div>
+                  <div className="px-1.5 py-2">Description</div>
+                  <div className="px-1.5 py-2 text-center">HS Code</div>
+                  <div className="px-1.5 py-2 text-center">Unit</div>
+                  <div className="px-1.5 py-2 text-center">Qty</div>
+                  <div className="px-1.5 py-2 text-right">Unit Wt</div>
+                  <div className="px-1.5 py-2 text-right">Cost</div>
+                  <div className="px-1.5 py-2 text-right">Rate</div>
+                  <div className="px-1.5 py-2 text-right">Amount</div>
+                  <div className="px-1.5 py-2 text-center">×</div>
+                </div>
+
+                {/* Item Rows */}
+                {invoiceItems.map((item, idx) => (
+                  <div key={idx} className="grid grid-cols-[40px_40px_1fr_90px_60px_60px_70px_60px_70px_70px_50px] border-t border-[#dce1e7] text-xs items-center hover:bg-red-50/30 transition-colors">
+                    <div className="px-1.5 py-1 text-center text-[10px] font-bold text-gray-500">{item.sr_no}</div>
+                    <div className="px-1">
+                      <input type="text" value={item.box_no} onChange={e => updateInvoiceItem(idx, 'box_no', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-[10px] text-center" />
+                    </div>
+                    <div className="px-1">
+                      <input type="text" placeholder="Item description" value={item.description} onChange={e => updateInvoiceItem(idx, 'description', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-[10px]" />
+                    </div>
+                    <div className="px-1">
+                      <input type="text" placeholder="840590" value={item.hs_code} onChange={e => updateInvoiceItem(idx, 'hs_code', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-[10px] font-mono text-center" />
+                    </div>
+                    <div className="px-1">
+                      <select value={item.unit_type} onChange={e => updateInvoiceItem(idx, 'unit_type', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-[10px] cursor-pointer">
+                        <option value="PCS">PCS</option>
+                        <option value="KGS">KGS</option>
+                        <option value="MTR">MTR</option>
+                        <option value="SET">SET</option>
+                        <option value="BOX">BOX</option>
+                        <option value="PAIR">PAIR</option>
+                      </select>
+                    </div>
+                    <div className="px-1">
+                      <input type="number" placeholder="0" value={item.quantity} onChange={e => updateInvoiceItem(idx, 'quantity', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-[10px] text-center" />
+                    </div>
+                    <div className="px-1">
+                      <input type="number" step="0.01" placeholder="0.00" value={item.unit_weight} onChange={e => updateInvoiceItem(idx, 'unit_weight', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-[10px] text-right" />
+                    </div>
+                    <div className="px-1">
+                      <input type="number" step="0.01" placeholder="0.00" value={item.cost} onChange={e => updateInvoiceItem(idx, 'cost', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-[10px] text-right" />
+                    </div>
+                    <div className="px-1">
+                      <input type="number" step="0.01" placeholder="0.00" value={item.unit_rates} onChange={e => updateInvoiceItem(idx, 'unit_rates', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-[10px] text-right" />
+                    </div>
+                    <div className="px-1">
+                      <input type="number" step="0.01" readOnly value={item.amount} 
+                        className="w-full bg-transparent focus:outline-none text-[10px] text-right font-bold text-[#BB0013]" />
+                    </div>
+                    <div className="px-1 text-center">
+                      <button type="button" onClick={() => removeInvoiceItem(idx)}
+                        className="text-red-400 hover:text-red-600 transition-colors cursor-pointer" title="Remove">
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Totals Row */}
+                <div className="grid grid-cols-[40px_40px_1fr_90px_60px_60px_70px_60px_70px_70px_50px] border-t-2 border-[#1a237e] bg-[#f5f5ff] text-[10px] font-extrabold items-center">
+                  <div className="col-span-5"></div>
+                  <div className="px-1.5 py-2 text-right text-[#1a237e] uppercase">Total</div>
+                  <div className="px-1.5 py-2 text-right text-[#1a237e]">{invoiceTotalWeight.toFixed(2)}</div>
+                  <div className="col-span-2 px-1.5 py-2 text-right text-[#1a237e] uppercase">Total Amount</div>
+                  <div className="px-1.5 py-2 text-right text-[#BB0013] text-xs">{invoiceTotalAmount.toFixed(2)}</div>
+                  <div></div>
+                </div>
+              </div>
+
+              {/* Add Item Button */}
+              <button
+                type="button"
+                onClick={addInvoiceItem}
+                className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#e8eaf6] text-[#1a237e] text-[10px] font-extrabold hover:bg-[#c5cae9] transition-colors"
+              >
+                <Plus className="w-3 h-3" />
+                ADD ITEM
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* ── Collapsible Accordion Banners ── */}
         <div className="space-y-1 mb-4">
           
@@ -1520,7 +1751,7 @@ export default function NewBookingPage() {
           <button
             type="button"
             onClick={() => navigate('/bookings')}
-            className="px-4 py-1.5 rounded border border-[#cfd8dc] bg-[#f8f9fa] text-xs font-bold text-[#455a64] hover:bg-[#eceff1]"
+            className="px-4 py-1.5 rounded border border-[#cfd8dc] bg-[#f8f9fa] text-xs font-bold text-[#455a64] hover:bg-[#eceff1] cursor-pointer"
           >
             Cancel
           </button>
@@ -1528,25 +1759,47 @@ export default function NewBookingPage() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setForm(INITIAL_FORM)}
-              className="px-4 py-1.5 rounded border border-[#cfd8dc] bg-white text-xs font-bold text-[#455a64] hover:bg-[#f8f9fa]"
+              onClick={() => { setForm(INITIAL_FORM); setInvoiceItems([{ sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }]) }}
+              className="px-4 py-1.5 rounded border border-[#cfd8dc] bg-white text-xs font-bold text-[#455a64] hover:bg-[#f8f9fa] cursor-pointer"
             >
               Reset Form
             </button>
+
+            {/* SAVE BOOKING — Draft, no vendor push */}
             <button
-              type="submit"
-              disabled={submitting}
-              className="px-6 py-2.5 rounded-full bg-[#BB0013] hover:bg-[#990010] text-white text-xs font-extrabold shadow-md transition-all flex items-center gap-2"
+              type="button"
+              disabled={savingDraft || submitting}
+              onClick={handleSaveBooking}
+              className="px-5 py-2.5 rounded-full bg-[#1a237e] hover:bg-[#0d1754] text-white text-xs font-extrabold shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              {submitting ? (
+              {savingDraft ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Creating Booking...
+                  Saving...
                 </>
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  Create Booking & Push API
+                  Save Booking
+                </>
+              )}
+            </button>
+
+            {/* PUSH TO API — Final submission, locks booking */}
+            <button
+              type="submit"
+              disabled={submitting || savingDraft}
+              className="px-5 py-2.5 rounded-full bg-[#BB0013] hover:bg-[#990010] text-white text-xs font-extrabold shadow-md transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Pushing to API...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  Push to API
                 </>
               )}
             </button>

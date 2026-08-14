@@ -18,7 +18,8 @@ import { query, execute } from '../config/db.js'
  */
 export const INTERNAL_FIELDS = [
   // Shipment
-  { key: 'tracking_number', label: 'Tracking Number', group: 'Shipment' },
+  { key: 'tracking_number', label: 'Tracking Number (Our AWB)', group: 'Shipment' },
+  { key: 'reference_number', label: 'Reference Number (Our AWB)', group: 'Shipment' },
   { key: 'order_id', label: 'Order ID', group: 'Shipment' },
   { key: 'order_reference', label: 'Order Reference', group: 'Shipment' },
   { key: 'package_type', label: 'Package Type (DOX/SPX)', group: 'Shipment' },

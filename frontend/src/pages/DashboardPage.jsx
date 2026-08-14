@@ -326,8 +326,8 @@ export default function DashboardPage() {
                   className="border-b border-border-light hover:bg-surface-alt/60 transition-colors"
                 >
                   <td className="px-5 py-3">
-                    <Link to={`/bookings/${b.id}`} className="text-[13px] font-bold text-primary hover:text-primary-dark transition-colors">
-                      {b.order_id}
+                    <Link to={`/bookings/${b.id}`} className="text-[13px] font-extrabold text-[#BB0013] hover:underline transition-colors">
+                      {b.tracking_number || b.order_id}
                     </Link>
                   </td>
                   <td className="px-5 py-3 text-[13px] text-text-secondary">{b.receivers?.name || b.senders?.name || '—'}</td>

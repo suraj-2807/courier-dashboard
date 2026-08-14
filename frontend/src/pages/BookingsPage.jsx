@@ -18,7 +18,9 @@ import { formatCurrency, formatDate } from '../utils/formatters'
 
 const STATUS_TABS = [
   { value: '', label: 'All Shipments' },
-  { value: 'pending', label: 'Pending' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'booked', label: 'Booked' },
+  { value: 'processing', label: 'Processing' },
   { value: 'in_transit', label: 'In Transit' },
   { value: 'delivered', label: 'Delivered' }
 ]
@@ -212,10 +214,10 @@ export default function BookingsPage() {
                         className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
                       />
                     </th>
-                    {['Shipment ID', 'Courier', 'Destination', 'Status', 'Est. Date', 'Actions'].map((h) => (
+                    {['Our AWB', 'Vendor AWB', 'Courier', 'Destination', 'Status', 'Date', 'Actions'].map((h) => (
                       <th
                         key={h}
-                        className={`px-5 py-3 text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] whitespace-nowrap ${
+                        className={`px-4 py-3 text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] whitespace-nowrap ${
                           h === 'Actions' ? 'text-center' : 'text-left'
                         }`}
                       >
@@ -240,41 +242,69 @@ export default function BookingsPage() {
                           className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
                         />
                       </td>
-                      <td className="px-5 py-3.5">
+                      {/* Our AWB (7-digit) */}
+                      <td className="px-4 py-3.5">
                         <Link
                           to={`/bookings/${b.id}`}
-                          className="text-[13px] font-bold text-text-primary hover:text-primary transition-colors"
+                          className="group/awb"
                         >
-                          {b.order_id}
+                          <span className="text-[13px] font-extrabold text-[#BB0013] hover:underline">
+                            {b.tracking_number || '—'}
+                          </span>
                         </Link>
                       </td>
-                      <td className="px-5 py-3.5">
+                      {/* Vendor AWB */}
+                      <td className="px-4 py-3.5">
+                        {b.vendor_awb_number ? (
+                          <div>
+                            <span className="text-[12px] font-bold text-[#1a237e]">
+                              {b.vendor_awb_number}
+                            </span>
+                            {b.vendor_awb_number_2 && (
+                              <span className="block text-[10px] text-text-tertiary mt-0.5">
+                                AWB2: {b.vendor_awb_number_2}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-text-tertiary italic">—</span>
+                        )}
+                      </td>
+                      {/* Courier */}
+                      <td className="px-4 py-3.5">
                         <div className="flex items-center gap-2">
                           <div className="w-7 h-7 bg-surface-alt border border-border rounded-lg flex items-center justify-center flex-shrink-0">
                             <Package className="w-3.5 h-3.5 text-text-tertiary" />
                           </div>
-                          <span className="text-[13px] text-text-secondary">
-                            {b.courier_providers?.name || 'Prince Express'}
+                          <span className="text-[12px] text-text-secondary">
+                            {b.vendor_api_configs?.name || b.courier_providers?.name || 'Local'}
                           </span>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5">
+                      {/* Destination */}
+                      <td className="px-4 py-3.5">
                         <div>
-                          <p className="text-[13px] text-text-primary font-medium">
+                          <p className="text-[12px] text-text-primary font-medium">
                             {b.receivers?.city || '—'}
                           </p>
-                          <p className="text-[11px] text-text-tertiary mt-0.5">
+                          <p className="text-[10px] text-text-tertiary mt-0.5">
                             {b.receivers?.name || '—'}
                           </p>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5">
+                      {/* Status */}
+                      <td className="px-4 py-3.5">
                         <StatusBadge status={b.status} size="xs" />
+                        {b.is_locked && (
+                          <span className="ml-1.5 text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">LOCKED</span>
+                        )}
                       </td>
-                      <td className="px-5 py-3.5 text-[13px] text-text-secondary whitespace-nowrap">
+                      {/* Date */}
+                      <td className="px-4 py-3.5 text-[12px] text-text-secondary whitespace-nowrap">
                         {formatDate(b.created_at)}
                       </td>
-                      <td className="px-5 py-3.5 text-center">
+                      {/* Actions */}
+                      <td className="px-4 py-3.5 text-center">
                         <Link
                           to={`/bookings/${b.id}`}
                           className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-surface-hover transition-colors cursor-pointer"

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { useBookingById } from '../hooks/useBookings'
+import { useBookingById, usePushBookingToApi } from '../hooks/useBookings'
+import { bookingsApi } from '../api/bookings.api'
 import {
   ArrowLeft,
   Package,
@@ -25,7 +26,10 @@ import {
   ChevronDown,
   ChevronUp,
   Zap,
-  XCircle
+  XCircle,
+  Send,
+  Lock,
+  Loader2
 } from 'lucide-react'
 import StatusBadge from '../components/ui/StatusBadge'
 import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters'
@@ -35,11 +39,43 @@ export default function BookingDetailPage() {
   const { id } = useParams()
   const { data, isLoading, isError, refetch } = useBookingById(id)
   const booking = data?.booking
+  const pushToApiMutation = usePushBookingToApi()
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
 
   const copyTracking = () => {
     if (booking?.tracking_number) {
       navigator.clipboard.writeText(booking.tracking_number)
-      toast.success('Tracking number copied!')
+      toast.success('Our AWB copied!')
+    }
+  }
+
+  const handleDownloadInvoice = async () => {
+    setDownloadingPdf(true)
+    try {
+      const res = await bookingsApi.downloadInvoice(id)
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `Invoice_${booking.tracking_number}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      toast.success('Invoice PDF downloaded!')
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to download invoice PDF')
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
+
+  const handlePushToApi = async () => {
+    try {
+      const res = await pushToApiMutation.mutateAsync(id)
+      toast.success(res.message || 'Booking pushed to Vendor API successfully!')
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err.message || 'Failed to push to Vendor API')
     }
   }
 
@@ -94,34 +130,92 @@ export default function BookingDetailPage() {
         Back to Shipments
       </Link>
 
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6">
+      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-[24px] font-extrabold text-text-primary">
-              {booking.order_id}
+            <h1 className="text-[24px] font-extrabold text-[#BB0013]">
+              AWB: {booking.tracking_number}
             </h1>
             <StatusBadge status={booking.status} size="md" />
+            {booking.is_locked ? (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full border border-amber-200">
+                <Lock className="w-3 h-3" /> Locked (Pushed)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">
+                Draft (Editable)
+              </span>
+            )}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] text-text-secondary">
-              Tracking:
-            </span>
-            <button
-              onClick={copyTracking}
-              className="inline-flex items-center gap-1.5 text-[13px] font-mono font-bold text-text-primary bg-surface-alt px-2 py-0.5 rounded-md hover:bg-surface-hover transition-colors cursor-pointer"
-            >
-              {booking.tracking_number}
-              <Copy className="w-3 h-3 text-text-tertiary" />
-            </button>
+
+          <div className="flex flex-wrap items-center gap-3 mt-2">
+            {/* Our AWB */}
+            <div className="flex items-center gap-1.5 bg-red-50 border border-red-200 px-3 py-1 rounded-lg">
+              <span className="text-[11px] font-bold text-red-800 uppercase tracking-wider">Our AWB:</span>
+              <button
+                onClick={copyTracking}
+                className="inline-flex items-center gap-1 text-[13px] font-mono font-extrabold text-[#BB0013] hover:underline cursor-pointer"
+                title="Copy Our AWB"
+              >
+                {booking.tracking_number}
+                <Copy className="w-3 h-3 text-red-400" />
+              </button>
+            </div>
+
+            {/* Vendor AWB 1 */}
+            {booking.vendor_awb_number && (
+              <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-lg">
+                <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider">Vendor AWB1:</span>
+                <span className="text-[13px] font-mono font-extrabold text-[#1a237e]">
+                  {booking.vendor_awb_number}
+                </span>
+              </div>
+            )}
+
+            {/* Vendor AWB 2 */}
+            {booking.vendor_awb_number_2 && (
+              <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 px-3 py-1 rounded-lg">
+                <span className="text-[11px] font-bold text-purple-800 uppercase tracking-wider">Vendor AWB2:</span>
+                <span className="text-[13px] font-mono font-extrabold text-purple-900">
+                  {booking.vendor_awb_number_2}
+                </span>
+              </div>
+            )}
           </div>
         </div>
-        <button
-          onClick={refetch}
-          className="inline-flex items-center gap-2 px-4 py-2 border border-border rounded-xl text-[12px] font-bold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          Refresh
-        </button>
+
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Download Invoice PDF */}
+          <button
+            onClick={handleDownloadInvoice}
+            disabled={downloadingPdf}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1a237e] hover:bg-[#0d1754] text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+          >
+            {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+            Download Invoice PDF
+          </button>
+
+          {/* Push to API button for draft / unlocked bookings */}
+          {!booking.is_locked && booking.vendor_config_id && (
+            <button
+              onClick={handlePushToApi}
+              disabled={pushToApiMutation.isPending}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#BB0013] hover:bg-[#990010] text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              {pushToApiMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              Push to Vendor API
+            </button>
+          )}
+
+          <button
+            onClick={refetch}
+            className="inline-flex items-center gap-2 px-3.5 py-2 border border-border rounded-xl text-[12px] font-bold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -324,9 +418,9 @@ function VendorResponseCard({ booking, vendorConfig }) {
           )}
         </div>
 
-        {/* AWB Number */}
+        {/* AWB Numbers (Vendor AWB 1 & Vendor AWB 2) */}
         <div>
-          <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-1">Vendor AWB</p>
+          <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-1">Vendor AWB1</p>
           {booking.vendor_awb_number ? (
             <button
               onClick={copyAwb}
@@ -337,6 +431,14 @@ function VendorResponseCard({ booking, vendorConfig }) {
             </button>
           ) : (
             <p className="text-[13px] text-text-tertiary">—</p>
+          )}
+          {booking.vendor_awb_number_2 && (
+            <div className="mt-2">
+              <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-0.5">Vendor AWB2 (Forwarded)</p>
+              <p className="text-[12px] font-mono font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded-md inline-block">
+                {booking.vendor_awb_number_2}
+              </p>
+            </div>
           )}
         </div>
 

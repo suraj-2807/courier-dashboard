@@ -4,5 +4,8 @@ export const bookingsApi = {
   getAll: (params) => api.get('/bookings', { params }),
   getById: (id) => api.get(`/bookings/${id}`),
   create: (data) => api.post('/bookings', data),
+  save: (data) => api.post('/bookings/save', data),
+  pushToApi: (id) => api.post(`/bookings/${id}/push`),
+  downloadInvoice: (id) => api.get(`/bookings/${id}/invoice-pdf`, { responseType: 'blob' }),
   updateStatus: (id, data) => api.patch(`/bookings/${id}/status`, data)
 }

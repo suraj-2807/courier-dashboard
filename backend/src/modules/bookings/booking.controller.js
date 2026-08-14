@@ -1,365 +1,751 @@
 import { query, execute } from '../../config/db.js'
 import generateTracking from '../../utils/generateTracking.js'
 import { pushShipmentToVendor } from '../../services/vendorApiPush.service.js'
+import { generateInvoicePdf } from '../../services/invoicePdf.service.js'
 import { syncAwbToWP } from '../../utils/wpSync.js'
+import path from 'path'
+import fs from 'fs'
+import { fileURLToPath } from 'url'
 
-export const createBooking = async (req, res) => {
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+/**
+ * Extract all booking fields from request body.
+ * Shared between saveBooking and createBooking.
+ */
+function extractBookingFields(body) {
+  return {
+    sender_id: body.sender_id,
+    receiver_id: body.receiver_id,
+    courier_provider_id: body.courier_provider_id,
+    vendor_config_id: body.vendor_config_id,
+    vendor_code: body.vendor_code,
+    service_code: body.service_code,
+    product_code: body.product_code,
+    weight: body.weight,
+    length: body.length,
+    breadth: body.breadth,
+    height: body.height,
+    payment_mode: body.payment_mode,
+    package_type: body.package_type,
+    total_amount: body.total_amount,
+    shipping_charge: body.shipping_charge,
+    order_reference: body.order_reference,
+    remarks: body.remarks,
+    // Inline sender/receiver
+    sender_name: body.sender_name,
+    sender_email: body.sender_email,
+    sender_phone: body.sender_phone,
+    sender_address: body.sender_address,
+    sender_city: body.sender_city,
+    sender_pincode: body.sender_pincode,
+    sender_state: body.sender_state,
+    sender_country: body.sender_country,
+    receiver_name: body.receiver_name,
+    receiver_email: body.receiver_email,
+    receiver_phone: body.receiver_phone,
+    receiver_address: body.receiver_address,
+    receiver_city: body.receiver_city,
+    receiver_pincode: body.receiver_pincode,
+    receiver_state: body.receiver_state,
+    receiver_country: body.receiver_country,
+    // Additional
+    no_of_pieces: body.no_of_pieces,
+    content_description: body.content_description,
+    declared_value: body.declared_value,
+    cod_amount: body.cod_amount,
+    // Extended
+    sender_company: body.sender_company,
+    sender_address_2: body.sender_address_2,
+    sender_gstin_type: body.sender_gstin_type,
+    sender_gstin_no: body.sender_gstin_no,
+    receiver_address_2: body.receiver_address_2,
+    receiver_gstin_type: body.receiver_gstin_type,
+    receiver_gstin_no: body.receiver_gstin_no,
+    invoice_no: body.invoice_no,
+    invoice_date: body.invoice_date,
+    invoice_currency: body.invoice_currency,
+    hs_code: body.hs_code,
+    export_reason: body.export_reason,
+    terms_of_trade: body.terms_of_trade,
+    // eAWB
+    eawb_no: body.eawb_no,
+    eawb_date: body.eawb_date,
+    eawb_exp_date: body.eawb_exp_date,
+    // Additional Charges
+    additional_discount: body.additional_discount,
+    additional_freight: body.additional_freight,
+    additional_insurance: body.additional_insurance,
+    additional_other_charges: body.additional_other_charges,
+    additional_specify_charges: body.additional_specify_charges,
+    // Buyer Details
+    buyer_name: body.buyer_name,
+    buyer_person_type: body.buyer_person_type,
+    buyer_address1: body.buyer_address1,
+    buyer_address2: body.buyer_address2,
+    buyer_pincode: body.buyer_pincode,
+    buyer_city: body.buyer_city,
+    buyer_state: body.buyer_state,
+    buyer_telephone: body.buyer_telephone,
+    buyer_mobile: body.buyer_mobile,
+    buyer_email: body.buyer_email,
+    buyer_country_code: body.buyer_country_code,
+    buyer_destination_code: body.buyer_destination_code,
+    buyer_iec_no: body.buyer_iec_no,
+    // GST & Manifest
+    gst_invoice: body.gst_invoice,
+    lut_igst: body.lut_igst,
+    total_igst: body.total_igst,
+    bank_ad_code: body.bank_ad_code,
+    bank_account: body.bank_account,
+    bank_ifsc: body.bank_ifsc,
+    lut_number: body.lut_number,
+    exchange_rate: body.exchange_rate,
+    manifest_firm: body.manifest_firm,
+    manifest_nfei: body.manifest_nfei,
+    pay_of_igst: body.pay_of_igst,
+    manifest_ecommerce: body.manifest_ecommerce,
+    meis_scheme: body.meis_scheme,
+    manifest_format: body.manifest_format,
+    manifest_iec_no: body.manifest_iec_no,
+    lut_issue_date: body.lut_issue_date,
+    lut_till_date: body.lut_till_date,
+    // Advanced Config
+    company_code: body.company_code,
+    is_commercial: body.is_commercial,
+    csb_type: body.csb_type,
+    otp: body.otp,
+    lsp_type: body.lsp_type,
+    required_performa: body.required_performa,
+    required_label: body.required_label,
+    // Invoice items (JSON array)
+    invoice_items: body.invoice_items,
+    invoice_type: body.invoice_type,
+    invoice_note: body.invoice_note
+  }
+}
+
+/**
+ * Upsert sender if inline fields provided
+ */
+async function upsertSender(fields) {
+  if (fields.sender_id) return fields.sender_id
+  if (!fields.sender_name) return null
+  
+  const result = await execute(
+    `INSERT INTO senders (name, email, phone, address, city, pincode, state, country)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      fields.sender_name,
+      fields.sender_email || '',
+      fields.sender_phone || '',
+      fields.sender_address || '',
+      fields.sender_city || '',
+      fields.sender_pincode || '',
+      fields.sender_state || '',
+      fields.sender_country || 'INDIA'
+    ]
+  )
+  return result.insertId
+}
+
+/**
+ * Upsert receiver if inline fields provided
+ */
+async function upsertReceiver(fields) {
+  if (fields.receiver_id) return fields.receiver_id
+  if (!fields.receiver_name) return null
+  
+  const result = await execute(
+    `INSERT INTO receivers (name, email, phone, address, city, pincode, state, country)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      fields.receiver_name,
+      fields.receiver_email || '',
+      fields.receiver_phone || '',
+      fields.receiver_address || '',
+      fields.receiver_city || '',
+      fields.receiver_pincode || '',
+      fields.receiver_state || '',
+      fields.receiver_country || 'INDIA'
+    ]
+  )
+  return result.insertId
+}
+
+/**
+ * Generate invoice PDF for a booking.
+ */
+async function generateInvoiceForBooking(trackingNumber, fields, senderId, receiverId) {
+  const invoiceItems = Array.isArray(fields.invoice_items)
+    ? fields.invoice_items
+    : (typeof fields.invoice_items === 'string' ? JSON.parse(fields.invoice_items || '[]') : [])
+
+  // Fetch sender/receiver details if we have IDs
+  let senderData = {}
+  let receiverData = {}
+
+  if (senderId) {
+    const sRows = await query('SELECT * FROM senders WHERE id = ?', [senderId])
+    if (sRows.length > 0) {
+      senderData = {
+        name: sRows[0].name,
+        phone: sRows[0].phone,
+        email: sRows[0].email,
+        address: sRows[0].address,
+        city: sRows[0].city,
+        state: sRows[0].state,
+        pincode: sRows[0].pincode,
+        country: sRows[0].country
+      }
+    }
+  }
+  // Override with inline fields
+  senderData = {
+    ...senderData,
+    name: fields.sender_name || senderData.name || '',
+    company: fields.sender_company || '',
+    phone: fields.sender_phone || senderData.phone || '',
+    email: fields.sender_email || senderData.email || '',
+    address: fields.sender_address || senderData.address || '',
+    address_2: fields.sender_address_2 || '',
+    city: fields.sender_city || senderData.city || '',
+    state: fields.sender_state || senderData.state || '',
+    pincode: fields.sender_pincode || senderData.pincode || '',
+    country: fields.sender_country || senderData.country || 'INDIA',
+    gstin_type: fields.sender_gstin_type || '',
+    gstin_no: fields.sender_gstin_no || ''
+  }
+
+  if (receiverId) {
+    const rRows = await query('SELECT * FROM receivers WHERE id = ?', [receiverId])
+    if (rRows.length > 0) {
+      receiverData = {
+        name: rRows[0].name,
+        phone: rRows[0].phone,
+        email: rRows[0].email,
+        address: rRows[0].address,
+        city: rRows[0].city,
+        state: rRows[0].state,
+        pincode: rRows[0].pincode,
+        country: rRows[0].country
+      }
+    }
+  }
+  receiverData = {
+    ...receiverData,
+    name: fields.receiver_name || receiverData.name || '',
+    company: fields.receiver_company || '',
+    phone: fields.receiver_phone || receiverData.phone || '',
+    email: fields.receiver_email || receiverData.email || '',
+    address: fields.receiver_address || receiverData.address || '',
+    address_2: fields.receiver_address_2 || '',
+    city: fields.receiver_city || receiverData.city || '',
+    state: fields.receiver_state || receiverData.state || '',
+    pincode: fields.receiver_pincode || receiverData.pincode || '',
+    country: fields.receiver_country || receiverData.country || ''
+  }
+
+  const pdfPath = await generateInvoicePdf({
+    awbNumber: trackingNumber,
+    sender: senderData,
+    receiver: receiverData,
+    shipment: {
+      weight: fields.weight,
+      length: fields.length,
+      breadth: fields.breadth,
+      height: fields.height,
+      no_of_pieces: fields.no_of_pieces,
+      package_type: fields.package_type
+    },
+    invoiceItems,
+    invoiceMeta: {
+      invoice_type: fields.invoice_type || 'INVOICE',
+      currency: fields.invoice_currency || 'INR',
+      incoterms: fields.terms_of_trade || 'CIF',
+      note: fields.invoice_note || fields.export_reason || '',
+      total_amount: fields.total_amount || fields.declared_value || 0
+    }
+  })
+
+  return pdfPath
+}
+
+/**
+ * Build flat shipment data object for the vendor adapter
+ */
+function buildVendorShipmentData(fields, orderId, trackingNumber) {
+  const currentDate = new Date().toISOString().split('T')[0]
+  const currentTime = new Date().toTimeString().split(' ')[0]
+
+  return {
+    order_id: orderId,
+    tracking_number: trackingNumber,
+    reference_number: trackingNumber, // Our AWB as reference number
+    order_reference: fields.order_reference || '',
+    weight: parseFloat(fields.weight) || 0,
+    length: parseFloat(fields.length) || 0,
+    breadth: parseFloat(fields.breadth) || 0,
+    height: parseFloat(fields.height) || 0,
+    no_of_pieces: parseInt(fields.no_of_pieces) || 1,
+    package_type: fields.package_type || 'parcel',
+    payment_mode: fields.payment_mode || 'prepaid',
+    shipping_charge: parseFloat(fields.shipping_charge) || 0,
+    total_amount: parseFloat(fields.total_amount) || 0,
+    declared_value: parseFloat(fields.declared_value) || 0,
+    content_description: fields.content_description || '',
+    cod_amount: parseFloat(fields.cod_amount) || 0,
+    remarks: fields.remarks || '',
+    vendor_code: fields.vendor_code || '',
+    service_code: fields.service_code || '',
+    product_code: fields.product_code || '',
+    booking_date: currentDate,
+    booking_time: currentTime,
+    // Sender
+    sender_name: fields.sender_name || '',
+    sender_email: fields.sender_email || '',
+    sender_phone: fields.sender_phone || '',
+    sender_address: fields.sender_address || '',
+    sender_city: fields.sender_city || '',
+    sender_state: fields.sender_state || '',
+    sender_pincode: fields.sender_pincode || '',
+    sender_country: fields.sender_country || 'INDIA',
+    sender_company: fields.sender_company || '',
+    sender_address_2: fields.sender_address_2 || '',
+    sender_gstin_type: fields.sender_gstin_type || '',
+    sender_gstin_no: fields.sender_gstin_no || '',
+    // Receiver
+    receiver_name: fields.receiver_name || '',
+    receiver_email: fields.receiver_email || '',
+    receiver_phone: fields.receiver_phone || '',
+    receiver_address: fields.receiver_address || '',
+    receiver_city: fields.receiver_city || '',
+    receiver_state: fields.receiver_state || '',
+    receiver_pincode: fields.receiver_pincode || '',
+    receiver_country: fields.receiver_country || 'INDIA',
+    receiver_address_2: fields.receiver_address_2 || '',
+    receiver_gstin_type: fields.receiver_gstin_type || '',
+    receiver_gstin_no: fields.receiver_gstin_no || '',
+    // Invoice
+    invoice_no: fields.invoice_no || '',
+    invoice_date: fields.invoice_date || '',
+    invoice_currency: fields.invoice_currency || 'INR',
+    hs_code: fields.hs_code || '',
+    export_reason: fields.export_reason || '',
+    terms_of_trade: fields.terms_of_trade || '',
+    // eAWB
+    eawb_no: fields.eawb_no || '',
+    eawb_date: fields.eawb_date || '',
+    eawb_exp_date: fields.eawb_exp_date || '',
+    // Additional Charges
+    additional_discount: fields.additional_discount || '',
+    additional_freight: fields.additional_freight || '',
+    additional_insurance: fields.additional_insurance || '',
+    additional_other_charges: fields.additional_other_charges || '',
+    additional_specify_charges: fields.additional_specify_charges || '',
+    // Buyer Details
+    buyer_name: fields.buyer_name || '',
+    buyer_person_type: fields.buyer_person_type || '',
+    buyer_address1: fields.buyer_address1 || '',
+    buyer_address2: fields.buyer_address2 || '',
+    buyer_pincode: fields.buyer_pincode || '',
+    buyer_city: fields.buyer_city || '',
+    buyer_state: fields.buyer_state || '',
+    buyer_telephone: fields.buyer_telephone || '',
+    buyer_mobile: fields.buyer_mobile || '',
+    buyer_email: fields.buyer_email || '',
+    buyer_country_code: fields.buyer_country_code || '',
+    buyer_destination_code: fields.buyer_destination_code || '',
+    buyer_iec_no: fields.buyer_iec_no || '',
+    // GST & Manifest
+    gst_invoice: fields.gst_invoice || '',
+    lut_igst: fields.lut_igst || '',
+    total_igst: fields.total_igst || '',
+    bank_ad_code: fields.bank_ad_code || '',
+    bank_account: fields.bank_account || '',
+    bank_ifsc: fields.bank_ifsc || '',
+    lut_number: fields.lut_number || '',
+    exchange_rate: fields.exchange_rate || '',
+    manifest_firm: fields.manifest_firm || '',
+    manifest_nfei: fields.manifest_nfei || '',
+    pay_of_igst: fields.pay_of_igst || '',
+    manifest_ecommerce: fields.manifest_ecommerce || '',
+    meis_scheme: fields.meis_scheme || '',
+    manifest_format: fields.manifest_format || '',
+    manifest_iec_no: fields.manifest_iec_no || '',
+    lut_issue_date: fields.lut_issue_date || '',
+    lut_till_date: fields.lut_till_date || '',
+    // Advanced
+    company_code: fields.company_code || '',
+    is_commercial: fields.is_commercial ?? '',
+    csb_type: fields.csb_type || '',
+    otp: fields.otp || '',
+    lsp_type: fields.lsp_type || '',
+    required_performa: fields.required_performa || '',
+    required_label: fields.required_label || ''
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  SAVE BOOKING (Draft — no vendor API push)
+// ═══════════════════════════════════════════════════════════════
+
+export const saveBooking = async (req, res) => {
   try {
-    const {
-      sender_id,
-      receiver_id,
-      courier_provider_id,
-      vendor_config_id,
-      vendor_code,
-      service_code,
-      product_code,
-      weight,
-      length,
-      breadth,
-      height,
-      payment_mode,
-      package_type,
-      total_amount,
-      shipping_charge,
-      order_reference,
-      remarks,
-      // Inline sender/receiver fields (when no sender_id/receiver_id)
-      sender_name,
-      sender_email,
-      sender_phone,
-      sender_address,
-      sender_city,
-      sender_pincode,
-      sender_state,
-      sender_country,
-      receiver_name,
-      receiver_email,
-      receiver_phone,
-      receiver_address,
-      receiver_city,
-      receiver_pincode,
-      receiver_state,
-      receiver_country,
-      // Additional fields
-      no_of_pieces,
-      content_description,
-      declared_value,
-      cod_amount,
-      // Pacific-specific fields
-      sender_company,
-      sender_address_2,
-      sender_gstin_type,
-      sender_gstin_no,
-      receiver_address_2,
-      receiver_gstin_type,
-      receiver_gstin_no,
-      invoice_no,
-      invoice_date,
-      invoice_currency,
-      hs_code,
-      export_reason,
-      terms_of_trade,
-      // eAWB Details
-      eawb_no,
-      eawb_date,
-      eawb_exp_date,
-      // Additional Charges
-      additional_discount,
-      additional_freight,
-      additional_insurance,
-      additional_other_charges,
-      additional_specify_charges,
-      // Buyer Details
-      buyer_name,
-      buyer_person_type,
-      buyer_address1,
-      buyer_address2,
-      buyer_pincode,
-      buyer_city,
-      buyer_state,
-      buyer_telephone,
-      buyer_mobile,
-      buyer_email,
-      buyer_country_code,
-      buyer_destination_code,
-      buyer_iec_no,
-      // GST & Manifest
-      gst_invoice,
-      lut_igst,
-      total_igst,
-      bank_ad_code,
-      bank_account,
-      bank_ifsc,
-      lut_number,
-      exchange_rate,
-      manifest_firm,
-      manifest_nfei,
-      pay_of_igst,
-      manifest_ecommerce,
-      meis_scheme,
-      manifest_format,
-      manifest_iec_no,
-      lut_issue_date,
-      lut_till_date,
-      // Advanced Config
-      company_code,
-      is_commercial,
-      csb_type,
-      otp,
-      lsp_type,
-      required_performa,
-      required_label
-    } = req.body
+    const fields = extractBookingFields(req.body)
 
-    const tracking_number = generateTracking()
-    const order_id = `ORD-${Date.now()}`
+    // Generate our 7-digit AWB (also used as order_id)
+    const tracking_number = await generateTracking()
+    const order_id = tracking_number
 
-    // ── Step 1: Upsert sender if inline fields provided ──
-    let finalSenderId = sender_id
-    if (!finalSenderId && sender_name) {
-      const senderResult = await execute(
-        `INSERT INTO senders (name, email, phone, address, city, pincode, state, country)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          sender_name,
-          sender_email || '',
-          sender_phone || '',
-          sender_address || '',
-          sender_city || '',
-          sender_pincode || '',
-          sender_state || '',
-          sender_country || 'INDIA'
-        ]
-      )
-      finalSenderId = senderResult.insertId
-    }
+    // Upsert sender/receiver
+    const finalSenderId = await upsertSender(fields)
+    const finalReceiverId = await upsertReceiver(fields)
 
-    // ── Step 2: Upsert receiver if inline fields provided ──
-    let finalReceiverId = receiver_id
-    if (!finalReceiverId && receiver_name) {
-      const receiverResult = await execute(
-        `INSERT INTO receivers (name, email, phone, address, city, pincode, state, country)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          receiver_name,
-          receiver_email || '',
-          receiver_phone || '',
-          receiver_address || '',
-          receiver_city || '',
-          receiver_pincode || '',
-          receiver_state || '',
-          receiver_country || 'INDIA'
-        ]
-      )
-      finalReceiverId = receiverResult.insertId
-    }
+    // Parse invoice items
+    const invoiceItemsJson = Array.isArray(fields.invoice_items)
+      ? JSON.stringify(fields.invoice_items)
+      : (fields.invoice_items || '[]')
 
-    // ── Step 3: Create shipment record ──
+    // Create shipment record (status = draft, vendor_push_status = skipped, is_locked = false)
     const shipmentResult = await execute(
       `INSERT INTO shipments (
         order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
         vendor_code, service_code, product_code, tracking_number, weight, \`length\`, breadth, height,
+        no_of_pieces, content_description, declared_value, cod_amount,
         payment_mode, package_type, total_amount, shipping_charge,
-        order_reference, remarks, status, vendor_push_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        order_reference, remarks, status, vendor_push_status, is_locked,
+        sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
+        receiver_address_2, receiver_gstin_type, receiver_gstin_no,
+        invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
+        invoice_type, invoice_note, invoice_items
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         order_id,
         finalSenderId || null,
         finalReceiverId || null,
-        courier_provider_id || null,
-        vendor_config_id || null,
-        vendor_code || '',
-        service_code || '',
-        product_code || '',
+        fields.courier_provider_id || null,
+        fields.vendor_config_id || null,
+        fields.vendor_code || '',
+        fields.service_code || '',
+        fields.product_code || '',
         tracking_number,
-        weight || 0,
-        length || 0,
-        breadth || 0,
-        height || 0,
-        payment_mode || 'prepaid',
-        package_type || 'parcel',
-        total_amount || 0,
-        shipping_charge || 0,
-        order_reference || '',
-        remarks || '',
-        vendor_config_id ? 'processing' : 'booked',
-        vendor_config_id ? 'pending' : 'skipped'
+        fields.weight || 0,
+        fields.length || 0,
+        fields.breadth || 0,
+        fields.height || 0,
+        parseInt(fields.no_of_pieces) || 1,
+        fields.content_description || 'General Goods',
+        parseFloat(fields.declared_value) || 0,
+        parseFloat(fields.cod_amount) || 0,
+        fields.payment_mode || 'prepaid',
+        fields.package_type || 'parcel',
+        parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
+        parseFloat(fields.shipping_charge) || 0,
+        fields.order_reference || '',
+        fields.remarks || '',
+        'draft',        // Status = draft (not pushed)
+        'skipped',      // No vendor push yet
+        false,          // Not locked
+        fields.sender_company || '',
+        fields.sender_address_2 || '',
+        fields.sender_gstin_type || '',
+        fields.sender_gstin_no || '',
+        fields.receiver_address_2 || '',
+        fields.receiver_gstin_type || '',
+        fields.receiver_gstin_no || '',
+        tracking_number, // invoice_no = AWB number
+        fields.invoice_date || new Date().toISOString().split('T')[0],
+        fields.invoice_currency || 'INR',
+        fields.hs_code || '',
+        fields.export_reason || '',
+        fields.terms_of_trade || 'CIF',
+        fields.invoice_type || 'INVOICE',
+        fields.invoice_note || '',
+        invoiceItemsJson
       ]
     )
 
     const shipmentId = shipmentResult.insertId
 
-    // ── Prepare common AWB data (used by both vendor and non-vendor flows) ──
-    const parsedAwb = String(tracking_number || '').trim().replace(/\D/g, '') || tracking_number
-    const currentDate = new Date().toISOString().split('T')[0]
-    const currentTime = new Date().toTimeString().split(' ')[0]
-
-    let vendName = ''
-    if (vendor_config_id) {
-      try {
-        const vendRows = await query('SELECT name FROM vendor_api_configs WHERE id = ?', [vendor_config_id])
-        if (vendRows.length > 0) vendName = vendRows[0].name
-      } catch (_) {}
+    // Generate invoice PDF
+    let invoicePdfPath = ''
+    try {
+      invoicePdfPath = await generateInvoiceForBooking(tracking_number, fields, finalSenderId, finalReceiverId)
+      await execute('UPDATE shipments SET invoice_pdf_path = ? WHERE id = ?', [invoicePdfPath, shipmentId])
+    } catch (pdfErr) {
+      console.error('Invoice PDF generation failed:', pdfErr.message)
     }
 
-    /**
-     * Helper: Insert or Update AWBENTRY + parcel_history + WP sync.
-     * DISABLED BY USER DIRECTIVE: No writes to AWBENTRY or parcel_history permitted.
-     */
+    // Create tracking event
+    await execute(
+      `INSERT INTO tracking_events (shipment_id, status, description, location)
+       VALUES (?, ?, ?, ?)`,
+      [shipmentId, 'Draft Created', 'Booking saved as draft with AWB: ' + tracking_number, 'System']
+    )
+
+    // Fetch the saved booking
+    const shipmentRows = await query('SELECT * FROM shipments WHERE id = ?', [shipmentId])
+
+    return res.status(201).json({
+      success: true,
+      booking: shipmentRows[0],
+      awb_number: tracking_number,
+      invoice_pdf_path: invoicePdfPath,
+      message: `Booking saved as draft. AWB: ${tracking_number}`
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    })
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  PUSH BOOKING TO API (Takes existing saved booking → pushes)
+// ═══════════════════════════════════════════════════════════════
+
+export const pushBookingToApi = async (req, res) => {
+  try {
+    const { id } = req.params
+
+    // Fetch the existing booking
+    const rows = await query(
+      `SELECT s.*, 
+        snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
+        snd.address as s_address, snd.city as s_city, snd.state as s_state,
+        snd.pincode as s_pincode, snd.country as s_country,
+        rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
+        rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
+        rcv.pincode as r_pincode, rcv.country as r_country
+       FROM shipments s
+       LEFT JOIN senders snd ON s.sender_id = snd.id
+       LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       WHERE s.id = ?`,
+      [id]
+    )
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking not found' })
+    }
+
+    const booking = rows[0]
+
+    if (booking.is_locked) {
+      return res.status(400).json({ success: false, message: 'This booking is already locked (pushed to API). No changes can be made.' })
+    }
+
+    if (!booking.vendor_config_id) {
+      return res.status(400).json({ success: false, message: 'No vendor API selected for this booking. Please select a vendor first.' })
+    }
+
+    // Build vendor data
+    const shipmentDataForVendor = buildVendorShipmentData({
+      ...booking,
+      sender_name: booking.s_name || '',
+      sender_email: booking.s_email || '',
+      sender_phone: booking.s_phone || '',
+      sender_address: booking.s_address || '',
+      sender_city: booking.s_city || '',
+      sender_state: booking.s_state || '',
+      sender_pincode: booking.s_pincode || '',
+      sender_country: booking.s_country || 'INDIA',
+      receiver_name: booking.r_name || '',
+      receiver_email: booking.r_email || '',
+      receiver_phone: booking.r_phone || '',
+      receiver_address: booking.r_address || '',
+      receiver_city: booking.r_city || '',
+      receiver_state: booking.r_state || '',
+      receiver_pincode: booking.r_pincode || '',
+      receiver_country: booking.r_country || 'INDIA',
+      sender_company: booking.sender_company || '',
+      sender_address_2: booking.sender_address_2 || '',
+      sender_gstin_type: booking.sender_gstin_type || '',
+      sender_gstin_no: booking.sender_gstin_no || '',
+      receiver_address_2: booking.receiver_address_2 || '',
+      receiver_gstin_type: booking.receiver_gstin_type || '',
+      receiver_gstin_no: booking.receiver_gstin_no || ''
+    }, booking.order_id, booking.tracking_number)
+
+    // Push to vendor API
+    const vendorResult = await pushShipmentToVendor(
+      booking.vendor_config_id,
+      booking.id,
+      shipmentDataForVendor
+    )
+
+    if (vendorResult.success) {
+      // Success → update status to booked, lock the booking
+      await execute(
+        `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success' WHERE id = ?`,
+        [id]
+      )
+
+      await execute(
+        `INSERT INTO tracking_events (shipment_id, status, description, location)
+         VALUES (?, ?, ?, ?)`,
+        [id, 'AWB Assigned', `Pushed to vendor API. Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Vendor API']
+      )
+
+      // Refetch
+      const updated = await query('SELECT * FROM shipments WHERE id = ?', [id])
+
+      return res.json({
+        success: true,
+        booking: updated[0],
+        vendor_result: vendorResult,
+        message: `Booking pushed to vendor API! Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`
+      })
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: `Vendor API Push Failed: ${vendorResult.error || 'Unknown error'}`,
+        vendor_result: vendorResult
+      })
+    }
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    })
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  CREATE BOOKING (Legacy — saves and pushes in one step)
+// ═══════════════════════════════════════════════════════════════
+
+export const createBooking = async (req, res) => {
+  try {
+    const fields = extractBookingFields(req.body)
+
+    const tracking_number = await generateTracking()
+    const order_id = tracking_number
+
+    // Upsert sender/receiver
+    const finalSenderId = await upsertSender(fields)
+    const finalReceiverId = await upsertReceiver(fields)
+
+    // Parse invoice items
+    const invoiceItemsJson = Array.isArray(fields.invoice_items)
+      ? JSON.stringify(fields.invoice_items)
+      : (fields.invoice_items || '[]')
+
+    // Create shipment record
+    const shipmentResult = await execute(
+      `INSERT INTO shipments (
+        order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
+        vendor_code, service_code, product_code, tracking_number, weight, \`length\`, breadth, height,
+        no_of_pieces, content_description, declared_value, cod_amount,
+        payment_mode, package_type, total_amount, shipping_charge,
+        order_reference, remarks, status, vendor_push_status, is_locked,
+        sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
+        receiver_address_2, receiver_gstin_type, receiver_gstin_no,
+        invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
+        invoice_type, invoice_note, invoice_items
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        order_id,
+        finalSenderId || null,
+        finalReceiverId || null,
+        fields.courier_provider_id || null,
+        fields.vendor_config_id || null,
+        fields.vendor_code || '',
+        fields.service_code || '',
+        fields.product_code || '',
+        tracking_number,
+        fields.weight || 0,
+        fields.length || 0,
+        fields.breadth || 0,
+        fields.height || 0,
+        parseInt(fields.no_of_pieces) || 1,
+        fields.content_description || 'General Goods',
+        parseFloat(fields.declared_value) || 0,
+        parseFloat(fields.cod_amount) || 0,
+        fields.payment_mode || 'prepaid',
+        fields.package_type || 'parcel',
+        parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
+        parseFloat(fields.shipping_charge) || 0,
+        fields.order_reference || '',
+        fields.remarks || '',
+        fields.vendor_config_id ? 'processing' : 'booked',
+        fields.vendor_config_id ? 'pending' : 'skipped',
+        false,
+        fields.sender_company || '',
+        fields.sender_address_2 || '',
+        fields.sender_gstin_type || '',
+        fields.sender_gstin_no || '',
+        fields.receiver_address_2 || '',
+        fields.receiver_gstin_type || '',
+        fields.receiver_gstin_no || '',
+        tracking_number, // invoice_no = AWB
+        fields.invoice_date || new Date().toISOString().split('T')[0],
+        fields.invoice_currency || 'INR',
+        fields.hs_code || '',
+        fields.export_reason || '',
+        fields.terms_of_trade || 'CIF',
+        fields.invoice_type || 'INVOICE',
+        fields.invoice_note || '',
+        invoiceItemsJson
+      ]
+    )
+
+    const shipmentId = shipmentResult.insertId
+
+    // Generate invoice PDF
+    let invoicePdfPath = ''
+    try {
+      invoicePdfPath = await generateInvoiceForBooking(tracking_number, fields, finalSenderId, finalReceiverId)
+      await execute('UPDATE shipments SET invoice_pdf_path = ? WHERE id = ?', [invoicePdfPath, shipmentId])
+    } catch (pdfErr) {
+      console.error('Invoice PDF generation failed:', pdfErr.message)
+    }
+
+    // Disabled: AWBENTRY writes
     const syncToAwbEntry = async (vendorAwbOverride) => {
       console.log('[Disabled] Writes to AWBENTRY and parcel_history are disabled.')
       return
     }
 
-    // ── Step 3.5: For NON-VENDOR bookings, sync to AWBENTRY immediately ──
-    if (!vendor_config_id) {
+    if (!fields.vendor_config_id) {
       await syncToAwbEntry(null)
     }
 
-    // ── Step 4: Create tracking event ──
+    // Create tracking event
     await execute(
       `INSERT INTO tracking_events (shipment_id, status, description, location)
        VALUES (?, ?, ?, ?)`,
       [shipmentId, 'Shipment Created', 'Shipment booked successfully', 'System']
     )
 
-    // ── Step 5: Push to vendor API if vendor selected ──
+    // Push to vendor API if vendor selected
     let vendorResult = null
-    if (vendor_config_id) {
-      // Build flat shipment data for the adapter
-      const shipmentDataForVendor = {
-        order_id,
-        tracking_number,
-        order_reference: order_reference || '',
-        weight: parseFloat(weight) || 0,
-        length: parseFloat(length) || 0,
-        breadth: parseFloat(breadth) || 0,
-        height: parseFloat(height) || 0,
-        no_of_pieces: parseInt(no_of_pieces) || 1,
-        package_type: package_type || 'parcel',
-        payment_mode: payment_mode || 'prepaid',
-        shipping_charge: parseFloat(shipping_charge) || 0,
-        total_amount: parseFloat(total_amount) || 0,
-        declared_value: parseFloat(declared_value) || 0,
-        content_description: content_description || '',
-        cod_amount: parseFloat(cod_amount) || 0,
-        remarks: remarks || '',
-        vendor_code: vendor_code || '',
-        service_code: service_code || '',
-        product_code: product_code || '',
-        booking_date: currentDate,
-        booking_time: currentTime,
-        // Sender info
-        sender_name: sender_name || '',
-        sender_email: sender_email || '',
-        sender_phone: sender_phone || '',
-        sender_address: sender_address || '',
-        sender_city: sender_city || '',
-        sender_state: sender_state || '',
-        sender_pincode: sender_pincode || '',
-        sender_country: sender_country || 'INDIA',
-        // Receiver info
-        receiver_name: receiver_name || '',
-        receiver_email: receiver_email || '',
-        receiver_phone: receiver_phone || '',
-        receiver_address: receiver_address || '',
-        receiver_city: receiver_city || '',
-        receiver_state: receiver_state || '',
-        receiver_pincode: receiver_pincode || '',
-        receiver_country: receiver_country || 'INDIA',
-        // Pacific-specific fields
-        sender_company: sender_company || '',
-        sender_address_2: sender_address_2 || '',
-        sender_gstin_type: sender_gstin_type || '',
-        sender_gstin_no: sender_gstin_no || '',
-        receiver_address_2: receiver_address_2 || '',
-        receiver_gstin_type: receiver_gstin_type || '',
-        receiver_gstin_no: receiver_gstin_no || '',
-        invoice_no: invoice_no || '',
-        invoice_date: invoice_date || '',
-        invoice_currency: invoice_currency || 'INR',
-        hs_code: hs_code || '',
-        export_reason: export_reason || '',
-        terms_of_trade: terms_of_trade || '',
-        // eAWB Details (pass-through)
-        eawb_no: eawb_no || '',
-        eawb_date: eawb_date || '',
-        eawb_exp_date: eawb_exp_date || '',
-        // Additional Charges (pass-through)
-        additional_discount: additional_discount || '',
-        additional_freight: additional_freight || '',
-        additional_insurance: additional_insurance || '',
-        additional_other_charges: additional_other_charges || '',
-        additional_specify_charges: additional_specify_charges || '',
-        // Buyer Details (pass-through)
-        buyer_name: buyer_name || '',
-        buyer_person_type: buyer_person_type || '',
-        buyer_address1: buyer_address1 || '',
-        buyer_address2: buyer_address2 || '',
-        buyer_pincode: buyer_pincode || '',
-        buyer_city: buyer_city || '',
-        buyer_state: buyer_state || '',
-        buyer_telephone: buyer_telephone || '',
-        buyer_mobile: buyer_mobile || '',
-        buyer_email: buyer_email || '',
-        buyer_country_code: buyer_country_code || '',
-        buyer_destination_code: buyer_destination_code || '',
-        buyer_iec_no: buyer_iec_no || '',
-        // GST & Manifest (pass-through)
-        gst_invoice: gst_invoice || '',
-        lut_igst: lut_igst || '',
-        total_igst: total_igst || '',
-        bank_ad_code: bank_ad_code || '',
-        bank_account: bank_account || '',
-        bank_ifsc: bank_ifsc || '',
-        lut_number: lut_number || '',
-        exchange_rate: exchange_rate || '',
-        manifest_firm: manifest_firm || '',
-        manifest_nfei: manifest_nfei || '',
-        pay_of_igst: pay_of_igst || '',
-        manifest_ecommerce: manifest_ecommerce || '',
-        meis_scheme: meis_scheme || '',
-        manifest_format: manifest_format || '',
-        manifest_iec_no: manifest_iec_no || '',
-        lut_issue_date: lut_issue_date || '',
-        lut_till_date: lut_till_date || '',
-        // Advanced Config (pass-through)
-        company_code: company_code || '',
-        is_commercial: is_commercial ?? '',
-        csb_type: csb_type || '',
-        otp: otp || '',
-        lsp_type: lsp_type || '',
-        required_performa: required_performa || '',
-        required_label: required_label || ''
-      }
+    if (fields.vendor_config_id) {
+      const shipmentDataForVendor = buildVendorShipmentData(fields, order_id, tracking_number)
 
       vendorResult = await pushShipmentToVendor(
-        vendor_config_id,
+        fields.vendor_config_id,
         shipmentId,
         shipmentDataForVendor
       )
 
       if (vendorResult.success) {
-        // Vendor push succeeded → update shipment status to booked
-        await execute('UPDATE shipments SET status = ? WHERE id = ?', ['booked', shipmentId])
+        await execute('UPDATE shipments SET status = ?, is_locked = TRUE WHERE id = ?', ['booked', shipmentId])
 
         await execute(
           `INSERT INTO tracking_events (shipment_id, status, description, location)
            VALUES (?, ?, ?, ?)`,
-          [
-            shipmentId,
-            'AWB Assigned',
-            `Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`,
-            'Vendor API'
-          ]
+          [shipmentId, 'AWB Assigned', `Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Vendor API']
         )
 
-        // Now it's safe to create the AWBENTRY (vendor push confirmed)
-        await syncToAwbEntry(vendorResult.awbNumber || vendor_code || '')
+        await syncToAwbEntry(vendorResult.awbNumber || fields.vendor_code || '')
       } else {
-        // Vendor push failed → clean up everything (no orphaned AWBENTRY)
         await execute('DELETE FROM shipments WHERE id = ?', [shipmentId])
-        // Safety: clean up local shipment only (AWBENTRY & parcel_history writes/deletes are disabled)
         return res.status(400).json({
           success: false,
           message: `Vendor API Push Failed: ${vendorResult.error || 'Unknown error'}`
@@ -367,7 +753,7 @@ export const createBooking = async (req, res) => {
       }
     }
 
-    // ── Step 5.5: Link & confirm booking request if created from a request ──
+    // Link booking request if applicable
     const fromRequestId = req.body.from_request || req.body.booking_request_id
     const requestAwb = req.body.request_awb
 
@@ -390,37 +776,17 @@ export const createBooking = async (req, res) => {
             [shipmentId, effectiveTracking, reqRow.id]
           )
 
-          const updateTitle = 'Shipment Confirmed'
-          const updateDesc = `Your booking request has been confirmed. Tracking Number: ${effectiveTracking}`
-          const wpUpdates = [
-            { type: 'status_change', title: 'Status Updated to Confirmed', description: 'Booking request status was changed to confirmed.' },
-            { type: 'shipment_created', title: updateTitle, description: updateDesc }
-          ]
-
           await execute(
             `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
-            [reqRow.id, 'shipment_created', updateTitle, updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking })]
+            [reqRow.id, 'shipment_created', 'Shipment Confirmed', `Booking confirmed. Tracking: ${effectiveTracking}`, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking })]
           )
-
-          // Sync status update to WordPress
-          syncStatusToWP({
-            request_awb: reqRow.request_awb,
-            status: 'confirmed',
-            shipment_id: shipmentId,
-            tracking_number: effectiveTracking,
-            updates: wpUpdates
-          }).catch(() => {})
         }
       } catch (reqSyncErr) {
-        console.error('Failed to update booking request on booking creation:', reqSyncErr.message)
+        console.error('Failed to update booking request:', reqSyncErr.message)
       }
     }
 
-    // ── Step 6: Refetch the shipment with updated vendor data ──
-    const shipmentRows = await query(
-      'SELECT * FROM shipments WHERE id = ?',
-      [shipmentId]
-    )
+    const shipmentRows = await query('SELECT * FROM shipments WHERE id = ?', [shipmentId])
 
     return res.status(201).json({
       success: true,
@@ -434,6 +800,44 @@ export const createBooking = async (req, res) => {
     })
   }
 }
+
+
+// ═══════════════════════════════════════════════════════════════
+//  SERVE INVOICE PDF
+// ═══════════════════════════════════════════════════════════════
+
+export const getInvoicePdf = async (req, res) => {
+  try {
+    const { id } = req.params
+
+    const rows = await query('SELECT invoice_pdf_path, tracking_number FROM shipments WHERE id = ?', [id])
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking not found' })
+    }
+
+    const { invoice_pdf_path, tracking_number } = rows[0]
+    if (!invoice_pdf_path) {
+      return res.status(404).json({ success: false, message: 'No invoice PDF available for this booking' })
+    }
+
+    const absPath = path.resolve(__dirname, '..', '..', '..', invoice_pdf_path)
+    if (!fs.existsSync(absPath)) {
+      return res.status(404).json({ success: false, message: 'Invoice PDF file not found on server' })
+    }
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="Invoice_${tracking_number}.pdf"`)
+    const fileStream = fs.createReadStream(absPath)
+    fileStream.pipe(res)
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  EXISTING CRUD (unchanged logic)
+// ═══════════════════════════════════════════════════════════════
 
 export const getBookings = async (req, res) => {
   try {
@@ -450,7 +854,6 @@ export const getBookings = async (req, res) => {
     const limitNum = parseInt(limit)
     const offset = (pageNum - 1) * limitNum
 
-    // Whitelist allowed sort columns to prevent SQL injection
     const allowedSortColumns = ['created_at', 'order_id', 'tracking_number', 'status', 'total_amount']
     const safeSortBy = allowedSortColumns.includes(sort_by) ? sort_by : 'created_at'
     const safeSortOrder = sort_order === 'asc' ? 'ASC' : 'DESC'
@@ -459,8 +862,8 @@ export const getBookings = async (req, res) => {
     const params = []
 
     if (search) {
-      whereClause += ' WHERE (s.order_id LIKE ? OR s.tracking_number LIKE ?)'
-      params.push(`%${search}%`, `%${search}%`)
+      whereClause += ' WHERE (s.order_id LIKE ? OR s.tracking_number LIKE ? OR s.vendor_awb_number LIKE ?)'
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`)
     }
 
     if (status) {
@@ -468,14 +871,12 @@ export const getBookings = async (req, res) => {
       params.push(status)
     }
 
-    // Count query
     const countRows = await query(
       `SELECT COUNT(*) as total FROM shipments s${whereClause}`,
       params
     )
     const total = countRows[0].total
 
-    // Main query with JOINs
     const dataRows = await query(
       `SELECT s.*,
         JSON_OBJECT(
@@ -503,7 +904,6 @@ export const getBookings = async (req, res) => {
       params
     )
 
-    // Parse JSON objects and handle null JOINs
     const bookings = dataRows.map(row => {
       const { senders, receivers, courier_providers, vendor_api_configs, ...shipment } = row
       return {
@@ -537,7 +937,6 @@ export const getBookingById = async (req, res) => {
   try {
     const { id } = req.params
 
-    // Fetch shipment with JOINs
     const rows = await query(
       `SELECT s.*,
         JSON_OBJECT(
@@ -573,7 +972,6 @@ export const getBookingById = async (req, res) => {
 
     const { senders, receivers, courier_providers, vendor_api_configs, ...shipment } = rows[0]
 
-    // Get tracking events
     const trackingEvents = await query(
       'SELECT * FROM tracking_events WHERE shipment_id = ? ORDER BY event_time DESC',
       [id]
@@ -603,13 +1001,11 @@ export const updateBookingStatus = async (req, res) => {
     const { id } = req.params
     const { status, description, location } = req.body
 
-    // Update shipment status
     await execute(
       'UPDATE shipments SET status = ? WHERE id = ?',
       [status, id]
     )
 
-    // Insert tracking event
     await execute(
       `INSERT INTO tracking_events (shipment_id, status, description, location)
        VALUES (?, ?, ?, ?)`,
