@@ -150,14 +150,8 @@ export default function NewBookingPage() {
   const [customServiceMode, setCustomServiceMode] = useState(false)
   const [customProductMode, setCustomProductMode] = useState(false)
 
-  // Collapsible accordion section toggles
-  const [showInvoice, setShowInvoice] = useState(false)
-  const [showEawb, setShowEawb] = useState(false)
-  const [showAdditionalCharges, setShowAdditionalCharges] = useState(false)
-  const [showBuyerDetails, setShowBuyerDetails] = useState(false)
-  const [showGstManifest, setShowGstManifest] = useState(false)
-  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false)
-  const [showShipmentInvoice, setShowShipmentInvoice] = useState(false)
+  // Form collapse toggles
+  const [showShipmentInvoice, setShowShipmentInvoice] = useState(true)
 
   // Invoice items state
   const [invoiceItems, setInvoiceItems] = useState([
@@ -576,7 +570,7 @@ export default function NewBookingPage() {
                     placeholder="Sender Full Name"
                     value={form.sender_name}
                     onChange={e => updateForm('sender_name', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs font-semibold text-[#1a202c]"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-semibold text-[#1a202c]"
                   />
                 </CompactField>
 
@@ -586,7 +580,7 @@ export default function NewBookingPage() {
                     placeholder="Sender Company Name"
                     value={form.sender_company}
                     onChange={e => updateForm('sender_company', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
                   />
                 </CompactField>
 
@@ -597,7 +591,7 @@ export default function NewBookingPage() {
                       placeholder="+91 99999 99999"
                       value={form.sender_phone}
                       onChange={e => updateForm('sender_phone', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
                     />
                   </CompactField>
                   <CompactField label="Email Address">
@@ -606,7 +600,7 @@ export default function NewBookingPage() {
                       placeholder="sender@example.com"
                       value={form.sender_email}
                       onChange={e => updateForm('sender_email', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                 </div>
@@ -617,7 +611,7 @@ export default function NewBookingPage() {
                     placeholder="Flat / Building / Street"
                     value={form.sender_address}
                     onChange={e => updateForm('sender_address', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                   />
                 </CompactField>
 
@@ -627,7 +621,7 @@ export default function NewBookingPage() {
                     placeholder="Area / Landmark"
                     value={form.sender_address_2}
                     onChange={e => updateForm('sender_address_2', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                   />
                 </CompactField>
 
@@ -638,7 +632,7 @@ export default function NewBookingPage() {
                       placeholder="City"
                       value={form.sender_city}
                       onChange={e => updateForm('sender_city', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                   <CompactField label="Pincode" required>
@@ -647,7 +641,7 @@ export default function NewBookingPage() {
                       placeholder="Pincode"
                       value={form.sender_pincode}
                       onChange={e => updateForm('sender_pincode', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
                     />
                   </CompactField>
                 </div>
@@ -659,7 +653,7 @@ export default function NewBookingPage() {
                       placeholder="State"
                       value={form.sender_state}
                       onChange={e => updateForm('sender_state', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
                     />
                   </CompactField>
                   <CompactField label="Country">
@@ -668,7 +662,7 @@ export default function NewBookingPage() {
                       placeholder="Country"
                       value={form.sender_country}
                       onChange={e => updateForm('sender_country', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase text-[#BB0013]"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold uppercase text-[#BB0013]"
                     />
                   </CompactField>
                 </div>
@@ -678,7 +672,7 @@ export default function NewBookingPage() {
                     <select
                       value={form.sender_gstin_type}
                       onChange={e => updateForm('sender_gstin_type', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs cursor-pointer"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 cursor-pointer"
                     >
                       <option value="">Select</option>
                       <option value="GSTIN">GSTIN</option>
@@ -695,7 +689,7 @@ export default function NewBookingPage() {
                       placeholder="Doc No."
                       value={form.sender_gstin_no}
                       onChange={e => updateForm('sender_gstin_no', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
                     />
                   </CompactField>
                 </div>
@@ -715,7 +709,7 @@ export default function NewBookingPage() {
                     placeholder="Receiver Full Name"
                     value={form.receiver_name}
                     onChange={e => updateForm('receiver_name', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs font-semibold"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-semibold"
                   />
                 </CompactField>
 
@@ -725,7 +719,7 @@ export default function NewBookingPage() {
                     placeholder="Receiver Company Name"
                     value={form.receiver_company}
                     onChange={e => updateForm('receiver_company', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
                   />
                 </CompactField>
 
@@ -736,7 +730,7 @@ export default function NewBookingPage() {
                       placeholder="+1 999 999 9999"
                       value={form.receiver_phone}
                       onChange={e => updateForm('receiver_phone', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
                     />
                   </CompactField>
                   <CompactField label="Email Address">
@@ -745,7 +739,7 @@ export default function NewBookingPage() {
                       placeholder="receiver@example.com"
                       value={form.receiver_email}
                       onChange={e => updateForm('receiver_email', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                 </div>
@@ -756,7 +750,7 @@ export default function NewBookingPage() {
                     placeholder="Street / House No."
                     value={form.receiver_address}
                     onChange={e => updateForm('receiver_address', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                   />
                 </CompactField>
 
@@ -766,7 +760,7 @@ export default function NewBookingPage() {
                     placeholder="Apt / Suite / Area"
                     value={form.receiver_address_2}
                     onChange={e => updateForm('receiver_address_2', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                   />
                 </CompactField>
 
@@ -777,7 +771,7 @@ export default function NewBookingPage() {
                       placeholder="City"
                       value={form.receiver_city}
                       onChange={e => updateForm('receiver_city', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                   <CompactField label="Pincode" required>
@@ -786,7 +780,7 @@ export default function NewBookingPage() {
                       placeholder="Zip / Pincode"
                       value={form.receiver_pincode}
                       onChange={e => updateForm('receiver_pincode', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
                     />
                   </CompactField>
                 </div>
@@ -798,7 +792,7 @@ export default function NewBookingPage() {
                       placeholder="State / Province"
                       value={form.receiver_state}
                       onChange={e => updateForm('receiver_state', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
                     />
                   </CompactField>
                   <CompactField label="Country" required highlight={!form.receiver_country}>
@@ -807,7 +801,7 @@ export default function NewBookingPage() {
                       placeholder="e.g. US, GB, AE"
                       value={form.receiver_country}
                       onChange={e => updateForm('receiver_country', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-bold uppercase text-[#BB0013] placeholder-red-300"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold uppercase text-[#BB0013] placeholder-red-300"
                     />
                   </CompactField>
                 </div>
@@ -817,7 +811,7 @@ export default function NewBookingPage() {
                     <select
                       value={form.receiver_gstin_type}
                       onChange={e => updateForm('receiver_gstin_type', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs cursor-pointer"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 cursor-pointer"
                     >
                       <option value="">Select</option>
                       <option value="Tax ID">Tax ID</option>
@@ -831,7 +825,7 @@ export default function NewBookingPage() {
                       placeholder="Doc No."
                       value={form.receiver_gstin_no}
                       onChange={e => updateForm('receiver_gstin_no', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
                     />
                   </CompactField>
                 </div>
@@ -858,7 +852,7 @@ export default function NewBookingPage() {
                       setCustomServiceMode(false)
                       setCustomProductMode(false)
                     }}
-                    className="w-full bg-transparent focus:outline-none text-xs font-bold text-[#BB0013] cursor-pointer"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold text-[#BB0013] cursor-pointer"
                   >
                     <option value="">— None (Local Only) —</option>
                     {activeVendors.map(v => (
@@ -881,7 +875,7 @@ export default function NewBookingPage() {
                               value={form.vendor_code}
                               onChange={e => updateForm('vendor_code', e.target.value)}
                               placeholder="e.g. PC, DHL"
-                              className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                              className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
                             />
                             <button
                               type="button"
@@ -902,7 +896,7 @@ export default function NewBookingPage() {
                                 updateForm('vendor_code', e.target.value)
                               }
                             }}
-                            className="w-full bg-transparent focus:outline-none text-xs cursor-pointer font-bold"
+                            className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 cursor-pointer font-bold"
                           >
                             <option value="">— Config Default —</option>
                             {vendorVendorCodes.map((vc, i) => (
@@ -918,7 +912,7 @@ export default function NewBookingPage() {
                             value={form.vendor_code}
                             onChange={e => updateForm('vendor_code', e.target.value)}
                             placeholder="e.g. PC, DHL"
-                            className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                            className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
                           />
                         )}
                       </CompactField>
@@ -934,7 +928,7 @@ export default function NewBookingPage() {
                               value={form.service_code}
                               onChange={e => updateForm('service_code', e.target.value)}
                               placeholder="e.g. SPX, STD"
-                              className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                              className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
                             />
                             <button
                               type="button"
@@ -955,7 +949,7 @@ export default function NewBookingPage() {
                                 updateForm('service_code', e.target.value)
                               }
                             }}
-                            className="w-full bg-transparent focus:outline-none text-xs cursor-pointer font-bold"
+                            className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 cursor-pointer font-bold"
                           >
                             <option value="">— Config Default —</option>
                             {vendorServices.map((svc, i) => (
@@ -971,7 +965,7 @@ export default function NewBookingPage() {
                             value={form.service_code}
                             onChange={e => updateForm('service_code', e.target.value)}
                             placeholder="e.g. SPX, STD"
-                            className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                            className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
                           />
                         )}
                       </CompactField>
@@ -987,7 +981,7 @@ export default function NewBookingPage() {
                               value={form.product_code}
                               onChange={e => updateForm('product_code', e.target.value)}
                               placeholder="e.g. SPX, DOX"
-                              className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                              className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
                             />
                             <button
                               type="button"
@@ -1008,7 +1002,7 @@ export default function NewBookingPage() {
                                 updateForm('product_code', e.target.value)
                               }
                             }}
-                            className="w-full bg-transparent focus:outline-none text-xs cursor-pointer font-bold"
+                            className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 cursor-pointer font-bold"
                           >
                             <option value="">— Select / Auto —</option>
                             {filteredProductCodes.map((pc, i) => (
@@ -1029,7 +1023,7 @@ export default function NewBookingPage() {
                                 updateForm('product_code', e.target.value)
                               }
                             }}
-                            className="w-full bg-transparent focus:outline-none text-xs cursor-pointer font-bold"
+                            className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 cursor-pointer font-bold"
                           >
                             <option value="">— Select / Auto —</option>
                             {vendorProductCodes.map((pc, i) => (
@@ -1045,7 +1039,7 @@ export default function NewBookingPage() {
                             value={form.product_code}
                             onChange={e => updateForm('product_code', e.target.value)}
                             placeholder="e.g. SPX, DOX"
-                            className="w-full bg-transparent focus:outline-none text-xs uppercase"
+                            className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
                           />
                         )}
                       </CompactField>
@@ -1059,7 +1053,7 @@ export default function NewBookingPage() {
                     <select
                       value={form.payment_mode}
                       onChange={e => updateForm('payment_mode', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-bold cursor-pointer"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold cursor-pointer"
                     >
                       <option value="prepaid">Prepaid</option>
                       <option value="cod">COD</option>
@@ -1072,7 +1066,7 @@ export default function NewBookingPage() {
                       placeholder="0.00"
                       value={form.shipping_charge}
                       onChange={e => updateForm('shipping_charge', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-semibold text-right"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-semibold text-right"
                     />
                   </CompactField>
                 </div>
@@ -1084,7 +1078,7 @@ export default function NewBookingPage() {
                       placeholder="0.00"
                       value={form.cod_amount}
                       onChange={e => updateForm('cod_amount', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-bold text-[#BB0013] text-right"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold text-[#BB0013] text-right"
                     />
                   </CompactField>
                 )}
@@ -1096,7 +1090,7 @@ export default function NewBookingPage() {
                       placeholder="e.g. ORD-1002"
                       value={form.order_reference}
                       onChange={e => updateForm('order_reference', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
                     />
                   </CompactField>
                   <CompactField label="Remarks">
@@ -1105,7 +1099,7 @@ export default function NewBookingPage() {
                       placeholder="Handling instructions"
                       value={form.remarks}
                       onChange={e => updateForm('remarks', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                 </div>
@@ -1124,7 +1118,7 @@ export default function NewBookingPage() {
               <select
                 value={form.package_type}
                 onChange={e => updateForm('package_type', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-xs font-bold cursor-pointer"
+                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold cursor-pointer"
               >
                 <option value="parcel">Parcel</option>
                 <option value="document">Document / DOX</option>
@@ -1139,7 +1133,7 @@ export default function NewBookingPage() {
                 min="1"
                 value={form.no_of_pieces}
                 onChange={e => updateForm('no_of_pieces', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-xs font-bold text-center"
+                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold text-center"
               />
             </CompactField>
 
@@ -1149,7 +1143,7 @@ export default function NewBookingPage() {
                 placeholder="Declared value"
                 value={form.declared_value}
                 onChange={e => updateForm('declared_value', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-xs font-semibold"
+                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-semibold"
               />
             </CompactField>
 
@@ -1159,7 +1153,7 @@ export default function NewBookingPage() {
                 placeholder="Items / Goods inside"
                 value={form.content_description}
                 onChange={e => updateForm('content_description', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-xs"
+                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
               />
             </CompactField>
           </div>
@@ -1172,7 +1166,7 @@ export default function NewBookingPage() {
                 placeholder="0.00"
                 value={form.weight}
                 onChange={e => updateForm('weight', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-xs font-extrabold text-right text-[#BB0013]"
+                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-extrabold text-right text-[#BB0013]"
               />
             </CompactField>
 
@@ -1182,7 +1176,7 @@ export default function NewBookingPage() {
                 placeholder="L"
                 value={form.length}
                 onChange={e => updateForm('length', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-xs text-center"
+                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 text-center"
               />
             </CompactField>
 
@@ -1192,7 +1186,7 @@ export default function NewBookingPage() {
                 placeholder="B"
                 value={form.breadth}
                 onChange={e => updateForm('breadth', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-xs text-center"
+                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 text-center"
               />
             </CompactField>
 
@@ -1202,7 +1196,7 @@ export default function NewBookingPage() {
                 placeholder="H"
                 value={form.height}
                 onChange={e => updateForm('height', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-xs text-center"
+                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 text-center"
               />
             </CompactField>
 
@@ -1211,7 +1205,7 @@ export default function NewBookingPage() {
                 type="text"
                 readOnly
                 value={form.volumetric_weight || '0.00'}
-                className="w-full bg-transparent focus:outline-none text-xs font-mono font-bold text-right text-gray-500"
+                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono font-bold text-right text-gray-500"
               />
             </CompactField>
           </div>
@@ -1222,7 +1216,7 @@ export default function NewBookingPage() {
           <button
             type="button"
             onClick={() => setShowShipmentInvoice(!showShipmentInvoice)}
-            className="w-full flex items-center justify-between"
+            className="w-full flex items-center justify-between cursor-pointer"
           >
             <RedBadge title="Create Shipment Invoice" icon={Receipt} />
             <ChevronDown className={`w-4 h-4 text-[#BB0013] transition-transform duration-200 ${showShipmentInvoice ? 'rotate-180' : ''}`} />
@@ -1231,12 +1225,12 @@ export default function NewBookingPage() {
           {showShipmentInvoice && (
             <div className="mt-3 animate-slide-down">
               {/* Invoice Meta Row */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 mb-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-3">
                 <CompactField label="Invoice Type">
                   <select
                     value={form.invoice_type || 'INVOICE'}
                     onChange={e => updateForm('invoice_type', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs font-bold cursor-pointer"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold cursor-pointer"
                   >
                     <option value="INVOICE">Invoice</option>
                     <option value="PROFORMA">Proforma Invoice</option>
@@ -1246,7 +1240,7 @@ export default function NewBookingPage() {
                   <select
                     value={form.invoice_currency}
                     onChange={e => updateForm('invoice_currency', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs font-bold cursor-pointer"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold cursor-pointer"
                   >
                     <option value="INR">INR</option>
                     <option value="USD">USD</option>
@@ -1259,7 +1253,7 @@ export default function NewBookingPage() {
                   <select
                     value={form.terms_of_trade}
                     onChange={e => updateForm('terms_of_trade', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs font-bold cursor-pointer"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold cursor-pointer"
                   >
                     <option value="CIF">CIF</option>
                     <option value="FOB">FOB</option>
@@ -1273,47 +1267,47 @@ export default function NewBookingPage() {
                     placeholder="e.g. Gift, Commercial, Personal Use"
                     value={form.invoice_note || ''}
                     onChange={e => updateForm('invoice_note', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-xs"
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                   />
                 </CompactField>
               </div>
 
               {/* Invoice Items Table */}
-              <div className="border border-[#1a237e] rounded overflow-hidden">
+              <div className="border border-[#1a237e] rounded-md overflow-hidden">
                 {/* Table Header */}
-                <div className="bg-[#1a237e] text-white grid grid-cols-[40px_40px_1fr_90px_60px_60px_70px_60px_70px_70px_50px] text-[9px] font-extrabold uppercase tracking-tight">
-                  <div className="px-1.5 py-2 text-center">SR</div>
-                  <div className="px-1.5 py-2 text-center">Box</div>
-                  <div className="px-1.5 py-2">Description</div>
-                  <div className="px-1.5 py-2 text-center">HS Code</div>
-                  <div className="px-1.5 py-2 text-center">Unit</div>
-                  <div className="px-1.5 py-2 text-center">Qty</div>
-                  <div className="px-1.5 py-2 text-right">Unit Wt</div>
-                  <div className="px-1.5 py-2 text-right">Cost</div>
-                  <div className="px-1.5 py-2 text-right">Rate</div>
-                  <div className="px-1.5 py-2 text-right">Amount</div>
-                  <div className="px-1.5 py-2 text-center">×</div>
+                <div className="bg-[#1a237e] text-white grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] text-[11px] font-extrabold uppercase tracking-tight">
+                  <div className="px-1.5 py-2.5 text-center">SR</div>
+                  <div className="px-1.5 py-2.5 text-center">Box</div>
+                  <div className="px-1.5 py-2.5">Description</div>
+                  <div className="px-1.5 py-2.5 text-center">HS Code</div>
+                  <div className="px-1.5 py-2.5 text-center">Unit</div>
+                  <div className="px-1.5 py-2.5 text-center">Qty</div>
+                  <div className="px-1.5 py-2.5 text-right">Unit Wt</div>
+                  <div className="px-1.5 py-2.5 text-right">Cost</div>
+                  <div className="px-1.5 py-2.5 text-right">Rate</div>
+                  <div className="px-1.5 py-2.5 text-right">Amount</div>
+                  <div className="px-1.5 py-2.5 text-center">×</div>
                 </div>
 
                 {/* Item Rows */}
                 {invoiceItems.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-[40px_40px_1fr_90px_60px_60px_70px_60px_70px_70px_50px] border-t border-[#dce1e7] text-xs items-center hover:bg-red-50/30 transition-colors">
-                    <div className="px-1.5 py-1 text-center text-[10px] font-bold text-gray-500">{item.sr_no}</div>
+                  <div key={idx} className="grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] border-t border-[#dce1e7] text-[13px] items-center hover:bg-red-50/30 transition-colors py-1">
+                    <div className="px-1.5 py-1 text-center text-xs font-bold text-gray-500">{item.sr_no}</div>
                     <div className="px-1">
                       <input type="text" value={item.box_no} onChange={e => updateInvoiceItem(idx, 'box_no', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-[10px] text-center" />
+                        className="w-full bg-transparent focus:outline-none text-xs text-center font-bold" />
                     </div>
                     <div className="px-1">
                       <input type="text" placeholder="Item description" value={item.description} onChange={e => updateInvoiceItem(idx, 'description', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-[10px]" />
+                        className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800" />
                     </div>
                     <div className="px-1">
                       <input type="text" placeholder="840590" value={item.hs_code} onChange={e => updateInvoiceItem(idx, 'hs_code', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-[10px] font-mono text-center" />
+                        className="w-full bg-transparent focus:outline-none text-xs font-mono text-center" />
                     </div>
                     <div className="px-1">
                       <select value={item.unit_type} onChange={e => updateInvoiceItem(idx, 'unit_type', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-[10px] cursor-pointer">
+                        className="w-full bg-transparent focus:outline-none text-xs font-semibold cursor-pointer">
                         <option value="PCS">PCS</option>
                         <option value="KGS">KGS</option>
                         <option value="MTR">MTR</option>
@@ -1324,35 +1318,35 @@ export default function NewBookingPage() {
                     </div>
                     <div className="px-1">
                       <input type="number" placeholder="0" value={item.quantity} onChange={e => updateInvoiceItem(idx, 'quantity', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-[10px] text-center" />
+                        className="w-full bg-transparent focus:outline-none text-xs text-center font-bold" />
                     </div>
                     <div className="px-1">
                       <input type="number" step="0.01" placeholder="0.00" value={item.unit_weight} onChange={e => updateInvoiceItem(idx, 'unit_weight', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-[10px] text-right" />
+                        className="w-full bg-transparent focus:outline-none text-xs text-right" />
                     </div>
                     <div className="px-1">
                       <input type="number" step="0.01" placeholder="0.00" value={item.cost} onChange={e => updateInvoiceItem(idx, 'cost', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-[10px] text-right" />
+                        className="w-full bg-transparent focus:outline-none text-xs text-right" />
                     </div>
                     <div className="px-1">
                       <input type="number" step="0.01" placeholder="0.00" value={item.unit_rates} onChange={e => updateInvoiceItem(idx, 'unit_rates', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-[10px] text-right" />
+                        className="w-full bg-transparent focus:outline-none text-xs text-right" />
                     </div>
                     <div className="px-1">
                       <input type="number" step="0.01" readOnly value={item.amount} 
-                        className="w-full bg-transparent focus:outline-none text-[10px] text-right font-bold text-[#BB0013]" />
+                        className="w-full bg-transparent focus:outline-none text-xs text-right font-extrabold text-[#BB0013]" />
                     </div>
                     <div className="px-1 text-center">
                       <button type="button" onClick={() => removeInvoiceItem(idx)}
-                        className="text-red-400 hover:text-red-600 transition-colors cursor-pointer" title="Remove">
-                        <Trash2 className="w-3 h-3" />
+                        className="text-red-400 hover:text-red-600 transition-colors cursor-pointer p-1" title="Remove">
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
                 ))}
 
                 {/* Totals Row */}
-                <div className="grid grid-cols-[40px_40px_1fr_90px_60px_60px_70px_60px_70px_70px_50px] border-t-2 border-[#1a237e] bg-[#f5f5ff] text-[10px] font-extrabold items-center">
+                <div className="grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] border-t-2 border-[#1a237e] bg-[#f5f5ff] text-[11px] font-extrabold items-center py-1.5">
                   <div className="col-span-5"></div>
                   <div className="px-1.5 py-2 text-right text-[#1a237e] uppercase">Total</div>
                   <div className="px-1.5 py-2 text-right text-[#1a237e]">{invoiceTotalWeight.toFixed(2)}</div>
@@ -1366,385 +1360,16 @@ export default function NewBookingPage() {
               <button
                 type="button"
                 onClick={addInvoiceItem}
-                className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#e8eaf6] text-[#1a237e] text-[10px] font-extrabold hover:bg-[#c5cae9] transition-colors"
+                className="mt-2.5 flex items-center gap-1.5 px-4 py-2 rounded bg-[#e8eaf6] text-[#1a237e] text-xs font-extrabold hover:bg-[#c5cae9] transition-colors cursor-pointer"
               >
-                <Plus className="w-3 h-3" />
+                <Plus className="w-3.5 h-3.5" />
                 ADD ITEM
               </button>
             </div>
           )}
         </div>
 
-        {/* ── Collapsible Accordion Banners ── */}
-        <div className="space-y-1 mb-4">
-          
-          {/* Accordion 1: Invoice & Export Details */}
-          {vendorRequiresField('invoice') && (
-            <>
-              <AccordionBanner
-                title="Click here for Invoice & Export Details"
-                isOpen={showInvoice}
-                onToggle={() => setShowInvoice(!showInvoice)}
-              />
-              {showInvoice && (
-                <div className="bg-white border border-[#dce1e7] rounded p-3 my-1 grid grid-cols-1 sm:grid-cols-3 gap-2.5 animate-slide-down">
-                  <CompactField label="Invoice No">
-                    <input
-                      type="text"
-                      placeholder="INV-001"
-                      value={form.invoice_no}
-                      onChange={e => updateForm('invoice_no', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
-                    />
-                  </CompactField>
-                  <CompactField label="Invoice Date">
-                    <input
-                      type="date"
-                      value={form.invoice_date}
-                      onChange={e => updateForm('invoice_date', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
-                    />
-                  </CompactField>
-                  <CompactField label="Invoice Currency">
-                    <select
-                      value={form.invoice_currency}
-                      onChange={e => updateForm('invoice_currency', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-bold cursor-pointer"
-                    >
-                      <option value="INR">INR</option>
-                      <option value="USD">USD</option>
-                      <option value="EUR">EUR</option>
-                      <option value="GBP">GBP</option>
-                      <option value="AED">AED</option>
-                    </select>
-                  </CompactField>
-                  <CompactField label="HS Code">
-                    <input
-                      type="text"
-                      placeholder="8471.30"
-                      value={form.hs_code}
-                      onChange={e => updateForm('hs_code', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
-                    />
-                  </CompactField>
-                  <CompactField label="Export Reason">
-                    <input
-                      type="text"
-                      placeholder="Commercial Goods / Gift"
-                      value={form.export_reason}
-                      onChange={e => updateForm('export_reason', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
-                    />
-                  </CompactField>
-                  <CompactField label="Terms of Trade">
-                    <select
-                      value={form.terms_of_trade}
-                      onChange={e => updateForm('terms_of_trade', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs cursor-pointer"
-                    >
-                      <option value="CIF">CIF</option>
-                      <option value="FOB">FOB</option>
-                      <option value="DDP">DDP</option>
-                      <option value="DDU">DDU</option>
-                    </select>
-                  </CompactField>
-                </div>
-              )}
-            </>
-          )}
 
-          {/* Accordion 2: eAWB Details */}
-          {vendorRequiresField('eawb') && (
-            <>
-              <AccordionBanner
-                title="Click here for eAWB Details"
-                isOpen={showEawb}
-                onToggle={() => setShowEawb(!showEawb)}
-              />
-              {showEawb && (
-                <div className="bg-white border border-[#dce1e7] rounded p-3 my-1 grid grid-cols-1 sm:grid-cols-3 gap-2.5 animate-slide-down">
-                  <CompactField label="eAWB No">
-                    <input
-                      type="text"
-                      placeholder="eAWB Number"
-                      value={form.eawb_no}
-                      onChange={e => updateForm('eawb_no', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
-                    />
-                  </CompactField>
-                  <CompactField label="eAWB Date">
-                    <input
-                      type="date"
-                      value={form.eawb_date}
-                      onChange={e => updateForm('eawb_date', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
-                    />
-                  </CompactField>
-                  <CompactField label="eAWB Exp Date">
-                    <input
-                      type="date"
-                      value={form.eawb_exp_date}
-                      onChange={e => updateForm('eawb_exp_date', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
-                    />
-                  </CompactField>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Accordion 3: Additional Charges */}
-          {vendorRequiresField('additional_charges') && (
-            <>
-              <AccordionBanner
-                title="Click here for Additional Charges"
-                isOpen={showAdditionalCharges}
-                onToggle={() => setShowAdditionalCharges(!showAdditionalCharges)}
-              />
-              {showAdditionalCharges && (
-                <div className="bg-white border border-[#dce1e7] rounded p-3 my-1 grid grid-cols-1 sm:grid-cols-3 gap-2.5 animate-slide-down">
-                  <CompactField label="Freight Charge">
-                    <input
-                      type="number"
-                      placeholder="0.00"
-                      value={form.additional_freight}
-                      onChange={e => updateForm('additional_freight', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
-                    />
-                  </CompactField>
-                  <CompactField label="Insurance">
-                    <input
-                      type="number"
-                      placeholder="0.00"
-                      value={form.additional_insurance}
-                      onChange={e => updateForm('additional_insurance', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
-                    />
-                  </CompactField>
-                  <CompactField label="Discount">
-                    <input
-                      type="number"
-                      placeholder="0.00"
-                      value={form.additional_discount}
-                      onChange={e => updateForm('additional_discount', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
-                    />
-                  </CompactField>
-                  <CompactField label="Other Charges">
-                    <input
-                      type="number"
-                      placeholder="0.00"
-                      value={form.additional_other_charges}
-                      onChange={e => updateForm('additional_other_charges', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
-                    />
-                  </CompactField>
-                  <CompactField label="Specify Charges">
-                    <input
-                      type="text"
-                      placeholder="Details"
-                      value={form.additional_specify_charges}
-                      onChange={e => updateForm('additional_specify_charges', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
-                    />
-                  </CompactField>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Accordion 4: Buyer Details */}
-          {vendorRequiresField('buyer_details') && (
-            <>
-              <AccordionBanner
-                title="Click here for Buyer Details"
-                isOpen={showBuyerDetails}
-                onToggle={() => setShowBuyerDetails(!showBuyerDetails)}
-              />
-              {showBuyerDetails && (
-                <div className="bg-white border border-[#dce1e7] rounded p-3 my-1 space-y-2.5 animate-slide-down">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <CompactField label="Buyer Name">
-                      <input
-                        type="text"
-                        value={form.buyer_name}
-                        onChange={e => updateForm('buyer_name', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs font-semibold"
-                      />
-                    </CompactField>
-                    <CompactField label="Person Type">
-                      <select
-                        value={form.buyer_person_type}
-                        onChange={e => updateForm('buyer_person_type', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs cursor-pointer"
-                      >
-                        <option value="Individual">Individual</option>
-                        <option value="Company">Company</option>
-                      </select>
-                    </CompactField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <CompactField label="Buyer Address 1">
-                      <input
-                        type="text"
-                        value={form.buyer_address1}
-                        onChange={e => updateForm('buyer_address1', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs"
-                      />
-                    </CompactField>
-                    <CompactField label="Buyer Address 2">
-                      <input
-                        type="text"
-                        value={form.buyer_address2}
-                        onChange={e => updateForm('buyer_address2', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs"
-                      />
-                    </CompactField>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                    <CompactField label="City">
-                      <input
-                        type="text"
-                        value={form.buyer_city}
-                        onChange={e => updateForm('buyer_city', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs"
-                      />
-                    </CompactField>
-                    <CompactField label="State">
-                      <input
-                        type="text"
-                        value={form.buyer_state}
-                        onChange={e => updateForm('buyer_state', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs"
-                      />
-                    </CompactField>
-                    <CompactField label="Pincode">
-                      <input
-                        type="text"
-                        value={form.buyer_pincode}
-                        onChange={e => updateForm('buyer_pincode', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs font-mono"
-                      />
-                    </CompactField>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Accordion 5: GST & Manifest Details */}
-          {vendorRequiresField('gst_manifest') && (
-            <>
-              <AccordionBanner
-                title="Click here for GST & Manifest Details"
-                isOpen={showGstManifest}
-                onToggle={() => setShowGstManifest(!showGstManifest)}
-              />
-              {showGstManifest && (
-                <div className="bg-white border border-[#dce1e7] rounded p-3 my-1 grid grid-cols-1 sm:grid-cols-3 gap-2.5 animate-slide-down">
-                  <CompactField label="GST Invoice">
-                    <select
-                      value={form.gst_invoice}
-                      onChange={e => updateForm('gst_invoice', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs cursor-pointer"
-                    >
-                      <option value="0">No</option>
-                      <option value="1">Yes</option>
-                    </select>
-                  </CompactField>
-                  <CompactField label="LUT IGST">
-                    <select
-                      value={form.lut_igst}
-                      onChange={e => updateForm('lut_igst', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs cursor-pointer"
-                    >
-                      <option value="N">No (N)</option>
-                      <option value="Y">Yes (Y)</option>
-                    </select>
-                  </CompactField>
-                  <CompactField label="LUT Number">
-                    <input
-                      type="text"
-                      value={form.lut_number}
-                      onChange={e => updateForm('lut_number', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
-                    />
-                  </CompactField>
-                  <CompactField label="Bank AD Code">
-                    <input
-                      type="text"
-                      value={form.bank_ad_code}
-                      onChange={e => updateForm('bank_ad_code', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
-                    />
-                  </CompactField>
-                  <CompactField label="Bank Account">
-                    <input
-                      type="text"
-                      value={form.bank_account}
-                      onChange={e => updateForm('bank_account', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
-                    />
-                  </CompactField>
-                  <CompactField label="Manifest Format">
-                    <select
-                      value={form.manifest_format}
-                      onChange={e => updateForm('manifest_format', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs cursor-pointer"
-                    >
-                      <option value="C2C">C2C</option>
-                      <option value="B2C">B2C</option>
-                      <option value="B2B">B2B</option>
-                    </select>
-                  </CompactField>
-                </div>
-              )}
-            </>
-          )}
-
-          {/* Accordion 6: Advanced Configuration */}
-          {vendorRequiresField('advanced_config') && (
-            <>
-              <AccordionBanner
-                title="Click here for Advanced Configuration"
-                isOpen={showAdvancedConfig}
-                onToggle={() => setShowAdvancedConfig(!showAdvancedConfig)}
-              />
-              {showAdvancedConfig && (
-                <div className="bg-white border border-[#dce1e7] rounded p-3 my-1 grid grid-cols-1 sm:grid-cols-3 gap-2.5 animate-slide-down">
-                  <CompactField label="Company Code">
-                    <input
-                      type="text"
-                      value={form.company_code}
-                      onChange={e => updateForm('company_code', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs font-mono"
-                    />
-                  </CompactField>
-                  <CompactField label="CSB Type">
-                    <select
-                      value={form.csb_type}
-                      onChange={e => updateForm('csb_type', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs cursor-pointer"
-                    >
-                      <option value="">— Select —</option>
-                      <option value="CSB-V">CSB-V (Non-Commercial)</option>
-                      <option value="CSB-IV">CSB-IV (Commercial)</option>
-                    </select>
-                  </CompactField>
-                  <CompactField label="LSP Type">
-                    <input
-                      type="text"
-                      value={form.lsp_type}
-                      onChange={e => updateForm('lsp_type', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-xs"
-                    />
-                  </CompactField>
-                </div>
-              )}
-            </>
-          )}
-
-        </div>
 
         {/* ── Footer Submit Bar ── */}
         <div className="bg-white rounded-lg border border-[#dce1e7] p-3 shadow-sm flex items-center justify-between flex-wrap gap-2">
@@ -1814,9 +1439,9 @@ export default function NewBookingPage() {
 
 function RedBadge({ title, icon: Icon }) {
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <span className="bg-[#BB0013] text-white text-[10px] font-extrabold px-3 py-1 rounded-full uppercase tracking-wider shadow-2xs flex items-center gap-1.5">
-        {Icon && <Icon className="w-3.5 h-3.5" />}
+    <div className="flex items-center gap-2 mb-1">
+      <span className="bg-[#BB0013] text-white text-[12px] font-extrabold px-3.5 py-1.5 rounded-full uppercase tracking-wider shadow-2xs flex items-center gap-1.5">
+        {Icon && <Icon className="w-4 h-4" />}
         {title}
       </span>
     </div>
@@ -1830,25 +1455,12 @@ function CompactField({ label, required, children, className = '', highlight = f
         highlight
           ? 'border-red-500 ring-1 ring-red-200'
           : 'border-[#cfd8dc] focus-within:border-[#BB0013] focus-within:ring-1 focus-within:ring-[#BB0013]'
-      } rounded bg-white px-2.5 py-1.5 transition-all ${className}`}
+      } rounded-md bg-white px-3 py-2 transition-all ${className}`}
     >
-      <label className="absolute -top-2.5 left-2 px-1 bg-white text-[9px] font-extrabold text-[#455a64] uppercase tracking-tighter whitespace-nowrap z-10">
+      <label className="absolute -top-2.5 left-2 px-1 bg-white text-[10px] sm:text-[11px] font-extrabold text-[#37474f] uppercase tracking-tight whitespace-nowrap z-10">
         {label} {required && <span className="text-red-600">*</span>}
       </label>
       <div className="pt-0.5">{children}</div>
     </div>
-  )
-}
-
-function AccordionBanner({ title, isOpen, onToggle }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className="w-full bg-[#e0e4e8] hover:bg-[#d5dadf] text-[#BB0013] font-extrabold text-xs py-2.5 px-4 rounded flex items-center justify-between transition-colors shadow-2xs my-1"
-    >
-      <span>{title}</span>
-      <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
-    </button>
   )
 }
