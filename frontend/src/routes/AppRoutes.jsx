@@ -49,6 +49,14 @@ export default function AppRoutes() {
         }
       />
       <Route
+        path="/bookings/edit/:id"
+        element={
+          <ProtectedRoute>
+            <NewBookingPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/bookings/:id"
         element={
           <ProtectedRoute>

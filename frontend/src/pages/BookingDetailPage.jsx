@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useBookingById, usePushBookingToApi } from '../hooks/useBookings'
 import { bookingsApi } from '../api/bookings.api'
 import {
@@ -29,7 +29,8 @@ import {
   XCircle,
   Send,
   Lock,
-  Loader2
+  Loader2,
+  Edit
 } from 'lucide-react'
 import StatusBadge from '../components/ui/StatusBadge'
 import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters'
@@ -37,6 +38,7 @@ import toast from 'react-hot-toast'
 
 export default function BookingDetailPage() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { data, isLoading, isError, refetch } = useBookingById(id)
   const booking = data?.booking
   const pushToApiMutation = usePushBookingToApi()
@@ -186,22 +188,40 @@ export default function BookingDetailPage() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Edit Shipment button for unlocked/draft bookings */}
+          {!booking.is_locked && (
+            <Link
+              to={`/bookings/edit/${booking.id}`}
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-navy hover:bg-navy-light text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors"
+            >
+              <Edit className="w-3.5 h-3.5" />
+              Edit Shipment
+            </Link>
+          )}
+
           {/* Download Invoice PDF */}
           <button
             onClick={handleDownloadInvoice}
             disabled={downloadingPdf}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#1a237e] hover:bg-[#0d1754] text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-surface hover:bg-surface-hover border border-border text-navy text-[12px] font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
           >
             {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
             Download Invoice PDF
           </button>
 
           {/* Push to API button for draft / unlocked bookings */}
-          {!booking.is_locked && booking.vendor_config_id && (
+          {!booking.is_locked && (
             <button
-              onClick={handlePushToApi}
+              onClick={() => {
+                if (!booking.vendor_config_id) {
+                  toast.error('Please select a vendor API before pushing')
+                  navigate(`/bookings/edit/${booking.id}`)
+                } else {
+                  handlePushToApi()
+                }
+              }}
               disabled={pushToApiMutation.isPending}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#BB0013] hover:bg-[#990010] text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-dark text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
             >
               {pushToApiMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
               Push to Vendor API

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useCreateBooking, useSaveBooking, usePushBookingToApi } from '../hooks/useBookings'
 import { getActiveVendors } from '../api/apiSettings.api'
+import { bookingsApi } from '../api/bookings.api'
 import {
   ArrowLeft,
   User,
@@ -200,10 +201,99 @@ export default function NewBookingPage() {
   })
   const activeVendors = vendorsData?.vendors || []
 
-  // Pre-fill from booking request URL params
+  // Edit Mode or Pre-fill from URL params
+  const { id: paramId } = useParams()
   const [searchParams] = useSearchParams()
+  const editId = paramId || searchParams.get('edit') || searchParams.get('id')
   const fromRequestId = searchParams.get('from_request')
   const requestAwb = searchParams.get('request_awb')
+
+  // Fetch existing booking when editing
+  const { data: editBookingData, isLoading: loadingEditBooking } = useQuery({
+    queryKey: ['booking-edit', editId],
+    queryFn: async () => {
+      const res = await bookingsApi.getById(editId)
+      return res.data?.booking
+    },
+    enabled: !!editId
+  })
+
+  // Pre-fill form when editing an existing shipment
+  useEffect(() => {
+    if (!editBookingData) return
+    const b = editBookingData
+    const sender = b.senders || {}
+    const receiver = b.receivers || {}
+
+    setForm(prev => ({
+      ...prev,
+      id: b.id,
+      sender_name: sender.name || b.sender_name || '',
+      sender_company: b.sender_company || sender.company || '',
+      sender_email: sender.email || b.sender_email || '',
+      sender_phone: sender.phone || b.sender_phone || '',
+      sender_address: sender.address || b.sender_address || '',
+      sender_address_2: b.sender_address_2 || '',
+      sender_city: sender.city || b.sender_city || '',
+      sender_pincode: sender.pincode || b.sender_pincode || '',
+      sender_state: sender.state || b.sender_state || '',
+      sender_country: sender.country || b.sender_country || 'INDIA',
+      sender_gstin_type: b.sender_gstin_type || '',
+      sender_gstin_no: b.sender_gstin_no || '',
+
+      receiver_name: receiver.name || b.receiver_name || '',
+      receiver_company: b.receiver_company || receiver.company || '',
+      receiver_email: receiver.email || b.receiver_email || '',
+      receiver_phone: receiver.phone || b.receiver_phone || '',
+      receiver_address: receiver.address || b.receiver_address || '',
+      receiver_address_2: b.receiver_address_2 || '',
+      receiver_city: receiver.city || b.receiver_city || '',
+      receiver_pincode: receiver.pincode || b.receiver_pincode || '',
+      receiver_state: receiver.state || b.receiver_state || '',
+      receiver_country: receiver.country || b.receiver_country || '',
+      receiver_gstin_type: b.receiver_gstin_type || '',
+      receiver_gstin_no: b.receiver_gstin_no || '',
+
+      courier_provider_id: b.courier_provider_id || '',
+      vendor_config_id: b.vendor_config_id || '',
+      vendor_code: b.vendor_code || '',
+      service_code: b.service_code || '',
+      product_code: b.product_code || '',
+
+      package_type: b.package_type || 'parcel',
+      weight: String(b.weight || ''),
+      length: String(b.length || ''),
+      breadth: String(b.breadth || ''),
+      height: String(b.height || ''),
+      no_of_pieces: String(b.no_of_pieces || '1'),
+      volumetric_weight: String(b.volumetric_weight || ''),
+      chargeable_weight: String(b.chargeable_weight || ''),
+      actual_weight: String(b.weight || ''),
+      content_description: b.content_description || '',
+      declared_value: String(b.declared_value || ''),
+      cod_amount: String(b.cod_amount || ''),
+      is_fragile: !!b.is_fragile,
+
+      invoice_type: b.invoice_type || 'INVOICE',
+      invoice_currency: b.invoice_currency || 'INR',
+      terms_of_trade: b.terms_of_trade || 'CIF',
+      invoice_note: b.invoice_note || '',
+      hs_code: b.hs_code || '',
+      export_reason: b.export_reason || '',
+
+      payment_mode: b.payment_mode || 'prepaid',
+      shipping_charge: String(b.shipping_charge || ''),
+      order_reference: b.order_reference || '',
+      remarks: b.remarks || ''
+    }))
+
+    if (b.invoice_items) {
+      const items = typeof b.invoice_items === 'string' ? JSON.parse(b.invoice_items) : b.invoice_items
+      if (Array.isArray(items) && items.length > 0) {
+        setInvoiceItems(items)
+      }
+    }
+  }, [editBookingData])
 
   useEffect(() => {
     if (!fromRequestId) return
@@ -401,6 +491,7 @@ export default function NewBookingPage() {
 
   // Build the common payload used by both save and push
   const buildPayload = () => ({
+    id: editId ? parseInt(editId) : undefined,
     sender_name: form.sender_name || form.sender_company,
     sender_company: form.sender_company,
     sender_email: form.sender_email,
@@ -609,10 +700,10 @@ export default function NewBookingPage() {
           </Link>
           <div>
             <h1 className="text-xl sm:text-[22px] font-extrabold text-navy tracking-tight">
-              Create New Booking
+              {editId ? `Edit Booking (AWB: ${editBookingData?.tracking_number || editId})` : 'Create New Booking'}
             </h1>
             <p className="text-[12px] text-text-secondary mt-0.5">
-              Single-page docket creation with auto vendor API dispatch
+              {editId ? 'Update shipment details or select vendor API to dispatch' : 'Single-page docket creation with auto vendor API dispatch'}
             </p>
           </div>
         </div>

@@ -395,10 +395,7 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
 export const saveBooking = async (req, res) => {
   try {
     const fields = extractBookingFields(req.body)
-
-    // Generate our 7-digit AWB (also used as order_id)
-    const tracking_number = await generateTracking()
-    const order_id = tracking_number
+    const existingId = req.body.id || req.body.shipment_id
 
     // Upsert sender/receiver
     const finalSenderId = await upsertSender(fields)
@@ -409,66 +406,137 @@ export const saveBooking = async (req, res) => {
       ? JSON.stringify(fields.invoice_items)
       : (fields.invoice_items || '[]')
 
-    // Create shipment record (status = draft, vendor_push_status = skipped, is_locked = false)
-    const shipmentResult = await execute(
-      `INSERT INTO shipments (
-        order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
-        vendor_code, service_code, product_code, tracking_number, weight, \`length\`, breadth, height,
-        no_of_pieces, content_description, declared_value, cod_amount,
-        payment_mode, package_type, total_amount, shipping_charge,
-        order_reference, remarks, status, vendor_push_status, is_locked,
-        sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
-        receiver_address_2, receiver_gstin_type, receiver_gstin_no,
-        invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
-        invoice_type, invoice_note, invoice_items
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        order_id,
-        finalSenderId || null,
-        finalReceiverId || null,
-        fields.courier_provider_id || null,
-        fields.vendor_config_id || null,
-        fields.vendor_code || '',
-        fields.service_code || '',
-        fields.product_code || '',
-        tracking_number,
-        fields.weight || 0,
-        fields.length || 0,
-        fields.breadth || 0,
-        fields.height || 0,
-        parseInt(fields.no_of_pieces) || 1,
-        fields.content_description || 'General Goods',
-        parseFloat(fields.declared_value) || 0,
-        parseFloat(fields.cod_amount) || 0,
-        fields.payment_mode || 'prepaid',
-        fields.package_type || 'parcel',
-        parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
-        parseFloat(fields.shipping_charge) || 0,
-        fields.order_reference || '',
-        fields.remarks || '',
-        'draft',        // Status = draft (not pushed)
-        'skipped',      // No vendor push yet
-        false,          // Not locked
-        fields.sender_company || '',
-        fields.sender_address_2 || '',
-        fields.sender_gstin_type || '',
-        fields.sender_gstin_no || '',
-        fields.receiver_address_2 || '',
-        fields.receiver_gstin_type || '',
-        fields.receiver_gstin_no || '',
-        tracking_number, // invoice_no = AWB number
-        fields.invoice_date || new Date().toISOString().split('T')[0],
-        fields.invoice_currency || 'INR',
-        fields.hs_code || '',
-        fields.export_reason || '',
-        fields.terms_of_trade || 'CIF',
-        fields.invoice_type || 'INVOICE',
-        fields.invoice_note || '',
-        invoiceItemsJson
-      ]
-    )
+    let shipmentId
+    let tracking_number
 
-    const shipmentId = shipmentResult.insertId
+    if (existingId) {
+      // Check if existing shipment is locked
+      const existing = await query('SELECT * FROM shipments WHERE id = ?', [existingId])
+      if (existing.length === 0) {
+        return res.status(404).json({ success: false, message: 'Shipment not found' })
+      }
+      if (existing[0].is_locked) {
+        return res.status(400).json({ success: false, message: 'This shipment is locked and cannot be edited.' })
+      }
+
+      shipmentId = existing[0].id
+      tracking_number = existing[0].tracking_number
+
+      await execute(
+        `UPDATE shipments SET
+          sender_id = ?, receiver_id = ?, courier_provider_id = ?, vendor_config_id = ?,
+          vendor_code = ?, service_code = ?, product_code = ?, weight = ?, \`length\` = ?, breadth = ?, height = ?,
+          no_of_pieces = ?, content_description = ?, declared_value = ?, cod_amount = ?,
+          payment_mode = ?, package_type = ?, total_amount = ?, shipping_charge = ?,
+          order_reference = ?, remarks = ?,
+          sender_company = ?, sender_address_2 = ?, sender_gstin_type = ?, sender_gstin_no = ?,
+          receiver_address_2 = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
+          invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
+          invoice_type = ?, invoice_note = ?, invoice_items = ?
+        WHERE id = ?`,
+        [
+          finalSenderId || null,
+          finalReceiverId || null,
+          fields.courier_provider_id || null,
+          fields.vendor_config_id || null,
+          fields.vendor_code || '',
+          fields.service_code || '',
+          fields.product_code || '',
+          fields.weight || 0,
+          fields.length || 0,
+          fields.breadth || 0,
+          fields.height || 0,
+          parseInt(fields.no_of_pieces) || 1,
+          fields.content_description || 'General Goods',
+          parseFloat(fields.declared_value) || 0,
+          parseFloat(fields.cod_amount) || 0,
+          fields.payment_mode || 'prepaid',
+          fields.package_type || 'parcel',
+          parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
+          parseFloat(fields.shipping_charge) || 0,
+          fields.order_reference || '',
+          fields.remarks || '',
+          fields.sender_company || '',
+          fields.sender_address_2 || '',
+          fields.sender_gstin_type || '',
+          fields.sender_gstin_no || '',
+          fields.receiver_address_2 || '',
+          fields.receiver_gstin_type || '',
+          fields.receiver_gstin_no || '',
+          fields.invoice_currency || 'INR',
+          fields.hs_code || '',
+          fields.export_reason || '',
+          fields.terms_of_trade || 'CIF',
+          fields.invoice_type || 'INVOICE',
+          fields.invoice_note || '',
+          invoiceItemsJson,
+          shipmentId
+        ]
+      )
+    } else {
+      // New shipment insertion
+      tracking_number = await generateTracking()
+      const order_id = tracking_number
+
+      const shipmentResult = await execute(
+        `INSERT INTO shipments (
+          order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
+          vendor_code, service_code, product_code, tracking_number, weight, \`length\`, breadth, height,
+          no_of_pieces, content_description, declared_value, cod_amount,
+          payment_mode, package_type, total_amount, shipping_charge,
+          order_reference, remarks, status, vendor_push_status, is_locked,
+          sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
+          receiver_address_2, receiver_gstin_type, receiver_gstin_no,
+          invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
+          invoice_type, invoice_note, invoice_items
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          order_id,
+          finalSenderId || null,
+          finalReceiverId || null,
+          fields.courier_provider_id || null,
+          fields.vendor_config_id || null,
+          fields.vendor_code || '',
+          fields.service_code || '',
+          fields.product_code || '',
+          tracking_number,
+          fields.weight || 0,
+          fields.length || 0,
+          fields.breadth || 0,
+          fields.height || 0,
+          parseInt(fields.no_of_pieces) || 1,
+          fields.content_description || 'General Goods',
+          parseFloat(fields.declared_value) || 0,
+          parseFloat(fields.cod_amount) || 0,
+          fields.payment_mode || 'prepaid',
+          fields.package_type || 'parcel',
+          parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
+          parseFloat(fields.shipping_charge) || 0,
+          fields.order_reference || '',
+          fields.remarks || '',
+          'draft',
+          'skipped',
+          false,
+          fields.sender_company || '',
+          fields.sender_address_2 || '',
+          fields.sender_gstin_type || '',
+          fields.sender_gstin_no || '',
+          fields.receiver_address_2 || '',
+          fields.receiver_gstin_type || '',
+          fields.receiver_gstin_no || '',
+          tracking_number,
+          fields.invoice_date || new Date().toISOString().split('T')[0],
+          fields.invoice_currency || 'INR',
+          fields.hs_code || '',
+          fields.export_reason || '',
+          fields.terms_of_trade || 'CIF',
+          fields.invoice_type || 'INVOICE',
+          fields.invoice_note || '',
+          invoiceItemsJson
+        ]
+      )
+      shipmentId = shipmentResult.insertId
+    }
 
     // Generate invoice PDF
     let invoicePdfPath = ''
@@ -479,27 +547,20 @@ export const saveBooking = async (req, res) => {
       console.error('Invoice PDF generation failed:', pdfErr.message)
     }
 
-    // Create tracking event
-    await execute(
-      `INSERT INTO tracking_events (shipment_id, status, description, location)
-       VALUES (?, ?, ?, ?)`,
-      [shipmentId, 'Draft Created', 'Booking saved as draft with AWB: ' + tracking_number, 'System']
-    )
-
-    // Fetch the saved booking
-    const shipmentRows = await query('SELECT * FROM shipments WHERE id = ?', [shipmentId])
+    // Refetch the saved shipment
+    const updated = await query('SELECT * FROM shipments WHERE id = ?', [shipmentId])
 
     return res.status(201).json({
       success: true,
-      booking: shipmentRows[0],
-      awb_number: tracking_number,
-      invoice_pdf_path: invoicePdfPath,
-      message: `Booking saved as draft. AWB: ${tracking_number}`
+      message: existingId ? 'Booking updated successfully' : 'Booking saved as draft',
+      booking: updated[0],
+      awb_number: tracking_number
     })
-  } catch (error) {
+  } catch (err) {
+    console.error('Save booking error:', err)
     return res.status(500).json({
       success: false,
-      message: error.message
+      message: err.message || 'Internal server error while saving booking'
     })
   }
 }
@@ -512,6 +573,7 @@ export const saveBooking = async (req, res) => {
 export const pushBookingToApi = async (req, res) => {
   try {
     const { id } = req.params
+    const { vendor_config_id, vendor_code, service_code, product_code } = req.body || {}
 
     // Fetch the existing booking
     const rows = await query(
@@ -533,7 +595,7 @@ export const pushBookingToApi = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Booking not found' })
     }
 
-    const booking = rows[0]
+    let booking = rows[0]
 
     if (booking.is_locked) {
       return res.status(400).json({ success: false, message: 'This booking is already locked (pushed to API). No changes can be made.' })

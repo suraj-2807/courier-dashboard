@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { useBookings } from '../hooks/useBookings'
+import { Link, useNavigate } from 'react-router-dom'
+import { useBookings, usePushBookingToApi } from '../hooks/useBookings'
 import {
   Search,
   Download,
@@ -8,13 +8,18 @@ import {
   Plus,
   X,
   MoreVertical,
-  ChevronDown
+  ChevronDown,
+  Edit,
+  Send,
+  Eye,
+  Loader2
 } from 'lucide-react'
 import StatusBadge from '../components/ui/StatusBadge'
 import Pagination from '../components/ui/Pagination'
 import EmptyState from '../components/ui/EmptyState'
 import ErrorState from '../components/ui/ErrorState'
 import { formatCurrency, formatDate } from '../utils/formatters'
+import toast from 'react-hot-toast'
 
 const STATUS_TABS = [
   { value: '', label: 'All Shipments' },
@@ -32,7 +37,9 @@ export default function BookingsPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [selectedIds, setSelectedIds] = useState([])
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false)
-  const limit = 10
+  const navigate = useNavigate()
+  const pushToApiMutation = usePushBookingToApi()
+  const [pushingId, setPushingId] = useState(null)
 
   const { data, isLoading, isError, refetch } = useBookings({
     page,
@@ -40,6 +47,25 @@ export default function BookingsPage() {
     search,
     status: statusFilter
   })
+
+  const handlePushRow = async (booking) => {
+    if (!booking.vendor_config_id) {
+      toast.error('Please select a vendor API before pushing')
+      navigate(`/bookings/edit/${booking.id}`)
+      return
+    }
+
+    setPushingId(booking.id)
+    try {
+      const res = await pushToApiMutation.mutateAsync(booking.id)
+      toast.success(res.message || 'Booking pushed to Vendor API!')
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err.message || 'Failed to push booking')
+    } finally {
+      setPushingId(null)
+    }
+  }
 
   const handleSearch = (e) => {
     if (e.key === 'Enter' || e.type === 'submit') {
@@ -305,12 +331,45 @@ export default function BookingsPage() {
                       </td>
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-center">
-                        <Link
-                          to={`/bookings/${b.id}`}
-                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg hover:bg-surface-hover transition-colors cursor-pointer"
-                        >
-                          <MoreVertical className="w-4 h-4 text-text-tertiary" />
-                        </Link>
+                        <div className="flex items-center justify-center gap-1.5">
+                          {/* View details */}
+                          <Link
+                            to={`/bookings/${b.id}`}
+                            className="p-1.5 text-text-secondary hover:text-navy hover:bg-surface-hover rounded-lg transition-colors"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Link>
+
+                          {/* If unlocked / draft: Show Edit and Push buttons */}
+                          {!b.is_locked && (
+                            <>
+                              <Link
+                                to={`/bookings/edit/${b.id}`}
+                                className="p-1.5 text-navy hover:text-primary hover:bg-primary/5 rounded-lg transition-colors font-bold flex items-center gap-1 text-[11px]"
+                                title="Edit Booking"
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Edit</span>
+                              </Link>
+
+                              <button
+                                type="button"
+                                disabled={pushingId === b.id}
+                                onClick={() => handlePushRow(b)}
+                                className="px-2.5 py-1 bg-primary hover:bg-primary-dark text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                title="Push to Vendor API"
+                              >
+                                {pushingId === b.id ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <Send className="w-3 h-3" />
+                                )}
+                                <span>Push</span>
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
