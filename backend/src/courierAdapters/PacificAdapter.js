@@ -8,6 +8,30 @@ import { decrypt } from '../utils/encryption.js'
  *   Inline authentication. Credentials (UserID, Password, CustomerCode) are sent
  *   directly inside the shipment request body (Awbentry).
  */
+function parseCredentials(raw) {
+  if (!raw) return {}
+  if (typeof raw === 'object' && raw !== null) return raw
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed) return {}
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return JSON.parse(trimmed)
+      } catch (e) {}
+    }
+    try {
+      const decrypted = decrypt(trimmed)
+      if (decrypted) {
+        return typeof decrypted === 'object' ? decrypted : JSON.parse(decrypted)
+      }
+    } catch (e) {}
+    try {
+      return JSON.parse(trimmed)
+    } catch (e) {}
+  }
+  return {}
+}
+
 export default class PacificAdapter extends BaseAdapter {
 
   async authenticate() {
@@ -16,14 +40,7 @@ export default class PacificAdapter extends BaseAdapter {
   }
 
   buildPayload(shipmentData, authContext) {
-    let credentials = {}
-    try {
-      if (this.config.auth_credentials) {
-        credentials = JSON.parse(decrypt(this.config.auth_credentials))
-      }
-    } catch (e) {
-      console.warn('Pacific: Failed to decrypt credentials, using defaults/empty.', e.message)
-    }
+    const credentials = parseCredentials(this.config.auth_credentials)
 
     // Credentials — match Pacific API spec max lengths
     const userId = this._truncate(credentials.user_id || credentials.username || credentials.UserID || 'P0503', 10)

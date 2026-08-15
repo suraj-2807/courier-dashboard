@@ -14,6 +14,30 @@ import GenericAdapter from './GenericAdapter.js'
  *   POST to shipment_api_url (create_docket) with bearer token in header,
  *   customer_id and shipment data in body.
  */
+function parseCredentials(raw) {
+  if (!raw) return {}
+  if (typeof raw === 'object' && raw !== null) return raw
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (!trimmed) return {}
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return JSON.parse(trimmed)
+      } catch (e) {}
+    }
+    try {
+      const decrypted = decrypt(trimmed)
+      if (decrypted) {
+        return typeof decrypted === 'object' ? decrypted : JSON.parse(decrypted)
+      }
+    } catch (e) {}
+    try {
+      return JSON.parse(trimmed)
+    } catch (e) {}
+  }
+  return {}
+}
+
 export default class FlySwiftAdapter extends BaseAdapter {
 
   async authenticate() {
@@ -21,12 +45,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
       throw new Error('FlySwift: Auth URL (get_token endpoint) is required')
     }
 
-    let credentials = {}
-    try {
-      credentials = JSON.parse(decrypt(this.config.auth_credentials))
-    } catch {
-      throw new Error('FlySwift: Failed to decrypt credentials')
-    }
+    const credentials = parseCredentials(this.config.auth_credentials)
 
     const companyIdRaw = credentials.company_code || credentials.company_id
     let companyId = null
