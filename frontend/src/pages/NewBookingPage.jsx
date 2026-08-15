@@ -198,10 +198,7 @@ export default function NewBookingPage() {
   // Fetch active vendors for vendor API selection
   const { data: vendorsData } = useQuery({
     queryKey: ['active-vendors'],
-    queryFn: async () => {
-      const res = await getActiveVendors()
-      return res.data
-    }
+    queryFn: getActiveVendors
   })
   const activeVendors = vendorsData?.vendors || []
 
