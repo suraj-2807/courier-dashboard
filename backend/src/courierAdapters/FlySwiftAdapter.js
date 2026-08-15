@@ -46,6 +46,45 @@ function toIsoCountryCode(val) {
   return clean.slice(0, 2)
 }
 
+function findAwbInObject(obj, depth = 0) {
+  if (!obj || depth > 4) return ''
+  if (typeof obj === 'string' || typeof obj === 'number') {
+    const str = String(obj).trim()
+    if (str.length >= 3 && !str.includes('{') && !str.includes('<') && !str.includes('true') && !str.includes('false')) {
+      return str
+    }
+    return ''
+  }
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const found = findAwbInObject(item, depth + 1)
+      if (found) return found
+    }
+    return ''
+  }
+  if (typeof obj === 'object') {
+    // Check priority key names first
+    const priorityKeys = [
+      'tracking_number', 'tracking_no', 'awb_number', 'awb_no', 'docket_no',
+      'docket_number', 'docketNo', 'docket', 'tracking_id', 'airwaybill_no', 'awb', 'id', 'reference_no'
+    ]
+    for (const key of priorityKeys) {
+      if (obj[key] !== undefined && obj[key] !== null) {
+        const val = findAwbInObject(obj[key], depth + 1)
+        if (val) return val
+      }
+    }
+    // Check any key containing tracking, docket, awb, or id
+    for (const [k, v] of Object.entries(obj)) {
+      if (/tracking|docket|awb|waybill|ref/i.test(k) && v !== undefined && v !== null) {
+        const val = findAwbInObject(v, depth + 1)
+        if (val) return val
+      }
+    }
+  }
+  return ''
+}
+
 export default class FlySwiftAdapter extends BaseAdapter {
 
   async authenticate() {
@@ -287,17 +326,10 @@ export default class FlySwiftAdapter extends BaseAdapter {
     let awbNumber = ''
     if (this.config.response_tracking_path) {
       awbNumber = this.extractValueByPath(responseBody, this.config.response_tracking_path) || ''
-    } else {
-      awbNumber =
-        responseBody.data?.tracking_number ||
-        responseBody.data?.tracking_no ||
-        responseBody.data?.awb_number ||
-        responseBody.data?.docket_no ||
-        responseBody.data?.id ||
-        responseBody.tracking_number ||
-        responseBody.docket_no ||
-        responseBody.awb_number ||
-        ''
+    }
+
+    if (!awbNumber) {
+      awbNumber = findAwbInObject(responseBody)
     }
 
     const trackingUrl = responseBody.data?.tracking_url || responseBody.tracking_url || ''
