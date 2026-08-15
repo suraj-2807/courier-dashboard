@@ -43,6 +43,8 @@ export default function BookingDetailPage() {
   const booking = data?.booking
   const pushToApiMutation = usePushBookingToApi()
   const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const [downloadingBill, setDownloadingBill] = useState(false)
+  const [downloadingLabels, setDownloadingLabels] = useState(false)
 
   const copyTracking = () => {
     if (booking?.tracking_number) {
@@ -68,6 +70,46 @@ export default function BookingDetailPage() {
       toast.error(err?.response?.data?.message || 'Failed to download invoice PDF')
     } finally {
       setDownloadingPdf(false)
+    }
+  }
+
+  const handleDownloadBill = async () => {
+    setDownloadingBill(true)
+    try {
+      const res = await bookingsApi.downloadWaybill(id)
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `Waybill_${booking.tracking_number}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      toast.success('Shipping Bill downloaded!')
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to download Shipping Bill')
+    } finally {
+      setDownloadingBill(false)
+    }
+  }
+
+  const handleDownloadLabels = async () => {
+    setDownloadingLabels(true)
+    try {
+      const res = await bookingsApi.downloadBoxLabels(id)
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `BoxLabels_${booking.tracking_number}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      toast.success('Box Labels PDF downloaded!')
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to download Box Labels')
+    } finally {
+      setDownloadingLabels(false)
     }
   }
 
@@ -203,10 +245,33 @@ export default function BookingDetailPage() {
           <button
             onClick={handleDownloadInvoice}
             disabled={downloadingPdf}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-surface hover:bg-surface-hover border border-border text-navy text-[12px] font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-surface hover:bg-surface-hover border border-border text-navy text-[12px] font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+            title="Download Invoice PDF"
           >
             {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-            Download Invoice PDF
+            Invoice
+          </button>
+
+          {/* Download Shipping Bill */}
+          <button
+            onClick={handleDownloadBill}
+            disabled={downloadingBill}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-navy hover:bg-navy-light text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            title="Download Official Shipping Bill / Waybill"
+          >
+            {downloadingBill ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            Shipping Bill
+          </button>
+
+          {/* Download Box Labels */}
+          <button
+            onClick={handleDownloadLabels}
+            disabled={downloadingLabels}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+            title="Download Box Shipping Labels"
+          >
+            {downloadingLabels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Package className="w-3.5 h-3.5" />}
+            Box Labels ({booking.no_of_pieces || 1} Box{booking.no_of_pieces > 1 ? 'es' : ''})
           </button>
 
           {/* Push to API button for draft / unlocked bookings */}

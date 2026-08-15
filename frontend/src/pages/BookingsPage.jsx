@@ -12,8 +12,10 @@ import {
   Edit,
   Send,
   Eye,
-  Loader2
+  Loader2,
+  FileText
 } from 'lucide-react'
+import { bookingsApi } from '../api/bookings.api'
 import StatusBadge from '../components/ui/StatusBadge'
 import Pagination from '../components/ui/Pagination'
 import EmptyState from '../components/ui/EmptyState'
@@ -65,6 +67,40 @@ export default function BookingsPage() {
       toast.error(err?.response?.data?.message || err.message || 'Failed to push booking')
     } finally {
       setPushingId(null)
+    }
+  }
+
+  const handleDownloadBillRow = async (b) => {
+    try {
+      const res = await bookingsApi.downloadWaybill(b.id)
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `Waybill_${b.tracking_number}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      toast.success('Shipping Bill downloaded!')
+    } catch (err) {
+      toast.error('Failed to download Shipping Bill')
+    }
+  }
+
+  const handleDownloadLabelsRow = async (b) => {
+    try {
+      const res = await bookingsApi.downloadBoxLabels(b.id)
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `BoxLabels_${b.tracking_number}.pdf`)
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      toast.success('Box Labels PDF downloaded!')
+    } catch (err) {
+      toast.error('Failed to download Box Labels')
     }
   }
 
@@ -341,6 +377,26 @@ export default function BookingsPage() {
                           >
                             <Eye className="w-4 h-4" />
                           </Link>
+
+                          {/* Shipping Bill */}
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadBillRow(b)}
+                            className="p-1.5 text-navy hover:text-primary hover:bg-navy/5 rounded-lg transition-colors"
+                            title="Download Shipping Bill"
+                          >
+                            <FileText className="w-4 h-4" />
+                          </button>
+
+                          {/* Box Labels */}
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadLabelsRow(b)}
+                            className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors"
+                            title={`Download ${b.no_of_pieces || 1} Box Labels`}
+                          >
+                            <Package className="w-4 h-4" />
+                          </button>
 
                           {/* If unlocked / draft: Show Edit and Push buttons */}
                           {!b.is_locked && (

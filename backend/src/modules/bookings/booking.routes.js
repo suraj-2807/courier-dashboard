@@ -8,6 +8,8 @@ import {
   getBookings,
   getBookingById,
   getInvoicePdf,
+  getWaybillPdf,
+  getBoxLabelsPdf,
   updateBookingStatus
 } from './booking.controller.js'
 
@@ -19,6 +21,8 @@ router.post('/:id/push', authMiddleware, pushBookingToApi)
 router.get('/', authMiddleware, getBookings)
 router.get('/:id', authMiddleware, getBookingById)
 router.get('/:id/invoice-pdf', authMiddleware, getInvoicePdf)
+router.get('/:id/bill-pdf', authMiddleware, getWaybillPdf)
+router.get('/:id/labels-pdf', authMiddleware, getBoxLabelsPdf)
 router.patch('/:id/status', authMiddleware, updateBookingStatus)
 
 export default router

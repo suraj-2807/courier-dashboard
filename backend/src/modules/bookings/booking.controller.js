@@ -2,6 +2,8 @@ import { query, execute } from '../../config/db.js'
 import generateTracking from '../../utils/generateTracking.js'
 import { pushShipmentToVendor } from '../../services/vendorApiPush.service.js'
 import { generateInvoicePdf } from '../../services/invoicePdf.service.js'
+import { generateWaybillPdf } from '../../services/waybillPdf.service.js'
+import { generateBoxLabelsPdf } from '../../services/boxLabelPdf.service.js'
 import { syncAwbToWP } from '../../utils/wpSync.js'
 import path from 'path'
 import fs from 'fs'
@@ -1153,5 +1155,137 @@ export const updateBookingStatus = async (req, res) => {
       success: false,
       message: error.message
     })
+  }
+}
+
+// Helper to fetch complete shipment details with sender & receiver for PDF generation
+async function getFullShipmentContext(shipmentId) {
+  const rows = await query(
+    `SELECT s.*,
+      snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.email as s_email,
+      snd.address as s_address, snd.city as s_city, snd.state as s_state, snd.pincode as s_pincode, snd.country as s_country,
+      rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.email as r_email,
+      rcv.address as r_address, rcv.city as r_city, rcv.state as r_state, rcv.pincode as r_pincode, rcv.country as r_country
+     FROM shipments s
+     LEFT JOIN senders snd ON s.sender_id = snd.id
+     LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+     WHERE s.id = ?`,
+    [shipmentId]
+  )
+  if (!rows || rows.length === 0) return null
+  const b = rows[0]
+
+  const sender = {
+    name: b.s_name || b.sender_name || '',
+    company: b.sender_company || '',
+    phone: b.s_phone || b.sender_phone || '',
+    email: b.s_email || b.sender_email || '',
+    address: b.s_address || b.sender_address || '',
+    address_2: b.sender_address_2 || '',
+    city: b.s_city || b.sender_city || '',
+    state: b.s_state || b.sender_state || '',
+    pincode: b.s_pincode || b.sender_pincode || '',
+    country: b.s_country || b.sender_country || 'INDIA',
+    gstin_type: b.sender_gstin_type || '',
+    gstin_no: b.sender_gstin_no || ''
+  }
+
+  const receiver = {
+    name: b.r_name || b.receiver_name || '',
+    company: b.receiver_company || '',
+    phone: b.r_phone || b.receiver_phone || '',
+    email: b.r_email || b.receiver_email || '',
+    address: b.r_address || b.receiver_address || '',
+    address_2: b.receiver_address_2 || '',
+    city: b.r_city || b.receiver_city || '',
+    state: b.r_state || b.receiver_state || '',
+    pincode: b.r_pincode || b.receiver_pincode || '',
+    country: b.r_country || b.receiver_country || '',
+    gstin_type: b.receiver_gstin_type || '',
+    gstin_no: b.receiver_gstin_no || ''
+  }
+
+  let parcels = []
+  if (b.parcels) {
+    try {
+      parcels = typeof b.parcels === 'string' ? JSON.parse(b.parcels) : b.parcels
+    } catch {}
+  }
+
+  let invoiceItems = []
+  if (b.invoice_items) {
+    try {
+      invoiceItems = typeof b.invoice_items === 'string' ? JSON.parse(b.invoice_items) : b.invoice_items
+    } catch {}
+  }
+
+  return { b, sender, receiver, parcels, invoiceItems }
+}
+
+export const getInvoicePdf = async (req, res) => {
+  try {
+    const { id } = req.params
+    const ctx = await getFullShipmentContext(id)
+    if (!ctx) return res.status(404).json({ success: false, message: 'Shipment not found' })
+
+    const pdfPath = await generateInvoicePdf({
+      awbNumber: ctx.b.tracking_number,
+      sender: ctx.sender,
+      receiver: ctx.receiver,
+      shipment: ctx.b,
+      invoiceItems: ctx.invoiceItems,
+      invoiceMeta: {
+        invoice_no: ctx.b.invoice_no || ctx.b.tracking_number,
+        invoice_type: ctx.b.invoice_type || 'INVOICE',
+        currency: ctx.b.invoice_currency || 'INR',
+        incoterms: ctx.b.terms_of_trade || 'CIF',
+        note: ctx.b.invoice_note || '',
+        total_amount: ctx.b.total_amount || ctx.b.declared_value || 0
+      }
+    })
+    return res.download(pdfPath, `Invoice_${ctx.b.tracking_number}.pdf`)
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export const getWaybillPdf = async (req, res) => {
+  try {
+    const { id } = req.params
+    const ctx = await getFullShipmentContext(id)
+    if (!ctx) return res.status(404).json({ success: false, message: 'Shipment not found' })
+
+    const pdfPath = await generateWaybillPdf({
+      awbNumber: ctx.b.tracking_number,
+      sender: ctx.sender,
+      receiver: ctx.receiver,
+      shipment: ctx.b,
+      parcels: ctx.parcels,
+      invoiceMeta: {
+        invoice_no: ctx.b.invoice_no || ctx.b.tracking_number
+      }
+    })
+    return res.download(pdfPath, `Waybill_${ctx.b.tracking_number}.pdf`)
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export const getBoxLabelsPdf = async (req, res) => {
+  try {
+    const { id } = req.params
+    const ctx = await getFullShipmentContext(id)
+    if (!ctx) return res.status(404).json({ success: false, message: 'Shipment not found' })
+
+    const pdfPath = await generateBoxLabelsPdf({
+      awbNumber: ctx.b.tracking_number,
+      sender: ctx.sender,
+      receiver: ctx.receiver,
+      shipment: ctx.b,
+      parcels: ctx.parcels
+    })
+    return res.download(pdfPath, `BoxLabels_${ctx.b.tracking_number}.pdf`)
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
   }
 }
