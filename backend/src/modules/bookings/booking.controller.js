@@ -903,39 +903,6 @@ export const createBooking = async (req, res) => {
 
 
 // ═══════════════════════════════════════════════════════════════
-//  SERVE INVOICE PDF
-// ═══════════════════════════════════════════════════════════════
-
-export const getInvoicePdf = async (req, res) => {
-  try {
-    const { id } = req.params
-
-    const rows = await query('SELECT invoice_pdf_path, tracking_number FROM shipments WHERE id = ?', [id])
-    if (rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Booking not found' })
-    }
-
-    const { invoice_pdf_path, tracking_number } = rows[0]
-    if (!invoice_pdf_path) {
-      return res.status(404).json({ success: false, message: 'No invoice PDF available for this booking' })
-    }
-
-    const absPath = path.resolve(__dirname, '..', '..', '..', invoice_pdf_path)
-    if (!fs.existsSync(absPath)) {
-      return res.status(404).json({ success: false, message: 'Invoice PDF file not found on server' })
-    }
-
-    res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `attachment; filename="Invoice_${tracking_number}.pdf"`)
-    const fileStream = fs.createReadStream(absPath)
-    fileStream.pipe(res)
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message })
-  }
-}
-
-
-// ═══════════════════════════════════════════════════════════════
 //  EXISTING CRUD (unchanged logic)
 // ═══════════════════════════════════════════════════════════════
 
