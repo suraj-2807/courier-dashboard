@@ -4,15 +4,6 @@ import GenericAdapter from './GenericAdapter.js'
 
 /**
  * FlySwiftAdapter — Adapter for FlySwift / Trackmate+ courier API.
- * 
- * Auth flow:
- *   1. POST to auth_url (get_token) with { username, password }
- *   2. Response contains { token, customer_id }
- *   3. Use bearer token + customer_id for create_docket
- * 
- * Shipment flow:
- *   POST to shipment_api_url (create_docket) with bearer token in header,
- *   customer_id and shipment data in body.
  */
 function parseCredentials(raw) {
   if (!raw) return {}
@@ -38,6 +29,23 @@ function parseCredentials(raw) {
   return {}
 }
 
+function toIsoCountryCode(val) {
+  if (!val) return ''
+  const clean = String(val).trim().toUpperCase()
+  if (clean.length === 2) return clean
+  if (clean === 'USA' || clean === 'UNITED STATES' || clean === 'UNITED STATES OF AMERICA') return 'US'
+  if (clean === 'INDIA' || clean === 'IND') return 'IN'
+  if (clean === 'UNITED KINGDOM' || clean === 'UK' || clean === 'GREAT BRITAIN') return 'GB'
+  if (clean === 'CANADA' || clean === 'CAN') return 'CA'
+  if (clean === 'AUSTRALIA' || clean === 'AUS') return 'AU'
+  if (clean === 'UNITED ARAB EMIRATES' || clean === 'UAE' || clean === 'DUBAI') return 'AE'
+  if (clean === 'GERMANY' || clean === 'DEU') return 'DE'
+  if (clean === 'FRANCE' || clean === 'FRA') return 'FR'
+  if (clean === 'JAPAN' || clean === 'JPN') return 'JP'
+  if (clean === 'SINGAPORE' || clean === 'SGP') return 'SG'
+  return clean.slice(0, 2)
+}
+
 export default class FlySwiftAdapter extends BaseAdapter {
 
   async authenticate() {
@@ -60,44 +68,41 @@ export default class FlySwiftAdapter extends BaseAdapter {
       password: credentials.password || ''
     }
 
+    const headers = {
+      'Content-Type': 'application/json'
+    }
+
+    if (this.config.headers_template && Object.keys(this.config.headers_template).length > 0) {
+      Object.assign(headers, this.config.headers_template)
+    }
+
     const response = await fetch(this.config.auth_url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(authPayload),
-      signal: AbortSignal.timeout(15000)
+      headers,
+      body: JSON.stringify(authPayload)
     })
 
     if (!response.ok) {
-      const errorBody = await response.text().catch(() => '')
-      throw new Error(`FlySwift auth failed: HTTP ${response.status} - ${errorBody}`)
+      const errorText = await response.text()
+      throw new Error(`FlySwift Auth failed (${response.status}): ${errorText}`)
     }
 
     const data = await response.json()
-
-    // Extract token — try multiple common paths
-    const token = data?.data?.token
-      || data?.token
-      || data?.access_token
-      || this._getNestedValue(data, this.config.auth_token_path)
+    const token = data?.data?.token || data?.token || data?.jwt
+    const customerId = data?.data?.customer_id || data?.customer_id || credentials.customer_id
 
     if (!token) {
-      throw new Error('FlySwift: Could not extract token from auth response')
+      throw new Error(`FlySwift Auth failed: No token returned in response (${JSON.stringify(data)})`)
     }
 
-    // Extract customer_id — FlySwift returns this alongside the token
-    const customerId = data?.data?.customer_id
-      || data?.customer_id
-      || credentials.customer_id
-      || ''
-
-    return { token, customerId }
+    return {
+      token,
+      customerId,
+      rawAuthResponse: data
+    }
   }
 
   buildPayload(shipmentData, authContext) {
-    // FlySwift create_docket expects a specific structure.
-    // If a request_template is configured, use it with field_mapping.
-    // Otherwise, build the default FlySwift payload structure.
-
     if (this.config.request_template && Object.keys(this.config.request_template).length > 0) {
       const generic = new GenericAdapter(this.config)
       return generic.buildPayload(shipmentData, authContext)
@@ -110,6 +115,9 @@ export default class FlySwiftAdapter extends BaseAdapter {
     const declaredValue = parseFloat(shipmentData.declared_value) || parseFloat(shipmentData.total_amount) || 100
     const invoiceNo = shipmentData.invoice_no || shipmentData.order_id || ''
     const invoiceDate = shipmentData.invoice_date || bookingDate
+
+    const originCode = toIsoCountryCode(shipmentData.sender_country) || 'IN'
+    const destCode = toIsoCountryCode(shipmentData.receiver_country || shipmentData.buyer_country_code || shipmentData.buyer_destination_code) || ''
 
     // Build docket_items array from shipment dimensions
     const docketItems = []
@@ -146,9 +154,12 @@ export default class FlySwiftAdapter extends BaseAdapter {
     return {
       tracking_no: shipmentData.tracking_number || shipmentData.order_id || '',
       reference_name: shipmentData.sender_name || shipmentData.order_reference || '',
-      origin_code: '',
+      origin_code: originCode,
+      origin: originCode,
       product_code: shipmentData.product_code || '',
-      destination_code: '',
+      destination_code: destCode,
+      destination: destCode,
+      destination_country: destCode,
       booking_date: bookingDate,
       booking_time: bookingTime,
       pcs: pcs,
@@ -175,7 +186,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
       shipper_address_line_3: shipmentData.sender_address_3 || '',
       shipper_city: shipmentData.sender_city || '',
       shipper_state: shipmentData.sender_state || '',
-      shipper_country: shipmentData.sender_country || 'IN',
+      shipper_country: originCode,
       shipper_zip_code: shipmentData.sender_pincode || '',
       shipper_gstin_type: shipmentData.sender_gstin_type || '',
       shipper_gstin_no: shipmentData.sender_gstin_no || '',
@@ -190,7 +201,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
       consignee_address_line_3: shipmentData.receiver_address_3 || '',
       consignee_city: shipmentData.receiver_city || '',
       consignee_state: shipmentData.receiver_state || '',
-      consignee_country: shipmentData.receiver_country || 'IN',
+      consignee_country: destCode,
       consignee_zip_code: shipmentData.receiver_pincode || '',
       consignee_gstin_type: shipmentData.receiver_gstin_type || '',
       consignee_gstin_no: shipmentData.receiver_gstin_no || '',
@@ -205,7 +216,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
       pickup_address_address_line_3: shipmentData.sender_address_3 || '',
       pickup_address_city: shipmentData.sender_city || '',
       pickup_address_state: shipmentData.sender_state || '',
-      pickup_address_country: shipmentData.sender_country || 'IN',
+      pickup_address_country: originCode,
       pickup_address_zip_code: shipmentData.sender_pincode || '',
       pickup_address_gstin_type: shipmentData.sender_gstin_type || '',
       pickup_address_gstin_no: shipmentData.sender_gstin_no || '',
@@ -218,126 +229,88 @@ export default class FlySwiftAdapter extends BaseAdapter {
     }
   }
 
-  buildHeaders(authContext) {
-    const headers = { 'Content-Type': 'application/json' }
-
-    if (authContext?.token) {
-      headers['Authorization'] = `Bearer ${authContext.token}`
+  async pushShipment(shipmentData, authContext) {
+    if (!this.config.shipment_api_url) {
+      throw new Error('FlySwift: Shipment API URL (create_docket endpoint) is required')
     }
 
-    // Also apply any custom headers from config
-    const customHeaders = this.config.headers_template || {}
-    for (const [key, value] of Object.entries(customHeaders)) {
-      if (typeof value === 'string') {
-        headers[key] = value
-          .replace(/\{\{token\}\}/g, authContext?.token || '')
-          .replace(/\{\{customer_id\}\}/g, authContext?.customerId || '')
-      } else {
-        headers[key] = value
-      }
-    }
+    const payload = this.buildPayload(shipmentData, authContext)
 
-    return headers
-  }
-
-  parseResponse(responseBody) {
-    // FlySwift response format — try multiple common structures
-    const data = responseBody?.data || responseBody
-
-    // Check success
-    const success = responseBody?.success === true
-      || responseBody?.status === 'success'
-      || responseBody?.status === true
-      || (responseBody?.data?.awb_number && true)
-      || false
-
-    // Extract AWB number
-    const awbNumber = String(
-      data?.awb_number || data?.awb || data?.tracking_number
-      || data?.docket_number || data?.waybill_number
-      || this._getNestedValue(responseBody, this.config.response_tracking_path)
-      || ''
-    )
-
-    // Extract URLs
-    const trackingUrl = String(data?.tracking_url || data?.track_url || '')
-    const labelUrl = String(data?.label_url || data?.pdf_url || data?.label || '')
-
-    // Error message — FlySwift returns errors as an array
-    let errorMessage = ''
-    if (!success) {
-      if (Array.isArray(responseBody?.errors) && responseBody.errors.length > 0) {
-        errorMessage = responseBody.errors.join('; ')
-      } else if (Array.isArray(data?.errors) && data.errors.length > 0) {
-        errorMessage = data.errors.join('; ')
-      } else {
-        errorMessage = responseBody?.message || responseBody?.error || responseBody?.msg
-          || data?.message || data?.error
-          || 'FlySwift API returned failure'
-      }
-    }
-
-    return { success, awbNumber, trackingUrl, labelUrl, errorMessage }
-  }
-
-  // ─── Private helpers ───
-
-  _buildFromTemplate(shipmentData, authContext) {
-    const template = this.config.request_template || {}
-    const mapping = this.config.field_mapping || {}
-    let payload = JSON.parse(JSON.stringify(template))
-
-    for (const [vendorFieldPath, mappingConfig] of Object.entries(mapping)) {
-      let value
-
-      if (mappingConfig.type === 'static') {
-        value = mappingConfig.value
-      } else if (mappingConfig.type === 'mapped') {
-        value = this._getNestedValue(shipmentData, mappingConfig.source)
-      } else if (mappingConfig.type === 'credential') {
-        try {
-          const credentials = JSON.parse(decrypt(this.config.auth_credentials))
-          value = credentials[mappingConfig.source]
-        } catch {
-          value = ''
-        }
-      }
-
-      if (value !== undefined) {
-        this._setNestedValue(payload, vendorFieldPath, value)
-      }
-    }
-
-    // Inject customer_id from auth context
-    if (authContext?.customerId && !payload.customer_id) {
+    if (authContext.customerId) {
       payload.customer_id = authContext.customerId
     }
 
-    return payload
+    const method = this.config.shipment_api_method || 'POST'
+    const headers = {
+      'Content-Type': 'application/json'
+    }
+
+    if (authContext.token) {
+      headers['Authorization'] = `Bearer ${authContext.token}`
+    }
+
+    if (this.config.headers_template && Object.keys(this.config.headers_template).length > 0) {
+      Object.assign(headers, this.config.headers_template)
+    }
+
+    const response = await fetch(this.config.shipment_api_url, {
+      method,
+      headers,
+      body: JSON.stringify(payload)
+    })
+
+    const responseText = await response.text()
+    let responseData = {}
+    try {
+      responseData = JSON.parse(responseText)
+    } catch (e) {
+      responseData = { raw: responseText }
+    }
+
+    let success = response.ok
+    if (this.config.response_success_path) {
+      const extracted = this.extractValueByPath(responseData, this.config.response_success_path)
+      if (this.config.response_success_value) {
+        success = String(extracted) === String(this.config.response_success_value)
+      } else {
+        success = Boolean(extracted)
+      }
+    } else if (responseData.success !== undefined) {
+      success = Boolean(responseData.success)
+    }
+
+    let vendorTrackingNumber = ''
+    if (this.config.response_tracking_path) {
+      vendorTrackingNumber = this.extractValueByPath(responseData, this.config.response_tracking_path) || ''
+    } else {
+      vendorTrackingNumber =
+        responseData.data?.tracking_number ||
+        responseData.data?.tracking_no ||
+        responseData.data?.awb_number ||
+        responseData.data?.docket_no ||
+        responseData.data?.id ||
+        responseData.tracking_number ||
+        responseData.docket_no ||
+        ''
+    }
+
+    return {
+      success,
+      statusCode: response.status,
+      vendorTrackingNumber: String(vendorTrackingNumber),
+      rawResponse: responseData,
+      rawRequestPayload: payload
+    }
   }
 
-  _getNestedValue(obj, path) {
-    if (!path || !obj) return undefined
-    const parts = path.split('.')
+  extractValueByPath(obj, pathStr) {
+    if (!obj || !pathStr) return undefined
+    const keys = pathStr.replace(/\[(\d+)\]/g, '.$1').split('.')
     let current = obj
-    for (const part of parts) {
+    for (const key of keys) {
       if (current === null || current === undefined) return undefined
-      current = current[part]
+      current = current[key]
     }
     return current
-  }
-
-  _setNestedValue(obj, path, value) {
-    if (!path) return
-    const parts = path.split('.')
-    let current = obj
-    for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i]
-      if (!(part in current) || typeof current[part] !== 'object') {
-        current[part] = {}
-      }
-      current = current[part]
-    }
-    current[parts[parts.length - 1]] = value
   }
 }
