@@ -102,6 +102,30 @@ export default class FlySwiftAdapter extends BaseAdapter {
     }
   }
 
+  getShipmentUrl() {
+    return this.config.shipment_api_url
+  }
+
+  getHttpMethod() {
+    return this.config.shipment_api_method || 'POST'
+  }
+
+  buildHeaders(authContext) {
+    const headers = {
+      'Content-Type': 'application/json'
+    }
+
+    if (authContext && authContext.token) {
+      headers['Authorization'] = `Bearer ${authContext.token}`
+    }
+
+    if (this.config.headers_template && Object.keys(this.config.headers_template).length > 0) {
+      Object.assign(headers, this.config.headers_template)
+    }
+
+    return headers
+  }
+
   buildPayload(shipmentData, authContext) {
     if (this.config.request_template && Object.keys(this.config.request_template).length > 0) {
       const generic = new GenericAdapter(this.config)
@@ -151,7 +175,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
     }
 
     // Default FlySwift create_docket payload structure
-    return {
+    const payload = {
       tracking_no: shipmentData.tracking_number || shipmentData.order_id || '',
       reference_name: shipmentData.sender_name || shipmentData.order_reference || '',
       origin_code: originCode,
@@ -227,79 +251,67 @@ export default class FlySwiftAdapter extends BaseAdapter {
       kyc_details: [],
       multiple_invoice: []
     }
-  }
 
-  async pushShipment(shipmentData, authContext) {
-    if (!this.config.shipment_api_url) {
-      throw new Error('FlySwift: Shipment API URL (create_docket endpoint) is required')
-    }
-
-    const payload = this.buildPayload(shipmentData, authContext)
-
-    if (authContext.customerId) {
+    if (authContext && authContext.customerId) {
       payload.customer_id = authContext.customerId
     }
 
-    const method = this.config.shipment_api_method || 'POST'
-    const headers = {
-      'Content-Type': 'application/json'
+    return payload
+  }
+
+  parseResponse(responseBody) {
+    if (!responseBody || typeof responseBody !== 'object') {
+      return {
+        success: false,
+        awbNumber: '',
+        trackingUrl: '',
+        labelUrl: '',
+        errorMessage: 'Invalid or empty response from FlySwift'
+      }
     }
 
-    if (authContext.token) {
-      headers['Authorization'] = `Bearer ${authContext.token}`
-    }
-
-    if (this.config.headers_template && Object.keys(this.config.headers_template).length > 0) {
-      Object.assign(headers, this.config.headers_template)
-    }
-
-    const response = await fetch(this.config.shipment_api_url, {
-      method,
-      headers,
-      body: JSON.stringify(payload)
-    })
-
-    const responseText = await response.text()
-    let responseData = {}
-    try {
-      responseData = JSON.parse(responseText)
-    } catch (e) {
-      responseData = { raw: responseText }
-    }
-
-    let success = response.ok
+    let success = false
     if (this.config.response_success_path) {
-      const extracted = this.extractValueByPath(responseData, this.config.response_success_path)
+      const extracted = this.extractValueByPath(responseBody, this.config.response_success_path)
       if (this.config.response_success_value) {
         success = String(extracted) === String(this.config.response_success_value)
       } else {
         success = Boolean(extracted)
       }
-    } else if (responseData.success !== undefined) {
-      success = Boolean(responseData.success)
+    } else if (responseBody.success !== undefined) {
+      success = Boolean(responseBody.success)
+    } else if (responseBody.status === true || responseBody.status === 'success' || responseBody.code === 200) {
+      success = true
     }
 
-    let vendorTrackingNumber = ''
+    let awbNumber = ''
     if (this.config.response_tracking_path) {
-      vendorTrackingNumber = this.extractValueByPath(responseData, this.config.response_tracking_path) || ''
+      awbNumber = this.extractValueByPath(responseBody, this.config.response_tracking_path) || ''
     } else {
-      vendorTrackingNumber =
-        responseData.data?.tracking_number ||
-        responseData.data?.tracking_no ||
-        responseData.data?.awb_number ||
-        responseData.data?.docket_no ||
-        responseData.data?.id ||
-        responseData.tracking_number ||
-        responseData.docket_no ||
+      awbNumber =
+        responseBody.data?.tracking_number ||
+        responseBody.data?.tracking_no ||
+        responseBody.data?.awb_number ||
+        responseBody.data?.docket_no ||
+        responseBody.data?.id ||
+        responseBody.tracking_number ||
+        responseBody.docket_no ||
+        responseBody.awb_number ||
         ''
     }
 
+    const trackingUrl = responseBody.data?.tracking_url || responseBody.tracking_url || ''
+    const labelUrl = responseBody.data?.label_url || responseBody.label_url || ''
+    const errorMessage = !success
+      ? (responseBody.message || responseBody.error || (Array.isArray(responseBody.errors) ? responseBody.errors.join(', ') : 'FlySwift API Error'))
+      : ''
+
     return {
       success,
-      statusCode: response.status,
-      vendorTrackingNumber: String(vendorTrackingNumber),
-      rawResponse: responseData,
-      rawRequestPayload: payload
+      awbNumber: String(awbNumber),
+      trackingUrl,
+      labelUrl,
+      errorMessage
     }
   }
 
