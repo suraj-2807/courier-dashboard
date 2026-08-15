@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useCreateBooking, useSaveBooking, usePushBookingToApi } from '../hooks/useBookings'
 import { getActiveVendors } from '../api/apiSettings.api'
 import { bookingsApi } from '../api/bookings.api'
+import { countryCodesApi } from '../api/countryCodes.api'
 import {
   ArrowLeft,
   User,
@@ -197,9 +198,35 @@ export default function NewBookingPage() {
   // Fetch active vendors for vendor API selection
   const { data: vendorsData } = useQuery({
     queryKey: ['active-vendors'],
-    queryFn: getActiveVendors
+    queryFn: async () => {
+      const res = await getActiveVendors()
+      return res.data
+    }
   })
   const activeVendors = vendorsData?.vendors || []
+
+  // Fetch country codes dictionary for mapping full names (e.g. USA) -> 2-letter codes (e.g. US)
+  const { data: countryCodesData } = useQuery({
+    queryKey: ['country-codes'],
+    queryFn: () => countryCodesApi.getAll().then(res => res.data)
+  })
+  const countryLookupMap = countryCodesData?.lookupMap || {}
+
+  const resolveCountryCode = (val) => {
+    if (!val) return ''
+    const clean = val.trim().toUpperCase()
+    if (countryLookupMap && countryLookupMap[clean]) {
+      return countryLookupMap[clean]
+    }
+    // Standard fallbacks
+    if (clean === 'USA' || clean === 'UNITED STATES' || clean === 'UNITED STATES OF AMERICA') return 'US'
+    if (clean === 'INDIA' || clean === 'IND') return 'IN'
+    if (clean === 'UK' || clean === 'UNITED KINGDOM' || clean === 'GREAT BRITAIN') return 'GB'
+    if (clean === 'CANADA' || clean === 'CAN') return 'CA'
+    if (clean === 'AUSTRALIA' || clean === 'AUS') return 'AU'
+    if (clean === 'UAE' || clean === 'UNITED ARAB EMIRATES' || clean === 'DUBAI') return 'AE'
+    return val
+  }
 
   // Edit Mode or Pre-fill from URL params
   const { id: paramId } = useParams()
@@ -501,7 +528,7 @@ export default function NewBookingPage() {
     sender_city: form.sender_city,
     sender_pincode: form.sender_pincode,
     sender_state: form.sender_state,
-    sender_country: form.sender_country,
+    sender_country: resolveCountryCode(form.sender_country) || 'IN',
     sender_gstin_type: form.sender_gstin_type,
     sender_gstin_no: form.sender_gstin_no,
 
@@ -514,7 +541,7 @@ export default function NewBookingPage() {
     receiver_city: form.receiver_city,
     receiver_pincode: form.receiver_pincode,
     receiver_state: form.receiver_state,
-    receiver_country: form.receiver_country,
+    receiver_country: resolveCountryCode(form.receiver_country),
     receiver_gstin_type: form.receiver_gstin_type,
     receiver_gstin_no: form.receiver_gstin_no,
 

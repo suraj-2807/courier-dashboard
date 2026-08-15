@@ -261,6 +261,45 @@ export async function initializeDb() {
       }
     }
 
+    // ── Country Codes Table ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS country_codes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        country_name VARCHAR(255) NOT NULL,
+        country_code VARCHAR(10) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY idx_country_name (country_name)
+      )`)
+      
+      const countRes = await query('SELECT COUNT(*) as total FROM country_codes')
+      if (countRes[0].total === 0) {
+        const defaultSeeds = [
+          ['UNITED STATES', 'US'], ['USA', 'US'], ['UNITED STATES OF AMERICA', 'US'],
+          ['INDIA', 'IN'], ['IND', 'IN'],
+          ['UNITED KINGDOM', 'GB'], ['UK', 'GB'], ['GREAT BRITAIN', 'GB'],
+          ['CANADA', 'CA'], ['CAN', 'CA'],
+          ['AUSTRALIA', 'AU'], ['AUS', 'AU'],
+          ['UNITED ARAB EMIRATES', 'AE'], ['UAE', 'AE'], ['DUBAI', 'AE'],
+          ['GERMANY', 'DE'], ['DEU', 'DE'],
+          ['FRANCE', 'FR'], ['FRA', 'FR'],
+          ['JAPAN', 'JP'], ['JPN', 'JP'],
+          ['SINGAPORE', 'SG'], ['SGP', 'SG'],
+          ['NEW ZEALAND', 'NZ'], ['NLD', 'NL'], ['NETHERLANDS', 'NL']
+        ]
+        for (const [name, code] of defaultSeeds) {
+          await execute(
+            'INSERT IGNORE INTO country_codes (country_name, country_code) VALUES (?, ?)',
+            [name, code]
+          )
+        }
+        console.log('country_codes seeded with default mappings.')
+      }
+    } catch (ccErr) {
+      if (ccErr.code !== 'ER_TABLE_EXISTS_ERROR') {
+        console.error('country_codes migration failed:', ccErr.message)
+      }
+    }
+
     console.log('DB initialization successfully completed!')
   } catch (err) {
     console.error('DB Initialization/Migration Failed:', err)

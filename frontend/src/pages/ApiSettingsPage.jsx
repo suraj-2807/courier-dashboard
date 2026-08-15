@@ -30,7 +30,8 @@ import {
   Key,
   Save,
   FileText,
-  ChevronDown
+  ChevronDown,
+  Upload
 } from 'lucide-react'
 import {
   getApiSettings,
@@ -44,6 +45,7 @@ import {
   getInternalFields,
   extractTemplatePaths
 } from '../api/apiSettings.api'
+import { countryCodesApi } from '../api/countryCodes.api'
 
 const AUTH_TYPES = [
   { value: 'token', label: 'Token (Bearer)', desc: 'Separate auth endpoint → get token → use in headers' },
@@ -155,6 +157,99 @@ export default function ApiSettingsPage() {
   const [requestTemplateStr, setRequestTemplateStr] = useState('')
   const [headersTemplateStr, setHeadersTemplateStr] = useState('')
   const [modalTab, setModalTab] = useState('connection')
+
+  // Country Codes Manager State
+  const [showCountryModal, setShowCountryModal] = useState(false)
+  const [newCountryName, setNewCountryName] = useState('')
+  const [newCountryCode, setNewCountryCode] = useState('')
+  const [countrySearch, setCountrySearch] = useState('')
+
+  const { data: countryCodesData, refetch: refetchCountryCodes } = useQuery({
+    queryKey: ['country-codes-admin'],
+    queryFn: () => countryCodesApi.getAll().then(res => res.data)
+  })
+  const countryList = countryCodesData?.countryCodes || []
+
+  const handleCsvUpload = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = async (evt) => {
+      const text = evt.target.result
+      const lines = text.split(/\r?\n/)
+      if (lines.length < 2) {
+        toast.error('CSV file is empty')
+        return
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, ''))
+      const branchIdx = headers.findIndex(h => /branch|country\s*name/i.test(h))
+      const codeIdx = headers.findIndex(h => /code/i.test(h))
+
+      if (branchIdx === -1 || codeIdx === -1) {
+        toast.error('CSV headers must include "Branch Name" and "Country Code"')
+        return
+      }
+
+      const rows = []
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim()
+        if (!line) continue
+        const parts = line.split(',').map(p => p.trim().replace(/^["']|["']$/g, ''))
+        const branch = parts[branchIdx]
+        const code = parts[codeIdx]
+        if (branch && code) {
+          rows.push({ country_name: branch, country_code: code })
+        }
+      }
+
+      if (rows.length === 0) {
+        toast.error('No valid rows found in CSV')
+        return
+      }
+
+      try {
+        const res = await countryCodesApi.import(rows)
+        toast.success(res.data.message || `Imported ${rows.length} mappings!`)
+        refetchCountryCodes()
+      } catch (err) {
+        toast.error('Failed to import country codes')
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  const handleAddSingleCountry = async (e) => {
+    e.preventDefault()
+    if (!newCountryName || !newCountryCode) {
+      toast.error('Branch/Country name and Country Code are required')
+      return
+    }
+    try {
+      await countryCodesApi.add({ country_name: newCountryName, country_code: newCountryCode })
+      toast.success('Mapping added successfully!')
+      setNewCountryName('')
+      setNewCountryCode('')
+      refetchCountryCodes()
+    } catch {
+      toast.error('Failed to add mapping')
+    }
+  }
+
+  const handleDeleteCountry = async (id) => {
+    try {
+      await countryCodesApi.delete(id)
+      toast.success('Mapping deleted!')
+      refetchCountryCodes()
+    } catch {
+      toast.error('Failed to delete mapping')
+    }
+  }
+
+  const filteredCountries = countryList.filter(item =>
+    item.country_name?.toLowerCase().includes(countrySearch.toLowerCase()) ||
+    item.country_code?.toLowerCase().includes(countrySearch.toLowerCase())
+  )
 
   // Fetch internal fields for mapping
   const { data: fieldsData } = useQuery({
@@ -560,22 +655,31 @@ export default function ApiSettingsPage() {
               Manage your vendor API connections, test authentication, and monitor API logs.
             </p>
           </div>
-          <button
-            onClick={openAdd}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              padding: '10px 20px',
-              background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))',
-              border: 'none', borderRadius: '12px',
-              fontSize: '13px', fontWeight: 700, color: '#fff',
-              cursor: 'pointer', transition: 'all 0.2s',
-              fontFamily: 'var(--font-family-body)',
-              boxShadow: '0 4px 12px rgba(187, 0, 19, 0.3)'
-            }}
-          >
-            <Plus style={{ width: '16px', height: '16px' }} />
-            Add Vendor
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCountryModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-surface hover:bg-surface-hover border border-border text-navy text-[13px] font-bold rounded-xl transition-colors cursor-pointer"
+            >
+              <Globe className="w-4 h-4 text-navy" />
+              Country Codes & CSV
+            </button>
+            <button
+              onClick={openAdd}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '10px 20px',
+                background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))',
+                border: 'none', borderRadius: '12px',
+                fontSize: '13px', fontWeight: 700, color: '#fff',
+                cursor: 'pointer', transition: 'all 0.2s',
+                fontFamily: 'var(--font-family-body)',
+                boxShadow: '0 4px 12px rgba(187, 0, 19, 0.3)'
+              }}
+            >
+              <Plus style={{ width: '16px', height: '16px' }} />
+              Add Vendor
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1878,6 +1982,120 @@ export default function ApiSettingsPage() {
               >
                 {deleteMutation.isPending && <Loader2 style={{ width: '14px', height: '14px', animation: 'spin 1s linear infinite' }} />}
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Country Codes Manager Modal */}
+      {showCountryModal && createPortal(
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-surface border border-border rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl animate-fade-in overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface-alt">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-navy/10 flex items-center justify-center">
+                  <Globe className="w-5 h-5 text-navy" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-navy">Country Codes & Branch CSV Manager</h3>
+                  <p className="text-[12px] text-text-secondary">Map branch names / full country names (e.g. USA) to valid 2-letter ISO codes (e.g. US)</p>
+                </div>
+              </div>
+              <button onClick={() => setShowCountryModal(false)} className="text-text-tertiary hover:text-navy p-1 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
+              {/* CSV Upload Section */}
+              <div className="p-4 bg-surface-alt border border-border rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[13px] font-extrabold text-navy flex items-center gap-1.5">
+                    <Upload className="w-4 h-4 text-primary" />
+                    Upload Country Code CSV
+                  </h4>
+                  <span className="text-[11px] text-text-tertiary">Headers: Branch Name / Country Name, Country Code</span>
+                </div>
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleCsvUpload}
+                  className="block w-full text-[12px] text-text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[12px] file:font-bold file:bg-navy file:text-white hover:file:bg-navy-light cursor-pointer"
+                />
+              </div>
+
+              {/* Add Single Mapping */}
+              <form onSubmit={handleAddSingleCountry} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Branch / Country Name (e.g. USA)"
+                  value={newCountryName}
+                  onChange={(e) => setNewCountryName(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-border rounded-xl text-[12px] bg-surface outline-none focus:border-primary"
+                />
+                <input
+                  type="text"
+                  placeholder="Code (e.g. US)"
+                  value={newCountryCode}
+                  onChange={(e) => setNewCountryCode(e.target.value)}
+                  className="w-32 px-3 py-2 border border-border rounded-xl text-[12px] bg-surface outline-none focus:border-primary uppercase"
+                />
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-primary text-white text-[12px] font-bold rounded-xl hover:bg-primary-dark cursor-pointer flex items-center gap-1"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add
+                </button>
+              </form>
+
+              {/* Search & List */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-bold text-navy">Mapped Country Codes ({filteredCountries.length})</span>
+                  <input
+                    type="text"
+                    placeholder="Search country..."
+                    value={countrySearch}
+                    onChange={(e) => setCountrySearch(e.target.value)}
+                    className="px-3 py-1 border border-border rounded-lg text-[11px] bg-surface"
+                  />
+                </div>
+                <div className="border border-border rounded-xl max-h-60 overflow-y-auto divide-y divide-border bg-surface">
+                  {filteredCountries.length === 0 ? (
+                    <div className="p-4 text-center text-[12px] text-text-tertiary">No country code mappings found.</div>
+                  ) : (
+                    filteredCountries.map(item => (
+                      <div key={item.id} className="p-2.5 flex items-center justify-between text-[12px]">
+                        <span className="font-semibold text-navy">{item.country_name}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="px-2 py-0.5 bg-primary/10 text-primary font-bold rounded-md font-mono">{item.country_code}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCountry(item.id)}
+                            className="text-text-tertiary hover:text-danger p-1"
+                            title="Delete Mapping"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-border flex justify-end bg-surface-alt">
+              <button
+                onClick={() => setShowCountryModal(false)}
+                className="px-4 py-2 bg-surface hover:bg-surface-hover border border-border text-navy text-[12px] font-bold rounded-xl"
+              >
+                Close
               </button>
             </div>
           </div>

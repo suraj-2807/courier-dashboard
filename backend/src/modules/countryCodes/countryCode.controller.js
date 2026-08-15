@@ -1,0 +1,141 @@
+import { query, execute } from '../../config/db.js'
+
+/**
+ * Get all country code mappings and return dictionary for quick lookup
+ */
+export const getCountryCodes = async (req, res) => {
+  try {
+    const rows = await query('SELECT * FROM country_codes ORDER BY country_name ASC')
+    const lookupMap = {}
+    
+    (rows || []).forEach(row => {
+      if (row.country_name && row.country_code) {
+        lookupMap[row.country_name.trim().toUpperCase()] = row.country_code.trim().toUpperCase()
+      }
+    })
+
+    return res.json({
+      success: true,
+      countryCodes: rows || [],
+      lookupMap
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    })
+  }
+}
+
+/**
+ * Import country code mappings from array or CSV rows
+ * Expects array of objects: [{ country_name / branch_name: 'USA', country_code: 'US' }, ...]
+ */
+export const importCountryCodes = async (req, res) => {
+  try {
+    const { rows = [] } = req.body
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No country rows provided'
+      })
+    }
+
+    let insertedCount = 0
+    for (const item of rows) {
+      // Support flexible CSV field names: "Branch Name", "Country Name", "Branch", "Country", etc.
+      const nameRaw = item.country_name || item['Branch Name'] || item['Country Name'] || item.branch_name || item.Country || item.Branch
+      const codeRaw = item.country_code || item['Country Code'] || item.code || item.Code
+
+      if (!nameRaw || !codeRaw) continue
+
+      const countryName = String(nameRaw).trim().toUpperCase()
+      const countryCode = String(codeRaw).trim().toUpperCase()
+
+      if (countryName && countryCode) {
+        await execute(
+          `INSERT INTO country_codes (country_name, country_code)
+           VALUES (?, ?)
+           ON DUPLICATE KEY UPDATE country_code = VALUES(country_code)`,
+          [countryName, countryCode]
+        )
+        insertedCount++
+      }
+    }
+
+    const updatedList = await query('SELECT * FROM country_codes ORDER BY country_name ASC')
+    const lookupMap = {}
+    (updatedList || []).forEach(row => {
+      lookupMap[row.country_name.trim().toUpperCase()] = row.country_code.trim().toUpperCase()
+    })
+
+    return res.json({
+      success: true,
+      message: `Successfully imported/updated ${insertedCount} country code mappings.`,
+      countryCodes: updatedList,
+      lookupMap
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    })
+  }
+}
+
+/**
+ * Add or update single country code mapping
+ */
+export const addCountryCode = async (req, res) => {
+  try {
+    const { country_name, country_code } = req.body
+
+    if (!country_name || !country_code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Country name and country code are required'
+      })
+    }
+
+    const name = String(country_name).trim().toUpperCase()
+    const code = String(country_code).trim().toUpperCase()
+
+    await execute(
+      `INSERT INTO country_codes (country_name, country_code)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE country_code = VALUES(country_code)`,
+      [name, code]
+    )
+
+    return res.json({
+      success: true,
+      message: `Mapping added: ${name} -> ${code}`
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    })
+  }
+}
+
+/**
+ * Delete a single country code mapping
+ */
+export const deleteCountryCode = async (req, res) => {
+  try {
+    const { id } = req.params
+    await execute('DELETE FROM country_codes WHERE id = ?', [id])
+
+    return res.json({
+      success: true,
+      message: 'Country code mapping deleted successfully'
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    })
+  }
+}
