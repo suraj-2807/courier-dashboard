@@ -37,6 +37,7 @@ export default function BookingsPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [selectedIds, setSelectedIds] = useState([])
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false)
+  const limit = 10
   const navigate = useNavigate()
   const pushToApiMutation = usePushBookingToApi()
   const [pushingId, setPushingId] = useState(null)
