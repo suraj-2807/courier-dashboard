@@ -60,6 +60,7 @@ const INITIAL_FORM = {
   height: '',
   no_of_pieces: '1',
   volumetric_weight: '',
+  chargeable_weight: '',
   actual_weight: '',
   content_description: '',
   declared_value: '',
@@ -246,6 +247,7 @@ export default function NewBookingPage() {
 
   // Get selected vendor's configured codes
   const selectedVendor = activeVendors.find(v => String(v.id) === String(form.vendor_config_id))
+  const isPacificVendor = selectedVendor?.name?.toLowerCase().includes('pacific') || selectedVendor?.vendor_code?.toLowerCase()?.includes('pacific')
   const vendorServices = safeArr(selectedVendor?.available_services)
   const vendorVendorCodes = safeArr(selectedVendor?.available_vendor_codes)
   const vendorProductCodes = safeArr(selectedVendor?.available_product_codes)
@@ -321,6 +323,7 @@ export default function NewBookingPage() {
     setForm(prev => ({
       ...prev,
       volumetric_weight: vol > 0 ? String(vol) : '',
+      chargeable_weight: chg > 0 ? String(chg) : '',
       actual_weight: act > 0 ? String(act) : '',
       shipping_charge: prev.shipping_charge || (chg > 0 ? String(chg) : '')
     }))
@@ -359,6 +362,7 @@ export default function NewBookingPage() {
     receiver_gstin_no: form.receiver_gstin_no,
 
     weight: parseFloat(form.weight) || 0,
+    chargeable_weight: parseFloat(form.chargeable_weight) || 0,
     length: parseFloat(form.length) || 0,
     breadth: parseFloat(form.breadth) || 0,
     height: parseFloat(form.height) || 0,
@@ -844,8 +848,11 @@ export default function NewBookingPage() {
                   <select
                     value={form.vendor_config_id}
                     onChange={e => {
-                      updateForm('vendor_config_id', e.target.value)
-                      updateForm('vendor_code', '')
+                      const newId = e.target.value
+                      updateForm('vendor_config_id', newId)
+                      const newVendor = activeVendors.find(v => String(v.id) === String(newId))
+                      const isPacific = newVendor?.name?.toLowerCase().includes('pacific') || newVendor?.vendor_code?.toLowerCase()?.includes('pacific')
+                      updateForm('vendor_code', isPacific ? 'PC' : '')
                       updateForm('service_code', '')
                       updateForm('product_code', '')
                       setCustomVendorMode(false)
@@ -866,7 +873,7 @@ export default function NewBookingPage() {
                 {form.vendor_config_id && (
                   <>
                     {/* Vendor Code */}
-                    {vendorRequiresField('vendor_code') && (
+                    {isPacificVendor && (
                       <CompactField label="Vendor Code">
                         {customVendorMode ? (
                           <div className="flex items-center gap-1">
@@ -1158,57 +1165,133 @@ export default function NewBookingPage() {
             </CompactField>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 items-center">
-            <CompactField label="Actual Wt (kg)" required highlight={!form.weight}>
-              <input
-                type="number"
-                step="0.01"
-                placeholder="0.00"
-                value={form.weight}
-                onChange={e => updateForm('weight', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-extrabold text-right text-[#BB0013]"
-              />
-            </CompactField>
+          {/* Weights and Dimensions Table */}
+          <div className="border border-[#1a237e] rounded-md overflow-hidden">
+            {/* Section Header */}
+            <div className="bg-[#1a237e] text-white px-3 py-2 text-[11px] font-extrabold uppercase tracking-wider">
+              Weights and Dimensions
+            </div>
 
-            <CompactField label="Length (cm)">
-              <input
-                type="number"
-                placeholder="L"
-                value={form.length}
-                onChange={e => updateForm('length', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 text-center"
-              />
-            </CompactField>
+            {/* Summary Row */}
+            <div className="grid grid-cols-4 border-b border-[#c5cae9]">
+              <div className="px-3 py-2.5 border-r border-[#c5cae9]">
+                <span className="text-[10px] font-extrabold uppercase text-[#37474f] block mb-1 tracking-tight">PCS</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={form.no_of_pieces}
+                  onChange={e => updateForm('no_of_pieces', e.target.value)}
+                  className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold"
+                />
+              </div>
+              <div className="px-3 py-2.5 border-r border-[#c5cae9]">
+                <span className="text-[10px] font-extrabold uppercase text-[#37474f] block mb-1 tracking-tight">Actual Weight</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={form.weight}
+                  onChange={e => updateForm('weight', e.target.value)}
+                  className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold"
+                />
+              </div>
+              <div className="px-3 py-2.5 border-r border-[#c5cae9] bg-[#1a237e]">
+                <span className="text-[10px] font-extrabold uppercase text-white block mb-1 tracking-tight">Volumetric Weight</span>
+                <input
+                  type="text"
+                  readOnly
+                  value={form.volumetric_weight || '0.00'}
+                  className="w-full bg-transparent focus:outline-none text-[13px] text-white font-extrabold"
+                />
+              </div>
+              <div className="px-3 py-2.5">
+                <span className="text-[10px] font-extrabold uppercase text-[#37474f] block mb-1 tracking-tight">Chargeable Weight</span>
+                <input
+                  type="text"
+                  readOnly
+                  value={form.chargeable_weight || '0.00'}
+                  className="w-full bg-transparent focus:outline-none text-[13px] text-[#BB0013] font-extrabold"
+                />
+              </div>
+            </div>
 
-            <CompactField label="Breadth (cm)">
-              <input
-                type="number"
-                placeholder="B"
-                value={form.breadth}
-                onChange={e => updateForm('breadth', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 text-center"
-              />
-            </CompactField>
+            {/* Per-Parcel Table Header */}
+            <div className="grid grid-cols-[1fr_1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] bg-[#e8eaf6] text-[10px] font-extrabold uppercase text-[#1a237e] tracking-tight border-b border-[#c5cae9]">
+              <div className="px-2 py-2 text-center border-r border-[#c5cae9]">Parcel No.</div>
+              <div className="px-2 py-2 text-center border-r border-[#c5cae9]">Box No.</div>
+              <div className="px-2 py-2 text-center border-r border-[#c5cae9]">Actual Wt(Kg.)</div>
+              <div className="px-2 py-2 text-center border-r border-[#c5cae9]">L(CM)</div>
+              <div className="px-2 py-2 text-center border-r border-[#c5cae9]">B(CM)</div>
+              <div className="px-2 py-2 text-center border-r border-[#c5cae9]">H(CM)</div>
+              <div className="px-2 py-2 text-center border-r border-[#c5cae9]">Volumetric Wt(Kg.)</div>
+              <div className="px-2 py-2 text-center">Chargeable Wt(Kg.)</div>
+            </div>
 
-            <CompactField label="Height (cm)">
-              <input
-                type="number"
-                placeholder="H"
-                value={form.height}
-                onChange={e => updateForm('height', e.target.value)}
-                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 text-center"
-              />
-            </CompactField>
-
-            <CompactField label="Volumetric Wt (kg)">
-              <input
-                type="text"
-                readOnly
-                value={form.volumetric_weight || '0.00'}
-                className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono font-bold text-right text-gray-500"
-              />
-            </CompactField>
+            {/* Per-Parcel Data Row */}
+            <div className="grid grid-cols-[1fr_1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] text-[13px] items-center hover:bg-blue-50/30 transition-colors">
+              <div className="px-2 py-2 text-center text-xs font-bold text-gray-400 border-r border-[#dce1e7]">1</div>
+              <div className="px-1 py-1 border-r border-[#dce1e7]">
+                <input type="text" value="1" readOnly className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-gray-600" />
+              </div>
+              <div className="px-1 py-1 border-r border-[#dce1e7]">
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={form.weight}
+                  onChange={e => updateForm('weight', e.target.value)}
+                  className="w-full bg-transparent focus:outline-none text-xs text-center font-bold"
+                />
+              </div>
+              <div className="px-1 py-1 border-r border-[#dce1e7]">
+                <input
+                  type="number"
+                  placeholder="L"
+                  value={form.length}
+                  onChange={e => updateForm('length', e.target.value)}
+                  className="w-full bg-transparent focus:outline-none text-xs text-center"
+                />
+              </div>
+              <div className="px-1 py-1 border-r border-[#dce1e7]">
+                <input
+                  type="number"
+                  placeholder="B"
+                  value={form.breadth}
+                  onChange={e => updateForm('breadth', e.target.value)}
+                  className="w-full bg-transparent focus:outline-none text-xs text-center"
+                />
+              </div>
+              <div className="px-1 py-1 border-r border-[#dce1e7]">
+                <input
+                  type="number"
+                  placeholder="H"
+                  value={form.height}
+                  onChange={e => updateForm('height', e.target.value)}
+                  className="w-full bg-transparent focus:outline-none text-xs text-center"
+                />
+              </div>
+              <div className="px-1 py-1 border-r border-[#dce1e7]">
+                <input
+                  type="text"
+                  readOnly
+                  value={form.volumetric_weight || '0.00'}
+                  className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-[#1a237e]"
+                />
+              </div>
+              <div className="px-1 py-1">
+                <input
+                  type="text"
+                  readOnly
+                  value={form.chargeable_weight || '0.00'}
+                  className="w-full bg-transparent focus:outline-none text-xs text-center font-extrabold text-[#BB0013]"
+                />
+              </div>
+            </div>
           </div>
+
+          <p className="text-[10px] text-gray-400 mt-1.5 italic">
+            * Volumetric weight = (L×B×H / 5000) × PCS. Chargeable weight = max(Actual, Volumetric).
+          </p>
         </div>
 
         {/* ── Create Shipment Invoice Section ── */}
