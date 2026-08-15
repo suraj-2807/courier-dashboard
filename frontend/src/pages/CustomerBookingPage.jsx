@@ -12,7 +12,10 @@ import {
   Trash2,
   Receipt
 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import toast, { Toaster } from 'react-hot-toast'
+import { countryCodesApi } from '../api/countryCodes.api'
+import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
 
 const INITIAL_FORM = {
   // Sender
@@ -78,6 +81,13 @@ export default function CustomerBookingPage() {
   const [submittedAwb, setSubmittedAwb] = useState(null)
   const [copied, setCopied] = useState(false)
   const [showShipmentInvoice, setShowShipmentInvoice] = useState(true)
+
+  // Fetch country codes list
+  const { data: countryCodesData } = useQuery({
+    queryKey: ['country-codes-customer'],
+    queryFn: () => countryCodesApi.getAll().then(res => res.data)
+  })
+  const countryList = countryCodesData?.countryCodes || []
 
   // Parcels detail state synced with no_of_pieces
   const [parcels, setParcels] = useState([
@@ -533,12 +543,12 @@ export default function CustomerBookingPage() {
                   />
                 </CompactField>
                 <CompactField label="Country">
-                  <input
-                    type="text"
-                    placeholder="Country"
+                  <CountryAutocompleteInput
                     value={form.sender_country}
-                    onChange={e => updateForm('sender_country', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-[13px] font-bold uppercase text-primary"
+                    onChange={val => updateForm('sender_country', val)}
+                    placeholder="Search Country (e.g. India, USA)"
+                    className="w-full bg-transparent focus:outline-none text-[13px] font-bold uppercase text-primary pr-6"
+                    countryList={countryList}
                   />
                 </CompactField>
               </div>
@@ -670,12 +680,12 @@ export default function CustomerBookingPage() {
                   />
                 </CompactField>
                 <CompactField label="Country" required highlight={!form.receiver_country}>
-                  <input
-                    type="text"
-                    placeholder="e.g. US, GB, AE"
+                  <CountryAutocompleteInput
                     value={form.receiver_country}
-                    onChange={e => updateForm('receiver_country', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-[13px] font-bold uppercase text-primary placeholder-red-300"
+                    onChange={val => updateForm('receiver_country', val)}
+                    placeholder="Search Country (e.g. USA, UK)"
+                    className="w-full bg-transparent focus:outline-none text-[13px] font-bold uppercase text-primary pr-6 placeholder-red-300"
+                    countryList={countryList}
                   />
                 </CompactField>
               </div>
