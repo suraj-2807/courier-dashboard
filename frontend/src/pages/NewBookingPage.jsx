@@ -154,6 +154,11 @@ export default function NewBookingPage() {
   // Form collapse toggles
   const [showShipmentInvoice, setShowShipmentInvoice] = useState(true)
 
+  // Parcels detail state synced with no_of_pieces
+  const [parcels, setParcels] = useState([
+    { parcel_no: 1, box_no: '1', weight: '', length: '', breadth: '', height: '', volumetric_weight: '', chargeable_weight: '' }
+  ])
+
   // Invoice items state
   const [invoiceItems, setInvoiceItems] = useState([
     { sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }
@@ -306,28 +311,89 @@ export default function NewBookingPage() {
     })
   })()
 
-  // Auto-calculate Volumetric Weight & Charge Weight
+  // Auto-sync parcels count with no_of_pieces
   useEffect(() => {
-    const l = parseFloat(form.length) || 0
-    const b = parseFloat(form.breadth) || 0
-    const h = parseFloat(form.height) || 0
-    const pcs = parseInt(form.no_of_pieces) || 1
-    const act = parseFloat(form.weight) || 0
+    const count = Math.max(1, parseInt(form.no_of_pieces) || 1)
+    setParcels(prev => {
+      const next = [...prev]
+      if (next.length < count) {
+        for (let i = next.length; i < count; i++) {
+          next.push({
+            parcel_no: i + 1,
+            box_no: String(i + 1),
+            weight: '',
+            length: '',
+            breadth: '',
+            height: '',
+            volumetric_weight: '',
+            chargeable_weight: ''
+          })
+        }
+      } else if (next.length > count) {
+        return next.slice(0, count)
+      }
+      return next
+    })
+  }, [form.no_of_pieces])
 
-    let vol = 0
-    if (l > 0 && b > 0 && h > 0) {
-      vol = Math.round(((l * b * h) / 5000) * pcs * 100) / 100
+  const updateParcel = (index, field, value) => {
+    setParcels(prev => {
+      const updated = [...prev]
+      const item = { ...updated[index], [field]: value }
+
+      const l = parseFloat(field === 'length' ? value : item.length) || 0
+      const b = parseFloat(field === 'breadth' ? value : item.breadth) || 0
+      const h = parseFloat(field === 'height' ? value : item.height) || 0
+      const act = parseFloat(field === 'weight' ? value : item.weight) || 0
+
+      let vol = 0
+      if (l > 0 && b > 0 && h > 0) {
+        vol = Math.round(((l * b * h) / 5000) * 100) / 100
+      }
+      const chg = Math.max(act, vol)
+
+      item.volumetric_weight = vol > 0 ? String(vol) : ''
+      item.chargeable_weight = chg > 0 ? String(chg) : ''
+      updated[index] = item
+      return updated
+    })
+  }
+
+  // Calculate totals from parcels array
+  const totalParcelActual = parcels.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+  const totalParcelVol = parcels.reduce((sum, p) => sum + (parseFloat(p.volumetric_weight) || 0), 0)
+  const totalParcelChg = parcels.reduce((sum, p) => sum + (parseFloat(p.chargeable_weight) || 0), 0)
+
+  // Keep main form summary fields synced with per-parcel totals
+  useEffect(() => {
+    if (parcels.length > 1) {
+      setForm(prev => ({
+        ...prev,
+        weight: totalParcelActual > 0 ? String(totalParcelActual) : prev.weight,
+        volumetric_weight: totalParcelVol > 0 ? String(totalParcelVol) : '',
+        chargeable_weight: totalParcelChg > 0 ? String(totalParcelChg) : '',
+        shipping_charge: prev.shipping_charge || (totalParcelChg > 0 ? String(totalParcelChg) : '')
+      }))
+    } else {
+      const l = parseFloat(form.length) || parseFloat(parcels[0]?.length) || 0
+      const b = parseFloat(form.breadth) || parseFloat(parcels[0]?.breadth) || 0
+      const h = parseFloat(form.height) || parseFloat(parcels[0]?.height) || 0
+      const act = parseFloat(form.weight) || parseFloat(parcels[0]?.weight) || 0
+
+      let vol = 0
+      if (l > 0 && b > 0 && h > 0) {
+        vol = Math.round(((l * b * h) / 5000) * 100) / 100
+      }
+      const chg = Math.max(act, vol)
+
+      setForm(prev => ({
+        ...prev,
+        volumetric_weight: vol > 0 ? String(vol) : '',
+        chargeable_weight: chg > 0 ? String(chg) : '',
+        shipping_charge: prev.shipping_charge || (chg > 0 ? String(chg) : '')
+      }))
     }
-    const chg = Math.max(act, vol)
-
-    setForm(prev => ({
-      ...prev,
-      volumetric_weight: vol > 0 ? String(vol) : '',
-      chargeable_weight: chg > 0 ? String(chg) : '',
-      actual_weight: act > 0 ? String(act) : '',
-      shipping_charge: prev.shipping_charge || (chg > 0 ? String(chg) : '')
-    }))
-  }, [form.length, form.breadth, form.height, form.weight, form.no_of_pieces])
+  }, [parcels, form.length, form.breadth, form.height, form.weight, form.no_of_pieces])
 
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
@@ -531,7 +597,7 @@ export default function NewBookingPage() {
   }
 
   return (
-    <div className="animate-fade-in max-w-7xl mx-auto space-y-5 pb-8">
+    <div className="animate-fade-in w-full space-y-6 pb-8">
       {/* ── Page Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-surface p-5 rounded-2xl border border-border shadow-xs">
         <div className="flex items-center gap-3.5">
@@ -1120,7 +1186,7 @@ export default function NewBookingPage() {
         <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs">
           <RedBadge title="Package & Weight Specifications" icon={Package} />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 mb-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3.5 mb-4">
             <CompactField label="Package Type">
               <select
                 value={form.package_type}
@@ -1227,66 +1293,80 @@ export default function NewBookingPage() {
               <div className="px-3 py-2 text-center">Chargeable Wt(Kg.)</div>
             </div>
 
-            {/* Per-Parcel Data Row */}
-            <div className="grid grid-cols-[1fr_1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] text-[13px] items-center hover:bg-surface-hover transition-colors">
-              <div className="px-3 py-2 text-center text-xs font-bold text-text-tertiary border-r border-border-light">1</div>
-              <div className="px-2 py-1 border-r border-border-light">
-                <input type="text" value="1" readOnly className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-text-secondary" />
+            {/* Per-Parcel Data Rows */}
+            {parcels.map((p, pIdx) => (
+              <div key={pIdx} className="grid grid-cols-[1fr_1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] text-[13px] items-center hover:bg-surface-hover transition-colors border-b border-border-light last:border-0 py-1">
+                <div className="px-3 py-2 text-center text-xs font-bold text-text-tertiary border-r border-border-light">{p.parcel_no}</div>
+                <div className="px-2 py-1 border-r border-border-light">
+                  <input type="text" value={p.box_no} readOnly className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-text-secondary" />
+                </div>
+                <div className="px-2 py-1 border-r border-border-light">
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={parcels.length === 1 ? form.weight : p.weight}
+                    onChange={e => {
+                      if (parcels.length === 1) updateForm('weight', e.target.value)
+                      updateParcel(pIdx, 'weight', e.target.value)
+                    }}
+                    className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy"
+                  />
+                </div>
+                <div className="px-2 py-1 border-r border-border-light">
+                  <input
+                    type="number"
+                    placeholder="L"
+                    value={parcels.length === 1 ? form.length : p.length}
+                    onChange={e => {
+                      if (parcels.length === 1) updateForm('length', e.target.value)
+                      updateParcel(pIdx, 'length', e.target.value)
+                    }}
+                    className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
+                  />
+                </div>
+                <div className="px-2 py-1 border-r border-border-light">
+                  <input
+                    type="number"
+                    placeholder="B"
+                    value={parcels.length === 1 ? form.breadth : p.breadth}
+                    onChange={e => {
+                      if (parcels.length === 1) updateForm('breadth', e.target.value)
+                      updateParcel(pIdx, 'breadth', e.target.value)
+                    }}
+                    className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
+                  />
+                </div>
+                <div className="px-2 py-1 border-r border-border-light">
+                  <input
+                    type="number"
+                    placeholder="H"
+                    value={parcels.length === 1 ? form.height : p.height}
+                    onChange={e => {
+                      if (parcels.length === 1) updateForm('height', e.target.value)
+                      updateParcel(pIdx, 'height', e.target.value)
+                    }}
+                    className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
+                  />
+                </div>
+                <div className="px-2 py-1 border-r border-border-light">
+                  <input
+                    type="text"
+                    readOnly
+                    value={parcels.length === 1 ? (form.volumetric_weight || '0.00') : (p.volumetric_weight || '0.00')}
+                    className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy"
+                  />
+                </div>
+                <div className="px-2 py-1">
+                  <input
+                    type="text"
+                    readOnly
+                    value={parcels.length === 1 ? (form.chargeable_weight || '0.00') : (p.chargeable_weight || '0.00')}
+                    className="w-full bg-transparent focus:outline-none text-xs text-center font-extrabold text-primary"
+                  />
+                </div>
               </div>
-              <div className="px-2 py-1 border-r border-border-light">
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={form.weight}
-                  onChange={e => updateForm('weight', e.target.value)}
-                  className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy"
-                />
-              </div>
-              <div className="px-2 py-1 border-r border-border-light">
-                <input
-                  type="number"
-                  placeholder="L"
-                  value={form.length}
-                  onChange={e => updateForm('length', e.target.value)}
-                  className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
-                />
-              </div>
-              <div className="px-2 py-1 border-r border-border-light">
-                <input
-                  type="number"
-                  placeholder="B"
-                  value={form.breadth}
-                  onChange={e => updateForm('breadth', e.target.value)}
-                  className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
-                />
-              </div>
-              <div className="px-2 py-1 border-r border-border-light">
-                <input
-                  type="number"
-                  placeholder="H"
-                  value={form.height}
-                  onChange={e => updateForm('height', e.target.value)}
-                  className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
-                />
-              </div>
-              <div className="px-2 py-1 border-r border-border-light">
-                <input
-                  type="text"
-                  readOnly
-                  value={form.volumetric_weight || '0.00'}
-                  className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy"
-                />
-              </div>
-              <div className="px-2 py-1">
-                <input
-                  type="text"
-                  readOnly
-                  value={form.chargeable_weight || '0.00'}
-                  className="w-full bg-transparent focus:outline-none text-xs text-center font-extrabold text-primary"
-                />
-              </div>
-            </div>
+            ))}
           </div>
 
           <p className="text-[11px] text-text-tertiary mt-2 italic">
@@ -1377,8 +1457,17 @@ export default function NewBookingPage() {
                   <div key={idx} className="grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] border-t border-border-light text-[13px] items-center hover:bg-surface-hover transition-colors py-1">
                     <div className="px-1.5 py-1 text-center text-xs font-bold text-text-tertiary">{item.sr_no}</div>
                     <div className="px-1">
-                      <input type="text" value={item.box_no} onChange={e => updateInvoiceItem(idx, 'box_no', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-text-secondary" />
+                      <select
+                        value={item.box_no}
+                        onChange={e => updateInvoiceItem(idx, 'box_no', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy cursor-pointer"
+                      >
+                        {Array.from({ length: Math.max(1, parseInt(form.no_of_pieces) || 1) }, (_, i) => i + 1).map(boxNum => (
+                          <option key={boxNum} value={String(boxNum)}>
+                            Box {boxNum}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div className="px-1">
                       <input type="text" placeholder="Item description" value={item.description} onChange={e => updateInvoiceItem(idx, 'description', e.target.value)}
@@ -1540,12 +1629,12 @@ function CompactField({ label, required, children, className = '', highlight = f
         highlight
           ? 'border-danger ring-2 ring-danger/10'
           : 'border-border focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10'
-      } rounded-xl bg-surface px-3 py-2 transition-all ${className}`}
+      } rounded-xl bg-surface px-3.5 py-2.5 transition-all ${className}`}
     >
-      <label className="absolute -top-2.5 left-2.5 px-1 bg-surface text-[10px] font-bold text-text-secondary uppercase tracking-wider whitespace-nowrap z-10">
+      <label className="absolute -top-2.5 left-3 px-1 bg-surface text-[10px] font-bold text-text-secondary uppercase tracking-wider whitespace-nowrap z-10">
         {label} {required && <span className="text-danger">*</span>}
       </label>
-      <div className="pt-0.5">{children}</div>
+      <div className="pt-1">{children}</div>
     </div>
   )
 }
