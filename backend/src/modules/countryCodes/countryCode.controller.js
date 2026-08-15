@@ -27,6 +27,19 @@ export const getCountryCodes = async (req, res) => {
   }
 }
 
+function extractVal(obj, possibleKeys) {
+  if (!obj || typeof obj !== 'object') return ''
+  for (const k of Object.keys(obj)) {
+    const cleanKey = k.trim().toLowerCase()
+    for (const target of possibleKeys) {
+      if (cleanKey === target.toLowerCase()) {
+        return obj[k]
+      }
+    }
+  }
+  return ''
+}
+
 /**
  * Import country code mappings from array or CSV rows
  * Expects array of objects: [{ country_name / branch_name: 'USA', country_code: 'US' }, ...]
@@ -38,15 +51,15 @@ export const importCountryCodes = async (req, res) => {
     if (!Array.isArray(rows) || rows.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'No country rows provided'
+        message: 'No country rows provided in request payload'
       })
     }
 
     let insertedCount = 0
     for (const item of rows) {
-      // Support flexible CSV field names: "Branch Name", "Country Name", "Branch", "Country", etc.
-      const nameRaw = item.country_name || item['Branch Name'] || item['Country Name'] || item.branch_name || item.Country || item.Branch
-      const codeRaw = item.country_code || item['Country Code'] || item.code || item.Code
+      // Support flexible CSV field names: "Branch Name", "Country Name", "Branch", "Country", "Country Code", "Code", etc.
+      const nameRaw = item.country_name || extractVal(item, ['country_name', 'branch_name', 'branch name', 'country name', 'branch', 'country', 'name'])
+      const codeRaw = item.country_code || extractVal(item, ['country_code', 'country code', 'code', 'iso', 'iso code', 'countrycode'])
 
       if (!nameRaw || !codeRaw) continue
 

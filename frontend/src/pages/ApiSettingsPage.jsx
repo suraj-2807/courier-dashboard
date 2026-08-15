@@ -175,27 +175,56 @@ export default function ApiSettingsPage() {
     if (!file) return
     const reader = new FileReader()
     reader.onload = async (evt) => {
-      const text = evt.target.result
-      const lines = text.split(/\r?\n/)
-      if (lines.length < 2) {
+      let text = evt.target.result || ''
+      // Strip UTF-8 BOM if present
+      if (text.charCodeAt(0) === 0xFEFF) {
+        text = text.slice(1)
+      }
+
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0)
+      if (lines.length === 0) {
         toast.error('CSV file is empty')
         return
       }
 
-      const headers = lines[0].split(',').map(h => h.trim().replace(/^["']|["']$/g, ''))
-      const branchIdx = headers.findIndex(h => /branch|country\s*name/i.test(h))
-      const codeIdx = headers.findIndex(h => /code/i.test(h))
+      // Auto-detect delimiter: check comma, tab, semicolon, pipe
+      const firstLine = lines[0]
+      const counts = {
+        ',': (firstLine.match(/,/g) || []).length,
+        '\t': (firstLine.match(/\t/g) || []).length,
+        ';': (firstLine.match(/;/g) || []).length,
+        '|': (firstLine.match(/\|/g) || []).length
+      }
+      let delimiter = ','
+      const bestDelim = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b)
+      if (counts[bestDelim] > 0) {
+        delimiter = bestDelim
+      }
 
+      const parseRow = (line) => line.split(delimiter).map(cell => cell.trim().replace(/^["']|["']$/g, ''))
+
+      const firstRow = parseRow(lines[0])
+      
+      let branchIdx = firstRow.findIndex(h => /branch|country\s*name|name/i.test(h))
+      let codeIdx = firstRow.findIndex(h => /code|iso/i.test(h))
+
+      let startRowIdx = 1
+
+      // If headers not explicitly matched by regex, try positional default (0 = Branch Name, 1 = Country Code)
       if (branchIdx === -1 || codeIdx === -1) {
-        toast.error('CSV headers must include "Branch Name" and "Country Code"')
-        return
+        if (firstRow.length >= 2) {
+          branchIdx = 0
+          codeIdx = 1
+          startRowIdx = 0
+        } else {
+          toast.error('Could not find Country Name and Country Code columns in file')
+          return
+        }
       }
 
       const rows = []
-      for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim()
-        if (!line) continue
-        const parts = line.split(',').map(p => p.trim().replace(/^["']|["']$/g, ''))
+      for (let i = startRowIdx; i < lines.length; i++) {
+        const parts = parseRow(lines[i])
         const branch = parts[branchIdx]
         const code = parts[codeIdx]
         if (branch && code) {
@@ -204,16 +233,17 @@ export default function ApiSettingsPage() {
       }
 
       if (rows.length === 0) {
-        toast.error('No valid rows found in CSV')
+        toast.error('No valid country rows found in file')
         return
       }
 
       try {
         const res = await countryCodesApi.import(rows)
-        toast.success(res.data.message || `Imported ${rows.length} mappings!`)
+        toast.success(res.data?.message || `Successfully imported ${rows.length} country code mappings!`)
         refetchCountryCodes()
       } catch (err) {
-        toast.error('Failed to import country codes')
+        const msg = err?.response?.data?.message || err?.message || 'Failed to import country codes'
+        toast.error(msg)
       }
     }
     reader.readAsText(file)
