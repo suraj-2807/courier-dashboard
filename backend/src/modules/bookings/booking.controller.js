@@ -130,7 +130,25 @@ function extractBookingFields(body) {
  * Upsert sender if inline fields provided
  */
 async function upsertSender(fields) {
-  if (fields.sender_id) return fields.sender_id
+  if (fields.sender_id) {
+    if (fields.sender_name) {
+      await execute(
+        `UPDATE senders SET name = ?, email = ?, phone = ?, address = ?, city = ?, pincode = ?, state = ?, country = ? WHERE id = ?`,
+        [
+          fields.sender_name,
+          fields.sender_email || '',
+          fields.sender_phone || '',
+          fields.sender_address || '',
+          fields.sender_city || '',
+          fields.sender_pincode || '',
+          fields.sender_state || '',
+          fields.sender_country || 'INDIA',
+          fields.sender_id
+        ]
+      )
+    }
+    return fields.sender_id
+  }
   if (!fields.sender_name) return null
   
   const result = await execute(
@@ -154,7 +172,25 @@ async function upsertSender(fields) {
  * Upsert receiver if inline fields provided
  */
 async function upsertReceiver(fields) {
-  if (fields.receiver_id) return fields.receiver_id
+  if (fields.receiver_id) {
+    if (fields.receiver_name) {
+      await execute(
+        `UPDATE receivers SET name = ?, email = ?, phone = ?, address = ?, city = ?, pincode = ?, state = ?, country = ? WHERE id = ?`,
+        [
+          fields.receiver_name,
+          fields.receiver_email || '',
+          fields.receiver_phone || '',
+          fields.receiver_address || '',
+          fields.receiver_city || '',
+          fields.receiver_pincode || '',
+          fields.receiver_state || '',
+          fields.receiver_country || 'INDIA',
+          fields.receiver_id
+        ]
+      )
+    }
+    return fields.receiver_id
+  }
   if (!fields.receiver_name) return null
   
   const result = await execute(
@@ -1001,21 +1037,12 @@ export const getBookingById = async (req, res) => {
 
     const rows = await query(
       `SELECT s.*,
-        JSON_OBJECT(
-          'id', snd.id, 'name', snd.name, 'phone', snd.phone, 'email', snd.email,
-          'address', snd.address, 'city', snd.city, 'state', snd.state, 'pincode', snd.pincode
-        ) as senders,
-        JSON_OBJECT(
-          'id', rcv.id, 'name', rcv.name, 'phone', rcv.phone, 'email', rcv.email,
-          'address', rcv.address, 'city', rcv.city, 'state', rcv.state, 'pincode', rcv.pincode
-        ) as receivers,
-        JSON_OBJECT(
-          'id', cp.id, 'name', cp.name, 'code', cp.code, 'tracking_url', cp.tracking_url
-        ) as courier_providers,
-        JSON_OBJECT(
-          'id', vac.id, 'name', vac.name, 'vendor_code', vac.vendor_code,
-          'environment', vac.environment
-        ) as vendor_api_configs
+        snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.email as s_email,
+        snd.address as s_address, snd.city as s_city, snd.state as s_state, snd.pincode as s_pincode, snd.country as s_country,
+        rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.email as r_email,
+        rcv.address as r_address, rcv.city as r_city, rcv.state as r_state, rcv.pincode as r_pincode, rcv.country as r_country,
+        cp.id as cp_id, cp.name as cp_name, cp.code as cp_code, cp.tracking_url as cp_tracking_url,
+        vac.id as vac_id, vac.name as vac_name, vac.vendor_code as vac_vendor_code, vac.environment as vac_environment
        FROM shipments s
        LEFT JOIN senders snd ON s.sender_id = snd.id
        LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
@@ -1032,7 +1059,45 @@ export const getBookingById = async (req, res) => {
       })
     }
 
-    const { senders, receivers, courier_providers, vendor_api_configs, ...shipment } = rows[0]
+    const b = rows[0]
+
+    const senders = (b.s_id || b.s_name) ? {
+      id: b.s_id,
+      name: b.s_name || '',
+      phone: b.s_phone || '',
+      email: b.s_email || '',
+      address: b.s_address || '',
+      city: b.s_city || '',
+      state: b.s_state || '',
+      pincode: b.s_pincode || '',
+      country: b.s_country || 'INDIA'
+    } : null
+
+    const receivers = (b.r_id || b.r_name) ? {
+      id: b.r_id,
+      name: b.r_name || '',
+      phone: b.r_phone || '',
+      email: b.r_email || '',
+      address: b.r_address || '',
+      city: b.r_city || '',
+      state: b.r_state || '',
+      pincode: b.r_pincode || '',
+      country: b.r_country || ''
+    } : null
+
+    const courier_providers = b.cp_id ? {
+      id: b.cp_id,
+      name: b.cp_name,
+      code: b.cp_code,
+      tracking_url: b.cp_tracking_url
+    } : null
+
+    const vendor_api_configs = b.vac_id ? {
+      id: b.vac_id,
+      name: b.vac_name,
+      vendor_code: b.vac_vendor_code,
+      environment: b.vac_environment
+    } : null
 
     const trackingEvents = await query(
       'SELECT * FROM tracking_events WHERE shipment_id = ? ORDER BY event_time DESC',
@@ -1042,11 +1107,11 @@ export const getBookingById = async (req, res) => {
     return res.json({
       success: true,
       booking: {
-        ...shipment,
-        senders: senders?.id ? senders : null,
-        receivers: receivers?.id ? receivers : null,
-        courier_providers: courier_providers?.id ? courier_providers : null,
-        vendor_api_configs: vendor_api_configs?.id ? vendor_api_configs : null,
+        ...b,
+        senders,
+        receivers,
+        courier_providers,
+        vendor_api_configs,
         tracking_events: trackingEvents
       }
     })
