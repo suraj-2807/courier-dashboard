@@ -8,18 +8,20 @@ export const getCountryCodes = async (req, res) => {
     const rows = await query('SELECT * FROM country_codes ORDER BY country_name ASC')
     const lookupMap = {}
     
-    (rows || []).forEach(row => {
-      if (row.country_name && row.country_code) {
-        lookupMap[row.country_name.trim().toUpperCase()] = row.country_code.trim().toUpperCase()
+    const rowsList = Array.isArray(rows) ? rows : []
+    rowsList.forEach(row => {
+      if (row && row.country_name && row.country_code) {
+        lookupMap[String(row.country_name).trim().toUpperCase()] = String(row.country_code).trim().toUpperCase()
       }
     })
 
     return res.json({
       success: true,
-      countryCodes: rows || [],
+      countryCodes: rowsList,
       lookupMap
     })
   } catch (error) {
+    console.error('Error in getCountryCodes:', error)
     return res.status(500).json({
       success: false,
       message: error.message
@@ -79,17 +81,21 @@ export const importCountryCodes = async (req, res) => {
 
     const updatedList = await query('SELECT * FROM country_codes ORDER BY country_name ASC')
     const lookupMap = {}
-    (updatedList || []).forEach(row => {
-      lookupMap[row.country_name.trim().toUpperCase()] = row.country_code.trim().toUpperCase()
+    const listArr = Array.isArray(updatedList) ? updatedList : []
+    listArr.forEach(row => {
+      if (row && row.country_name && row.country_code) {
+        lookupMap[String(row.country_name).trim().toUpperCase()] = String(row.country_code).trim().toUpperCase()
+      }
     })
 
     return res.json({
       success: true,
       message: `Successfully imported/updated ${insertedCount} country code mappings.`,
-      countryCodes: updatedList,
+      countryCodes: listArr,
       lookupMap
     })
   } catch (error) {
+    console.error('Error in importCountryCodes:', error)
     return res.status(500).json({
       success: false,
       message: error.message
