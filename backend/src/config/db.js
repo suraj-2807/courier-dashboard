@@ -81,59 +81,65 @@ process.on('SIGINT', async () => {
 export async function initializeDb() {
   console.log('--- RUNNING DB INITIALIZATION & MIGRATIONS ---')
   try {
-    const shipmentsColumns = await query("SHOW COLUMNS FROM shipments")
-    const columnNames = shipmentsColumns.map(col => col.Field || col.field)
-    
-    if (!columnNames.includes('vendor_code')) {
-      console.log('Adding vendor_code column to shipments table...')
-      await execute("ALTER TABLE shipments ADD COLUMN vendor_code VARCHAR(100) DEFAULT '' AFTER vendor_config_id")
-      console.log('vendor_code column successfully added.')
-    } else {
-      console.log('vendor_code column already exists.')
+    // ── Shipments table column auto-migration ──
+    const shipmentsCols = await query("SHOW COLUMNS FROM shipments")
+    const shipColNames = shipmentsCols.map(col => (col.Field || col.field).toLowerCase())
+
+    const requiredShipmentCols = [
+      { name: 'vendor_code', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'product_code', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'no_of_pieces', type: "INT DEFAULT 1" },
+      { name: 'content_description', type: "VARCHAR(500) DEFAULT ''" },
+      { name: 'declared_value', type: "DECIMAL(12,2) DEFAULT 0" },
+      { name: 'cod_amount', type: "DECIMAL(12,2) DEFAULT 0" },
+      { name: 'sender_company', type: "VARCHAR(255) DEFAULT ''" },
+      { name: 'sender_address_2', type: "VARCHAR(500) DEFAULT ''" },
+      { name: 'sender_gstin_type', type: "VARCHAR(50) DEFAULT ''" },
+      { name: 'sender_gstin_no', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'receiver_address_2', type: "VARCHAR(500) DEFAULT ''" },
+      { name: 'receiver_gstin_type', type: "VARCHAR(50) DEFAULT ''" },
+      { name: 'receiver_gstin_no', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'invoice_no', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'invoice_date', type: "VARCHAR(50) DEFAULT ''" },
+      { name: 'invoice_currency', type: "VARCHAR(10) DEFAULT 'INR'" },
+      { name: 'hs_code', type: "VARCHAR(50) DEFAULT ''" },
+      { name: 'export_reason', type: "VARCHAR(255) DEFAULT ''" },
+      { name: 'terms_of_trade', type: "VARCHAR(10) DEFAULT 'CIF'" },
+      { name: 'invoice_type', type: "VARCHAR(50) DEFAULT 'INVOICE'" },
+      { name: 'invoice_note', type: "TEXT DEFAULT NULL" },
+      { name: 'invoice_items', type: "JSON DEFAULT NULL" },
+      { name: 'invoice_pdf_path', type: "VARCHAR(500) DEFAULT ''" },
+      { name: 'is_locked', type: "BOOLEAN DEFAULT FALSE" }
+    ]
+
+    for (const col of requiredShipmentCols) {
+      if (!shipColNames.includes(col.name.toLowerCase())) {
+        console.log(`Adding ${col.name} column to shipments table...`)
+        try {
+          await execute(`ALTER TABLE shipments ADD COLUMN ${col.name} ${col.type}`)
+          console.log(`shipments.${col.name} column added.`)
+        } catch (colErr) {
+          console.error(`Failed to add shipments.${col.name}:`, colErr.message)
+        }
+      }
     }
-    
-    if (!columnNames.includes('product_code')) {
-      console.log('Adding product_code column to shipments table...')
-      await execute("ALTER TABLE shipments ADD COLUMN product_code VARCHAR(100) DEFAULT '' AFTER service_code")
-      console.log('product_code column successfully added.')
-    } else {
-      console.log('product_code column already exists.')
-    }
-    // ── Vendor API Configs: add available_vendor_codes & available_product_codes ──
+
+    // ── Vendor API Configs table ──
     try {
       const vendorCols = await query("SHOW COLUMNS FROM vendor_api_configs")
-      const vendorColNames = vendorCols.map(col => col.Field || col.field)
+      const vendorColNames = vendorCols.map(col => (col.Field || col.field).toLowerCase())
 
       if (!vendorColNames.includes('available_vendor_codes')) {
-        console.log('Adding available_vendor_codes column to vendor_api_configs...')
         await execute("ALTER TABLE vendor_api_configs ADD COLUMN available_vendor_codes JSON DEFAULT NULL AFTER available_services")
-        console.log('available_vendor_codes column successfully added.')
-      } else {
-        console.log('available_vendor_codes column already exists.')
       }
-
       if (!vendorColNames.includes('available_product_codes')) {
-        console.log('Adding available_product_codes column to vendor_api_configs...')
         await execute("ALTER TABLE vendor_api_configs ADD COLUMN available_product_codes JSON DEFAULT NULL AFTER available_vendor_codes")
-        console.log('available_product_codes column successfully added.')
-      } else {
-        console.log('available_product_codes column already exists.')
       }
-
       if (!vendorColNames.includes('required_fields')) {
-        console.log('Adding required_fields column to vendor_api_configs...')
         await execute("ALTER TABLE vendor_api_configs ADD COLUMN required_fields JSON DEFAULT NULL AFTER available_product_codes")
-        console.log('required_fields column successfully added.')
-      } else {
-        console.log('required_fields column already exists.')
       }
-
       if (!vendorColNames.includes('product_code_restrictions')) {
-        console.log('Adding product_code_restrictions column to vendor_api_configs...')
         await execute("ALTER TABLE vendor_api_configs ADD COLUMN product_code_restrictions JSON DEFAULT NULL AFTER required_fields")
-        console.log('product_code_restrictions column successfully added.')
-      } else {
-        console.log('product_code_restrictions column already exists.')
       }
     } catch (vendorMigErr) {
       console.error('Vendor API config migration failed:', vendorMigErr.message)
@@ -198,23 +204,46 @@ export async function initializeDb() {
       }
     }
 
-    // ── Add tracking_number column to booking_requests if missing ──
+    // ── Booking Requests column auto-migration ──
     try {
       const brCols = await query("SHOW COLUMNS FROM booking_requests")
-      const brColNames = brCols.map(col => col.Field || col.field)
+      const brColNames = brCols.map(col => (col.Field || col.field).toLowerCase())
 
-      if (!brColNames.includes('tracking_number')) {
-        console.log('Adding tracking_number column to booking_requests...')
-        await execute("ALTER TABLE booking_requests ADD COLUMN tracking_number VARCHAR(50) DEFAULT NULL AFTER shipment_id")
-        console.log('tracking_number column successfully added.')
-      } else {
-        console.log('booking_requests.tracking_number column already exists.')
+      const requiredBrCols = [
+        { name: 'no_of_pieces', type: "INT DEFAULT 1" },
+        { name: 'content_description', type: "TEXT DEFAULT NULL" },
+        { name: 'declared_value', type: "DECIMAL(10,2) DEFAULT 0" },
+        { name: 'is_fragile', type: "TINYINT DEFAULT 0" },
+        { name: 'tracking_number', type: "VARCHAR(50) DEFAULT NULL" },
+        { name: 'order_reference', type: "VARCHAR(255) DEFAULT ''" },
+        { name: 'payment_mode', type: "VARCHAR(50) DEFAULT 'prepaid'" },
+        { name: 'shipping_charge', type: "DECIMAL(10,2) DEFAULT 0" },
+        { name: 'invoice_type', type: "VARCHAR(50) DEFAULT 'INVOICE'" },
+        { name: 'invoice_currency', type: "VARCHAR(10) DEFAULT 'INR'" },
+        { name: 'hs_code', type: "VARCHAR(50) DEFAULT ''" },
+        { name: 'export_reason', type: "VARCHAR(255) DEFAULT ''" },
+        { name: 'terms_of_trade', type: "VARCHAR(10) DEFAULT 'CIF'" },
+        { name: 'invoice_note', type: "TEXT DEFAULT NULL" },
+        { name: 'invoice_items', type: "JSON DEFAULT NULL" },
+        { name: 'parcels', type: "JSON DEFAULT NULL" }
+      ]
+
+      for (const col of requiredBrCols) {
+        if (!brColNames.includes(col.name.toLowerCase())) {
+          console.log(`Adding ${col.name} column to booking_requests table...`)
+          try {
+            await execute(`ALTER TABLE booking_requests ADD COLUMN ${col.name} ${col.type}`)
+            console.log(`booking_requests.${col.name} column added.`)
+          } catch (colErr) {
+            console.error(`Failed to add booking_requests.${col.name}:`, colErr.message)
+          }
+        }
       }
     } catch (brColErr) {
       console.error('booking_requests column migration failed:', brColErr.message)
     }
 
-    // ── Request Updates table (timeline of events for each booking request) ──
+    // ── Request Updates table ──
     try {
       await execute(`CREATE TABLE IF NOT EXISTS request_updates (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -226,16 +255,11 @@ export async function initializeDb() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_request_id (request_id)
       )`)
-      console.log('request_updates table ready.')
     } catch (ruErr) {
-      if (ruErr.code === 'ER_TABLE_EXISTS_ERROR') {
-        console.log('request_updates table already exists.')
-      } else {
+      if (ruErr.code !== 'ER_TABLE_EXISTS_ERROR') {
         console.error('request_updates migration failed:', ruErr.message)
       }
     }
-    // ── AWBENTRY & parcel_history tables (WRITES DISABLED BY USER DIRECTIVE) ──
-    console.log('AWBENTRY & parcel_history table writes/migrations are completely disabled.')
 
     console.log('DB initialization successfully completed!')
   } catch (err) {
