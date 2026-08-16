@@ -6,3 +6,4 @@ frontend/dist
 build
 .next
 backend/scratch
+backend/uploads

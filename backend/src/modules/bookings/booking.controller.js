@@ -1228,6 +1228,7 @@ export const getWaybillPdf = async (req, res) => {
       receiver: ctx.receiver,
       shipment: ctx.b,
       parcels: ctx.parcels,
+      invoiceItems: ctx.invoiceItems,
       invoiceMeta: {
         invoice_no: ctx.b.invoice_no || ctx.b.tracking_number
       }

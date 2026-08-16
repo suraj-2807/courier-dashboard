@@ -1054,56 +1054,16 @@ export default function NewBookingPage() {
 
                 {form.vendor_config_id && (
                   <>
-                    {/* Vendor Code */}
+                    {/* Vendor Code — Only shown for Pacific, disabled with default value 'PC' */}
                     {isPacificVendor && (
                       <CompactField label="Vendor Code">
-                        {customVendorMode ? (
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="text"
-                              value={form.vendor_code}
-                              onChange={e => updateForm('vendor_code', e.target.value)}
-                              placeholder="e.g. PC, DHL"
-                              className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setCustomVendorMode(false)}
-                              className="text-[10px] text-gray-500 underline"
-                            >
-                              Reset
-                            </button>
-                          </div>
-                        ) : vendorVendorCodes.length > 0 ? (
-                          <select
-                            value={form.vendor_code}
-                            onChange={e => {
-                              if (e.target.value === '__custom__') {
-                                setCustomVendorMode(true)
-                                updateForm('vendor_code', '')
-                              } else {
-                                updateForm('vendor_code', e.target.value)
-                              }
-                            }}
-                            className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 cursor-pointer font-bold"
-                          >
-                            <option value="">— Config Default —</option>
-                            {vendorVendorCodes.map((vc, i) => (
-                              <option key={i} value={vc.code}>
-                                {vc.code} {vc.label && vc.label !== vc.code ? `— ${vc.label}` : ''}
-                              </option>
-                            ))}
-                            <option value="__custom__">Custom Vendor Code...</option>
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            value={form.vendor_code}
-                            onChange={e => updateForm('vendor_code', e.target.value)}
-                            placeholder="e.g. PC, DHL"
-                            className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 uppercase"
-                          />
-                        )}
+                        <input
+                          type="text"
+                          value="PC"
+                          disabled
+                          readOnly
+                          className="w-full bg-gray-100/80 text-gray-500 text-[13px] font-bold cursor-not-allowed border border-gray-200 rounded px-2.5 py-1 select-none"
+                        />
                       </CompactField>
                     )}
 
@@ -1254,7 +1214,10 @@ export default function NewBookingPage() {
                       type="number"
                       placeholder="0.00"
                       value={form.shipping_charge}
-                      onChange={e => updateForm('shipping_charge', e.target.value)}
+                      onChange={e => {
+                        const val = e.target.value
+                        setForm(prev => ({ ...prev, shipping_charge: val, total_amount: val }))
+                      }}
                       className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-semibold text-right"
                     />
                   </CompactField>

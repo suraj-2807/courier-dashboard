@@ -13,29 +13,11 @@ if (!fs.existsSync(BILLS_DIR)) {
   fs.mkdirSync(BILLS_DIR, { recursive: true })
 }
 
-/**
- * Generate Code128 Barcode PNG buffer
- */
-async function generateBarcode(text, height = 15, textsize = 10) {
-  try {
-    const png = await bwipjs.toBuffer({
-      bcid: 'code128',
-      text: String(text),
-      scale: 3,
-      height: height,
-      includetext: true,
-      textxalign: 'center',
-      textsize: textsize
-    })
-    return png
-  } catch (err) {
-    console.error('Waybill barcode generation failed:', err.message)
-    return null
-  }
-}
+// Logo path
+const LOGO_PATH = path.join(__dirname, '..', 'assets', 'PRINCE LOGO.png')
 
 /**
- * Generate Shipping Bill / Waybill PDF matching Prince Courier branding
+ * Generate Shipping Bill / Waybill PDF matching exact user layout & Prince Courier branding
  */
 export async function generateWaybillPdf(params) {
   const {
@@ -44,6 +26,7 @@ export async function generateWaybillPdf(params) {
     receiver = {},
     shipment = {},
     parcels = [],
+    invoiceItems = [],
     invoiceMeta = {}
   } = params
 
@@ -60,231 +43,270 @@ export async function generateWaybillPdf(params) {
       doc.pipe(writeStream)
 
       const startX = 20
-      let curY = 20
+      let curY = 15
       const contentWidth = 555
 
-      // Generate Barcode for top right AWB
-      const barcodeBuffer = await generateBarcode(awbNumber, 18, 9)
+      // ── Top Header Text (Outside Box) ──
+      doc.fillColor('#0D2132').fontSize(7.5).font('Helvetica')
+        .text('Subject to Surat Jurisdiction', startX, curY)
+      doc.fillColor('#0D2132').fontSize(8.5).font('Helvetica-Bold')
+        .text('Customer Copy', startX, curY, { width: contentWidth, align: 'right' })
 
-      // ── Outer Border Box ──
-      doc.rect(startX, curY, contentWidth, 800).strokeColor('#0D2132').lineWidth(1.5).stroke()
+      curY += 14
 
-      // ── Header Block (Height: 70) ──
-      const headerHeight = 70
-      doc.rect(startX, curY, contentWidth, headerHeight).strokeColor('#0D2132').lineWidth(1).stroke()
+      // Color System
+      const NAVY = '#0D2132'
+      const RED = '#BB0013'
+      const TEXT_DARK = '#111827'
+      const BORDER_COLOR = '#0D2132'
 
-      // Left Logo & Brand Info (Width: 360)
-      doc.fillColor('#BB0013').fontSize(16).font('Helvetica-Bold').text('PRINCE COURIER SERVICE', startX + 10, curY + 10)
-      doc.fillColor('#0D2132').fontSize(8).font('Helvetica').text('International & Domestic Express Logistics', startX + 10, curY + 28)
-      doc.fontSize(7.5).fillColor('#5F6B7A').text('Phone: +91 94261 07199  |  Email: info@princecourier.com  |  www.princecourier.com', startX + 10, curY + 42)
-
-      // Right AWB Barcode Block (Width: 195)
-      const rightX = startX + 360
-      doc.moveTo(rightX, curY).lineTo(rightX, curY + headerHeight).strokeColor('#0D2132').stroke()
-      
-      doc.fillColor('#0D2132').fontSize(8).font('Helvetica-Bold').text('AWB NUMBER', rightX + 10, curY + 6, { width: 175, align: 'center' })
-      if (barcodeBuffer) {
-        doc.image(barcodeBuffer, rightX + 15, curY + 18, { width: 165, height: 42 })
-      } else {
-        doc.fillColor('#BB0013').fontSize(16).font('Helvetica-Bold').text(String(awbNumber), rightX + 10, curY + 25, { width: 175, align: 'center' })
+      // Helper for drawing cell borders
+      const drawBox = (x, y, w, h, lineWidth = 0.75) => {
+        doc.rect(x, y, w, h).strokeColor(BORDER_COLOR).lineWidth(lineWidth).stroke()
       }
 
-      curY += headerHeight
+      // ── Outer Main Container ──
+      const outerStartY = curY
+      const totalHeaderHeight = 65
+      const row2Height = 145
+      const row3Height = 105
+      const row4Height = 90
+      const totalBoxHeight = totalHeaderHeight + row2Height + row3Height + row4Height
 
-      // Helper for drawing boxed table rows
-      const drawRow = (y, height, cols) => {
-        doc.rect(startX, y, contentWidth, height).strokeColor('#0D2132').lineWidth(0.75).stroke()
-        let currentX = startX
-        cols.forEach((col, idx) => {
-          if (idx > 0) {
-            doc.moveTo(currentX, y).lineTo(currentX, y + height).strokeColor('#0D2132').stroke()
-          }
-          if (col.bg) {
-            doc.rect(currentX + 0.5, y + 0.5, col.width - 1, height - 1).fillColor(col.bg).fill()
-          }
-          if (col.label) {
-            doc.fillColor(col.labelColor || '#5F6B7A').fontSize(col.labelSize || 6.5).font('Helvetica-Bold')
-              .text(col.label.toUpperCase(), currentX + 4, y + 4, { width: col.width - 8 })
-          }
-          if (col.value !== undefined) {
-            doc.fillColor(col.valueColor || '#0D2132').fontSize(col.valueSize || 8.5).font(col.bold ? 'Helvetica-Bold' : 'Helvetica')
-              .text(String(col.value), currentX + 4, y + (col.label ? 14 : 4), { width: col.width - 8, align: col.align || 'left' })
-          }
-          currentX += col.width
-        })
+      // Draw Outer Frame
+      drawBox(startX, outerStartY, contentWidth, totalBoxHeight, 1.25)
+
+      // ── SECTION 1: HEADER BLOCK (Height: 65) ──
+      const col1Width = 310
+      const col2Width = 135
+      const col3Width = 110
+
+      // Header vertical dividers
+      doc.moveTo(startX + col1Width, curY).lineTo(startX + col1Width, curY + totalHeaderHeight).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
+      doc.moveTo(startX + col1Width + col2Width, curY).lineTo(startX + col1Width + col2Width, curY + totalHeaderHeight).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
+      doc.moveTo(startX, curY + totalHeaderHeight).lineTo(startX + contentWidth, curY + totalHeaderHeight).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
+
+      // Header Col 1: Logo & Company Address
+      let logoX = startX + 5
+      let textLeft = startX + 6
+      if (fs.existsSync(LOGO_PATH)) {
+        try {
+          doc.image(LOGO_PATH, logoX, curY + 6, { fit: [50, 45] })
+          textLeft = startX + 58
+        } catch (e) {
+          console.error('Failed to load logo in PDF:', e.message)
+        }
       }
 
-      // ── Row 1: Summary Metrics (Height: 32) ──
-      const pcs = shipment.no_of_pieces || 1
-      const actWt = parseFloat(shipment.weight || 0).toFixed(2)
-      const volWt = parseFloat(shipment.volumetric_weight || 0).toFixed(2)
-      const chgWt = parseFloat(shipment.chargeable_weight || Math.max(actWt, volWt)).toFixed(2)
+      doc.fillColor(NAVY).fontSize(10.5).font('Helvetica-Bold')
+        .text('PRINCE INTERNATIONAL COURIER SER', textLeft, curY + 6, { width: col1Width - (textLeft - startX) - 4 })
 
-      drawRow(curY, 32, [
-        { width: 120, label: 'ACCOUNT NUMBER - NAME', value: `1032 - ${sender.name || 'CUSTOMER'}`, bold: true },
-        { width: 55, label: 'ORIGIN', value: sender.country ? sender.country.slice(0, 3).toUpperCase() : 'IN', bold: true, align: 'center' },
-        { width: 65, label: 'DESTINATION', value: receiver.country ? receiver.country.slice(0, 3).toUpperCase() : 'US', bold: true, align: 'center' },
-        { width: 95, label: 'CHARGEABLE WT.', value: `${chgWt} kg`, bold: true, valueColor: '#BB0013', bg: '#FEF2F2', align: 'center' },
-        { width: 75, label: 'ACT WT.', value: `${actWt} kg`, align: 'center' },
-        { width: 50, label: 'PCS', value: String(pcs), bold: true, align: 'center' },
-        { width: 95, label: 'VOLUMETRIC WT.', value: `${volWt} kg`, align: 'center' }
-      ])
-      curY += 32
+      doc.fillColor(TEXT_DARK).fontSize(6.5).font('Helvetica')
+        .text('SHOP NO. 4, AL MARHABA APT OPP. SAI BABA EYE HOSPITAL, MACHHLIPITH B/H LALAGATE, SURAT-395003.', textLeft, curY + 22, { width: col1Width - (textLeft - startX) - 4 })
+        .text('Ph: 9898787199,', textLeft, curY + 41)
+        .text('Website : http://www.princeexp.com', textLeft, curY + 50)
 
-      // ── Row 2: Sender & Receiver Names (Height: 28) ──
-      drawRow(curY, 28, [
-        { width: 277.5, label: "SENDER'S COMPANY & NAME", value: `${sender.company ? sender.company + ' — ' : ''}${sender.name || ''}`, bold: true },
-        { width: 277.5, label: "RECIPIENT'S COMPANY & NAME", value: `${receiver.company ? receiver.company + ' — ' : ''}${receiver.name || ''}`, bold: true }
-      ])
-      curY += 28
+      // Header Col 2: AWB, Destination, Pieces
+      const col2X = startX + col1Width + 6
+      doc.fillColor(TEXT_DARK).fontSize(8.5).font('Helvetica-Bold')
+        .text('AWB No.', col2X, curY + 8)
+        .text(':', col2X + 55, curY + 8)
+        .text(String(awbNumber), col2X + 65, curY + 8)
 
-      // ── Row 3: Addresses (Height: 36) ──
-      const senderAdd = `${sender.address || ''} ${sender.address_2 || ''}`.trim()
-      const receiverAdd = `${receiver.address || ''} ${receiver.address_2 || ''}`.trim()
-      drawRow(curY, 36, [
-        { width: 277.5, label: 'SENDER ADDRESS', value: senderAdd },
-        { width: 277.5, label: 'RECIPIENT ADDRESS', value: receiverAdd }
-      ])
-      curY += 36
+        .text('Destination', col2X, curY + 26)
+        .text(':', col2X + 55, curY + 26)
+        .text(String(receiver.country || shipment.destination_country || '').toUpperCase(), col2X + 65, curY + 26)
 
-      // ── Row 4: City / State / Country (Height: 26) ──
-      const senderLoc = `${sender.city || ''}, ${sender.state || ''}, ${sender.country || 'INDIA'}`.trim()
-      const receiverLoc = `${receiver.city || ''}, ${receiver.state || ''}, ${receiver.country || ''}`.trim()
-      drawRow(curY, 26, [
-        { width: 277.5, label: 'CITY / STATE / COUNTRY', value: senderLoc, bold: true },
-        { width: 277.5, label: 'CITY / STATE / COUNTRY', value: receiverLoc, bold: true }
-      ])
-      curY += 26
+        .text('Pieces', col2X, curY + 44)
+        .text(':', col2X + 55, curY + 44)
+        .text(String(shipment.no_of_pieces || parcels.length || 1), col2X + 65, curY + 44)
 
-      // ── Row 5: PIN & Phone (Height: 26) ──
-      drawRow(curY, 26, [
-        { width: 138.75, label: 'PIN CODE', value: sender.pincode || '—' },
-        { width: 138.75, label: 'TEL NO.', value: sender.phone || '—' },
-        { width: 138.75, label: 'PIN / ZIP CODE', value: receiver.pincode || '—' },
-        { width: 138.75, label: 'TEL NO.', value: receiver.phone || '—' }
-      ])
-      curY += 26
+      // Header Col 3: Date & Pay Status
+      const col3X = startX + col1Width + col2Width + 6
+      const bookingDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      const payStatus = shipment.payment_status || 'Fully UnPaid'
 
-      // ── Row 6: Booking Date, Goods Description, Charges (Height: 110) ──
-      const bookingDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-      const isDoc = shipment.package_type === 'document'
-      const shipValue = parseFloat(shipment.declared_value || 0).toFixed(2)
-      const freight = parseFloat(shipment.shipping_charge || 0)
-      const gst = freight * 0.18
-      const totalCharge = freight + gst
+      doc.fillColor(TEXT_DARK).fontSize(8.5).font('Helvetica-Bold')
+        .text('Date :', col3X, curY + 8)
+        .font('Helvetica').text(bookingDate, col3X + 32, curY + 8)
 
-      // Draw Subtable for Row 6
-      doc.rect(startX, curY, contentWidth, 110).strokeColor('#0D2132').lineWidth(0.75).stroke()
+        .font('Helvetica-Bold').text('Pay  :', col3X, curY + 26)
+        .font('Helvetica').text(payStatus, col3X + 32, curY + 26)
 
-      // Column 1: Date & Shipper Sign (Width: 100)
-      doc.moveTo(startX + 100, curY).lineTo(startX + 100, curY + 110).strokeColor('#0D2132').stroke()
-      doc.fillColor('#5F6B7A').fontSize(6.5).font('Helvetica-Bold').text('BOOKING DATE', startX + 4, curY + 4)
-      doc.fillColor('#0D2132').fontSize(8.5).font('Helvetica-Bold').text(bookingDate, startX + 4, curY + 14)
-      
-      doc.fillColor('#5F6B7A').fontSize(6).font('Helvetica').text('SHIPPER AGREEMENT\nShipper agrees to Prince Courier standard terms & conditions of carriage.', startX + 4, curY + 36, { width: 92 })
-      doc.fillColor('#5F6B7A').fontSize(6.5).font('Helvetica-Bold').text("SHIPPER'S SIGN:", startX + 4, curY + 80)
-      doc.moveTo(startX + 4, curY + 102).lineTo(startX + 92, curY + 102).strokeColor('#9CA3AF').stroke()
+      curY += totalHeaderHeight
 
-      // Column 2: Goods & Services (Width: 260)
-      const col2X = startX + 100
-      doc.moveTo(col2X + 260, curY).lineTo(col2X + 260, curY + 110).strokeColor('#0D2132').stroke()
+      // ── SECTION 2: SHIPPER / CONSIGNEE / CHARGES (Height: 145) ──
+      const sColWidth = 220
+      const cColWidth = 220
+      const chgColWidth = 115
 
-      doc.fillColor('#5F6B7A').fontSize(6.5).font('Helvetica-Bold').text('DESCRIPTION OF GOODS', col2X + 4, curY + 4)
-      doc.fillColor('#0D2132').fontSize(9).font('Helvetica-Bold').text(shipment.content_description || 'GENERAL GOODS / PARCEL', col2X + 4, curY + 14, { width: 250 })
+      // Vertical dividers for Row 2
+      doc.moveTo(startX + sColWidth, curY).lineTo(startX + sColWidth, curY + row2Height).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
+      doc.moveTo(startX + sColWidth + cColWidth, curY).lineTo(startX + sColWidth + cColWidth, curY + row2Height).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
+      doc.moveTo(startX, curY + row2Height).lineTo(startX + contentWidth, curY + row2Height).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
 
-      // Inner divider line
-      doc.moveTo(col2X, curY + 50).lineTo(col2X + 260, curY + 50).strokeColor('#0D2132').stroke()
-      
-      // Service & Forwarding
-      doc.rect(col2X, curY + 50, 130, 16).fillColor('#0D2132').fill()
-      doc.fillColor('#FFFFFF').fontSize(7).font('Helvetica-Bold').text('SERVICE', col2X + 4, curY + 54, { width: 120, align: 'center' })
-      doc.rect(col2X + 130, curY + 50, 130, 16).fillColor('#0D2132').fill()
-      doc.fillColor('#FFFFFF').fontSize(7).font('Helvetica-Bold').text('FORWARDING NO.', col2X + 134, curY + 54, { width: 120, align: 'center' })
+      // Shipper Block
+      const sX = startX + 6
+      doc.fillColor(NAVY).fontSize(8.5).font('Helvetica-Bold').text('Shipper :', sX, curY + 5)
 
-      doc.fillColor('#0D2132').fontSize(8.5).font('Helvetica-Bold').text(shipment.service_code || 'EXPRESS DUTYPAID', col2X + 4, curY + 72, { width: 120, align: 'center' })
-      doc.fillColor('#0D2132').fontSize(8.5).font('Helvetica-Bold').text(shipment.vendor_awb_number || '—', col2X + 134, curY + 72, { width: 120, align: 'center' })
+      let sY = curY + 18
+      const sName = (sender.name || sender.company || '').toUpperCase()
+      if (sName) {
+        doc.fillColor(TEXT_DARK).fontSize(8.5).font('Helvetica-Bold').text(sName, sX, sY, { width: sColWidth - 12 })
+        sY += 12
+      }
+      const sAddress = [sender.address, sender.address_2, sender.city, sender.state, sender.pincode ? `SURAT-${sender.pincode}` : ''].filter(Boolean).join('\n').toUpperCase()
+      if (sAddress) {
+        doc.fillColor(TEXT_DARK).fontSize(7.5).font('Helvetica').text(sAddress, sX, sY, { width: sColWidth - 12 })
+        sY += (sender.address ? 32 : 16)
+      }
+      const sPhone = sender.phone || '0123456789'
+      doc.fillColor(TEXT_DARK).fontSize(8).font('Helvetica-Bold').text(`Ph : ${sPhone}`, sX, curY + row2Height - 16)
 
-      // Column 3: Ship Value & Ref (Width: 95)
-      const col3X = col2X + 260
-      doc.moveTo(col3X + 95, curY).lineTo(col3X + 95, curY + 110).strokeColor('#0D2132').stroke()
+      // Consignee Block
+      const cX = startX + sColWidth + 6
+      doc.fillColor(NAVY).fontSize(8.5).font('Helvetica-Bold').text('Consignee :', cX, curY + 5)
 
-      doc.fillColor('#5F6B7A').fontSize(6.5).font('Helvetica-Bold').text('SHIP VALUE', col3X + 4, curY + 4)
-      doc.fillColor('#0D2132').fontSize(8.5).font('Helvetica').text(`₹${shipValue}`, col3X + 4, curY + 14)
+      let rY = curY + 18
+      const rName = (receiver.name || receiver.company || '').toUpperCase()
+      if (rName) {
+        doc.fillColor(TEXT_DARK).fontSize(8.5).font('Helvetica-Bold').text(rName, cX, rY, { width: cColWidth - 12 })
+        rY += 12
+      }
+      const rAddressParts = [receiver.address, receiver.address_2, receiver.city, receiver.state, receiver.pincode, receiver.country].filter(Boolean).join('\n').toUpperCase()
+      if (rAddressParts) {
+        doc.fillColor(TEXT_DARK).fontSize(7.5).font('Helvetica').text(rAddressParts, cX, rY, { width: cColWidth - 12 })
+      }
+      const rPhone = receiver.phone || ''
+      if (rPhone) {
+        doc.fillColor(TEXT_DARK).fontSize(8).font('Helvetica-Bold').text(`Ph : ${rPhone}`, cX, curY + row2Height - 16)
+      }
 
-      doc.fillColor('#5F6B7A').fontSize(6.5).font('Helvetica-Bold').text('MODE', col3X + 4, curY + 30)
-      doc.fillColor('#BB0013').fontSize(8.5).font('Helvetica-Bold').text(isDoc ? 'DOCUMENT' : 'NON-DOX', col3X + 4, curY + 40)
+      // Charges Breakdown Sub-Table (Right Col, 5 Sub-Rows)
+      const chgX = startX + sColWidth + cColWidth
+      const chgRowH = row2Height / 5
+      const actWt = parseFloat(shipment.weight || 0)
+      const volWt = parseFloat(shipment.volumetric_weight || 0)
+      const chgWt = parseFloat(shipment.chargeable_weight || Math.max(actWt, volWt)).toFixed(3)
+      const shippingCharge = parseFloat(shipment.shipping_charge || shipment.amount || 0).toFixed(2)
 
-      doc.fillColor('#5F6B7A').fontSize(6.5).font('Helvetica-Bold').text('INVOICE NO.', col3X + 4, curY + 58)
-      doc.fillColor('#0D2132').fontSize(8).font('Helvetica-Bold').text(invoiceMeta.invoice_no || awbNumber, col3X + 4, curY + 68)
-
-      doc.fillColor('#5F6B7A').fontSize(6.5).font('Helvetica-Bold').text('EWAY BILL NO.', col3X + 4, curY + 82)
-      doc.fillColor('#0D2132').fontSize(8).font('Helvetica').text('—', col3X + 4, curY + 92)
-
-      // Column 4: Financial Breakdown (Width: 100)
-      const col4X = col3X + 95
-      const chargeLines = [
-        { label: 'Freight:', val: freight.toFixed(2) },
-        { label: 'Other Charges:', val: '0.00' },
-        { label: 'FSC:', val: '0.00' },
-        { label: 'CGST @ 9%:', val: (gst / 2).toFixed(2) },
-        { label: 'SGST @ 9%:', val: (gst / 2).toFixed(2) },
-        { label: 'IGST @ 18%:', val: '0.00' },
-        { label: 'TOTAL:', val: totalCharge.toFixed(2), bold: true, color: '#BB0013' }
+      const chargesRows = [
+        { label: 'Weight', val: chgWt },
+        { label: 'Charges', val: shippingCharge },
+        { label: 'Surcharge', val: '0.00' },
+        { label: 'Service Chrg.', val: '0.00' },
+        { label: 'Comm. Chrg.', val: '0.00' }
       ]
 
-      let cY = curY + 4
-      chargeLines.forEach(line => {
-        doc.fillColor(line.color || '#5F6B7A').fontSize(line.bold ? 7.5 : 6.5).font(line.bold ? 'Helvetica-Bold' : 'Helvetica')
-          .text(line.label, col4X + 4, cY)
-        doc.fillColor(line.color || '#0D2132').fontSize(line.bold ? 8 : 7).font(line.bold ? 'Helvetica-Bold' : 'Helvetica')
-          .text(line.val, col4X + 4, cY, { width: 90, align: 'right' })
-        cY += 14
+      chargesRows.forEach((row, rIdx) => {
+        const ry = curY + (rIdx * chgRowH)
+        if (rIdx > 0) {
+          doc.moveTo(chgX, ry).lineTo(chgX + chgColWidth, ry).strokeColor(BORDER_COLOR).lineWidth(0.5).stroke()
+        }
+        // Sub-divider inside Charges cell
+        doc.moveTo(chgX + 62, ry).lineTo(chgX + 62, ry + chgRowH).strokeColor(BORDER_COLOR).lineWidth(0.5).stroke()
+
+        doc.fillColor(NAVY).fontSize(7.5).font('Helvetica-Bold').text(row.label, chgX + 4, ry + 8, { width: 56, align: 'center' })
+        doc.fillColor(TEXT_DARK).fontSize(8).font('Helvetica-Bold').text(row.val, chgX + 64, ry + 8, { width: 48, align: 'right' })
       })
 
-      curY += 110
+      curY += row2Height
 
-      // ── Row 7: Per-Parcel Breakdown Table if Multi-box (Height: 85) ──
-      if (parcels.length > 0) {
-        doc.rect(startX, curY, contentWidth, 85).strokeColor('#0D2132').lineWidth(0.75).stroke()
-        doc.rect(startX, curY, contentWidth, 14).fillColor('#0D2132').fill()
-        doc.fillColor('#FFFFFF').fontSize(7).font('Helvetica-Bold').text('PARCEL & BOX BREAKDOWN', startX + 10, curY + 3)
+      // ── SECTION 3: CONTENTS & TOTALS (Height: 105) ──
+      const contentsWidth = 440
+      const totalsWidth = 115
 
-        const pCols = [30, 45, 80, 50, 50, 50, 80, 85]
-        const pHeaders = ['Box', 'Box No', 'Actual Wt', 'L(cm)', 'B(cm)', 'H(cm)', 'Vol Wt', 'Chg Wt']
-        
-        let pY = curY + 15
-        let px = startX
-        pHeaders.forEach((h, idx) => {
-          doc.fillColor('#5F6B7A').fontSize(6).font('Helvetica-Bold').text(h, px + 2, pY, { width: pCols[idx] - 4, align: idx >= 2 ? 'center' : 'left' })
-          px += pCols[idx]
-        })
+      // Vertical & horizontal dividers for Row 3
+      doc.moveTo(startX + contentsWidth, curY).lineTo(startX + contentsWidth, curY + row3Height).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
+      doc.moveTo(startX, curY + row3Height).lineTo(startX + contentWidth, curY + row3Height).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
 
-        pY += 10
-        parcels.slice(0, 4).forEach((p, idx) => {
-          px = startX
-          const pValues = [
-            String(idx + 1),
-            `Box ${p.box_no || idx + 1}`,
-            `${parseFloat(p.weight || 0).toFixed(2)} kg`,
-            String(p.length || 0),
-            String(p.breadth || 0),
-            String(p.height || 0),
-            `${parseFloat(p.volumetric_weight || 0).toFixed(2)} kg`,
-            `${parseFloat(p.chargeable_weight || 0).toFixed(2)} kg`
-          ]
-          pValues.forEach((val, cIdx) => {
-            doc.fillColor('#0D2132').fontSize(6.5).font(cIdx === 7 ? 'Helvetica-Bold' : 'Helvetica')
-              .text(val, px + 2, pY, { width: pCols[cIdx] - 4, align: cIdx >= 2 ? 'center' : 'left' })
-            px += pCols[cIdx]
-          })
-          pY += 11
-        })
+      // Contents Left Block
+      const cntX = startX + 6
+      doc.fillColor(NAVY).fontSize(8.5).font('Helvetica-Bold').text('Contents:', cntX, curY + 5)
 
-        curY += 85
+      // Build contents string from invoice items or content description
+      let contentsStr = ''
+      if (invoiceItems && invoiceItems.length > 0) {
+        contentsStr = invoiceItems.map(item => {
+          const name = (item.description || item.name || 'ITEM').toUpperCase()
+          const qty = parseFloat(item.quantity || item.qty || 1).toFixed(2)
+          const unit = (item.unit_type || item.unit || 'PCS').toUpperCase()
+          return `${name}-${qty}(${unit})`
+        }).join(',') + '.'
+      } else if (shipment.content_description) {
+        contentsStr = shipment.content_description.toUpperCase()
+      } else {
+        contentsStr = 'PARCEL / GENERAL GOODS.'
       }
 
-      // Footer Terms Notice
-      doc.fillColor('#9CA3AF').fontSize(6).font('Helvetica').text('This is a computer generated Shipping Waybill document issued by Prince Courier Service.', startX, 815, { width: contentWidth, align: 'center' })
+      doc.fillColor(TEXT_DARK).fontSize(7.5).font('Helvetica').text(contentsStr, cntX, curY + 18, { width: contentsWidth - 12, lineGap: 2 })
+
+      // Totals Right Block (7 rows)
+      const totX = startX + contentsWidth
+      const freightVal = '0.00'
+      const totalVal = shippingCharge
+      const sgstVal = '0.00'
+      const cgstVal = '0.00'
+      const grandTotalVal = shippingCharge
+      const receivedVal = '0.00'
+      const creditVal = shippingCharge
+
+      const totalsRows = [
+        { label: 'Freight :', val: freightVal },
+        { label: 'Total :', val: totalVal },
+        { label: 'SGST :', val: sgstVal },
+        { label: 'CGST :', val: cgstVal },
+        { label: 'Grand Total :', val: grandTotalVal, isBold: true, isRed: true },
+        { label: 'Received :', val: receivedVal, isBold: true },
+        { label: 'Credit :', val: creditVal, isBold: true }
+      ]
+
+      let totY = curY + 3
+      totalsRows.forEach((tr, tIdx) => {
+        if (tIdx === 4) {
+          // Solid line before Grand Total
+          doc.moveTo(totX, totY - 1).lineTo(totX + totalsWidth, totY - 1).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
+        }
+
+        const fontName = tr.isBold ? 'Helvetica-Bold' : 'Helvetica'
+        const fontColor = tr.isRed ? RED : NAVY
+
+        doc.fillColor(fontColor).fontSize(7.5).font(fontName).text(tr.label, totX + 4, totY)
+        doc.fillColor(fontColor).fontSize(7.5).font(fontName).text(tr.val, totX + 50, totY, { width: totalsWidth - 54, align: 'right' })
+
+        totY += 14
+      })
+
+      curY += row3Height
+
+      // ── SECTION 4: TERMS & CONDITIONS & SIGNATURE (Height: 90) ──
+      const termsWidth = 390
+      const sigWidth = 165
+
+      // Vertical divider for Row 4
+      doc.moveTo(startX + termsWidth, curY).lineTo(startX + termsWidth, curY + row4Height).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
+
+      // Terms Left Block
+      const tX = startX + 6
+      doc.fillColor(NAVY).fontSize(8.5).font('Helvetica-Bold').text('TERMS & CONDITION:', tX, curY + 4)
+
+      const termsList = [
+        '1. Parcels will send on the complete risk and responsibility of customers.',
+        '2. Customers are responsible for clearance of custom of courier shipment (parcels).',
+        '3. Claming cannot be done by customer for any breakage or thieving.',
+        '4. Customers are responsible for any changes in weight of parcel and are also responsible for payment of Service-Tax as well as changes in Service-Tax if any.',
+        '5. No Guarantee for Duty Amount in Any Country.'
+      ]
+
+      let tLineY = curY + 16
+      termsList.forEach(term => {
+        doc.fillColor(TEXT_DARK).fontSize(6.5).font('Helvetica').text(term, tX, tLineY, { width: termsWidth - 12 })
+        tLineY += (term.length > 80 ? 18 : 12)
+      })
+
+      // Receiver's Signature Right Block
+      const sigX = startX + termsWidth + 6
+      doc.fillColor(NAVY).fontSize(8.5).font('Helvetica-Bold').text("Receiver's Signature", sigX, curY + 4)
 
       doc.end()
 
@@ -300,3 +322,4 @@ export async function generateWaybillPdf(params) {
     }
   })
 }
+
