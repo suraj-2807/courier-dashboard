@@ -140,3 +140,14 @@ textarea.form-input:focus {
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px rgba(187, 0, 19, 0.08);
 }
+
+/* ── Capitalize all text inputs by default ───── */
+input:not([type="email"]):not([type="password"]):not([type="number"]):not([type="date"]):not([type="time"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]),
+textarea {
+  text-transform: uppercase;
+}
+
+input[type="email"],
+input[type="password"] {
+  text-transform: none !important;
+}

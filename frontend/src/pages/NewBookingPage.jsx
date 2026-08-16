@@ -184,7 +184,11 @@ export default function NewBookingPage() {
   const updateInvoiceItem = (index, field, value) => {
     setInvoiceItems(prev => {
       const updated = [...prev]
-      updated[index] = { ...updated[index], [field]: value }
+      let val = value
+      if (typeof val === 'string' && !['quantity', 'unit_weight', 'cost', 'unit_rates', 'amount'].includes(field)) {
+        val = val.toUpperCase()
+      }
+      updated[index] = { ...updated[index], [field]: val }
       // Auto-calculate amount = quantity * unit_rates (or cost)
       if (field === 'quantity' || field === 'unit_rates' || field === 'cost') {
         const qty = parseFloat(field === 'quantity' ? value : updated[index].quantity) || 1
@@ -536,7 +540,11 @@ export default function NewBookingPage() {
   }, [invoiceTotalAmount])
 
   const updateForm = (field, value) => {
-    setForm(prev => ({ ...prev, [field]: value }))
+    let val = value
+    if (typeof val === 'string' && !field.toLowerCase().includes('email')) {
+      val = val.toUpperCase()
+    }
+    setForm(prev => ({ ...prev, [field]: val }))
   }
 
   // Build the common payload used by both save and push

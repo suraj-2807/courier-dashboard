@@ -21,6 +21,7 @@ import Pagination from '../components/ui/Pagination'
 import EmptyState from '../components/ui/EmptyState'
 import ErrorState from '../components/ui/ErrorState'
 import { formatCurrency, formatDate } from '../utils/formatters'
+import { exportShipmentsToExcel } from '../utils/exportShipmentsExcel'
 import toast from 'react-hot-toast'
 
 const STATUS_TABS = [
@@ -39,6 +40,7 @@ export default function BookingsPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [selectedIds, setSelectedIds] = useState([])
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const limit = 10
   const navigate = useNavigate()
   const pushToApiMutation = usePushBookingToApi()
@@ -50,6 +52,33 @@ export default function BookingsPage() {
     search,
     status: statusFilter
   })
+
+  const handleExportExcel = async () => {
+    setIsExporting(true)
+    try {
+      // Fetch all records matching the current filters
+      const res = await bookingsApi.getAll({
+        page: 1,
+        limit: 5000,
+        search,
+        status: statusFilter
+      })
+      const shipmentsToExport = res?.data?.bookings || data?.bookings || []
+      if (shipmentsToExport.length === 0) {
+        toast.error('No shipments found to export')
+        return
+      }
+      const filterTag = statusFilter ? `_${statusFilter}` : ''
+      const dateTag = new Date().toISOString().split('T')[0]
+      exportShipmentsToExcel(shipmentsToExport, `PrinceExp_Shipments${filterTag}_${dateTag}.xlsx`)
+      toast.success(`Exported ${shipmentsToExport.length} shipments to Excel successfully!`)
+    } catch (err) {
+      console.error('Export error:', err)
+      toast.error('Failed to export shipments: ' + (err.message || 'Unknown error'))
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   const handlePushRow = async (booking) => {
     if (!booking.vendor_config_id) {
@@ -148,9 +177,19 @@ export default function BookingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1.5 px-4 py-[7px] border border-border rounded-xl text-[12px] font-semibold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer">
-            <Download className="w-3.5 h-3.5" />
-            Export
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={isExporting}
+            className="flex items-center gap-1.5 px-4 py-[7px] border border-border rounded-xl text-[12px] font-bold text-navy bg-surface hover:bg-surface-hover transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+            title="Export shipments with complete form details to Excel (.xlsx)"
+          >
+            {isExporting ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+            ) : (
+              <Download className="w-3.5 h-3.5 text-navy" />
+            )}
+            <span>{isExporting ? 'Exporting...' : 'Export Excel'}</span>
           </button>
           <Link
             to="/bookings/new"
