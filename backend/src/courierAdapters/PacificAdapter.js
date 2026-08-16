@@ -150,23 +150,53 @@ export default class PacificAdapter extends BaseAdapter {
       })
     }
 
-    // Build Performa array
-    const declaredValue = parseFloat(shipmentData.declared_value || shipmentData.total_amount || 100)
-    const perPieceValue = (declaredValue / numPieces).toFixed(2)
+    // Build Performa array from invoice_items if provided, or fallback to per-piece breakdown
+    let invoiceItemsList = []
+    if (shipmentData.invoice_items) {
+      try {
+        invoiceItemsList = typeof shipmentData.invoice_items === 'string' ? JSON.parse(shipmentData.invoice_items) : shipmentData.invoice_items
+      } catch {}
+    }
+
+    const declaredValue = parseFloat(shipmentData.total_amount || shipmentData.shipping_charge || shipmentData.declared_value || 100)
     const performa = []
-    for (let i = 0; i < numPieces; i++) {
-      performa.push({
-        BoxNo: `Box-${i + 1}`,
-        Description: this._truncate(shipmentData.content_description || 'Shipment Content', 50),
-        HSNCode: this._truncate(shipmentData.hs_code || '123456', 10),
-        Quantity: '1',
-        Unit: 'PCS',
-        Rate: String(perPieceValue),
-        Amount: String(perPieceValue),
-        Weight: String(perPieceWeight),
-        PerformaIGST: "0",
-        PerformaIGSTAmount: "0"
+
+    if (Array.isArray(invoiceItemsList) && invoiceItemsList.length > 0) {
+      invoiceItemsList.forEach((item, idx) => {
+        const qty = String(parseFloat(item.quantity || 1) || 1)
+        const rate = parseFloat(item.unit_rates || item.cost || (parseFloat(item.amount) / parseFloat(qty)) || 0).toFixed(2)
+        const amt = parseFloat(item.amount || (parseFloat(qty) * parseFloat(rate)) || 0).toFixed(2)
+        const wt = parseFloat(item.unit_weight || (perPieceWeight / invoiceItemsList.length) || perPieceWeight).toFixed(3)
+
+        performa.push({
+          BoxNo: `Box-${item.box_no || (idx + 1)}`,
+          Description: this._truncate(item.description || shipmentData.content_description || 'Shipment Content', 50),
+          HSNCode: this._truncate(item.hs_code || shipmentData.hs_code || '123456', 10),
+          Quantity: qty,
+          Unit: item.unit_type || 'PCS',
+          Rate: String(rate),
+          Amount: String(amt),
+          Weight: String(wt),
+          PerformaIGST: "0",
+          PerformaIGSTAmount: "0"
+        })
       })
+    } else {
+      const perPieceValue = (declaredValue / numPieces).toFixed(2)
+      for (let i = 0; i < numPieces; i++) {
+        performa.push({
+          BoxNo: `Box-${i + 1}`,
+          Description: this._truncate(shipmentData.content_description || 'Shipment Content', 50),
+          HSNCode: this._truncate(shipmentData.hs_code || '123456', 10),
+          Quantity: '1',
+          Unit: 'PCS',
+          Rate: String(perPieceValue),
+          Amount: String(perPieceValue),
+          Weight: String(perPieceWeight),
+          PerformaIGST: "0",
+          PerformaIGSTAmount: "0"
+        })
+      }
     }
 
     let productCode = ''

@@ -185,11 +185,22 @@ export default function NewBookingPage() {
     setInvoiceItems(prev => {
       const updated = [...prev]
       updated[index] = { ...updated[index], [field]: value }
-      // Auto-calculate amount = quantity * unit_rates
-      if (field === 'quantity' || field === 'unit_rates') {
-        const qty = parseFloat(field === 'quantity' ? value : updated[index].quantity) || 0
-        const rate = parseFloat(field === 'unit_rates' ? value : updated[index].unit_rates) || 0
-        updated[index].amount = (qty * rate).toFixed(2)
+      // Auto-calculate amount = quantity * unit_rates (or cost)
+      if (field === 'quantity' || field === 'unit_rates' || field === 'cost') {
+        const qty = parseFloat(field === 'quantity' ? value : updated[index].quantity) || 1
+        const rate = parseFloat(field === 'unit_rates' ? value : (field === 'cost' ? value : (updated[index].unit_rates || updated[index].cost || 0))) || 0
+        if (rate > 0) {
+          updated[index].amount = (qty * rate).toFixed(2)
+          if (!updated[index].unit_rates && updated[index].cost) {
+            updated[index].unit_rates = updated[index].cost
+          }
+        }
+      } else if (field === 'amount') {
+        const qty = parseFloat(updated[index].quantity) || 1
+        const amt = parseFloat(value) || 0
+        if (amt > 0 && qty > 0) {
+          updated[index].unit_rates = (amt / qty).toFixed(2)
+        }
       }
       return updated
     })
@@ -490,8 +501,7 @@ export default function NewBookingPage() {
         ...prev,
         weight: totalParcelActual > 0 ? String(totalParcelActual) : prev.weight,
         volumetric_weight: totalParcelVol > 0 ? String(totalParcelVol) : '',
-        chargeable_weight: totalParcelChg > 0 ? String(totalParcelChg) : '',
-        shipping_charge: prev.shipping_charge || (totalParcelChg > 0 ? String(totalParcelChg) : '')
+        chargeable_weight: totalParcelChg > 0 ? String(totalParcelChg) : ''
       }))
     } else {
       const l = parseFloat(form.length) || parseFloat(parcels[0]?.length) || 0
@@ -508,18 +518,32 @@ export default function NewBookingPage() {
       setForm(prev => ({
         ...prev,
         volumetric_weight: vol > 0 ? String(vol) : '',
-        chargeable_weight: chg > 0 ? String(chg) : '',
-        shipping_charge: prev.shipping_charge || (chg > 0 ? String(chg) : '')
+        chargeable_weight: chg > 0 ? String(chg) : ''
       }))
     }
   }, [parcels, form.length, form.breadth, form.height, form.weight, form.no_of_pieces])
+
+  // Sync shipping_charge, total_amount, and declared_value with invoice total
+  useEffect(() => {
+    if (invoiceTotalAmount > 0) {
+      setForm(prev => ({
+        ...prev,
+        shipping_charge: String(invoiceTotalAmount.toFixed(2)),
+        total_amount: String(invoiceTotalAmount.toFixed(2)),
+        declared_value: prev.declared_value && prev.declared_value !== '0' ? prev.declared_value : String(invoiceTotalAmount.toFixed(2))
+      }))
+    }
+  }, [invoiceTotalAmount])
 
   const updateForm = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }))
   }
 
   // Build the common payload used by both save and push
-  const buildPayload = () => ({
+  const buildPayload = () => {
+    const finalAmount = invoiceTotalAmount > 0 ? invoiceTotalAmount : (parseFloat(form.shipping_charge) || parseFloat(form.total_amount) || 0)
+
+    return {
     id: editId ? parseInt(editId) : undefined,
     sender_name: form.sender_name || form.sender_company,
     sender_company: form.sender_company,
@@ -554,11 +578,11 @@ export default function NewBookingPage() {
     height: parseFloat(form.height) || 0,
     no_of_pieces: parseInt(form.no_of_pieces) || 1,
     content_description: form.content_description || 'General Goods',
-    declared_value: parseFloat(form.declared_value) || 0,
+    declared_value: parseFloat(form.declared_value) || finalAmount,
     package_type: form.package_type,
     payment_mode: form.payment_mode,
-    shipping_charge: parseFloat(form.shipping_charge) || 0,
-    total_amount: parseFloat(form.total_amount) || parseFloat(form.shipping_charge) || 0,
+    shipping_charge: finalAmount,
+    total_amount: finalAmount,
     order_reference: form.order_reference,
     remarks: form.remarks,
 
@@ -630,7 +654,8 @@ export default function NewBookingPage() {
 
     from_request: fromRequestId || undefined,
     request_awb: requestAwb || undefined
-  })
+  }
+  }
 
   const validateForm = () => {
     if (!form.sender_name && !form.sender_company) {
@@ -1260,16 +1285,18 @@ export default function NewBookingPage() {
                       <option value="credit">Account Credit</option>
                     </select>
                   </CompactField>
-                  <CompactField label="Shipping Charge (₹)">
+                  <CompactField label={invoiceTotalAmount > 0 ? `Shipping Charge (₹) — Auto from Invoice` : `Shipping Charge (₹)`}>
                     <input
                       type="number"
                       placeholder="0.00"
-                      value={form.shipping_charge}
+                      value={invoiceTotalAmount > 0 ? invoiceTotalAmount.toFixed(2) : form.shipping_charge}
+                      readOnly={invoiceTotalAmount > 0}
                       onChange={e => {
+                        if (invoiceTotalAmount > 0) return
                         const val = e.target.value
                         setForm(prev => ({ ...prev, shipping_charge: val, total_amount: val }))
                       }}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-semibold text-right"
+                      className={`w-full bg-transparent focus:outline-none text-[13px] font-semibold text-right ${invoiceTotalAmount > 0 ? 'text-primary font-bold cursor-default' : 'text-gray-800'}`}
                     />
                   </CompactField>
                 </div>
