@@ -42,13 +42,13 @@ async function trackPacific(awb, config) {
   })
 
   if (!response.ok) {
-    throw new Error(`Pacific tracking API returned ${response.status}`)
+    throw new Error(`Pacific tracking API returned status ${response.status}`)
   }
 
   const data = await response.json()
 
   if (data.ErrorCode !== '0' && data.ResponseCode !== 'RT01') {
-    throw new Error(data.ErrorDisc || 'Pacific tracking failed')
+    throw new Error(data.ErrorDisc || 'Pacific tracking failed: invalid response')
   }
 
   const tracking = data.Tracking?.[0] || {}
@@ -61,9 +61,10 @@ async function trackPacific(awb, config) {
     rawTime: ev.EventTime || ''
   }))
 
-  // Determine current status from latest event
+  // Determine current status from latest event or tracking object
   const latestEvent = events[0] || {}
-  const statusLower = (latestEvent.status || '').toLowerCase()
+  const statusString = latestEvent.status || tracking.Status || 'In Progress'
+  const statusLower = statusString.toLowerCase()
 
   let currentStage = 'booked'
   if (statusLower.includes('delivered')) currentStage = 'delivered'
@@ -71,12 +72,16 @@ async function trackPacific(awb, config) {
   else if (statusLower.includes('departed') || statusLower.includes('arrived') || statusLower.includes('in transit') || statusLower.includes('import scan') || statusLower.includes('processing')) currentStage = 'in_transit'
   else if (statusLower.includes('origin scan') || statusLower.includes('received') || statusLower.includes('picked') || statusLower.includes('label')) currentStage = 'picked_up'
 
+  // Extract secondary AWB (FedEx / UPS AWB)
+  const secondaryAwb = tracking.VendorAWBNo1 || tracking.VendorAWBNo2 || ''
+
   return {
     vendor: 'Pacific Express',
     vendorCode: 'pacific',
     shipmentInfo: {
       awbNo: tracking.AWBNo || awb,
-      vendorAwbNo: tracking.VendorAWBNo1 || tracking.VendorAWBNo2 || '',
+      vendorAwbNo: secondaryAwb,
+      secondaryCarrier: tracking.VendorName || tracking.VendorName2 || '',
       bookingDate: tracking.BookingDate1 || tracking.BookingDate || '',
       origin: tracking.Origin || '',
       originCountry: tracking.Origin_Country || '',
@@ -84,7 +89,7 @@ async function trackPacific(awb, config) {
       destinationCountry: tracking.Destination_Country || '',
       consignee: tracking.Consignee || '',
       shipperName: tracking.Shipper_Name || '',
-      vendorName: tracking.VendorName || '',
+      vendorName: tracking.VendorName || 'Pacific Express',
       serviceName: tracking.ServiceName || '',
       weight: tracking.Weight || '',
       refNo: tracking.RefNo || '',
@@ -96,7 +101,7 @@ async function trackPacific(awb, config) {
       remark: tracking.Remark || ''
     },
     events,
-    currentStatus: latestEvent.status || 'Unknown',
+    currentStatus: statusString,
     currentStage
   }
 }
@@ -115,18 +120,16 @@ async function trackFlySwift(awb, config) {
   })
 
   if (!response.ok) {
-    throw new Error(`FlySwift tracking API returned ${response.status}`)
+    throw new Error(`FlySwift tracking API returned status ${response.status}`)
   }
 
   const data = await response.json()
 
-  // FlySwift returns data in various possible structures
   const trackingData = data.data || data
   const shipment = trackingData.shipment || trackingData.docket || trackingData || {}
 
-  // Extract events from FlySwift response
   const rawEvents = trackingData.tracking_history || trackingData.events || trackingData.tracking || shipment.tracking_history || []
-  const events = rawEvents.map(ev => ({
+  const events = (Array.isArray(rawEvents) ? rawEvents : []).map(ev => ({
     date: ev.date || ev.event_date || ev.created_at || '',
     time: ev.time || ev.event_time || '',
     location: ev.location || ev.city || ev.hub || '',
@@ -135,9 +138,9 @@ async function trackFlySwift(awb, config) {
     rawTime: ev.time || ev.event_time || ''
   }))
 
-  // Try to determine current stage
   const latestEvent = events[0] || {}
-  const statusLower = (shipment.status || latestEvent.status || '').toLowerCase()
+  const statusString = shipment.status || latestEvent.status || 'In Progress'
+  const statusLower = statusString.toLowerCase()
 
   let currentStage = 'booked'
   if (statusLower.includes('delivered') || statusLower.includes('dlvd')) currentStage = 'delivered'
@@ -151,6 +154,7 @@ async function trackFlySwift(awb, config) {
     shipmentInfo: {
       awbNo: shipment.tracking_no || shipment.docket_no || String(awb),
       vendorAwbNo: shipment.vendor_awb || shipment.ref_no || '',
+      secondaryCarrier: shipment.carrier || '',
       bookingDate: shipment.booking_date || shipment.created_at || '',
       origin: shipment.origin || shipment.origin_city || '',
       originCountry: shipment.origin_country || 'INDIA',
@@ -158,7 +162,7 @@ async function trackFlySwift(awb, config) {
       destinationCountry: shipment.destination_country || '',
       consignee: shipment.consignee_name || shipment.receiver_name || '',
       shipperName: shipment.shipper_name || shipment.sender_name || '',
-      vendorName: shipment.vendor_name || shipment.carrier || '',
+      vendorName: shipment.vendor_name || 'FlySwift',
       serviceName: shipment.service_name || shipment.service_type || '',
       weight: shipment.weight || shipment.actual_weight || '',
       refNo: shipment.reference_no || shipment.ref_no || '',
@@ -170,7 +174,7 @@ async function trackFlySwift(awb, config) {
       remark: shipment.remark || ''
     },
     events,
-    currentStatus: shipment.status || latestEvent.status || 'Unknown',
+    currentStatus: statusString,
     currentStage
   }
 }
@@ -178,13 +182,13 @@ async function trackFlySwift(awb, config) {
 // ─── Vendor Dispatcher ─────────────────────────────────────────────
 const VENDOR_TRACKERS = {
   pacific: trackPacific,
-  pacifc: trackPacific,  // typo alias
+  pacifc: trackPacific,
   flyswift: trackFlySwift,
-  trackmate: trackFlySwift // alias
+  trackmate: trackFlySwift
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Existing searchTracking (DB-only lookup — unchanged)
+// Existing searchTracking (DB-only lookup)
 // ═══════════════════════════════════════════════════════════════════
 export const searchTracking = async (req, res) => {
   try {
@@ -197,7 +201,6 @@ export const searchTracking = async (req, res) => {
       })
     }
 
-    // Fetch shipment with JOINs
     const rows = await query(
       `SELECT s.*,
         JSON_OBJECT(
@@ -215,9 +218,12 @@ export const searchTracking = async (req, res) => {
        LEFT JOIN senders snd ON s.sender_id = snd.id
        LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
        LEFT JOIN courier_providers cp ON s.courier_provider_id = cp.id
-       WHERE s.tracking_number = ?
+       WHERE s.tracking_number = ? 
+          OR s.vendor_awb_number = ? 
+          OR s.order_id = ? 
+          OR s.invoice_no = ?
        LIMIT 1`,
-      [tracking_number]
+      [tracking_number, tracking_number, tracking_number, tracking_number]
     )
 
     if (rows.length === 0) {
@@ -229,7 +235,6 @@ export const searchTracking = async (req, res) => {
 
     const { senders, receivers, courier_providers, ...shipment } = rows[0]
 
-    // Get tracking events
     const events = await query(
       'SELECT * FROM tracking_events WHERE shipment_id = ? ORDER BY event_time DESC',
       [shipment.id]
@@ -267,95 +272,161 @@ export const liveTrack = async (req, res) => {
       })
     }
 
+    const searchStr = String(awb).trim()
+    let vendorAwbToTrack = searchStr
+    let matchedShipment = null
     let vendorCode = vendor_code || ''
     let config = null
 
-    // ── Strategy 1: Explicit vendor_code provided → find its config ──
-    if (vendorCode) {
+    // ── 1. Search database for matching shipment by our AWB, Order ID, Invoice, or Vendor AWB ──
+    const shipments = await query(
+      `SELECT s.*, 
+              cp.code as provider_code, cp.name as provider_name,
+              vac.vendor_code as vac_vendor_code, vac.id as vac_config_id,
+              vac.auth_credentials as vac_credentials
+       FROM shipments s
+       LEFT JOIN courier_providers cp ON s.courier_provider_id = cp.id
+       LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
+       WHERE s.tracking_number = ? 
+          OR s.vendor_awb_number = ? 
+          OR s.order_id = ? 
+          OR s.order_reference = ?
+          OR s.invoice_no = ?
+       LIMIT 1`,
+      [searchStr, searchStr, searchStr, searchStr, searchStr]
+    )
+
+    if (shipments.length > 0) {
+      matchedShipment = shipments[0]
+      // Use vendor_awb_number if available; fallback to tracking_number or user searchStr
+      vendorAwbToTrack = matchedShipment.vendor_awb_number && matchedShipment.vendor_awb_number.trim() !== ''
+        ? matchedShipment.vendor_awb_number.trim()
+        : (matchedShipment.tracking_number || searchStr)
+
+      // Resolve vendor code from shipment
+      if (!vendorCode) {
+        vendorCode = matchedShipment.vac_vendor_code || matchedShipment.vendor_code || matchedShipment.provider_code || ''
+      }
+
+      // If vendor_config_id is directly linked
+      if (matchedShipment.vendor_config_id) {
+        const configRows = await query(
+          `SELECT * FROM vendor_api_configs WHERE id = ? AND is_active = TRUE LIMIT 1`,
+          [matchedShipment.vendor_config_id]
+        )
+        if (configRows.length > 0) {
+          config = configRows[0]
+        }
+      }
+    }
+
+    // ── 2. If no shipment found yet, check booking_requests ──
+    if (!matchedShipment) {
+      const requests = await query(
+        `SELECT br.*, s.vendor_awb_number as ship_vendor_awb, s.vendor_config_id, s.vendor_code as ship_vendor_code
+         FROM booking_requests br
+         LEFT JOIN shipments s ON br.shipment_id = s.id
+         WHERE br.request_awb = ? OR br.tracking_number = ?
+         LIMIT 1`,
+        [searchStr, searchStr]
+      )
+
+      if (requests.length > 0) {
+        const reqRow = requests[0]
+        vendorAwbToTrack = reqRow.ship_vendor_awb || reqRow.tracking_number || searchStr
+        if (!vendorCode && reqRow.ship_vendor_code) {
+          vendorCode = reqRow.ship_vendor_code
+        }
+        if (reqRow.vendor_config_id) {
+          const configRows = await query(
+            `SELECT * FROM vendor_api_configs WHERE id = ? AND is_active = TRUE LIMIT 1`,
+            [reqRow.vendor_config_id]
+          )
+          if (configRows.length > 0) config = configRows[0]
+        }
+      }
+    }
+
+    // ── 3. If explicit vendorCode is known but config not loaded ──
+    if (!config && vendorCode) {
       const configs = await query(
         `SELECT * FROM vendor_api_configs WHERE LOWER(vendor_code) = ? AND is_active = TRUE LIMIT 1`,
         [vendorCode.toLowerCase()]
       )
-      if (configs.length > 0) config = configs[0]
+      if (configs.length > 0) {
+        config = configs[0]
+      }
     }
 
-    // ── Strategy 2: Look up shipment in DB to find its vendor ──
-    if (!config) {
-      const shipments = await query(
-        `SELECT s.courier_provider_id, s.vendor_code as shipment_vendor_code,
-                cp.code as provider_code, cp.name as provider_name
-         FROM shipments s
-         LEFT JOIN courier_providers cp ON s.courier_provider_id = cp.id
-         WHERE s.tracking_number = ? OR s.awb_number = ?
-         LIMIT 1`,
-        [awb, awb]
-      )
+    // ── 4. Try tracking with matched config ──
+    if (config) {
+      const normalizedCode = (config.vendor_code || vendorCode || '').toLowerCase()
+      const tracker = VENDOR_TRACKERS[normalizedCode]
 
-      if (shipments.length > 0) {
-        const ship = shipments[0]
-        const lookupCode = ship.shipment_vendor_code || ship.provider_code || ''
-
-        if (lookupCode) {
-          const configs = await query(
-            `SELECT * FROM vendor_api_configs WHERE LOWER(vendor_code) = ? AND is_active = TRUE LIMIT 1`,
-            [lookupCode.toLowerCase()]
-          )
-          if (configs.length > 0) {
-            config = configs[0]
-            vendorCode = lookupCode.toLowerCase()
+      if (tracker) {
+        try {
+          const result = await tracker(vendorAwbToTrack, config)
+          if (matchedShipment) {
+            result.internalShipment = {
+              id: matchedShipment.id,
+              ourAwb: matchedShipment.tracking_number,
+              orderId: matchedShipment.order_id,
+              invoiceNo: matchedShipment.invoice_no,
+              vendorAwbNumber: matchedShipment.vendor_awb_number
+            }
           }
+          return res.json({ success: true, tracking: result })
+        } catch (trackErr) {
+          console.warn(`Direct tracker ${normalizedCode} failed for AWB ${vendorAwbToTrack}:`, trackErr.message)
         }
       }
     }
 
-    // ── Strategy 3: Try all active vendors one by one ──
-    if (!config) {
-      const allConfigs = await query(
-        `SELECT * FROM vendor_api_configs WHERE is_active = TRUE ORDER BY created_at DESC`
-      )
+    // ── 5. Fallback: Iterate across all active vendor configs ──
+    const allConfigs = await query(
+      `SELECT * FROM vendor_api_configs WHERE is_active = TRUE ORDER BY created_at DESC`
+    )
 
-      // Try each vendor's tracking API
-      for (const cfg of allConfigs) {
-        const code = (cfg.vendor_code || '').toLowerCase()
-        const tracker = VENDOR_TRACKERS[code]
-        if (!tracker) continue
+    for (const cfg of allConfigs) {
+      const code = (cfg.vendor_code || '').toLowerCase()
+      const tracker = VENDOR_TRACKERS[code]
+      if (!tracker) continue
 
+      // Try tracking with vendorAwbToTrack first, and searchStr as fallback
+      const awbsToAttempt = [vendorAwbToTrack]
+      if (searchStr !== vendorAwbToTrack) awbsToAttempt.push(searchStr)
+
+      for (const targetAwb of awbsToAttempt) {
         try {
-          const result = await tracker(awb, cfg)
-          if (result && result.events && result.events.length > 0) {
+          const result = await tracker(targetAwb, cfg)
+          if (result && (result.events?.length > 0 || result.shipmentInfo?.awbNo)) {
+            if (matchedShipment) {
+              result.internalShipment = {
+                id: matchedShipment.id,
+                ourAwb: matchedShipment.tracking_number,
+                orderId: matchedShipment.order_id,
+                invoiceNo: matchedShipment.invoice_no,
+                vendorAwbNumber: matchedShipment.vendor_awb_number
+              }
+            }
             return res.json({ success: true, tracking: result })
           }
         } catch (err) {
-          // This vendor didn't have the AWB, try next
-          console.log(`Tracking attempt with ${code} failed: ${err.message}`)
+          // Continue to next
         }
       }
-
-      return res.status(404).json({
-        success: false,
-        message: 'No tracking data found for this AWB across any vendor'
-      })
     }
 
-    // ── Execute tracking with found config ──
-    const normalizedCode = (vendorCode || config.vendor_code || '').toLowerCase()
-    const tracker = VENDOR_TRACKERS[normalizedCode]
-
-    if (!tracker) {
-      return res.status(400).json({
-        success: false,
-        message: `No tracking support for vendor "${config.vendor_code || vendorCode}". Supported: ${Object.keys(VENDOR_TRACKERS).join(', ')}`
-      })
-    }
-
-    const result = await tracker(awb, config)
-    return res.json({ success: true, tracking: result })
+    return res.status(404).json({
+      success: false,
+      message: `No live tracking information found for AWB "${searchStr}".`
+    })
 
   } catch (error) {
     console.error('Live tracking error:', error)
     return res.status(500).json({
       success: false,
-      message: error.message || 'Tracking failed'
+      message: error.message || 'Tracking lookup failed'
     })
   }
 }

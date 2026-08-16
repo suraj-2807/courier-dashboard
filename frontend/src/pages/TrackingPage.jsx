@@ -295,15 +295,22 @@ export default function TrackingPage() {
                 </h2>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-y-4 gap-x-5">
-                  <InfoItem icon={Hash} label="AWB Number" value={tracking.shipmentInfo.awbNo} mono />
+                  {tracking.internalShipment?.ourAwb && (
+                    <InfoItem icon={Hash} label="Our AWB" value={tracking.internalShipment.ourAwb} mono highlight />
+                  )}
+                  <InfoItem icon={Hash} label="Vendor AWB" value={tracking.shipmentInfo.awbNo} mono />
                   {tracking.shipmentInfo.vendorAwbNo && (
-                    <InfoItem icon={Hash} label="Vendor AWB" value={tracking.shipmentInfo.vendorAwbNo} mono />
+                    <InfoItem 
+                      icon={Hash} 
+                      label={tracking.shipmentInfo.secondaryCarrier ? `${tracking.shipmentInfo.secondaryCarrier} AWB` : "Carrier AWB"} 
+                      value={tracking.shipmentInfo.vendorAwbNo} 
+                      mono 
+                    />
                   )}
                   <InfoItem icon={Truck} label="Carrier" value={tracking.shipmentInfo.vendorName || tracking.vendor} />
                   <InfoItem icon={Package} label="Service" value={tracking.shipmentInfo.serviceName || '—'} />
                   <InfoItem icon={Calendar} label="Booking Date" value={tracking.shipmentInfo.bookingDate || '—'} />
                   <InfoItem icon={Weight} label="Weight" value={tracking.shipmentInfo.weight ? `${tracking.shipmentInfo.weight} kg` : '—'} />
-                  <InfoItem icon={Hash} label="Ref No" value={tracking.shipmentInfo.refNo || '—'} mono />
                   <InfoItem
                     icon={CheckCircle2}
                     label="Current Status"
