@@ -10,3 +10,14 @@ export const useTrackingSearch = (trackingNumber) => {
     retry: false
   })
 }
+
+export const useLiveTracking = (awb, vendorCode) => {
+  return useQuery({
+    queryKey: ['live-tracking', awb, vendorCode],
+    queryFn: () =>
+      trackingApi.liveTrack(awb, vendorCode).then((res) => res.data),
+    enabled: !!awb && awb.length >= 3,
+    retry: false,
+    staleTime: 60000 // Cache for 1 minute
+  })
+}
