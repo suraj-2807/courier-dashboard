@@ -1,6 +1,8 @@
 import BaseAdapter from './BaseAdapter.js'
 import { decrypt } from '../utils/encryption.js'
 import GenericAdapter from './GenericAdapter.js'
+import fs from 'fs'
+import path from 'path'
 
 /**
  * FlySwiftAdapter — Adapter for FlySwift / Trackmate+ courier API.
@@ -46,15 +48,17 @@ function toIsoCountryCode(val) {
   return clean.slice(0, 2)
 }
 
-function findAwbInObject(obj, depth = 0) {
-  if (!obj || depth > 4) return ''
+export function findAwbInObject(obj, depth = 0) {
+  if (!obj || depth > 5) return ''
+
   if (typeof obj === 'string' || typeof obj === 'number') {
     const str = String(obj).trim()
-    if (str.length >= 3 && !str.includes('{') && !str.includes('<') && !str.includes('true') && !str.includes('false')) {
+    if (str.length >= 3 && !str.includes('{') && !str.includes('<') && str !== 'true' && str !== 'false' && str !== 'null' && str !== 'undefined') {
       return str
     }
     return ''
   }
+
   if (Array.isArray(obj)) {
     for (const item of obj) {
       const found = findAwbInObject(item, depth + 1)
@@ -62,26 +66,46 @@ function findAwbInObject(obj, depth = 0) {
     }
     return ''
   }
+
   if (typeof obj === 'object') {
-    // Check priority key names first
+    // 1. Direct FlySwift / Trackmate keys
+    if (obj.data && typeof obj.data === 'object') {
+      const dataAwb = obj.data.awb_no || obj.data.entry_number || obj.data.forwording_no || obj.data.docket_id || obj.data.awb_number || obj.data.tracking_number || obj.data.docket_no
+      if (dataAwb) return String(dataAwb).trim()
+    }
+
+    // 2. Direct priority keys on current object
     const priorityKeys = [
-      'tracking_number', 'tracking_no', 'awb_number', 'awb_no', 'docket_no',
-      'docket_number', 'docketNo', 'docket', 'tracking_id', 'airwaybill_no', 'awb', 'id', 'reference_no'
+      'awb_no', 'awb_number', 'awbNumber', 'awb', 'tracking_number', 'tracking_no', 'trackingNumber',
+      'entry_number', 'docket_no', 'docket_number', 'docketNo', 'docket_id', 'docket', 'forwording_no', 'forwarding_no',
+      'waybill_no', 'waybill', 'airwaybill_no', 'tracking_id', 'reference_no', 'ref_no'
     ]
+
     for (const key of priorityKeys) {
-      if (obj[key] !== undefined && obj[key] !== null) {
+      if (obj[key] !== undefined && obj[key] !== null && obj[key] !== '') {
         const val = findAwbInObject(obj[key], depth + 1)
         if (val) return val
       }
     }
-    // Check any key containing tracking, docket, awb, or id
+
+    // 3. Known envelope objects like data, result, response, payload, shipment, etc.
+    const envelopeKeys = ['data', 'result', 'response', 'payload', 'shipment', 'output', 'body', 'data_response']
+    for (const envKey of envelopeKeys) {
+      if (obj[envKey] && typeof obj[envKey] === 'object') {
+        const val = findAwbInObject(obj[envKey], depth + 1)
+        if (val) return val
+      }
+    }
+
+    // 4. Any key matching tracking, docket, awb, waybill, or ref
     for (const [k, v] of Object.entries(obj)) {
-      if (/tracking|docket|awb|waybill|ref/i.test(k) && v !== undefined && v !== null) {
+      if (/tracking|docket|awb|waybill|forwarding|forwording/i.test(k) && v !== undefined && v !== null && v !== '') {
         const val = findAwbInObject(v, depth + 1)
         if (val) return val
       }
     }
   }
+
   return ''
 }
 
@@ -333,14 +357,34 @@ export default class FlySwiftAdapter extends BaseAdapter {
     }
 
     const trackingUrl = responseBody.data?.tracking_url || responseBody.tracking_url || ''
-    const labelUrl = responseBody.data?.label_url || responseBody.label_url || ''
+    let labelUrl = responseBody.data?.label_url || responseBody.label_url || ''
+
+    // If labels array with base64 PDF is present, save the label to disk
+    if (!labelUrl && Array.isArray(responseBody.labels) && responseBody.labels.length > 0) {
+      const boxLabel = responseBody.labels.find(l => (l.filename && l.filename.includes('label')) || (l.filename && l.filename.includes('box'))) || responseBody.labels[0]
+      if (boxLabel && boxLabel.label) {
+        try {
+          const uploadsDir = path.join(process.cwd(), 'uploads', 'vendor_labels')
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true })
+          }
+          const labelFileName = `vendor_label_${awbNumber || Date.now()}.pdf`
+          const labelFilePath = path.join(uploadsDir, labelFileName)
+          fs.writeFileSync(labelFilePath, Buffer.from(boxLabel.label, 'base64'))
+          labelUrl = `/uploads/vendor_labels/${labelFileName}`
+        } catch (labelErr) {
+          console.error('Failed to save vendor label PDF:', labelErr.message)
+        }
+      }
+    }
+
     const errorMessage = !success
       ? (responseBody.message || responseBody.error || (Array.isArray(responseBody.errors) ? responseBody.errors.join(', ') : 'FlySwift API Error'))
       : ''
 
     return {
       success,
-      awbNumber: String(awbNumber),
+      awbNumber: String(awbNumber).trim(),
       trackingUrl,
       labelUrl,
       errorMessage
