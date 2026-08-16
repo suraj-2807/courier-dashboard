@@ -430,9 +430,27 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
 //  SAVE BOOKING (Draft — no vendor API push)
 // ═══════════════════════════════════════════════════════════════
 
+function validateAadhaarDoc(type, number) {
+  if (type && /aadhaar|aadhar/i.test(type)) {
+    const clean = (number || '').toString().replace(/\D/g, '')
+    if (clean.length !== 12) {
+      return false
+    }
+  }
+  return true
+}
+
 export const saveBooking = async (req, res) => {
   try {
     const fields = extractBookingFields(req.body)
+
+    if (!validateAadhaarDoc(fields.sender_gstin_type, fields.sender_gstin_no)) {
+      return res.status(400).json({ success: false, message: 'Aadhaar number must be exactly 12 digits' })
+    }
+    if (!validateAadhaarDoc(fields.receiver_gstin_type, fields.receiver_gstin_no)) {
+      return res.status(400).json({ success: false, message: 'Receiver Aadhaar number must be exactly 12 digits' })
+    }
+
     const existingId = req.body.id || req.body.shipment_id
 
     // Upsert sender/receiver
@@ -724,6 +742,13 @@ export const createBooking = async (req, res) => {
   try {
     const fields = extractBookingFields(req.body)
 
+    if (!validateAadhaarDoc(fields.sender_gstin_type, fields.sender_gstin_no)) {
+      return res.status(400).json({ success: false, message: 'Aadhaar number must be exactly 12 digits' })
+    }
+    if (!validateAadhaarDoc(fields.receiver_gstin_type, fields.receiver_gstin_no)) {
+      return res.status(400).json({ success: false, message: 'Receiver Aadhaar number must be exactly 12 digits' })
+    }
+
     const tracking_number = await generateTracking()
     const order_id = tracking_number
 
@@ -946,20 +971,12 @@ export const getBookings = async (req, res) => {
 
     const dataRows = await query(
       `SELECT s.*,
-        JSON_OBJECT(
-          'id', snd.id, 'name', snd.name, 'phone', snd.phone, 'email', snd.email,
-          'address', snd.address, 'city', snd.city, 'state', snd.state, 'pincode', snd.pincode
-        ) as senders,
-        JSON_OBJECT(
-          'id', rcv.id, 'name', rcv.name, 'phone', rcv.phone, 'email', rcv.email,
-          'address', rcv.address, 'city', rcv.city, 'state', rcv.state, 'pincode', rcv.pincode
-        ) as receivers,
-        JSON_OBJECT(
-          'id', cp.id, 'name', cp.name, 'code', cp.code, 'tracking_url', cp.tracking_url
-        ) as courier_providers,
-        JSON_OBJECT(
-          'id', vac.id, 'name', vac.name, 'vendor_code', vac.vendor_code
-        ) as vendor_api_configs
+        snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.email as s_email,
+        snd.address as s_address, snd.city as s_city, snd.state as s_state, snd.pincode as s_pincode, snd.country as s_country,
+        rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.email as r_email,
+        rcv.address as r_address, rcv.city as r_city, rcv.state as r_state, rcv.pincode as r_pincode, rcv.country as r_country,
+        cp.id as cp_id, cp.name as cp_name, cp.code as cp_code, cp.tracking_url as cp_tracking_url,
+        vac.id as vac_id, vac.name as vac_name, vac.vendor_code as vac_vendor_code, vac.environment as vac_environment
        FROM shipments s
        LEFT JOIN senders snd ON s.sender_id = snd.id
        LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
@@ -972,13 +989,50 @@ export const getBookings = async (req, res) => {
     )
 
     const bookings = dataRows.map(row => {
-      const { senders, receivers, courier_providers, vendor_api_configs, ...shipment } = row
+      const senders = (row.s_id || row.s_name) ? {
+        id: row.s_id,
+        name: row.s_name || '',
+        phone: row.s_phone || '',
+        email: row.s_email || '',
+        address: row.s_address || '',
+        city: row.s_city || '',
+        state: row.s_state || '',
+        pincode: row.s_pincode || '',
+        country: row.s_country || 'INDIA'
+      } : null
+
+      const receivers = (row.r_id || row.r_name) ? {
+        id: row.r_id,
+        name: row.r_name || '',
+        phone: row.r_phone || '',
+        email: row.r_email || '',
+        address: row.r_address || '',
+        city: row.r_city || '',
+        state: row.r_state || '',
+        pincode: row.r_pincode || '',
+        country: row.r_country || ''
+      } : null
+
+      const courier_providers = row.cp_id ? {
+        id: row.cp_id,
+        name: row.cp_name,
+        code: row.cp_code,
+        tracking_url: row.cp_tracking_url
+      } : null
+
+      const vendor_api_configs = row.vac_id ? {
+        id: row.vac_id,
+        name: row.vac_name,
+        vendor_code: row.vac_vendor_code,
+        environment: row.vac_environment
+      } : null
+
       return {
-        ...shipment,
-        senders: senders?.id ? senders : null,
-        receivers: receivers?.id ? receivers : null,
-        courier_providers: courier_providers?.id ? courier_providers : null,
-        vendor_api_configs: vendor_api_configs?.id ? vendor_api_configs : null
+        ...row,
+        senders,
+        receivers,
+        courier_providers,
+        vendor_api_configs
       }
     })
 

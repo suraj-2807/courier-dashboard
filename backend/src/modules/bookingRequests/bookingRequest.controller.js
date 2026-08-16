@@ -46,6 +46,19 @@ export const createBookingRequest = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Receiver name and phone are required' })
     }
 
+    if (sender_gstin_type && /aadhaar|aadhar/i.test(sender_gstin_type)) {
+      const clean = (sender_gstin_no || '').toString().replace(/\D/g, '')
+      if (clean.length !== 12) {
+        return res.status(400).json({ success: false, message: 'Aadhaar number must be exactly 12 digits' })
+      }
+    }
+    if (receiver_gstin_type && /aadhaar|aadhar/i.test(receiver_gstin_type)) {
+      const clean = (receiver_gstin_no || '').toString().replace(/\D/g, '')
+      if (clean.length !== 12) {
+        return res.status(400).json({ success: false, message: 'Receiver Aadhaar number must be exactly 12 digits' })
+      }
+    }
+
     const request_awb = await generateRequestAwb()
 
     const resolvedCustomerId = customer_id ? parseInt(customer_id) : null

@@ -698,6 +698,20 @@ export default function NewBookingPage() {
       toast.error('Please enter the shipment weight')
       return false
     }
+    if (form.sender_gstin_type && /aadhaar|aadhar/i.test(form.sender_gstin_type)) {
+      const cleanAadhaar = (form.sender_gstin_no || '').replace(/\D/g, '')
+      if (cleanAadhaar.length !== 12) {
+        toast.error('Aadhaar number must be exactly 12 digits')
+        return false
+      }
+    }
+    if (form.receiver_gstin_type && /aadhaar|aadhar/i.test(form.receiver_gstin_type)) {
+      const cleanAadhaar = (form.receiver_gstin_no || '').replace(/\D/g, '')
+      if (cleanAadhaar.length !== 12) {
+        toast.error('Receiver Aadhaar number must be exactly 12 digits')
+        return false
+      }
+    }
     return true
   }
 
@@ -952,12 +966,19 @@ export default function NewBookingPage() {
                       <option value="Driving License">Driving License</option>
                     </select>
                   </CompactField>
-                  <CompactField label="Document Number">
+                  <CompactField label={/aadhaar|aadhar/i.test(form.sender_gstin_type) ? 'Aadhaar No. (12 Digits)' : 'Document Number'}>
                     <input
                       type="text"
-                      placeholder="Doc No."
+                      placeholder={/aadhaar|aadhar/i.test(form.sender_gstin_type) ? '12-digit Aadhaar' : 'Doc No.'}
                       value={form.sender_gstin_no}
-                      onChange={e => updateForm('sender_gstin_no', e.target.value)}
+                      maxLength={/aadhaar|aadhar/i.test(form.sender_gstin_type) ? 12 : undefined}
+                      onChange={e => {
+                        let val = e.target.value
+                        if (/aadhaar|aadhar/i.test(form.sender_gstin_type)) {
+                          val = val.replace(/\D/g, '').slice(0, 12)
+                        }
+                        updateForm('sender_gstin_no', val)
+                      }}
                       className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
                     />
                   </CompactField>
@@ -1086,14 +1107,22 @@ export default function NewBookingPage() {
                       <option value="Tax ID">Tax ID</option>
                       <option value="VAT">VAT</option>
                       <option value="Passport">Passport</option>
+                      <option value="Aadhaar Number">Aadhaar</option>
                     </select>
                   </CompactField>
-                  <CompactField label="Document Number">
+                  <CompactField label={/aadhaar|aadhar/i.test(form.receiver_gstin_type) ? 'Aadhaar No. (12 Digits)' : 'Document Number'}>
                     <input
                       type="text"
-                      placeholder="Doc No."
+                      placeholder={/aadhaar|aadhar/i.test(form.receiver_gstin_type) ? '12-digit Aadhaar' : 'Doc No.'}
                       value={form.receiver_gstin_no}
-                      onChange={e => updateForm('receiver_gstin_no', e.target.value)}
+                      maxLength={/aadhaar|aadhar/i.test(form.receiver_gstin_type) ? 12 : undefined}
+                      onChange={e => {
+                        let val = e.target.value
+                        if (/aadhaar|aadhar/i.test(form.receiver_gstin_type)) {
+                          val = val.replace(/\D/g, '').slice(0, 12)
+                        }
+                        updateForm('receiver_gstin_no', val)
+                      }}
                       className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
                     />
                   </CompactField>
@@ -1293,7 +1322,7 @@ export default function NewBookingPage() {
                       <option value="credit">Account Credit</option>
                     </select>
                   </CompactField>
-                  <CompactField label={invoiceTotalAmount > 0 ? `Shipping Charge (₹) — Auto from Invoice` : `Shipping Charge (₹)`}>
+                  <CompactField label="Shipping Charge (₹)">
                     <input
                       type="number"
                       placeholder="0.00"

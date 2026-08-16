@@ -12,10 +12,23 @@ export function exportShipmentsToExcel(shipments = [], fileName = '') {
 
   // Format rows with every single attribute from the booking form
   const formattedRows = shipments.map((s, index) => {
-    const sender = s.senders || {}
-    const receiver = s.receivers || {}
-    const vendorConfig = s.vendor_api_configs || {}
-    const courierProvider = s.courier_providers || {}
+    // Parse sender/receiver objects safely
+    let sender = s.senders || s.sender || {}
+    if (typeof sender === 'string') {
+      try { sender = JSON.parse(sender) } catch { sender = {} }
+    }
+    let receiver = s.receivers || s.receiver || {}
+    if (typeof receiver === 'string') {
+      try { receiver = JSON.parse(receiver) } catch { receiver = {} }
+    }
+    let vendorConfig = s.vendor_api_configs || s.vendor_config || {}
+    if (typeof vendorConfig === 'string') {
+      try { vendorConfig = JSON.parse(vendorConfig) } catch { vendorConfig = {} }
+    }
+    let courierProvider = s.courier_providers || s.courier_provider || {}
+    if (typeof courierProvider === 'string') {
+      try { courierProvider = JSON.parse(courierProvider) } catch { courierProvider = {} }
+    }
 
     // Parse invoice items
     let invoiceItemsSummary = ''
@@ -38,39 +51,39 @@ export function exportShipmentsToExcel(shipments = [], fileName = '') {
       'Status': String(s.status || 'draft').toUpperCase(),
       'Vendor Push Status': s.vendor_push_status || '—',
       'Is Locked': s.is_locked ? 'YES' : 'NO',
-      'Vendor / Carrier': vendorConfig.name || courierProvider.name || '—',
+      'Vendor / Carrier': vendorConfig.name || courierProvider.name || s.vendor_code || '—',
       'Vendor Code': s.vendor_code || vendorConfig.vendor_code || '—',
       'Service Code': s.service_code || '—',
       'Product Code': s.product_code || '—',
       'Forwarding / Vendor AWB': s.vendor_awb_number || s.vendor_result?.awbNumber || '—',
 
       // Shipper Details
-      'Shipper Name': sender.name || s.sender_name || '—',
-      'Shipper Company': s.sender_company || sender.company || '—',
-      'Shipper Phone': sender.phone || s.sender_phone || '—',
-      'Shipper Email': sender.email || s.sender_email || '—',
-      'Shipper Address Line 1': sender.address || s.sender_address || '—',
-      'Shipper Address Line 2': s.sender_address_2 || '—',
-      'Shipper City': sender.city || s.sender_city || '—',
-      'Shipper State': sender.state || s.sender_state || '—',
-      'Shipper Pincode': sender.pincode || s.sender_pincode || '—',
-      'Shipper Country': sender.country || s.sender_country || 'INDIA',
-      'Shipper ID/GST Type': s.sender_gstin_type || '—',
-      'Shipper ID/GST Number': s.sender_gstin_no || '—',
+      'Shipper Name': sender.name || s.s_name || s.sender_name || s.sender_company || '—',
+      'Shipper Company': s.sender_company || sender.company || s.s_company || '—',
+      'Shipper Phone': sender.phone || s.s_phone || s.sender_phone || '—',
+      'Shipper Email': sender.email || s.s_email || s.sender_email || '—',
+      'Shipper Address Line 1': sender.address || s.s_address || s.sender_address || '—',
+      'Shipper Address Line 2': s.sender_address_2 || sender.address_2 || s.s_address_2 || '—',
+      'Shipper City': sender.city || s.s_city || s.sender_city || '—',
+      'Shipper State': sender.state || s.s_state || s.sender_state || '—',
+      'Shipper Pincode': sender.pincode || s.s_pincode || s.sender_pincode || '—',
+      'Shipper Country': sender.country || s.s_country || s.sender_country || 'INDIA',
+      'Shipper ID/GST Type': s.sender_gstin_type || sender.gstin_type || '—',
+      'Shipper ID/GST Number': s.sender_gstin_no || sender.gstin_no || '—',
 
       // Consignee Details
-      'Consignee Name': receiver.name || s.receiver_name || '—',
-      'Consignee Company': s.receiver_company || receiver.company || '—',
-      'Consignee Phone': receiver.phone || s.receiver_phone || '—',
-      'Consignee Email': receiver.email || s.receiver_email || '—',
-      'Consignee Address Line 1': receiver.address || s.receiver_address || '—',
-      'Consignee Address Line 2': s.receiver_address_2 || '—',
-      'Consignee City': receiver.city || s.receiver_city || '—',
-      'Consignee State': receiver.state || s.receiver_state || '—',
-      'Consignee Pincode': receiver.pincode || s.receiver_pincode || '—',
-      'Consignee Country': receiver.country || s.receiver_country || '—',
-      'Consignee ID/GST Type': s.receiver_gstin_type || '—',
-      'Consignee ID/GST Number': s.receiver_gstin_no || '—',
+      'Consignee Name': receiver.name || s.r_name || s.receiver_name || s.receiver_company || '—',
+      'Consignee Company': s.receiver_company || receiver.company || s.r_company || '—',
+      'Consignee Phone': receiver.phone || s.r_phone || s.receiver_phone || '—',
+      'Consignee Email': receiver.email || s.r_email || s.receiver_email || '—',
+      'Consignee Address Line 1': receiver.address || s.r_address || s.receiver_address || '—',
+      'Consignee Address Line 2': s.receiver_address_2 || receiver.address_2 || s.r_address_2 || '—',
+      'Consignee City': receiver.city || s.r_city || s.receiver_city || '—',
+      'Consignee State': receiver.state || s.r_state || s.receiver_state || '—',
+      'Consignee Pincode': receiver.pincode || s.r_pincode || s.receiver_pincode || '—',
+      'Consignee Country': receiver.country || s.r_country || s.receiver_country || '—',
+      'Consignee ID/GST Type': s.receiver_gstin_type || receiver.gstin_type || '—',
+      'Consignee ID/GST Number': s.receiver_gstin_no || receiver.gstin_no || '—',
 
       // Package & Dimensions
       'Package Type': String(s.package_type || 'parcel').toUpperCase(),
