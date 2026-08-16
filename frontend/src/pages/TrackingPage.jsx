@@ -74,7 +74,8 @@ export default function TrackingPage() {
   const vendorOptions = [
     { value: '', label: 'Auto Detect' },
     { value: 'pacific', label: 'Pacific Express' },
-    { value: 'flyswift', label: 'FlySwift' }
+    { value: 'flyswift', label: 'FlySwift' },
+    { value: 'acx', label: 'ACX International' }
   ]
 
   return (

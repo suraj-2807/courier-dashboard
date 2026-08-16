@@ -107,12 +107,27 @@ async function trackPacific(awb, config) {
 }
 
 // ─── FlySwift Tracking ─────────────────────────────────────────────
-async function trackFlySwift(awb, config) {
+async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift') {
   const creds = parseCredentials(config.auth_credentials)
-  const apiCompanyId = creds.api_company_id || creds.company_id || creds.company_code || ''
+  const apiCompanyId = creds.api_company_id || creds.company_id || creds.company_code || '5'
   const customerCode = creds.customer_code || creds.customer_id || ''
 
-  const trackingUrl = `https://admin.flyswift.net/api/tracking_api/get_tracking_data?api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${awb}`
+  // Determine host dynamically from config auth_url or shipment_api_url
+  let host = 'admin.flyswift.net'
+  if (config.auth_url) {
+    try {
+      const parsedUrl = new URL(config.auth_url)
+      host = parsedUrl.host
+    } catch {}
+  } else if (config.shipment_api_url) {
+    try {
+      const parsedUrl = new URL(config.shipment_api_url)
+      host = parsedUrl.host
+    } catch {}
+  }
+
+  const vendorDisplayName = config.name || defaultVendorName || 'Courier Partner'
+  const trackingUrl = `https://${host}/api/tracking_api/get_tracking_data?api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${awb}`
 
   const response = await fetch(trackingUrl, {
     method: 'GET',
@@ -120,7 +135,7 @@ async function trackFlySwift(awb, config) {
   })
 
   if (!response.ok) {
-    throw new Error(`FlySwift tracking API returned status ${response.status}`)
+    throw new Error(`${vendorDisplayName} tracking API returned status ${response.status}`)
   }
 
   const data = await response.json()
@@ -149,8 +164,8 @@ async function trackFlySwift(awb, config) {
   else if (statusLower.includes('picked') || statusLower.includes('booked') || statusLower.includes('manifest')) currentStage = 'picked_up'
 
   return {
-    vendor: 'FlySwift',
-    vendorCode: 'flyswift',
+    vendor: vendorDisplayName,
+    vendorCode: (config.vendor_code || 'acx').toLowerCase(),
     shipmentInfo: {
       awbNo: shipment.tracking_no || shipment.docket_no || String(awb),
       vendorAwbNo: shipment.vendor_awb || shipment.ref_no || '',
@@ -162,7 +177,7 @@ async function trackFlySwift(awb, config) {
       destinationCountry: shipment.destination_country || '',
       consignee: shipment.consignee_name || shipment.receiver_name || '',
       shipperName: shipment.shipper_name || shipment.sender_name || '',
-      vendorName: shipment.vendor_name || 'FlySwift',
+      vendorName: shipment.vendor_name || vendorDisplayName,
       serviceName: shipment.service_name || shipment.service_type || '',
       weight: shipment.weight || shipment.actual_weight || '',
       refNo: shipment.reference_no || shipment.ref_no || '',
@@ -183,8 +198,11 @@ async function trackFlySwift(awb, config) {
 const VENDOR_TRACKERS = {
   pacific: trackPacific,
   pacifc: trackPacific,
-  flyswift: trackFlySwift,
-  trackmate: trackFlySwift
+  flyswift: trackTrackmateVendor,
+  trackmate: trackTrackmateVendor,
+  acx: trackTrackmateVendor,
+  acxintl: trackTrackmateVendor,
+  acx_international: trackTrackmateVendor
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -14,7 +14,10 @@ import PacificAdapter from './PacificAdapter.js'
  */
 const ADAPTERS = {
   'flyswift': FlySwiftAdapter,
-  'trackmate': FlySwiftAdapter,   // Alias — same vendor, different branding
+  'trackmate': FlySwiftAdapter,   // Alias — same vendor engine, different branding
+  'acx': FlySwiftAdapter,         // ACX International Courier
+  'acxintl': FlySwiftAdapter,     // ACX International Courier alias
+  'acx_international': FlySwiftAdapter,
   'pacific': PacificAdapter,
   'pacifc': PacificAdapter,       // Support typo variation as requested
   // 'bluedart': BlueDartAdapter,
