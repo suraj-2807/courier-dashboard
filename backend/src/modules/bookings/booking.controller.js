@@ -5,6 +5,7 @@ import { generateInvoicePdf } from '../../services/invoicePdf.service.js'
 import { generateWaybillPdf } from '../../services/waybillPdf.service.js'
 import { generateBoxLabelsPdf } from '../../services/boxLabelPdf.service.js'
 import { syncAwbToWP } from '../../utils/wpSync.js'
+import { syncToRemoteAwbEntry } from '../../services/remoteAwbEntry.service.js'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -709,12 +710,34 @@ export const pushBookingToApi = async (req, res) => {
         [id, 'AWB Assigned', `Pushed to vendor API. Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Vendor API']
       )
 
-      // Refetch
-      const updated = await query('SELECT * FROM shipments WHERE id = ?', [id])
+      // Refetch with sender/receiver details
+      const updatedRows = await query(
+        `SELECT s.*, 
+          snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
+          snd.address as s_address, snd.city as s_city, snd.state as s_state,
+          snd.pincode as s_pincode, snd.country as s_country,
+          rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
+          rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
+          rcv.pincode as r_pincode, rcv.country as r_country
+         FROM shipments s
+         LEFT JOIN senders snd ON s.sender_id = snd.id
+         LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+         WHERE s.id = ?`,
+        [id]
+      )
+
+      const updated = updatedRows[0] || booking
+
+      // Sync to Remote Operations AWBENTRY table (Hostinger DB)
+      try {
+        await syncToRemoteAwbEntry(updated, vendorResult)
+      } catch (syncErr) {
+        console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
+      }
 
       return res.json({
         success: true,
-        booking: updated[0],
+        booking: updated,
         vendor_result: vendorResult,
         message: `Booking pushed to vendor API! Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`
       })
@@ -868,7 +891,18 @@ export const createBooking = async (req, res) => {
           [shipmentId, 'AWB Assigned', `Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Vendor API']
         )
 
-        await syncToAwbEntry(vendorResult.awbNumber || fields.vendor_code || '')
+        // Sync to Remote Operations AWBENTRY table (Hostinger DB)
+        try {
+          await syncToRemoteAwbEntry({
+            ...fields,
+            id: shipmentId,
+            tracking_number,
+            order_id,
+            vendor_awb_number: vendorResult.awbNumber || fields.vendor_code || ''
+          }, vendorResult)
+        } catch (syncErr) {
+          console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
+        }
       } else {
         await execute('DELETE FROM shipments WHERE id = ?', [shipmentId])
         return res.status(400).json({
