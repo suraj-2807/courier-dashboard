@@ -397,7 +397,7 @@ export default function BookingsPage() {
                       {/* Status */}
                       <td className="px-4 py-3.5">
                         <StatusBadge status={b.status} size="xs" />
-                        {b.is_locked && (
+                        {Boolean(b.is_locked) && (
                           <span className="ml-1.5 text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">LOCKED</span>
                         )}
                       </td>
@@ -441,14 +441,14 @@ export default function BookingsPage() {
                           <Link
                             to={`/bookings/edit/${b.id}`}
                             className="p-1.5 text-navy hover:text-primary hover:bg-primary/5 rounded-lg transition-colors font-bold flex items-center gap-1 text-[11px]"
-                            title={b.is_locked ? "View Booking Form (Locked)" : "Edit Booking"}
+                            title={Boolean(b.is_locked) ? "View Booking Form (Locked)" : "Edit Booking"}
                           >
                             <Edit className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">{b.is_locked ? 'Form' : 'Edit'}</span>
+                            <span className="hidden sm:inline">{Boolean(b.is_locked) ? 'Form' : 'Edit'}</span>
                           </Link>
 
                           {/* If unlocked / draft: Show Push button */}
-                          {!b.is_locked && (
+                          {!Boolean(b.is_locked) && (
                             <button
                               type="button"
                               disabled={pushingId === b.id}

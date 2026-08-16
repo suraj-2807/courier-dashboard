@@ -318,7 +318,7 @@ export default function BookingDetailPage() {
           </button>
 
           {/* Push to API button for draft */}
-          {!booking.is_locked && (
+          {!Boolean(booking.is_locked) && (
             <button
               onClick={() => {
                 if (!booking.vendor_config_id) {

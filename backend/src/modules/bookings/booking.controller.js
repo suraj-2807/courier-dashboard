@@ -19,6 +19,7 @@ const __dirname = path.dirname(__filename)
  */
 function extractBookingFields(body) {
   return {
+    id: body.id,
     sender_id: body.sender_id,
     receiver_id: body.receiver_id,
     courier_provider_id: body.courier_provider_id,
@@ -658,6 +659,15 @@ export const pushBookingToApi = async (req, res) => {
       return res.status(400).json({ success: false, message: 'This booking is already locked (pushed to API). No changes can be made.' })
     }
 
+    if (vendor_config_id) {
+      await execute('UPDATE shipments SET vendor_config_id = ?, vendor_code = ?, service_code = ?, product_code = ? WHERE id = ?',
+        [vendor_config_id, vendor_code || '', service_code || '', product_code || '', id])
+      booking.vendor_config_id = vendor_config_id
+      booking.vendor_code = vendor_code || booking.vendor_code
+      booking.service_code = service_code || booking.service_code
+      booking.product_code = product_code || booking.product_code
+    }
+
     if (!booking.vendor_config_id) {
       return res.status(400).json({ success: false, message: 'No vendor API selected for this booking. Please select a vendor first.' })
     }
@@ -764,6 +774,7 @@ export const pushBookingToApi = async (req, res) => {
 export const createBooking = async (req, res) => {
   try {
     const fields = extractBookingFields(req.body)
+    const existingId = fields.id || req.body.id
 
     if (!validateAadhaarDoc(fields.sender_gstin_type, fields.sender_gstin_no)) {
       return res.status(400).json({ success: false, message: 'Aadhaar number must be exactly 12 digits' })
@@ -771,9 +782,6 @@ export const createBooking = async (req, res) => {
     if (!validateAadhaarDoc(fields.receiver_gstin_type, fields.receiver_gstin_no)) {
       return res.status(400).json({ success: false, message: 'Receiver Aadhaar number must be exactly 12 digits' })
     }
-
-    const tracking_number = await generateTracking()
-    const order_id = tracking_number
 
     // Upsert sender/receiver
     const finalSenderId = await upsertSender(fields)
@@ -784,66 +792,145 @@ export const createBooking = async (req, res) => {
       ? JSON.stringify(fields.invoice_items)
       : (fields.invoice_items || '[]')
 
-    // Create shipment record
-    const shipmentResult = await execute(
-      `INSERT INTO shipments (
-        order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
-        vendor_code, service_code, product_code, tracking_number, weight, \`length\`, breadth, height,
-        no_of_pieces, content_description, declared_value, cod_amount,
-        payment_mode, package_type, total_amount, shipping_charge,
-        order_reference, remarks, status, vendor_push_status, is_locked,
-        sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
-        receiver_address_2, receiver_gstin_type, receiver_gstin_no,
-        invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
-        invoice_type, invoice_note, invoice_items
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        order_id,
-        finalSenderId || null,
-        finalReceiverId || null,
-        fields.courier_provider_id || null,
-        fields.vendor_config_id || null,
-        fields.vendor_code || '',
-        fields.service_code || '',
-        fields.product_code || '',
-        tracking_number,
-        fields.weight || 0,
-        fields.length || 0,
-        fields.breadth || 0,
-        fields.height || 0,
-        parseInt(fields.no_of_pieces) || 1,
-        fields.content_description || 'General Goods',
-        parseFloat(fields.declared_value) || 0,
-        parseFloat(fields.cod_amount) || 0,
-        fields.payment_mode || 'prepaid',
-        fields.package_type || 'parcel',
-        parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
-        parseFloat(fields.shipping_charge) || 0,
-        fields.order_reference || '',
-        fields.remarks || '',
-        fields.vendor_config_id ? 'processing' : 'booked',
-        fields.vendor_config_id ? 'pending' : 'skipped',
-        false,
-        fields.sender_company || '',
-        fields.sender_address_2 || '',
-        fields.sender_gstin_type || '',
-        fields.sender_gstin_no || '',
-        fields.receiver_address_2 || '',
-        fields.receiver_gstin_type || '',
-        fields.receiver_gstin_no || '',
-        tracking_number, // invoice_no = AWB
-        fields.invoice_date || new Date().toISOString().split('T')[0],
-        fields.invoice_currency || 'INR',
-        fields.hs_code || '',
-        fields.export_reason || '',
-        fields.terms_of_trade || 'CIF',
-        fields.invoice_type || 'INVOICE',
-        fields.invoice_note || '',
-        invoiceItemsJson
-      ]
-    )
+    let shipmentId
+    let tracking_number
+    let order_id
+    let isExisting = false
 
-    const shipmentId = shipmentResult.insertId
+    if (existingId) {
+      const existing = await query('SELECT * FROM shipments WHERE id = ?', [existingId])
+      if (existing.length === 0) {
+        return res.status(404).json({ success: false, message: 'Shipment not found' })
+      }
+      if (existing[0].is_locked) {
+        return res.status(400).json({ success: false, message: 'This shipment is already locked/dispatched and cannot be pushed again.' })
+      }
+      isExisting = true
+      shipmentId = existing[0].id
+      tracking_number = existing[0].tracking_number
+      order_id = existing[0].order_id || tracking_number
+
+      // Update existing shipment in place (KEEP THE SAME AWB!)
+      await execute(
+        `UPDATE shipments SET
+          sender_id = ?, receiver_id = ?, courier_provider_id = ?, vendor_config_id = ?,
+          vendor_code = ?, service_code = ?, product_code = ?, weight = ?, \`length\` = ?, breadth = ?, height = ?,
+          no_of_pieces = ?, content_description = ?, declared_value = ?, cod_amount = ?,
+          payment_mode = ?, package_type = ?, total_amount = ?, shipping_charge = ?,
+          order_reference = ?, remarks = ?, status = ?, vendor_push_status = ?,
+          sender_company = ?, sender_address_2 = ?, sender_gstin_type = ?, sender_gstin_no = ?,
+          receiver_address_2 = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
+          invoice_no = ?, invoice_date = ?, invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
+          invoice_type = ?, invoice_note = ?, invoice_items = ?
+        WHERE id = ?`,
+        [
+          finalSenderId || null,
+          finalReceiverId || null,
+          fields.courier_provider_id || null,
+          fields.vendor_config_id || null,
+          fields.vendor_code || '',
+          fields.service_code || '',
+          fields.product_code || '',
+          fields.weight || 0,
+          fields.length || 0,
+          fields.breadth || 0,
+          fields.height || 0,
+          parseInt(fields.no_of_pieces) || 1,
+          fields.content_description || 'General Goods',
+          parseFloat(fields.declared_value) || 0,
+          parseFloat(fields.cod_amount) || 0,
+          fields.payment_mode || 'prepaid',
+          fields.package_type || 'parcel',
+          parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
+          parseFloat(fields.shipping_charge) || 0,
+          fields.order_reference || '',
+          fields.remarks || '',
+          fields.vendor_config_id ? 'processing' : 'booked',
+          fields.vendor_config_id ? 'pending' : 'skipped',
+          fields.sender_company || '',
+          fields.sender_address_2 || '',
+          fields.sender_gstin_type || '',
+          fields.sender_gstin_no || '',
+          fields.receiver_address_2 || '',
+          fields.receiver_gstin_type || '',
+          fields.receiver_gstin_no || '',
+          tracking_number,
+          fields.invoice_date || new Date().toISOString().split('T')[0],
+          fields.invoice_currency || 'INR',
+          fields.hs_code || '',
+          fields.export_reason || '',
+          fields.terms_of_trade || 'CIF',
+          fields.invoice_type || 'INVOICE',
+          fields.invoice_note || '',
+          invoiceItemsJson,
+          shipmentId
+        ]
+      )
+    } else {
+      // New shipment insertion
+      tracking_number = await generateTracking()
+      order_id = tracking_number
+
+      const shipmentResult = await execute(
+        `INSERT INTO shipments (
+          order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
+          vendor_code, service_code, product_code, tracking_number, weight, \`length\`, breadth, height,
+          no_of_pieces, content_description, declared_value, cod_amount,
+          payment_mode, package_type, total_amount, shipping_charge,
+          order_reference, remarks, status, vendor_push_status, is_locked,
+          sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
+          receiver_address_2, receiver_gstin_type, receiver_gstin_no,
+          invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
+          invoice_type, invoice_note, invoice_items
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          order_id,
+          finalSenderId || null,
+          finalReceiverId || null,
+          fields.courier_provider_id || null,
+          fields.vendor_config_id || null,
+          fields.vendor_code || '',
+          fields.service_code || '',
+          fields.product_code || '',
+          tracking_number,
+          fields.weight || 0,
+          fields.length || 0,
+          fields.breadth || 0,
+          fields.height || 0,
+          parseInt(fields.no_of_pieces) || 1,
+          fields.content_description || 'General Goods',
+          parseFloat(fields.declared_value) || 0,
+          parseFloat(fields.cod_amount) || 0,
+          fields.payment_mode || 'prepaid',
+          fields.package_type || 'parcel',
+          parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
+          parseFloat(fields.shipping_charge) || 0,
+          fields.order_reference || '',
+          fields.remarks || '',
+          fields.vendor_config_id ? 'processing' : 'booked',
+          fields.vendor_config_id ? 'pending' : 'skipped',
+          false,
+          fields.sender_company || '',
+          fields.sender_address_2 || '',
+          fields.sender_gstin_type || '',
+          fields.sender_gstin_no || '',
+          fields.receiver_address_2 || '',
+          fields.receiver_gstin_type || '',
+          fields.receiver_gstin_no || '',
+          tracking_number,
+          fields.invoice_date || new Date().toISOString().split('T')[0],
+          fields.invoice_currency || 'INR',
+          fields.hs_code || '',
+          fields.export_reason || '',
+          fields.terms_of_trade || 'CIF',
+          fields.invoice_type || 'INVOICE',
+          fields.invoice_note || '',
+          invoiceItemsJson
+        ]
+      )
+
+      shipmentId = shipmentResult.insertId
+    }
 
     // Generate invoice PDF
     let invoicePdfPath = ''
@@ -854,22 +941,14 @@ export const createBooking = async (req, res) => {
       console.error('Invoice PDF generation failed:', pdfErr.message)
     }
 
-    // Disabled: AWBENTRY writes
-    const syncToAwbEntry = async (vendorAwbOverride) => {
-      console.log('[Disabled] Writes to AWBENTRY and parcel_history are disabled.')
-      return
+    // Create tracking event if new
+    if (!isExisting) {
+      await execute(
+        `INSERT INTO tracking_events (shipment_id, status, description, location)
+         VALUES (?, ?, ?, ?)`,
+        [shipmentId, 'Shipment Created', 'Shipment booked successfully', 'System']
+      )
     }
-
-    if (!fields.vendor_config_id) {
-      await syncToAwbEntry(null)
-    }
-
-    // Create tracking event
-    await execute(
-      `INSERT INTO tracking_events (shipment_id, status, description, location)
-       VALUES (?, ?, ?, ?)`,
-      [shipmentId, 'Shipment Created', 'Shipment booked successfully', 'System']
-    )
 
     // Push to vendor API if vendor selected
     let vendorResult = null
@@ -904,7 +983,11 @@ export const createBooking = async (req, res) => {
           console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
         }
       } else {
-        await execute('DELETE FROM shipments WHERE id = ?', [shipmentId])
+        if (!isExisting) {
+          await execute('DELETE FROM shipments WHERE id = ?', [shipmentId])
+        } else {
+          await execute('UPDATE shipments SET vendor_push_status = ? WHERE id = ?', ['failed', shipmentId])
+        }
         return res.status(400).json({
           success: false,
           message: `Vendor API Push Failed: ${vendorResult.error || 'Unknown error'}`
