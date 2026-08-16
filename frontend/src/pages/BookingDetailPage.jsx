@@ -276,15 +276,13 @@ export default function BookingDetailPage() {
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          {!booking.is_locked && (
-            <Link
-              to={`/bookings/edit/${booking.id}`}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-navy hover:bg-navy-light text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors"
-            >
-              <Edit className="w-3.5 h-3.5" />
-              Edit Shipment
-            </Link>
-          )}
+          <Link
+            to={`/bookings/edit/${booking.id}`}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-navy hover:bg-navy-light text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors"
+          >
+            <Edit className="w-3.5 h-3.5" />
+            {booking.is_locked ? 'View Full Form (Locked)' : 'Edit Shipment'}
+          </Link>
 
           {/* Download Invoice PDF */}
           <button

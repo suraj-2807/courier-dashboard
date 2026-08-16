@@ -6,7 +6,8 @@ export default function CountryAutocompleteInput({
   onChange,
   placeholder = 'Search Country...',
   className = '',
-  countryList = []
+  countryList = [],
+  disabled = false
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -38,6 +39,7 @@ export default function CountryAutocompleteInput({
   }).slice(0, 60)
 
   const handleSelect = (item) => {
+    if (disabled) return
     // Automatically set the 2-letter ISO country code
     onChange(item.country_code)
     setSearch(item.country_code)
@@ -45,6 +47,7 @@ export default function CountryAutocompleteInput({
   }
 
   const handleInputChange = (e) => {
+    if (disabled) return
     const val = e.target.value
     setSearch(val)
     onChange(val)
@@ -58,9 +61,10 @@ export default function CountryAutocompleteInput({
           type="text"
           placeholder={placeholder}
           value={search}
-          onFocus={() => setIsOpen(true)}
+          disabled={disabled}
+          onFocus={() => { if (!disabled) setIsOpen(true) }}
           onChange={handleInputChange}
-          className={className}
+          className={`${className} ${disabled ? 'cursor-not-allowed text-gray-500 opacity-75' : ''}`}
         />
         <ChevronDown
           className="w-3.5 h-3.5 text-gray-400 absolute right-2 pointer-events-none transition-transform"

@@ -25,7 +25,9 @@ import {
   Send,
   Plus,
   Trash2,
-  Receipt
+  Receipt,
+  Lock,
+  Eye
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -242,6 +244,8 @@ export default function NewBookingPage() {
     },
     enabled: !!editId
   })
+
+  const isLocked = !!editBookingData?.is_locked
 
   // Pre-fill form when editing an existing shipment
   useEffect(() => {
@@ -724,23 +728,69 @@ export default function NewBookingPage() {
             <ArrowLeft className="w-5 h-5" />
           </Link>
           <div>
-            <h1 className="text-xl sm:text-[22px] font-extrabold text-navy tracking-tight">
-              {editId ? `Edit Booking (AWB: ${editBookingData?.tracking_number || editId})` : 'Create New Booking'}
+            <h1 className="text-xl sm:text-[22px] font-extrabold text-navy tracking-tight flex items-center gap-2 flex-wrap">
+              {isLocked ? (
+                <>
+                  <span>View Booking (AWB: {editBookingData?.tracking_number || editId})</span>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-extrabold bg-amber-500/15 text-amber-800 border border-amber-500/30 px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                    <Lock className="w-3 h-3 text-amber-700" /> Locked / Dispatched
+                  </span>
+                </>
+              ) : editId ? (
+                `Edit Booking (AWB: ${editBookingData?.tracking_number || editId})`
+              ) : (
+                'Create New Booking'
+              )}
             </h1>
             <p className="text-[12px] text-text-secondary mt-0.5">
-              {editId ? 'Update shipment details or select vendor API to dispatch' : 'Single-page docket creation with auto vendor API dispatch'}
+              {isLocked
+                ? 'This shipment was dispatched and pushed to the carrier API. All details are open in read-only mode for review.'
+                : editId
+                ? 'Update shipment details or select vendor API to dispatch'
+                : 'Single-page docket creation with auto vendor API dispatch'}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="bg-primary/10 text-primary border border-primary/20 text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-            Single Page Form
-          </span>
+          {isLocked ? (
+            <Link
+              to={`/bookings/${editId}`}
+              className="bg-navy hover:bg-navy-light text-white text-[12px] font-bold px-3.5 py-1.5 rounded-xl transition-colors inline-flex items-center gap-1.5 shadow-xs"
+            >
+              <Eye className="w-3.5 h-3.5" />
+              Tracking & Documents
+            </Link>
+          ) : (
+            <span className="bg-primary/10 text-primary border border-primary/20 text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+              Single Page Form
+            </span>
+          )}
         </div>
       </div>
 
+      {/* ── Locked Shipment Notice Banner ── */}
+      {isLocked && (
+        <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-700 flex-shrink-0">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-navy">Shipment is Locked (API Pushed)</h4>
+              <p className="text-xs text-text-secondary mt-0.5">
+                All inputs are disabled to protect dispatched carrier data. Admin can inspect all shipper, consignee, package, charges, and invoice details.
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-extrabold uppercase px-3 py-1 bg-amber-500 text-white rounded-full tracking-wider shadow-xs self-start sm:self-center">
+            Read-Only
+          </span>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-5">
+        <fieldset disabled={isLocked} className="contents">
         {/* ── Main 3 Columns Layout ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
@@ -1029,6 +1079,7 @@ export default function NewBookingPage() {
                 <CompactField label="Courier Vendor API">
                   <select
                     value={form.vendor_config_id}
+                    disabled={isLocked || (!!editId && !!form.vendor_config_id)}
                     onChange={e => {
                       const newId = e.target.value
                       updateForm('vendor_config_id', newId)
@@ -1041,7 +1092,7 @@ export default function NewBookingPage() {
                       setCustomServiceMode(false)
                       setCustomProductMode(false)
                     }}
-                    className="w-full bg-transparent focus:outline-none text-[13px] text-primary font-bold cursor-pointer"
+                    className={`w-full bg-transparent focus:outline-none text-[13px] text-primary font-bold cursor-pointer ${(isLocked || (!!editId && !!form.vendor_config_id)) ? 'cursor-not-allowed text-gray-500 opacity-75' : ''}`}
                   >
                     <option value="">— None (Local Only) —</option>
                     {activeVendors.map(v => (
@@ -1619,8 +1670,7 @@ export default function NewBookingPage() {
             </div>
           )}
         </div>
-
-
+        </fieldset>
 
         {/* ── Footer Submit Bar ── */}
         <div className="bg-surface rounded-2xl border border-border p-4 shadow-xs flex items-center justify-between flex-wrap gap-3">
@@ -1629,56 +1679,69 @@ export default function NewBookingPage() {
             onClick={() => navigate('/bookings')}
             className="px-4 py-2.5 rounded-xl border border-border bg-surface text-xs font-semibold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
           >
-            Cancel
+            {isLocked ? 'Back' : 'Cancel'}
           </button>
 
-          <div className="flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => { setForm(INITIAL_FORM); setInvoiceItems([{ sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }]) }}
-              className="px-4 py-2.5 rounded-xl border border-border bg-surface text-xs font-semibold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
-            >
-              Reset Form
-            </button>
+          <div className="flex items-center gap-3">
+            {isLocked ? (
+              <div className="flex items-center gap-3">
+                <Link
+                  to={`/bookings/${editId}`}
+                  className="px-4 py-2.5 rounded-xl border border-border bg-surface hover:bg-surface-hover text-navy text-xs font-bold transition-colors flex items-center gap-2"
+                >
+                  <Eye className="w-4 h-4" />
+                  View Tracking Details
+                </Link>
+                <Link
+                  to="/bookings"
+                  className="px-5 py-2.5 rounded-xl bg-navy hover:bg-navy-light text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-2"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to Bookings
+                </Link>
+              </div>
+            ) : (
+              <>
+                {/* SAVE DRAFT / UPDATE */}
+                <button
+                  type="button"
+                  onClick={handleSaveBooking}
+                  disabled={savingDraft || submitting}
+                  className="px-5 py-2.5 rounded-xl border border-border bg-surface hover:bg-surface-hover text-navy text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {savingDraft ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      {editId ? 'Save Changes' : 'Save Booking'}
+                    </>
+                  )}
+                </button>
 
-            {/* SAVE BOOKING — Draft */}
-            <button
-              type="button"
-              disabled={savingDraft || submitting}
-              onClick={handleSaveBooking}
-              className="px-5 py-2.5 rounded-xl bg-navy hover:bg-navy-light text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              {savingDraft ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  Save Booking
-                </>
-              )}
-            </button>
-
-            {/* PUSH TO API */}
-            <button
-              type="submit"
-              disabled={submitting || savingDraft}
-              className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Pushing to API...
-                </>
-              ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  Push to API
-                </>
-              )}
-            </button>
+                {/* PUSH TO API */}
+                <button
+                  type="submit"
+                  disabled={submitting || savingDraft}
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {submitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Pushing to API...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      Push to API
+                    </>
+                  )}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </form>

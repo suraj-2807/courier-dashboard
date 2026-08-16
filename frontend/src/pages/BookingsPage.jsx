@@ -398,33 +398,32 @@ export default function BookingsPage() {
                             <Package className="w-4 h-4" />
                           </button>
 
-                          {/* If unlocked / draft: Show Edit and Push buttons */}
-                          {!b.is_locked && (
-                            <>
-                              <Link
-                                to={`/bookings/edit/${b.id}`}
-                                className="p-1.5 text-navy hover:text-primary hover:bg-primary/5 rounded-lg transition-colors font-bold flex items-center gap-1 text-[11px]"
-                                title="Edit Booking"
-                              >
-                                <Edit className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">Edit</span>
-                              </Link>
+                          {/* Edit / View Booking Form */}
+                          <Link
+                            to={`/bookings/edit/${b.id}`}
+                            className="p-1.5 text-navy hover:text-primary hover:bg-primary/5 rounded-lg transition-colors font-bold flex items-center gap-1 text-[11px]"
+                            title={b.is_locked ? "View Booking Form (Locked)" : "Edit Booking"}
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">{b.is_locked ? 'Form' : 'Edit'}</span>
+                          </Link>
 
-                              <button
-                                type="button"
-                                disabled={pushingId === b.id}
-                                onClick={() => handlePushRow(b)}
-                                className="px-2.5 py-1 bg-primary hover:bg-primary-dark text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                title="Push to Vendor API"
-                              >
-                                {pushingId === b.id ? (
-                                  <Loader2 className="w-3 h-3 animate-spin" />
-                                ) : (
-                                  <Send className="w-3 h-3" />
-                                )}
-                                <span>Push</span>
-                              </button>
-                            </>
+                          {/* If unlocked / draft: Show Push button */}
+                          {!b.is_locked && (
+                            <button
+                              type="button"
+                              disabled={pushingId === b.id}
+                              onClick={() => handlePushRow(b)}
+                              className="px-2.5 py-1 bg-primary hover:bg-primary-dark text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              title="Push to Vendor API"
+                            >
+                              {pushingId === b.id ? (
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                              ) : (
+                                <Send className="w-3 h-3" />
+                              )}
+                              <span>Push</span>
+                            </button>
                           )}
                         </div>
                       </td>
