@@ -4,8 +4,7 @@ import { pushShipmentToVendor } from '../../services/vendorApiPush.service.js'
 import { generateInvoicePdf } from '../../services/invoicePdf.service.js'
 import { generateWaybillPdf } from '../../services/waybillPdf.service.js'
 import { generateBoxLabelsPdf } from '../../services/boxLabelPdf.service.js'
-import { syncAwbToWP } from '../../utils/wpSync.js'
-import { syncToRemoteAwbEntry } from '../../services/remoteAwbEntry.service.js'
+import { syncToRemoteAwbEntry, syncToRemoteParcelHistory } from '../../services/remoteAwbEntry.service.js'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -28,6 +27,7 @@ function extractBookingFields(body) {
     service_code: body.service_code,
     product_code: body.product_code,
     weight: body.weight,
+    chargeable_weight: body.chargeable_weight,
     length: body.length,
     breadth: body.breadth,
     height: body.height,
@@ -123,6 +123,8 @@ function extractBookingFields(body) {
     lsp_type: body.lsp_type,
     required_performa: body.required_performa,
     required_label: body.required_label,
+    // Parcels (JSON array of multi-box dimensions)
+    parcels: body.parcels,
     // Invoice items (JSON array)
     invoice_items: body.invoice_items,
     invoice_type: body.invoice_type,
@@ -423,7 +425,11 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     otp: fields.otp || '',
     lsp_type: fields.lsp_type || '',
     required_performa: fields.required_performa || '',
-    required_label: fields.required_label || ''
+    required_label: fields.required_label || '',
+    // Parcels & Invoice Items
+    parcels: fields.parcels,
+    invoice_items: fields.invoice_items,
+    chargeable_weight: parseFloat(fields.chargeable_weight) || 0
   }
 }
 
@@ -459,10 +465,14 @@ export const saveBooking = async (req, res) => {
     const finalSenderId = await upsertSender(fields)
     const finalReceiverId = await upsertReceiver(fields)
 
-    // Parse invoice items
+    // Parse invoice items and parcels
     const invoiceItemsJson = Array.isArray(fields.invoice_items)
       ? JSON.stringify(fields.invoice_items)
       : (fields.invoice_items || '[]')
+
+    const parcelsJson = Array.isArray(fields.parcels)
+      ? JSON.stringify(fields.parcels)
+      : (typeof fields.parcels === 'string' ? fields.parcels : null)
 
     let shipmentId
     let tracking_number
@@ -483,14 +493,14 @@ export const saveBooking = async (req, res) => {
       await execute(
         `UPDATE shipments SET
           sender_id = ?, receiver_id = ?, courier_provider_id = ?, vendor_config_id = ?,
-          vendor_code = ?, service_code = ?, product_code = ?, weight = ?, \`length\` = ?, breadth = ?, height = ?,
+          vendor_code = ?, service_code = ?, product_code = ?, weight = ?, chargeable_weight = ?, \`length\` = ?, breadth = ?, height = ?,
           no_of_pieces = ?, content_description = ?, declared_value = ?, cod_amount = ?,
           payment_mode = ?, package_type = ?, total_amount = ?, shipping_charge = ?,
           order_reference = ?, remarks = ?,
           sender_company = ?, sender_address_2 = ?, sender_gstin_type = ?, sender_gstin_no = ?,
           receiver_address_2 = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
           invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
-          invoice_type = ?, invoice_note = ?, invoice_items = ?
+          invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?
         WHERE id = ?`,
         [
           finalSenderId || null,
@@ -501,6 +511,7 @@ export const saveBooking = async (req, res) => {
           fields.service_code || '',
           fields.product_code || '',
           fields.weight || 0,
+          parseFloat(fields.chargeable_weight) || parseFloat(fields.weight) || 0,
           fields.length || 0,
           fields.breadth || 0,
           fields.height || 0,
@@ -528,6 +539,7 @@ export const saveBooking = async (req, res) => {
           fields.invoice_type || 'INVOICE',
           fields.invoice_note || '',
           invoiceItemsJson,
+          parcelsJson,
           shipmentId
         ]
       )
@@ -539,15 +551,15 @@ export const saveBooking = async (req, res) => {
       const shipmentResult = await execute(
         `INSERT INTO shipments (
           order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
-          vendor_code, service_code, product_code, tracking_number, weight, \`length\`, breadth, height,
+          vendor_code, service_code, product_code, tracking_number, weight, chargeable_weight, \`length\`, breadth, height,
           no_of_pieces, content_description, declared_value, cod_amount,
           payment_mode, package_type, total_amount, shipping_charge,
           order_reference, remarks, status, vendor_push_status, is_locked,
           sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
           receiver_address_2, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
-          invoice_type, invoice_note, invoice_items
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          invoice_type, invoice_note, invoice_items, parcels
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
           finalSenderId || null,
@@ -559,6 +571,7 @@ export const saveBooking = async (req, res) => {
           fields.product_code || '',
           tracking_number,
           fields.weight || 0,
+          parseFloat(fields.chargeable_weight) || parseFloat(fields.weight) || 0,
           fields.length || 0,
           fields.breadth || 0,
           fields.height || 0,
@@ -590,7 +603,8 @@ export const saveBooking = async (req, res) => {
           fields.terms_of_trade || 'CIF',
           fields.invoice_type || 'INVOICE',
           fields.invoice_note || '',
-          invoiceItemsJson
+          invoiceItemsJson,
+          parcelsJson
         ]
       )
       shipmentId = shipmentResult.insertId
@@ -605,13 +619,45 @@ export const saveBooking = async (req, res) => {
       console.error('Invoice PDF generation failed:', pdfErr.message)
     }
 
-    // Refetch the saved shipment
-    const updated = await query('SELECT * FROM shipments WHERE id = ?', [shipmentId])
+    // Refetch the saved shipment with sender & receiver details
+    const updatedRows = await query(
+      `SELECT s.*, 
+        snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
+        snd.address as s_address, snd.city as s_city, snd.state as s_state,
+        snd.pincode as s_pincode, snd.country as s_country,
+        rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
+        rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
+        rcv.pincode as r_pincode, rcv.country as r_country
+       FROM shipments s
+       LEFT JOIN senders snd ON s.sender_id = snd.id
+       LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       WHERE s.id = ?`,
+      [shipmentId]
+    )
+
+    const updatedShipment = updatedRows[0] || {}
+
+    // Sync draft booking to remote Hostinger operations DB (AWBENTRY and parcel_history)
+    try {
+      await syncToRemoteAwbEntry(updatedShipment)
+    } catch (syncErr) {
+      console.error('[Remote AWBENTRY Draft Sync Error]:', syncErr.message)
+    }
+
+    try {
+      await syncToRemoteParcelHistory(
+        updatedShipment,
+        'SHIPMENT BOOKED',
+        updatedShipment.s_city || updatedShipment.sender_city || 'SURAT'
+      )
+    } catch (syncErr) {
+      console.error('[Remote parcel_history Draft Sync Error]:', syncErr.message)
+    }
 
     return res.status(201).json({
       success: true,
       message: existingId ? 'Booking updated successfully' : 'Booking saved as draft',
-      booking: updated[0],
+      booking: updatedShipment,
       awb_number: tracking_number
     })
   } catch (err) {
@@ -738,11 +784,21 @@ export const pushBookingToApi = async (req, res) => {
 
       const updated = updatedRows[0] || booking
 
-      // Sync to Remote Operations AWBENTRY table (Hostinger DB)
+      // Sync to Remote Operations AWBENTRY and parcel_history (Hostinger DB)
       try {
         await syncToRemoteAwbEntry(updated, vendorResult)
       } catch (syncErr) {
         console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
+      }
+
+      try {
+        await syncToRemoteParcelHistory(
+          updated,
+          'SHIPMENT BOOKED',
+          updated.s_city || updated.sender_city || 'SURAT'
+        )
+      } catch (syncErr) {
+        console.error('[Remote parcel_history Sync Error]:', syncErr.message)
       }
 
       return res.json({
@@ -787,10 +843,14 @@ export const createBooking = async (req, res) => {
     const finalSenderId = await upsertSender(fields)
     const finalReceiverId = await upsertReceiver(fields)
 
-    // Parse invoice items
+    // Parse invoice items and parcels
     const invoiceItemsJson = Array.isArray(fields.invoice_items)
       ? JSON.stringify(fields.invoice_items)
       : (fields.invoice_items || '[]')
+
+    const parcelsJson = Array.isArray(fields.parcels)
+      ? JSON.stringify(fields.parcels)
+      : (typeof fields.parcels === 'string' ? fields.parcels : null)
 
     let shipmentId
     let tracking_number
@@ -814,14 +874,14 @@ export const createBooking = async (req, res) => {
       await execute(
         `UPDATE shipments SET
           sender_id = ?, receiver_id = ?, courier_provider_id = ?, vendor_config_id = ?,
-          vendor_code = ?, service_code = ?, product_code = ?, weight = ?, \`length\` = ?, breadth = ?, height = ?,
+          vendor_code = ?, service_code = ?, product_code = ?, weight = ?, chargeable_weight = ?, \`length\` = ?, breadth = ?, height = ?,
           no_of_pieces = ?, content_description = ?, declared_value = ?, cod_amount = ?,
           payment_mode = ?, package_type = ?, total_amount = ?, shipping_charge = ?,
           order_reference = ?, remarks = ?, status = ?, vendor_push_status = ?,
           sender_company = ?, sender_address_2 = ?, sender_gstin_type = ?, sender_gstin_no = ?,
           receiver_address_2 = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
           invoice_no = ?, invoice_date = ?, invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
-          invoice_type = ?, invoice_note = ?, invoice_items = ?
+          invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?
         WHERE id = ?`,
         [
           finalSenderId || null,
@@ -832,6 +892,7 @@ export const createBooking = async (req, res) => {
           fields.service_code || '',
           fields.product_code || '',
           fields.weight || 0,
+          parseFloat(fields.chargeable_weight) || parseFloat(fields.weight) || 0,
           fields.length || 0,
           fields.breadth || 0,
           fields.height || 0,
@@ -863,6 +924,7 @@ export const createBooking = async (req, res) => {
           fields.invoice_type || 'INVOICE',
           fields.invoice_note || '',
           invoiceItemsJson,
+          parcelsJson,
           shipmentId
         ]
       )
@@ -874,15 +936,15 @@ export const createBooking = async (req, res) => {
       const shipmentResult = await execute(
         `INSERT INTO shipments (
           order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
-          vendor_code, service_code, product_code, tracking_number, weight, \`length\`, breadth, height,
+          vendor_code, service_code, product_code, tracking_number, weight, chargeable_weight, \`length\`, breadth, height,
           no_of_pieces, content_description, declared_value, cod_amount,
           payment_mode, package_type, total_amount, shipping_charge,
           order_reference, remarks, status, vendor_push_status, is_locked,
           sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
           receiver_address_2, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
-          invoice_type, invoice_note, invoice_items
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          invoice_type, invoice_note, invoice_items, parcels
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
           finalSenderId || null,
@@ -894,6 +956,7 @@ export const createBooking = async (req, res) => {
           fields.product_code || '',
           tracking_number,
           fields.weight || 0,
+          parseFloat(fields.chargeable_weight) || parseFloat(fields.weight) || 0,
           fields.length || 0,
           fields.breadth || 0,
           fields.height || 0,
@@ -925,7 +988,8 @@ export const createBooking = async (req, res) => {
           fields.terms_of_trade || 'CIF',
           fields.invoice_type || 'INVOICE',
           fields.invoice_note || '',
-          invoiceItemsJson
+          invoiceItemsJson,
+          parcelsJson
         ]
       )
 
@@ -970,7 +1034,7 @@ export const createBooking = async (req, res) => {
           [shipmentId, 'AWB Assigned', `Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Vendor API']
         )
 
-        // Sync to Remote Operations AWBENTRY table (Hostinger DB)
+        // Sync to Remote Operations AWBENTRY and parcel_history table (Hostinger DB)
         try {
           await syncToRemoteAwbEntry({
             ...fields,
@@ -981,6 +1045,20 @@ export const createBooking = async (req, res) => {
           }, vendorResult)
         } catch (syncErr) {
           console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
+        }
+
+        try {
+          await syncToRemoteParcelHistory(
+            {
+              ...fields,
+              tracking_number,
+              order_id
+            },
+            'SHIPMENT BOOKED',
+            fields.sender_city || 'SURAT'
+          )
+        } catch (syncErr) {
+          console.error('[Remote parcel_history Sync Error]:', syncErr.message)
         }
       } else {
         if (!isExisting) {
@@ -1239,15 +1317,26 @@ export const getBookingById = async (req, res) => {
       environment: b.vac_environment
     } : null
 
-    const trackingEvents = await query(
-      'SELECT * FROM tracking_events WHERE shipment_id = ? ORDER BY event_time DESC',
-      [id]
-    )
+    let parsedParcels = []
+    if (b.parcels) {
+      try {
+        parsedParcels = typeof b.parcels === 'string' ? JSON.parse(b.parcels) : b.parcels
+      } catch {}
+    }
+
+    let parsedInvoiceItems = []
+    if (b.invoice_items) {
+      try {
+        parsedInvoiceItems = typeof b.invoice_items === 'string' ? JSON.parse(b.invoice_items) : b.invoice_items
+      } catch {}
+    }
 
     return res.json({
       success: true,
       booking: {
         ...b,
+        parcels: parsedParcels,
+        invoice_items: parsedInvoiceItems,
         senders,
         receivers,
         courier_providers,

@@ -43,8 +43,21 @@ export default class GenericAdapter extends BaseAdapter {
     // Deep clone the template
     let payload = JSON.parse(JSON.stringify(template))
 
+    // Parse parcels and invoice items if provided as strings
+    let parsedShipmentData = { ...shipmentData }
+    if (typeof parsedShipmentData.parcels === 'string') {
+      try {
+        parsedShipmentData.parcels = JSON.parse(parsedShipmentData.parcels)
+      } catch {}
+    }
+    if (typeof parsedShipmentData.invoice_items === 'string') {
+      try {
+        parsedShipmentData.invoice_items = JSON.parse(parsedShipmentData.invoice_items)
+      } catch {}
+    }
+
     const initializedArrays = new Set()
-    const numPieces = parseInt(shipmentData.no_of_pieces) || 1
+    const numPieces = parseInt(shipmentData.no_of_pieces) || (Array.isArray(parsedShipmentData.parcels) && parsedShipmentData.parcels.length > 0 ? parsedShipmentData.parcels.length : 1)
 
     // First, initialize/duplicate any arrays mapped with dynamic indexing
     for (const [vendorFieldPath] of Object.entries(mapping)) {
@@ -76,9 +89,9 @@ export default class GenericAdapter extends BaseAdapter {
           if (mappingConfig.type === 'static') {
             value = mappingConfig.value
           } else if (mappingConfig.type === 'mapped') {
-            value = this._getNestedValue(shipmentData, mappingConfig.source)
+            value = this._getNestedValue(parsedShipmentData, mappingConfig.source, i)
             if (mappingConfig.transform) {
-              value = this._applyTransform(value, mappingConfig.transform, i, numPieces, shipmentData)
+              value = this._applyTransform(value, mappingConfig.transform, i, numPieces, parsedShipmentData)
             }
           } else if (mappingConfig.type === 'credential') {
             try {
@@ -100,9 +113,9 @@ export default class GenericAdapter extends BaseAdapter {
         if (mappingConfig.type === 'static') {
           value = mappingConfig.value
         } else if (mappingConfig.type === 'mapped') {
-          value = this._getNestedValue(shipmentData, mappingConfig.source)
+          value = this._getNestedValue(parsedShipmentData, mappingConfig.source)
           if (mappingConfig.transform) {
-            value = this._applyTransform(value, mappingConfig.transform, 0, 1, shipmentData)
+            value = this._applyTransform(value, mappingConfig.transform, 0, 1, parsedShipmentData)
           }
         } else if (mappingConfig.type === 'credential') {
           try {
@@ -244,13 +257,26 @@ export default class GenericAdapter extends BaseAdapter {
     return token
   }
 
-  _getNestedValue(obj, path) {
+  _getNestedValue(obj, path, index = null) {
     if (!path || !obj) return undefined
     const parts = path.split('.')
     let current = obj
-    for (const part of parts) {
+    for (let i = 0; i < parts.length; i++) {
+      let part = parts[i]
       if (current === null || current === undefined) return undefined
-      current = current[part]
+      if (part.endsWith('[]')) {
+        part = part.slice(0, -2)
+        const arrayIdx = index !== null ? index : 0
+        current = Array.isArray(current[part]) ? current[part][arrayIdx] : undefined
+      } else if (part.includes('[') && part.endsWith(']')) {
+        const openBracket = part.indexOf('[')
+        const indexStr = part.slice(openBracket + 1, -1)
+        part = part.slice(0, openBracket)
+        const arrayIdx = indexStr === '' && index !== null ? index : (parseInt(indexStr) || 0)
+        current = Array.isArray(current[part]) ? current[part][arrayIdx] : undefined
+      } else {
+        current = current[part]
+      }
     }
     return current
   }
@@ -323,6 +349,14 @@ export default class GenericAdapter extends BaseAdapter {
     const weight = parseFloat(shipmentData.weight) || 0
     const declaredValue = parseFloat(shipmentData.declared_value) || parseFloat(shipmentData.total_amount) || 0
 
+    let parcelsList = []
+    if (shipmentData.parcels) {
+      try {
+        parcelsList = typeof shipmentData.parcels === 'string' ? JSON.parse(shipmentData.parcels) : shipmentData.parcels
+      } catch {}
+    }
+    const currentParcel = Array.isArray(parcelsList) ? (parcelsList[index] || {}) : {}
+
     switch (transform) {
       case 'uppercase': return String(value || '').toUpperCase()
       case 'lowercase': return String(value || '').toLowerCase()
@@ -335,10 +369,28 @@ export default class GenericAdapter extends BaseAdapter {
         return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
       }
       case 'weight_per_piece': {
-        return String(Math.round((weight / numPieces) * 100) / 100)
+        return String(parseFloat(currentParcel.weight) || Math.round((weight / numPieces) * 100) / 100)
       }
       case 'declared_value_per_piece': {
         return String(Math.round((declaredValue / numPieces) * 100) / 100)
+      }
+      case 'parcel_weight': {
+        return String(parseFloat(currentParcel.weight) || Math.round((weight / numPieces) * 100) / 100)
+      }
+      case 'parcel_length': {
+        return String(parseFloat(currentParcel.length || shipmentData.length) || 1)
+      }
+      case 'parcel_width': {
+        return String(parseFloat(currentParcel.breadth || currentParcel.width || shipmentData.breadth) || 1)
+      }
+      case 'parcel_height': {
+        return String(parseFloat(currentParcel.height || shipmentData.height) || 1)
+      }
+      case 'parcel_volumetric_weight': {
+        return String(currentParcel.volumetric_weight || '')
+      }
+      case 'parcel_chargeable_weight': {
+        return String(currentParcel.chargeable_weight || '')
       }
       case 'index_1_based': {
         return String(index + 1)

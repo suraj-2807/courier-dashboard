@@ -302,3 +302,66 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
     return { success: false, error: err.message }
   }
 }
+
+/**
+ * Insert an entry into the remote parcel_history table (Hostinger DB).
+ * 
+ * Schema:
+ * - HISTORYID (int(11) AUTO_INCREMENT)
+ * - AWBNO (int(11))
+ * - date (date)
+ * - time (time)
+ * - activity (varchar(30))
+ * - location (varchar(30))
+ * 
+ * @param {Object} shipment - Shipment or booking object
+ * @param {string} activity - Status/activity text e.g. 'SHIPMENT BOOKED' (max 30 chars)
+ * @param {string} location - Location string e.g. 'SURAT' (max 30 chars)
+ */
+export async function syncToRemoteParcelHistory(shipment, activity = 'SHIPMENT BOOKED', location = '') {
+  try {
+    const pool = getRemotePool()
+    if (!pool) {
+      console.log('[Remote parcel_history Sync] Skipped — Remote DB is disabled.')
+      return { success: false, message: 'Remote DB disabled' }
+    }
+
+    const trackingNumber = shipment.tracking_number || shipment.order_id || ''
+    const awbNo = parseInt(String(trackingNumber).replace(/\D/g, '')) || 0
+    if (!awbNo) {
+      console.warn('[Remote parcel_history Sync] Skipped — Invalid tracking number for AWBNO:', trackingNumber)
+      return { success: false, message: 'Invalid AWBNO' }
+    }
+
+    const bookingDate = shipment.booking_date || shipment.invoice_date || (shipment.created_at ? String(shipment.created_at).split('T')[0] : new Date().toISOString().split('T')[0])
+    const now = new Date()
+    const currentTime = now.toTimeString().split(' ')[0] // HH:MM:SS
+    const loc = (location || shipment.s_city || shipment.sender_city || 'SURAT').toUpperCase().slice(0, 30)
+    const act = (activity || 'SHIPMENT BOOKED').toUpperCase().slice(0, 30)
+
+    // Check if entry with identical AWBNO and activity already exists to avoid redundant rows
+    const [existing] = await pool.execute(
+      'SELECT HISTORYID FROM parcel_history WHERE AWBNO = ? AND activity = ? LIMIT 1',
+      [awbNo, act]
+    )
+
+    if (existing.length > 0) {
+      console.log(`[Remote parcel_history Sync] Entry for AWBNO ${awbNo} with activity '${act}' already exists (HISTORYID: ${existing[0].HISTORYID}).`)
+      return { success: true, action: 'already_exists', historyId: existing[0].HISTORYID }
+    }
+
+    console.log(`[Remote parcel_history Sync] Inserting '${act}' into parcel_history for AWBNO ${awbNo}...`)
+    const [result] = await pool.execute(
+      'INSERT INTO parcel_history (AWBNO, `date`, `time`, activity, location) VALUES (?, ?, ?, ?, ?)',
+      [awbNo, bookingDate, currentTime, act, loc]
+    )
+
+    console.log(`[Remote parcel_history Sync] Successfully inserted into parcel_history for AWBNO ${awbNo} (HISTORYID: ${result.insertId}).`)
+    return { success: true, action: 'inserted', historyId: result.insertId, awbNo }
+  } catch (err) {
+    console.error('[Remote parcel_history Sync] Error syncing to parcel_history:', err.message)
+    // Non-blocking
+    return { success: false, error: err.message }
+  }
+}
+

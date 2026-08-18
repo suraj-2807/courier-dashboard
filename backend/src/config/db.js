@@ -108,6 +108,8 @@ export async function initializeDb() {
       { name: 'invoice_type', type: "VARCHAR(50) DEFAULT 'INVOICE'" },
       { name: 'invoice_note', type: "TEXT DEFAULT NULL" },
       { name: 'invoice_items', type: "JSON DEFAULT NULL" },
+      { name: 'parcels', type: "JSON DEFAULT NULL" },
+      { name: 'chargeable_weight', type: "DECIMAL(10,2) DEFAULT 0" },
       { name: 'invoice_pdf_path', type: "VARCHAR(500) DEFAULT ''" },
       { name: 'is_locked', type: "BOOLEAN DEFAULT FALSE" }
     ]

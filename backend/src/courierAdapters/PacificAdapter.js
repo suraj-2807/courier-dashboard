@@ -139,15 +139,38 @@ export default class PacificAdapter extends BaseAdapter {
       new Date(new Date(bookingDateStr).getTime() + 10 * 24 * 60 * 60 * 1000)
     )
 
-    // Build Dimensions array
+    // Parse parcels for multi-box dimensions
+    let parcelsList = []
+    if (shipmentData.parcels) {
+      try {
+        parcelsList = typeof shipmentData.parcels === 'string' ? JSON.parse(shipmentData.parcels) : shipmentData.parcels
+      } catch {}
+    }
+
+    // Build Dimensions array (using individual box dimensions if provided)
     const dimensions = []
-    for (let i = 0; i < numPieces; i++) {
-      dimensions.push({
-        ActualWeight: String(perPieceWeight),
-        Vol_WeightL: String(length),
-        Vol_WeightW: String(width),
-        Vol_WeightH: String(height)
+    if (Array.isArray(parcelsList) && parcelsList.length > 0) {
+      parcelsList.forEach((p, idx) => {
+        const pWeight = parseFloat(p.weight) || parseFloat(perPieceWeight) || 1.0
+        const pLength = parseFloat(p.length) || parseFloat(length) || 10.0
+        const pWidth = parseFloat(p.breadth || p.width) || parseFloat(width) || 10.0
+        const pHeight = parseFloat(p.height) || parseFloat(height) || 10.0
+        dimensions.push({
+          ActualWeight: String(pWeight.toFixed(3)),
+          Vol_WeightL: String(pLength.toFixed(3)),
+          Vol_WeightW: String(pWidth.toFixed(3)),
+          Vol_WeightH: String(pHeight.toFixed(3))
+        })
       })
+    } else {
+      for (let i = 0; i < numPieces; i++) {
+        dimensions.push({
+          ActualWeight: String(perPieceWeight),
+          Vol_WeightL: String(length),
+          Vol_WeightW: String(width),
+          Vol_WeightH: String(height)
+        })
+      }
     }
 
     // Build Performa array from invoice_items if provided, or fallback to per-piece breakdown
@@ -163,20 +186,21 @@ export default class PacificAdapter extends BaseAdapter {
 
     if (Array.isArray(invoiceItemsList) && invoiceItemsList.length > 0) {
       invoiceItemsList.forEach((item, idx) => {
-        const qty = String(parseFloat(item.quantity || 1) || 1)
-        const rate = parseFloat(item.unit_rates || item.cost || (parseFloat(item.amount) / parseFloat(qty)) || 0).toFixed(2)
-        const amt = parseFloat(item.amount || (parseFloat(qty) * parseFloat(rate)) || 0).toFixed(2)
-        const wt = parseFloat(item.unit_weight || (perPieceWeight / invoiceItemsList.length) || perPieceWeight).toFixed(3)
+        const qty = String(parseFloat(item.quantity) || 1)
+        const unitRate = parseFloat(item.unit_rates || item.cost || item.rate || (parseFloat(item.amount) / (parseFloat(qty) || 1)) || 0)
+        const totalItemAmount = parseFloat(item.amount) || (parseFloat(qty) * unitRate) || 0
+        const itemWeight = parseFloat(item.unit_weight) || (parseFloat(totalWeight) / invoiceItemsList.length) || parseFloat(perPieceWeight) || 0.5
+        const boxNoClean = String(item.box_no || (idx + 1)).replace(/^box-?/i, '')
 
         performa.push({
-          BoxNo: `Box-${item.box_no || (idx + 1)}`,
+          BoxNo: `Box-${boxNoClean}`,
           Description: this._truncate(item.description || shipmentData.content_description || 'Shipment Content', 50),
           HSNCode: this._truncate(item.hs_code || shipmentData.hs_code || '123456', 10),
           Quantity: qty,
-          Unit: item.unit_type || 'PCS',
-          Rate: String(rate),
-          Amount: String(amt),
-          Weight: String(wt),
+          Unit: item.unit_type || item.unit || 'PCS',
+          Rate: unitRate.toFixed(2),
+          Amount: totalItemAmount.toFixed(2),
+          Weight: itemWeight.toFixed(3),
           PerformaIGST: "0",
           PerformaIGSTAmount: "0"
         })

@@ -331,6 +331,37 @@ export default function NewBookingPage() {
       remarks: b.remarks || ''
     }))
 
+    if (b.parcels) {
+      try {
+        const pList = typeof b.parcels === 'string' ? JSON.parse(b.parcels) : b.parcels
+        if (Array.isArray(pList) && pList.length > 0) {
+          setParcels(pList)
+        } else {
+          setParcels([{
+            parcel_no: 1,
+            box_no: '1',
+            weight: String(b.weight || ''),
+            length: String(b.length || ''),
+            breadth: String(b.breadth || ''),
+            height: String(b.height || ''),
+            volumetric_weight: String(b.volumetric_weight || ''),
+            chargeable_weight: String(b.chargeable_weight || '')
+          }])
+        }
+      } catch (err) {}
+    } else if (b.weight || b.length || b.breadth || b.height) {
+      setParcels([{
+        parcel_no: 1,
+        box_no: '1',
+        weight: String(b.weight || ''),
+        length: String(b.length || ''),
+        breadth: String(b.breadth || ''),
+        height: String(b.height || ''),
+        volumetric_weight: String(b.volumetric_weight || ''),
+        chargeable_weight: String(b.chargeable_weight || '')
+      }])
+    }
+
     if (b.invoice_items) {
       const items = typeof b.invoice_items === 'string' ? JSON.parse(b.invoice_items) : b.invoice_items
       if (Array.isArray(items) && items.length > 0) {
@@ -450,6 +481,17 @@ export default function NewBookingPage() {
     const count = Math.max(1, parseInt(form.no_of_pieces) || 1)
     setParcels(prev => {
       const next = [...prev]
+      if (next.length > 0 && !next[0].weight && form.weight) {
+        next[0] = {
+          ...next[0],
+          weight: form.weight,
+          length: form.length || next[0].length || '',
+          breadth: form.breadth || next[0].breadth || '',
+          height: form.height || next[0].height || '',
+          volumetric_weight: form.volumetric_weight || next[0].volumetric_weight || '',
+          chargeable_weight: form.chargeable_weight || next[0].chargeable_weight || ''
+        }
+      }
       if (next.length < count) {
         for (let i = next.length; i < count; i++) {
           next.push({
@@ -609,6 +651,31 @@ export default function NewBookingPage() {
     terms_of_trade: form.terms_of_trade,
     invoice_type: form.invoice_type || 'INVOICE',
     invoice_note: form.invoice_note || '',
+    parcels: parcels.map((p, idx) => {
+      const pWeight = (p.weight !== undefined && p.weight !== '') ? String(p.weight) : (parcels.length === 1 ? String(form.weight || '') : '')
+      const pLength = (p.length !== undefined && p.length !== '') ? String(p.length) : (parcels.length === 1 ? String(form.length || '') : '')
+      const pBreadth = (p.breadth !== undefined && p.breadth !== '') ? String(p.breadth) : (parcels.length === 1 ? String(form.breadth || '') : '')
+      const pHeight = (p.height !== undefined && p.height !== '') ? String(p.height) : (parcels.length === 1 ? String(form.height || '') : '')
+
+      const act = parseFloat(pWeight) || 0
+      const l = parseFloat(pLength) || 0
+      const b = parseFloat(pBreadth) || 0
+      const h = parseFloat(pHeight) || 0
+      const vol = (l > 0 && b > 0 && h > 0) ? Math.round(((l * b * h) / 5000) * 100) / 100 : 0
+      const chg = Math.max(act, vol)
+
+      return {
+        parcel_no: idx + 1,
+        box_no: p.box_no || String(idx + 1),
+        weight: pWeight,
+        length: pLength,
+        breadth: pBreadth,
+        width: pBreadth,
+        height: pHeight,
+        volumetric_weight: vol > 0 ? String(vol) : (p.volumetric_weight || ''),
+        chargeable_weight: chg > 0 ? String(chg) : (p.chargeable_weight || '')
+      }
+    }),
     invoice_items: invoiceItems.filter(item => item.description),
 
     eawb_no: form.eawb_no,
@@ -1451,7 +1518,12 @@ export default function NewBookingPage() {
                   step="0.01"
                   placeholder="0.00"
                   value={form.weight}
-                  onChange={e => updateForm('weight', e.target.value)}
+                  onChange={e => {
+                    updateForm('weight', e.target.value)
+                    if (parcels.length === 1) {
+                      updateParcel(0, 'weight', e.target.value)
+                    }
+                  }}
                   className="w-full bg-transparent focus:outline-none text-[14px] text-navy font-bold"
                 />
               </div>
@@ -1499,10 +1571,10 @@ export default function NewBookingPage() {
                     type="number"
                     step="0.01"
                     placeholder="0.00"
-                    value={parcels.length === 1 ? form.weight : p.weight}
+                    value={p.weight ?? ''}
                     onChange={e => {
-                      if (parcels.length === 1) updateForm('weight', e.target.value)
                       updateParcel(pIdx, 'weight', e.target.value)
+                      if (parcels.length === 1) updateForm('weight', e.target.value)
                     }}
                     className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy"
                   />
@@ -1511,10 +1583,10 @@ export default function NewBookingPage() {
                   <input
                     type="number"
                     placeholder="L"
-                    value={parcels.length === 1 ? form.length : p.length}
+                    value={p.length ?? ''}
                     onChange={e => {
-                      if (parcels.length === 1) updateForm('length', e.target.value)
                       updateParcel(pIdx, 'length', e.target.value)
+                      if (parcels.length === 1) updateForm('length', e.target.value)
                     }}
                     className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
                   />
@@ -1523,10 +1595,10 @@ export default function NewBookingPage() {
                   <input
                     type="number"
                     placeholder="B"
-                    value={parcels.length === 1 ? form.breadth : p.breadth}
+                    value={p.breadth ?? ''}
                     onChange={e => {
-                      if (parcels.length === 1) updateForm('breadth', e.target.value)
                       updateParcel(pIdx, 'breadth', e.target.value)
+                      if (parcels.length === 1) updateForm('breadth', e.target.value)
                     }}
                     className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
                   />
@@ -1535,10 +1607,10 @@ export default function NewBookingPage() {
                   <input
                     type="number"
                     placeholder="H"
-                    value={parcels.length === 1 ? form.height : p.height}
+                    value={p.height ?? ''}
                     onChange={e => {
-                      if (parcels.length === 1) updateForm('height', e.target.value)
                       updateParcel(pIdx, 'height', e.target.value)
+                      if (parcels.length === 1) updateForm('height', e.target.value)
                     }}
                     className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
                   />
@@ -1547,7 +1619,7 @@ export default function NewBookingPage() {
                   <input
                     type="text"
                     readOnly
-                    value={parcels.length === 1 ? (form.volumetric_weight || '0.00') : (p.volumetric_weight || '0.00')}
+                    value={p.volumetric_weight || '0.00'}
                     className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy"
                   />
                 </div>
@@ -1555,7 +1627,7 @@ export default function NewBookingPage() {
                   <input
                     type="text"
                     readOnly
-                    value={parcels.length === 1 ? (form.chargeable_weight || '0.00') : (p.chargeable_weight || '0.00')}
+                    value={p.chargeable_weight || '0.00'}
                     className="w-full bg-transparent focus:outline-none text-xs text-center font-extrabold text-primary"
                   />
                 </div>

@@ -362,16 +362,28 @@ export default function BookingDetailPage() {
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4">
               <InfoField icon={Calendar} label="Booked On" value={formatDate(booking.created_at)} />
-              <InfoField icon={Truck} label="Courier" value={courier?.name || liveTracking?.shipmentInfo?.vendorName || '—'} />
-              <InfoField icon={Weight} label="Weight" value={booking.weight ? `${booking.weight} kg` : (liveTracking?.shipmentInfo?.weight ? `${liveTracking.shipmentInfo.weight} kg` : '—')} />
+              <InfoField
+                icon={Truck}
+                label="Carrier / Network"
+                value={liveTracking?.shipmentInfo?.secondaryCarrier || liveTracking?.shipmentInfo?.vendorName || courier?.name || booking.vendor_code || 'Direct'}
+              />
+              <InfoField
+                icon={Zap}
+                label="API Gateway"
+                value={vendorConfig?.name || liveTracking?.vendor || 'Local / Direct'}
+              />
+              <InfoField
+                icon={Weight}
+                label="Weight"
+                value={booking.weight ? `${booking.weight} kg` : (liveTracking?.shipmentInfo?.weight ? `${liveTracking.shipmentInfo.weight} kg` : '—')}
+              />
               <InfoField icon={CreditCard} label="Payment" value={booking.payment_mode?.toUpperCase() || '—'} />
               <InfoField
                 icon={Ruler}
                 label="Dimensions"
                 value={booking.length ? `${booking.length}×${booking.breadth}×${booking.height} cm` : '—'}
               />
-              <InfoField icon={Package} label="Package" value={booking.package_type || '—'} />
-              <InfoField icon={FileText} label="Reference" value={booking.order_reference || liveTracking?.shipmentInfo?.refNo || '—'} />
+              <InfoField icon={Package} label="Package & Boxes" value={`${booking.package_type || 'Parcel'} (${booking.no_of_pieces || 1} Box${(parseInt(booking.no_of_pieces) || 1) > 1 ? 'es' : ''})`} />
               <InfoField icon={CreditCard} label="Amount" value={formatCurrency(booking.total_amount)} highlight />
             </div>
             {booking.remarks && (
@@ -381,6 +393,49 @@ export default function BookingDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Multi-Box (Parcels) Breakdown Card */}
+          {Array.isArray(booking.parcels) && booking.parcels.length > 0 && (
+            <div className="bg-surface border border-border rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-[14px] font-bold text-text-primary flex items-center gap-2">
+                  <div className="w-7 h-7 bg-blue-50 rounded-lg flex items-center justify-center">
+                    <Package className="w-3.5 h-3.5 text-blue-600" />
+                  </div>
+                  Box Breakdown ({booking.parcels.length} Boxes)
+                </h2>
+                <span className="text-[11px] font-bold text-text-tertiary">
+                  Total Weight: {booking.weight || 0} kg
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[12px]">
+                  <thead>
+                    <tr className="border-b border-border text-text-tertiary font-bold text-[11px] uppercase tracking-wider">
+                      <th className="py-2 px-3">Box #</th>
+                      <th className="py-2 px-3">Actual Wt (kg)</th>
+                      <th className="py-2 px-3">Dimensions (L × W × H cm)</th>
+                      <th className="py-2 px-3">Vol. Wt (kg)</th>
+                      <th className="py-2 px-3">Chargeable Wt (kg)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border-light">
+                    {booking.parcels.map((p, idx) => (
+                      <tr key={idx} className="hover:bg-surface-alt/50 transition-colors">
+                        <td className="py-2.5 px-3 font-bold text-primary">Box {p.box_no || idx + 1}</td>
+                        <td className="py-2.5 px-3 font-medium text-text-primary">{p.weight || '—'} kg</td>
+                        <td className="py-2.5 px-3 text-text-secondary">
+                          {p.length || 0} × {p.breadth || p.width || 0} × {p.height || 0} cm
+                        </td>
+                        <td className="py-2.5 px-3 text-text-secondary">{p.volumetric_weight || '—'} kg</td>
+                        <td className="py-2.5 px-3 font-bold text-text-primary">{p.chargeable_weight || p.weight || '—'} kg</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Vendor API Response Card */}
           {booking.vendor_config_id && (
@@ -640,7 +695,7 @@ function VendorResponseCard({ booking, vendorConfig, liveTracking }) {
           <div className="w-7 h-7 bg-violet-50 rounded-lg flex items-center justify-center">
             <Plug className="w-3.5 h-3.5 text-violet-600" />
           </div>
-          Vendor Integration
+          Vendor API Gateway
         </h2>
         <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide ${
           isSuccess
@@ -654,11 +709,11 @@ function VendorResponseCard({ booking, vendorConfig, liveTracking }) {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4">
-        {/* Vendor Name */}
+        {/* Vendor Gateway */}
         <div>
           <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-1 flex items-center gap-1">
             <Zap className="w-3 h-3" />
-            Vendor
+            API Gateway
           </p>
           <p className="text-[13px] font-bold text-text-primary">
             {vendorConfig?.name || liveTracking?.vendor || '—'}

@@ -206,35 +206,87 @@ export default class FlySwiftAdapter extends BaseAdapter {
     const originCode = toIsoCountryCode(shipmentData.sender_country) || 'IN'
     const destCode = toIsoCountryCode(shipmentData.receiver_country || shipmentData.buyer_country_code || shipmentData.buyer_destination_code) || ''
 
-    // Build docket_items array from shipment dimensions
+    // Parse parcels for multi-box dimensions
+    let parcelsList = []
+    if (shipmentData.parcels) {
+      try {
+        parcelsList = typeof shipmentData.parcels === 'string' ? JSON.parse(shipmentData.parcels) : shipmentData.parcels
+      } catch {}
+    }
+
+    // Build docket_items array from shipment dimensions (or parcels if multi-box)
     const docketItems = []
     const numPieces = parseInt(shipmentData.no_of_pieces) || 1
     const perPieceWeight = String(Math.round((weight / numPieces) * 100) / 100)
-    for (let i = 0; i < numPieces; i++) {
-      docketItems.push({
-        actual_weight: perPieceWeight,
-        length: String(parseFloat(shipmentData.length) || 1),
-        width: String(parseFloat(shipmentData.breadth) || 1),
-        height: String(parseFloat(shipmentData.height) || 1),
-        number_of_boxes: '1'
+
+    if (Array.isArray(parcelsList) && parcelsList.length > 0) {
+      parcelsList.forEach((p, idx) => {
+        docketItems.push({
+          actual_weight: String(parseFloat(p.weight || perPieceWeight) || 0.5),
+          length: String(parseFloat(p.length || shipmentData.length) || 1),
+          width: String(parseFloat(p.breadth || p.width || shipmentData.breadth) || 1),
+          height: String(parseFloat(p.height || shipmentData.height) || 1),
+          number_of_boxes: '1'
+        })
       })
+    } else {
+      for (let i = 0; i < numPieces; i++) {
+        docketItems.push({
+          actual_weight: perPieceWeight,
+          length: String(parseFloat(shipmentData.length) || 1),
+          width: String(parseFloat(shipmentData.breadth) || 1),
+          height: String(parseFloat(shipmentData.height) || 1),
+          number_of_boxes: '1'
+        })
+      }
+    }
+
+    // Parse invoice items for free_form_line_items
+    let invoiceItemsList = []
+    if (shipmentData.invoice_items) {
+      try {
+        invoiceItemsList = typeof shipmentData.invoice_items === 'string' ? JSON.parse(shipmentData.invoice_items) : shipmentData.invoice_items
+      } catch {}
     }
 
     // Build free_form_line_items (required by FlySwift for invoice)
     const perItemValue = String(Math.round((declaredValue / numPieces) * 100) / 100)
     const freeFormLineItems = []
-    for (let i = 0; i < numPieces; i++) {
-      freeFormLineItems.push({
-        total: perItemValue,
-        no_of_packages: '1',
-        box_no: String(i + 1),
-        rate: perItemValue,
-        hscode: shipmentData.hs_code || '999999',
-        description: shipmentData.content_description || 'Shipment',
-        unit_of_measurement: 'Pc',
-        unit_weight: perPieceWeight,
-        igst_amount: '0.00'
+
+    if (Array.isArray(invoiceItemsList) && invoiceItemsList.length > 0) {
+      invoiceItemsList.forEach((item, idx) => {
+        const qty = String(parseFloat(item.quantity) || 1)
+        const unitRate = parseFloat(item.unit_rates || item.cost || item.rate || (parseFloat(item.amount) / (parseFloat(qty) || 1)) || 0)
+        const totalItemAmount = parseFloat(item.amount) || (parseFloat(qty) * unitRate) || 0
+        const itemWeight = String(parseFloat(item.unit_weight || (weight / invoiceItemsList.length) || perPieceWeight) || 0.5)
+        const boxNoClean = String(item.box_no || (idx + 1)).replace(/^box-?/i, '')
+
+        freeFormLineItems.push({
+          total: totalItemAmount.toFixed(2),
+          no_of_packages: qty,
+          box_no: boxNoClean,
+          rate: unitRate.toFixed(2),
+          hscode: item.hs_code || shipmentData.hs_code || '999999',
+          description: item.description || shipmentData.content_description || 'Shipment',
+          unit_of_measurement: item.unit_type || 'Pc',
+          unit_weight: itemWeight,
+          igst_amount: '0.00'
+        })
       })
+    } else {
+      for (let i = 0; i < numPieces; i++) {
+        freeFormLineItems.push({
+          total: perItemValue,
+          no_of_packages: '1',
+          box_no: String(i + 1),
+          rate: perItemValue,
+          hscode: shipmentData.hs_code || '999999',
+          description: shipmentData.content_description || 'Shipment',
+          unit_of_measurement: 'Pc',
+          unit_weight: perPieceWeight,
+          igst_amount: '0.00'
+        })
+      }
     }
 
     // Default FlySwift create_docket payload structure
