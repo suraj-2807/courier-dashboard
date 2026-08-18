@@ -366,11 +366,50 @@ export default class FlySwiftAdapter extends BaseAdapter {
       pickup_address_gstin_type: shipmentData.sender_gstin_type || '',
       pickup_address_gstin_no: shipmentData.sender_gstin_no || '',
 
+      // DHL-specific fields
+      dhl_otp: shipmentData.otp || '',
+      dhl_service: shipmentData.dhl_service || shipmentData.terms_of_trade || '',
+
       // Nested arrays
       docket_items: docketItems,
       free_form_line_items: freeFormLineItems,
-      kyc_details: [],
-      multiple_invoice: []
+      kyc_details: (() => {
+        // Build KYC details from sender/receiver document info
+        const kycDocs = []
+        if (shipmentData.sender_gstin_type && shipmentData.sender_gstin_no) {
+          kycDocs.push({
+            document_type: shipmentData.sender_gstin_type,
+            document_no: shipmentData.sender_gstin_no,
+            document_sub_type: 'doc_1',
+            document_name: '',
+            file_path: ''
+          })
+          // Second KYC entry (back of document)
+          kycDocs.push({
+            document_type: shipmentData.sender_gstin_type,
+            document_no: shipmentData.sender_gstin_no,
+            document_sub_type: 'doc_2',
+            document_name: '',
+            file_path: ''
+          })
+        }
+        return kycDocs
+      })(),
+      multiple_invoice: (() => {
+        // Build multiple invoice entries if invoice data exists
+        const invoices = []
+        if (invoiceNo) {
+          invoices.push({
+            mul_invoice_date: invoiceDate,
+            mul_invoice_no: invoiceNo,
+            mul_order_no: shipmentData.order_reference || shipmentData.order_id || '',
+            mul_currecny: shipmentData.invoice_currency || 'INR',
+            mul_invoice_amount: String(declaredValue),
+            mul_eway_bill: shipmentData.eawb_no || ''
+          })
+        }
+        return invoices
+      })()
     }
 
     if (authContext && authContext.customerId) {
