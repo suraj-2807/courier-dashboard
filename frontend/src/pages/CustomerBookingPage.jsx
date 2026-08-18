@@ -889,8 +889,7 @@ export default function CustomerBookingPage() {
             </div>
 
             {/* Per-Parcel Table Header */}
-            <div className="grid grid-cols-[1fr_1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] bg-surface-alt text-[10px] font-bold uppercase text-text-tertiary tracking-wider border-b border-border">
-              <div className="px-3 py-2 text-center border-r border-border">Parcel No.</div>
+            <div className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] bg-surface-alt text-[10px] font-bold uppercase text-text-tertiary tracking-wider border-b border-border">
               <div className="px-3 py-2 text-center border-r border-border">Box No.</div>
               <div className="px-3 py-2 text-center border-r border-border">Actual Wt(Kg.)</div>
               <div className="px-3 py-2 text-center border-r border-border">L(CM)</div>
@@ -902,8 +901,7 @@ export default function CustomerBookingPage() {
 
             {/* Per-Parcel Data Rows */}
             {parcels.map((p, pIdx) => (
-              <div key={pIdx} className="grid grid-cols-[1fr_1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] text-[13px] items-center hover:bg-surface-hover transition-colors border-b border-border-light last:border-0 py-1">
-                <div className="px-3 py-2 text-center text-xs font-bold text-text-tertiary border-r border-border-light">{p.parcel_no}</div>
+              <div key={pIdx} className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] text-[13px] items-center hover:bg-surface-hover transition-colors border-b border-border-light last:border-0 py-1">
                 <div className="px-2 py-1 border-r border-border-light">
                   <input type="text" value={p.box_no} readOnly className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-text-secondary" />
                 </div>
@@ -1071,7 +1069,7 @@ export default function CustomerBookingPage() {
                       >
                         {Array.from({ length: Math.max(1, parseInt(form.no_of_pieces) || 1) }, (_, i) => i + 1).map(boxNum => (
                           <option key={boxNum} value={String(boxNum)}>
-                            Box {boxNum}
+                            {boxNum}
                           </option>
                         ))}
                       </select>
@@ -1081,7 +1079,7 @@ export default function CustomerBookingPage() {
                         className="w-full bg-transparent focus:outline-none text-[13px] text-navy font-medium" />
                     </div>
                     <div className="px-1">
-                      <input type="text" placeholder="840590" value={item.hs_code} onChange={e => updateInvoiceItem(idx, 'hs_code', e.target.value)}
+                      <input type="text" placeholder="" value={item.hs_code} onChange={e => updateInvoiceItem(idx, 'hs_code', e.target.value)}
                         className="w-full bg-transparent focus:outline-none text-xs font-mono text-center text-text-primary" />
                     </div>
                     <div className="px-1">
@@ -1096,23 +1094,23 @@ export default function CustomerBookingPage() {
                       </select>
                     </div>
                     <div className="px-1">
-                      <input type="number" placeholder="0" value={item.quantity} onChange={e => updateInvoiceItem(idx, 'quantity', e.target.value)}
+                      <input type="number" placeholder="" value={item.quantity} onChange={e => updateInvoiceItem(idx, 'quantity', e.target.value)}
                         className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy" />
                     </div>
                     <div className="px-1">
-                      <input type="number" step="0.01" placeholder="0.00" value={item.unit_weight} onChange={e => updateInvoiceItem(idx, 'unit_weight', e.target.value)}
+                      <input type="number" step="0.01" placeholder="" value={item.unit_weight} onChange={e => updateInvoiceItem(idx, 'unit_weight', e.target.value)}
                         className="w-full bg-transparent focus:outline-none text-xs text-right text-text-primary" />
                     </div>
                     <div className="px-1">
-                      <input type="number" step="0.01" placeholder="0.00" value={item.cost} onChange={e => updateInvoiceItem(idx, 'cost', e.target.value)}
+                      <input type="number" step="0.01" placeholder="" value={item.cost} onChange={e => updateInvoiceItem(idx, 'cost', e.target.value)}
                         className="w-full bg-transparent focus:outline-none text-xs text-right text-text-primary" />
                     </div>
                     <div className="px-1">
-                      <input type="number" step="0.01" placeholder="0.00" value={item.unit_rates} onChange={e => updateInvoiceItem(idx, 'unit_rates', e.target.value)}
+                      <input type="number" step="0.01" placeholder="" value={item.unit_rates} onChange={e => updateInvoiceItem(idx, 'unit_rates', e.target.value)}
                         className="w-full bg-transparent focus:outline-none text-xs text-right text-text-primary" />
                     </div>
                     <div className="px-1">
-                      <input type="number" step="0.01" readOnly value={item.amount}
+                      <input type="number" step="0.01" placeholder="" readOnly value={item.amount}
                         className="w-full bg-transparent focus:outline-none text-xs text-right font-extrabold text-primary" />
                     </div>
                     <div className="px-1 text-center">

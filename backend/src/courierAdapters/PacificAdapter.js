@@ -187,7 +187,7 @@ export default class PacificAdapter extends BaseAdapter {
       ? shipmentData.content_description
       : (derivedContent || shipmentData.content_description || 'Shipment Content')
 
-    const declaredValue = parseFloat(shipmentData.total_amount || shipmentData.shipping_charge || shipmentData.declared_value || 100)
+    const declaredValue = parseFloat(shipmentData.declared_value || shipmentData.total_amount || shipmentData.shipping_charge || 100)
     const performa = []
 
     if (Array.isArray(invoiceItemsList) && invoiceItemsList.length > 0) {
@@ -201,7 +201,7 @@ export default class PacificAdapter extends BaseAdapter {
         performa.push({
           BoxNo: `Box-${boxNoClean}`,
           Description: this._truncate(item.description || contentDescription || 'Shipment Content', 50),
-          HSNCode: this._truncate(item.hs_code || shipmentData.hs_code || '123456', 10),
+          HSNCode: this._truncate(item.hs_code || shipmentData.hs_code || '', 10),
           Quantity: qty,
           Unit: item.unit_type || item.unit || 'PCS',
           Rate: unitRate.toFixed(2),
@@ -217,7 +217,7 @@ export default class PacificAdapter extends BaseAdapter {
         performa.push({
           BoxNo: `Box-${i + 1}`,
           Description: this._truncate(contentDescription || 'Shipment Content', 50),
-          HSNCode: this._truncate(shipmentData.hs_code || '123456', 10),
+          HSNCode: this._truncate(shipmentData.hs_code || '', 10),
           Quantity: '1',
           Unit: 'PCS',
           Rate: String(perPieceValue),
@@ -287,6 +287,7 @@ export default class PacificAdapter extends BaseAdapter {
       InvoiceDate: this._formatDateDDMMYYYY(invoiceDateStr),
       CompanyCode: this._truncate(shipmentData.company_code || credentials.company_code || vendorName || 'PC', 3),
       IsCommercial: shipmentData.is_commercial !== '' && shipmentData.is_commercial !== undefined ? (parseInt(shipmentData.is_commercial) || 0) : ((shipmentData.export_reason === 'COMMERCIAL' || shipmentData.export_reason === 'commercial') ? 1 : 0),
+      IsMedical: shipmentData.is_medical !== '' && shipmentData.is_medical !== undefined ? (parseInt(shipmentData.is_medical) || 0) : 0,
       OTP: shipmentData.otp || "123456",
       LSPType: shipmentData.lsp_type || "I",
       RequiredPerforma: shipmentData.required_performa || "y",
