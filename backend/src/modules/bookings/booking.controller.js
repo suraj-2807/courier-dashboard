@@ -1222,8 +1222,24 @@ export const getBookings = async (req, res) => {
         environment: row.vac_environment
       } : null
 
+      let parsedParcels = []
+      if (row.parcels) {
+        try {
+          parsedParcels = typeof row.parcels === 'string' ? JSON.parse(row.parcels) : row.parcels
+        } catch {}
+      }
+
+      let parsedInvoiceItems = []
+      if (row.invoice_items) {
+        try {
+          parsedInvoiceItems = typeof row.invoice_items === 'string' ? JSON.parse(row.invoice_items) : row.invoice_items
+        } catch {}
+      }
+
       return {
         ...row,
+        parcels: parsedParcels,
+        invoice_items: parsedInvoiceItems,
         senders,
         receivers,
         courier_providers,
@@ -1266,8 +1282,8 @@ export const getBookingById = async (req, res) => {
        LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
        LEFT JOIN courier_providers cp ON s.courier_provider_id = cp.id
        LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
-       WHERE s.id = ?`,
-      [id]
+       WHERE s.id = ? OR s.tracking_number = ? OR s.order_id = ? OR s.vendor_awb_number = ?`,
+      [id, id, id, id]
     )
 
     if (rows.length === 0) {
@@ -1331,6 +1347,14 @@ export const getBookingById = async (req, res) => {
       } catch {}
     }
 
+    let trackingEvents = []
+    try {
+      trackingEvents = await query(
+        'SELECT * FROM tracking_events WHERE shipment_id = ? ORDER BY event_time DESC, id DESC',
+        [b.id]
+      )
+    } catch {}
+
     return res.json({
       success: true,
       booking: {
@@ -1362,11 +1386,13 @@ export const updateBookingStatus = async (req, res) => {
       [status, id]
     )
 
-    await execute(
-      `INSERT INTO tracking_events (shipment_id, status, description, location)
-       VALUES (?, ?, ?, ?)`,
-      [id, status, description || `Status updated to ${status}`, location || 'System']
-    )
+    if (description) {
+      await execute(
+        `INSERT INTO tracking_events (shipment_id, status, description, location)
+         VALUES (?, ?, ?, ?)`,
+        [id, status, description, location || '']
+      )
+    }
 
     const rows = await query(
       'SELECT * FROM shipments WHERE id = ?',
@@ -1396,8 +1422,8 @@ async function getFullShipmentContext(shipmentId) {
      FROM shipments s
      LEFT JOIN senders snd ON s.sender_id = snd.id
      LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
-     WHERE s.id = ?`,
-    [shipmentId]
+     WHERE s.id = ? OR s.tracking_number = ? OR s.order_id = ? OR s.vendor_awb_number = ?`,
+    [shipmentId, shipmentId, shipmentId, shipmentId]
   )
   if (!rows || rows.length === 0) return null
   const b = rows[0]
