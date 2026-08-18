@@ -181,6 +181,12 @@ export default class PacificAdapter extends BaseAdapter {
       } catch {}
     }
 
+    const itemDescriptions = Array.isArray(invoiceItemsList) ? invoiceItemsList.map(item => item.description).filter(Boolean) : []
+    const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
+    const contentDescription = (shipmentData.content_description && shipmentData.content_description !== 'General Goods' && shipmentData.content_description !== 'ITEMS / GOODS INSIDE')
+      ? shipmentData.content_description
+      : (derivedContent || shipmentData.content_description || 'Shipment Content')
+
     const declaredValue = parseFloat(shipmentData.total_amount || shipmentData.shipping_charge || shipmentData.declared_value || 100)
     const performa = []
 
@@ -194,7 +200,7 @@ export default class PacificAdapter extends BaseAdapter {
 
         performa.push({
           BoxNo: `Box-${boxNoClean}`,
-          Description: this._truncate(item.description || shipmentData.content_description || 'Shipment Content', 50),
+          Description: this._truncate(item.description || contentDescription || 'Shipment Content', 50),
           HSNCode: this._truncate(item.hs_code || shipmentData.hs_code || '123456', 10),
           Quantity: qty,
           Unit: item.unit_type || item.unit || 'PCS',
@@ -210,7 +216,7 @@ export default class PacificAdapter extends BaseAdapter {
       for (let i = 0; i < numPieces; i++) {
         performa.push({
           BoxNo: `Box-${i + 1}`,
-          Description: this._truncate(shipmentData.content_description || 'Shipment Content', 50),
+          Description: this._truncate(contentDescription || 'Shipment Content', 50),
           HSNCode: this._truncate(shipmentData.hs_code || '123456', 10),
           Quantity: '1',
           Unit: 'PCS',
@@ -271,7 +277,7 @@ export default class PacificAdapter extends BaseAdapter {
       Dox_Spx: productCode,
       Pieces: String(numPieces),
       Weight: totalWeight.toFixed(3),
-      Content: this._truncate(shipmentData.content_description || 'Shipment Content', 150),
+      Content: this._truncate(contentDescription, 150),
       Currency: this._truncate(shipmentData.invoice_currency || 'INR', 3),
       ShipmentValue: String(declaredValue.toFixed(0)),
       CODAmount: shipmentData.payment_mode === 'cod' ? parseFloat(shipmentData.cod_amount || shipmentData.total_amount || 0).toFixed(2) : '0.00',

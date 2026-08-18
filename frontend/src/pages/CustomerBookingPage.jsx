@@ -335,7 +335,9 @@ export default function CustomerBookingPage() {
         breadth: parseFloat(form.breadth) || 0,
         height: parseFloat(form.height) || 0,
         no_of_pieces: parseInt(form.no_of_pieces) || 1,
-        content_description: form.content_description,
+        content_description: (form.content_description && form.content_description !== 'General Goods' && form.content_description !== 'ITEMS / GOODS INSIDE')
+          ? form.content_description
+          : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'General Goods'),
         declared_value: parseFloat(form.declared_value) || 0,
         is_fragile: form.is_fragile,
         remarks: form.remarks,
@@ -375,7 +377,7 @@ export default function CustomerBookingPage() {
         export_reason: form.export_reason,
         terms_of_trade: form.terms_of_trade,
         invoice_note: form.invoice_note || '',
-        invoice_items: invoiceItems.filter(item => item.description)
+        invoice_items: invoiceItems.filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0)
       }
 
       const res = await fetch('/api/customer/booking-requests', {

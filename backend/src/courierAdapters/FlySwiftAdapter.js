@@ -249,6 +249,12 @@ export default class FlySwiftAdapter extends BaseAdapter {
       } catch {}
     }
 
+    const itemDescriptions = Array.isArray(invoiceItemsList) ? invoiceItemsList.map(item => item.description).filter(Boolean) : []
+    const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
+    const contentDescription = (shipmentData.content_description && shipmentData.content_description !== 'General Goods' && shipmentData.content_description !== 'ITEMS / GOODS INSIDE')
+      ? shipmentData.content_description
+      : (derivedContent || shipmentData.content_description || 'Shipment')
+
     // Build free_form_line_items (required by FlySwift for invoice)
     const perItemValue = String(Math.round((declaredValue / numPieces) * 100) / 100)
     const freeFormLineItems = []
@@ -267,7 +273,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
           box_no: boxNoClean,
           rate: unitRate.toFixed(2),
           hscode: item.hs_code || shipmentData.hs_code || '999999',
-          description: item.description || shipmentData.content_description || 'Shipment',
+          description: item.description || contentDescription || 'Shipment',
           unit_of_measurement: item.unit_type || 'Pc',
           unit_weight: itemWeight,
           igst_amount: '0.00'
@@ -281,7 +287,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
           box_no: String(i + 1),
           rate: perItemValue,
           hscode: shipmentData.hs_code || '999999',
-          description: shipmentData.content_description || 'Shipment',
+          description: contentDescription || 'Shipment',
           unit_of_measurement: 'Pc',
           unit_weight: perPieceWeight,
           igst_amount: '0.00'
@@ -307,7 +313,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
       actual_weight: String(weight),
       shipment_invoice_no: invoiceNo,
       shipment_invoice_date: invoiceDate,
-      shipment_content: shipmentData.content_description || 'Shipment',
+      shipment_content: contentDescription,
       remark: shipmentData.remarks || '',
       new_docket_free_form_invoice: '1',
       free_form_currency: shipmentData.invoice_currency || 'INR',

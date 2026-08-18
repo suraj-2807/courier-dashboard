@@ -321,6 +321,18 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
   const currentDate = new Date().toISOString().split('T')[0]
   const currentTime = new Date().toTimeString().split(' ')[0]
 
+  let invoiceItemsList = []
+  if (fields.invoice_items) {
+    try {
+      invoiceItemsList = typeof fields.invoice_items === 'string' ? JSON.parse(fields.invoice_items) : fields.invoice_items
+    } catch {}
+  }
+  const itemDescriptions = Array.isArray(invoiceItemsList) ? invoiceItemsList.map(i => i.description).filter(Boolean) : []
+  const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
+  const contentDescription = (fields.content_description && fields.content_description !== 'General Goods' && fields.content_description !== 'ITEMS / GOODS INSIDE')
+    ? fields.content_description
+    : (derivedContent || fields.content_description || 'General Goods')
+
   return {
     order_id: orderId,
     tracking_number: trackingNumber,
@@ -336,7 +348,7 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     shipping_charge: parseFloat(fields.shipping_charge) || parseFloat(fields.total_amount) || parseFloat(fields.declared_value) || 0,
     total_amount: parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || parseFloat(fields.declared_value) || 0,
     declared_value: parseFloat(fields.declared_value) || 0,
-    content_description: fields.content_description || '',
+    content_description: contentDescription,
     cod_amount: parseFloat(fields.cod_amount) || 0,
     remarks: fields.remarks || '',
     vendor_code: fields.vendor_code || '',
@@ -470,6 +482,15 @@ export const saveBooking = async (req, res) => {
       ? JSON.stringify(fields.invoice_items)
       : (fields.invoice_items || '[]')
 
+    const parsedInvoiceItems = Array.isArray(fields.invoice_items)
+      ? fields.invoice_items
+      : (typeof fields.invoice_items === 'string' ? (JSON.parse(fields.invoice_items || '[]') || []) : [])
+    const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => i.description).filter(Boolean) : []
+    const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
+    const contentDescription = (fields.content_description && fields.content_description !== 'General Goods' && fields.content_description !== 'ITEMS / GOODS INSIDE')
+      ? fields.content_description
+      : (derivedContent || fields.content_description || 'General Goods')
+
     const parcelsJson = Array.isArray(fields.parcels)
       ? JSON.stringify(fields.parcels)
       : (typeof fields.parcels === 'string' ? fields.parcels : null)
@@ -516,7 +537,7 @@ export const saveBooking = async (req, res) => {
           fields.breadth || 0,
           fields.height || 0,
           parseInt(fields.no_of_pieces) || 1,
-          fields.content_description || 'General Goods',
+          contentDescription,
           parseFloat(fields.declared_value) || 0,
           parseFloat(fields.cod_amount) || 0,
           fields.payment_mode || 'prepaid',
@@ -576,7 +597,7 @@ export const saveBooking = async (req, res) => {
           fields.breadth || 0,
           fields.height || 0,
           parseInt(fields.no_of_pieces) || 1,
-          fields.content_description || 'General Goods',
+          contentDescription,
           parseFloat(fields.declared_value) || 0,
           parseFloat(fields.cod_amount) || 0,
           fields.payment_mode || 'prepaid',
@@ -848,6 +869,15 @@ export const createBooking = async (req, res) => {
       ? JSON.stringify(fields.invoice_items)
       : (fields.invoice_items || '[]')
 
+    const parsedInvoiceItems = Array.isArray(fields.invoice_items)
+      ? fields.invoice_items
+      : (typeof fields.invoice_items === 'string' ? (JSON.parse(fields.invoice_items || '[]') || []) : [])
+    const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => i.description).filter(Boolean) : []
+    const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
+    const contentDescription = (fields.content_description && fields.content_description !== 'General Goods' && fields.content_description !== 'ITEMS / GOODS INSIDE')
+      ? fields.content_description
+      : (derivedContent || fields.content_description || 'General Goods')
+
     const parcelsJson = Array.isArray(fields.parcels)
       ? JSON.stringify(fields.parcels)
       : (typeof fields.parcels === 'string' ? fields.parcels : null)
@@ -897,7 +927,7 @@ export const createBooking = async (req, res) => {
           fields.breadth || 0,
           fields.height || 0,
           parseInt(fields.no_of_pieces) || 1,
-          fields.content_description || 'General Goods',
+          contentDescription,
           parseFloat(fields.declared_value) || 0,
           parseFloat(fields.cod_amount) || 0,
           fields.payment_mode || 'prepaid',
@@ -961,7 +991,7 @@ export const createBooking = async (req, res) => {
           fields.breadth || 0,
           fields.height || 0,
           parseInt(fields.no_of_pieces) || 1,
-          fields.content_description || 'General Goods',
+          contentDescription,
           parseFloat(fields.declared_value) || 0,
           parseFloat(fields.cod_amount) || 0,
           fields.payment_mode || 'prepaid',

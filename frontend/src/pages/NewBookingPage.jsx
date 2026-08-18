@@ -627,7 +627,9 @@ export default function NewBookingPage() {
     breadth: parseFloat(form.breadth) || 0,
     height: parseFloat(form.height) || 0,
     no_of_pieces: parseInt(form.no_of_pieces) || 1,
-    content_description: form.content_description || 'General Goods',
+    content_description: (form.content_description && form.content_description !== 'General Goods' && form.content_description !== 'ITEMS / GOODS INSIDE')
+      ? form.content_description
+      : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'General Goods'),
     declared_value: parseFloat(form.declared_value) || finalAmount,
     package_type: form.package_type,
     payment_mode: form.payment_mode,
@@ -676,7 +678,7 @@ export default function NewBookingPage() {
         chargeable_weight: chg > 0 ? String(chg) : (p.chargeable_weight || '')
       }
     }),
-    invoice_items: invoiceItems.filter(item => item.description),
+    invoice_items: invoiceItems.filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0),
 
     eawb_no: form.eawb_no,
     eawb_date: form.eawb_date,
