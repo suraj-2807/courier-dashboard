@@ -156,11 +156,11 @@ export const createApiSetting = async (req, res) => {
     const result = await execute(
       `INSERT INTO vendor_api_configs (
         name, vendor_code, auth_type, auth_url, auth_payload_template,
-        auth_credentials, auth_token_path, shipment_api_url, shipment_api_method,
+        auth_credentials, auth_token_path, shipment_api_url, tracking_api_url, shipment_api_method,
         request_template, field_mapping, headers_template,
         response_tracking_path, response_success_path, response_success_value,
         available_services, available_vendor_codes, available_product_codes, environment, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         configData.name,
         configData.vendor_code,
@@ -170,6 +170,7 @@ export const createApiSetting = async (req, res) => {
         configData.auth_credentials,
         configData.auth_token_path,
         configData.shipment_api_url,
+        configData.tracking_api_url,
         configData.shipment_api_method,
         JSON.stringify(configData.request_template),
         JSON.stringify(configData.field_mapping),
@@ -216,7 +217,7 @@ export const updateApiSetting = async (req, res) => {
     // Map simple and advanced fields
     const directFields = [
       'name', 'vendor_code', 'auth_type', 'auth_url', 'auth_token_path',
-      'shipment_api_url', 'shipment_api_method',
+      'shipment_api_url', 'tracking_api_url', 'shipment_api_method',
       'response_tracking_path', 'response_success_path', 'response_success_value',
       'environment', 'is_active'
     ]
@@ -684,6 +685,7 @@ function _buildConfigFromBody(body) {
     auth_credentials: encryptedCredentials,
     auth_token_path: body.auth_token_path || 'data.token',
     shipment_api_url: shipmentApiUrl,
+    tracking_api_url: body.tracking_api_url || '',
     shipment_api_method: body.shipment_api_method || 'POST',
     request_template: body.request_template || {},
     field_mapping: body.field_mapping || {},

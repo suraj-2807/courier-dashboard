@@ -94,6 +94,7 @@ const EMPTY_FORM = {
   auth_url: '',
   auth_token_path: 'data.token',
   shipment_api_url: '',
+  tracking_api_url: '',
   shipment_api_method: 'POST',
   // Simple credential fields
   user_id: '',
@@ -364,6 +365,7 @@ export default function ApiSettingsPage() {
       auth_url: config.auth_url || '',
       auth_token_path: config.auth_token_path || 'data.token',
       shipment_api_url: config.shipment_api_url || '',
+      tracking_api_url: config.tracking_api_url || '',
       shipment_api_method: config.shipment_api_method || 'POST',
       user_id: '',
       username: '',
@@ -1334,6 +1336,24 @@ export default function ApiSettingsPage() {
                           style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
                         />
                       </div>
+                    </div>
+                  </div>
+
+                  {/* ── Section: Tracking API ── */}
+                  <SectionLabel>Tracking API</SectionLabel>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '24px' }}>
+                    <div>
+                      <label style={labelStyle}>Tracking API URL</label>
+                      <input
+                        value={form.tracking_api_url}
+                        onChange={(e) => setForm({ ...form, tracking_api_url: e.target.value })}
+                        placeholder="e.g., https://vendor.com/api/tracking_api/get_tracking_data"
+                        style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px' }}
+                      />
+                      <p style={{ fontSize: '10px', color: 'var(--color-text-tertiary)', marginTop: '4px' }}>
+                        For FlySwift/Trackmate vendors: base tracking URL. Query params (api_company_id, customer_code, tracking_no) are appended automatically.
+                        For Pacific: full tracking endpoint URL. Leave blank to use defaults.
+                      </p>
                     </div>
                   </div>
 

@@ -134,6 +134,9 @@ export async function initializeDb() {
       const vendorCols = await query("SHOW COLUMNS FROM vendor_api_configs")
       const vendorColNames = vendorCols.map(col => (col.Field || col.field).toLowerCase())
 
+      if (!vendorColNames.includes('tracking_api_url')) {
+        await execute("ALTER TABLE vendor_api_configs ADD COLUMN tracking_api_url VARCHAR(500) DEFAULT '' AFTER shipment_api_url")
+      }
       if (!vendorColNames.includes('available_vendor_codes')) {
         await execute("ALTER TABLE vendor_api_configs ADD COLUMN available_vendor_codes JSON DEFAULT NULL AFTER available_services")
       }

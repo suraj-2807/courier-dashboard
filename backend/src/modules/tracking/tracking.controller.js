@@ -28,7 +28,7 @@ async function trackPacific(awb, config) {
   const userId = creds.user_id || creds.username || creds.UserID || 'P0503'
   const password = creds.password || creds.Password || 'P0503@7199'
 
-  const trackingUrl = 'https://eship.pacificexp.net/api/v1/Tracking/Tracking'
+  const trackingUrl = config.tracking_api_url || 'https://eship.pacificexp.net/api/v1/Tracking/Tracking'
 
   const response = await fetch(trackingUrl, {
     method: 'POST',
@@ -139,7 +139,16 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift')
   }
 
   const vendorDisplayName = config.name || defaultVendorName || 'Courier Partner'
-  const trackingUrl = `https://${host}/api/tracking_api/get_tracking_data?api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(String(awb).trim())}`
+
+  // Use explicit tracking_api_url if configured, otherwise construct from host
+  let trackingUrl
+  if (config.tracking_api_url) {
+    // If the URL already contains query params, append; otherwise build full URL
+    const sep = config.tracking_api_url.includes('?') ? '&' : '?'
+    trackingUrl = `${config.tracking_api_url}${sep}api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(String(awb).trim())}`
+  } else {
+    trackingUrl = `https://${host}/api/tracking_api/get_tracking_data?api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(String(awb).trim())}`
+  }
 
   const response = await fetch(trackingUrl, {
     method: 'GET',
@@ -282,7 +291,9 @@ const VENDOR_TRACKERS = {
   trackmate: trackTrackmateVendor,
   acx: trackTrackmateVendor,
   acxintl: trackTrackmateVendor,
-  acx_international: trackTrackmateVendor
+  acx_international: trackTrackmateVendor,
+  bhabani: trackTrackmateVendor,
+  bhabani_express: trackTrackmateVendor
 }
 
 // ═══════════════════════════════════════════════════════════════════
