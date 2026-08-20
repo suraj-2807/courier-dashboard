@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useCreateBooking, useSaveBooking, usePushBookingToApi } from '../hooks/useBookings'
@@ -159,6 +159,14 @@ export default function NewBookingPage() {
 
   // Form collapse toggles
   const [showShipmentInvoice, setShowShipmentInvoice] = useState(true)
+
+  // Bill-only fields (NOT sent to API)
+  const [finalChargeableWeight, setFinalChargeableWeight] = useState('')
+  const [extraCharge, setExtraCharge] = useState('')
+  const finalShippingCharge = ((parseFloat(form.shipping_charge) || 0) + (parseFloat(extraCharge) || 0)).toFixed(2)
+
+  // Ref for auto-focus on new invoice row
+  const invoiceDescRefs = useRef([])
 
   // Parcels detail state synced with no_of_pieces
   const [parcels, setParcels] = useState([
@@ -531,7 +539,10 @@ export default function NewBookingPage() {
       if (l > 0 && b > 0 && h > 0) {
         vol = Math.round(((l * b * h) / 5000) * 100) / 100
       }
-      const chg = Math.max(act, vol)
+      // Round up each box: ceil(actual) and ceil(vol)
+      const actCeil = act > 0 ? Math.ceil(act) : 0
+      const volCeil = vol > 0 ? Math.ceil(vol) : 0
+      const chg = Math.max(actCeil, volCeil)
 
       item.volumetric_weight = vol > 0 ? String(vol) : ''
       item.chargeable_weight = chg > 0 ? String(chg) : ''
@@ -540,8 +551,8 @@ export default function NewBookingPage() {
     })
   }
 
-  // Calculate totals from parcels array
-  const totalParcelActual = parcels.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+  // Calculate totals from parcels array (per-box weights already ceiled for chargeable)
+  const totalParcelActual = parcels.reduce((sum, p) => sum + Math.ceil(parseFloat(p.weight) || 0), 0)
   const totalParcelVol = parcels.reduce((sum, p) => sum + (parseFloat(p.volumetric_weight) || 0), 0)
   const totalParcelChg = parcels.reduce((sum, p) => sum + (parseFloat(p.chargeable_weight) || 0), 0)
 
@@ -574,11 +585,14 @@ export default function NewBookingPage() {
       if (l > 0 && b > 0 && h > 0) {
         vol = Math.round(((l * b * h) / 5000) * 100) / 100
       }
-      const chg = Math.max(act, vol)
+      // Round up for chargeable
+      const actCeil = act > 0 ? Math.ceil(act) : 0
+      const volCeil = vol > 0 ? Math.ceil(vol) : 0
+      const chg = Math.max(actCeil, volCeil)
 
       setForm(prev => {
         const rate = parseFloat(prev.rate_per_kg) || 0
-        const chgNum = chg > 0 ? chg : act
+        const chgNum = chg > 0 ? chg : actCeil
         const updatedShipping = (rate > 0 && chgNum > 0)
           ? (rate * chgNum).toFixed(2)
           : prev.shipping_charge
@@ -592,6 +606,13 @@ export default function NewBookingPage() {
       })
     }
   }, [parcels, form.length, form.breadth, form.height, form.weight, form.no_of_pieces])
+
+  // Auto-sync final chargeable weight from computed chargeable weight
+  useEffect(() => {
+    if (form.chargeable_weight) {
+      setFinalChargeableWeight(form.chargeable_weight)
+    }
+  }, [form.chargeable_weight])
 
   // Sync total_amount and declared_value with invoice total
   useEffect(() => {
@@ -665,7 +686,7 @@ export default function NewBookingPage() {
     receiver_gstin_type: form.receiver_gstin_type,
     receiver_gstin_no: form.receiver_gstin_no,
 
-    weight: (parcels.length > 1 && totalParcelActual > 0) ? totalParcelActual : (parseFloat(form.weight) || (parcels[0] ? parseFloat(parcels[0].weight) : 0) || 0),
+    weight: (parcels.length > 1 && totalParcelActual > 0) ? totalParcelActual : Math.ceil(parseFloat(form.weight) || (parcels[0] ? parseFloat(parcels[0].weight) : 0) || 0),
     chargeable_weight: (parcels.length > 1 && totalParcelChg > 0) ? totalParcelChg : (parseFloat(form.chargeable_weight) || 0),
     length: parseFloat(form.length) || (parcels[0] ? parseFloat(parcels[0].length) : 0) || 0,
     breadth: parseFloat(form.breadth) || (parcels[0] ? parseFloat(parcels[0].breadth) : 0) || 0,
@@ -1439,6 +1460,29 @@ export default function NewBookingPage() {
                     </select>
                   </CompactField>
 
+                  {/* Final Chargeable Weight — editable override, for bill/invoice only */}
+                  <CompactField label="Final Chargeable Wt (kg)">
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={finalChargeableWeight}
+                      onChange={e => {
+                        const val = e.target.value
+                        setFinalChargeableWeight(val)
+                        // Recalculate shipping charge using rate_per_kg
+                        const rate = parseFloat(form.rate_per_kg) || 0
+                        if (rate > 0 && parseFloat(val) > 0) {
+                          setForm(prev => ({
+                            ...prev,
+                            shipping_charge: String((rate * parseFloat(val)).toFixed(2))
+                          }))
+                        }
+                      }}
+                      className="w-full bg-transparent focus:outline-none text-[13px] font-bold text-navy text-right"
+                    />
+                  </CompactField>
+
                   <div className="grid grid-cols-2 gap-2">
                     <CompactField label="Rate / Kg (₹)">
                       <input
@@ -1448,7 +1492,7 @@ export default function NewBookingPage() {
                         value={form.rate_per_kg || ''}
                         onChange={e => {
                           const rateVal = e.target.value
-                          const chgWt = parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
+                          const chgWt = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
                           const calcTotal = (parseFloat(rateVal) > 0 && chgWt > 0)
                             ? String((parseFloat(rateVal) * chgWt).toFixed(2))
                             : form.shipping_charge
@@ -1470,7 +1514,7 @@ export default function NewBookingPage() {
                         value={form.shipping_charge || ''}
                         onChange={e => {
                           const val = e.target.value
-                          const chgWt = parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
+                          const chgWt = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
                           const calcRate = (parseFloat(val) > 0 && chgWt > 0)
                             ? String((parseFloat(val) / chgWt).toFixed(2))
                             : form.rate_per_kg
@@ -1481,6 +1525,28 @@ export default function NewBookingPage() {
                           }))
                         }}
                         className="w-full bg-transparent focus:outline-none text-[13px] font-bold text-primary text-right"
+                      />
+                    </CompactField>
+                  </div>
+
+                  {/* Extra Charge & Final Shipping Charge — bill/invoice only, NOT sent to API */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <CompactField label="Extra Charge (₹)">
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="0.00"
+                        value={extraCharge}
+                        onChange={e => setExtraCharge(e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-[13px] font-semibold text-right text-gray-800"
+                      />
+                    </CompactField>
+                    <CompactField label="Final Shipping (₹)">
+                      <input
+                        type="text"
+                        readOnly
+                        value={finalShippingCharge}
+                        className="w-full bg-transparent focus:outline-none text-[13px] font-extrabold text-primary text-right cursor-default"
                       />
                     </CompactField>
                   </div>
@@ -1595,17 +1661,10 @@ export default function NewBookingPage() {
               <div className="px-4 py-3 border-r border-border">
                 <span className="text-[10px] font-extrabold uppercase text-text-secondary block mb-1 tracking-wider">Actual Weight (kg)</span>
                 <input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={form.weight}
-                  onChange={e => {
-                    updateForm('weight', e.target.value)
-                    if (parcels.length === 1) {
-                      updateParcel(0, 'weight', e.target.value)
-                    }
-                  }}
-                  className="w-full bg-transparent focus:outline-none text-[14px] text-navy font-bold"
+                  type="text"
+                  readOnly
+                  value={form.weight || '0.00'}
+                  className="w-full bg-transparent focus:outline-none text-[14px] text-navy font-bold cursor-default"
                 />
               </div>
               <div className="px-4 py-3 border-r border-border bg-navy/5">
@@ -1816,6 +1875,7 @@ export default function NewBookingPage() {
                     </div>
                     <div className="px-1">
                       <input type="text" placeholder="Item description" value={item.description} onChange={e => updateInvoiceItem(idx, 'description', e.target.value)}
+                        ref={el => invoiceDescRefs.current[idx] = el}
                         className="w-full bg-transparent focus:outline-none text-[13px] text-navy font-medium" />
                     </div>
                     <div className="px-1">
@@ -1850,8 +1910,19 @@ export default function NewBookingPage() {
                         className="w-full bg-transparent focus:outline-none text-xs text-right text-text-primary" />
                     </div>
                     <div className="px-1">
-                      <input type="number" step="0.01" placeholder="" readOnly value={item.amount} 
-                        className="w-full bg-transparent focus:outline-none text-xs text-right font-extrabold text-primary" />
+                      <input type="number" step="0.01" placeholder="" readOnly value={item.amount}
+                        className="w-full bg-transparent focus:outline-none text-xs text-right font-extrabold text-primary"
+                        onKeyDown={e => {
+                          if (e.key === 'Tab' && !e.shiftKey && idx === invoiceItems.length - 1) {
+                            e.preventDefault()
+                            addInvoiceItem()
+                            setTimeout(() => {
+                              const newRef = invoiceDescRefs.current[idx + 1]
+                              if (newRef) newRef.focus()
+                            }, 50)
+                          }
+                        }}
+                      />
                     </div>
                     <div className="px-1 text-center">
                       <button type="button" onClick={() => removeInvoiceItem(idx)}

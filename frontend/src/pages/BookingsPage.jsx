@@ -316,7 +316,7 @@ export default function BookingsPage() {
                         className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
                       />
                     </th>
-                    {['Our AWB', 'Vendor AWB', 'Courier', 'Destination', 'Status', 'Date', 'Actions'].map((h) => (
+                    {['Our AWB', 'Vendor / AWB', 'Destination', 'Status', 'Date', 'Actions'].map((h) => (
                       <th
                         key={h}
                         className={`px-4 py-3 text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] whitespace-nowrap ${
@@ -355,33 +355,30 @@ export default function BookingsPage() {
                           </span>
                         </Link>
                       </td>
-                      {/* Vendor AWB */}
+                      {/* Vendor / AWB */}
                       <td className="px-4 py-3.5">
                         {b.vendor_awb_number ? (
                           <div>
                             <span className="text-[12px] font-bold text-[#1a237e]">
                               {b.vendor_awb_number}
                             </span>
+                            <span className="block text-[10px] text-text-tertiary mt-0.5">
+                              {b.vendor_api_configs?.name || b.courier_providers?.name || 'Local'}
+                            </span>
                             {b.vendor_awb_number_2 && (
-                              <span className="block text-[10px] text-text-tertiary mt-0.5">
-                                AWB2: {b.vendor_awb_number_2}
+                              <span className="block text-[10px] text-text-tertiary mt-0.5 font-mono">
+                                FWD: {b.vendor_awb_number_2}
                               </span>
                             )}
                           </div>
                         ) : (
-                          <span className="text-[11px] text-text-tertiary italic">—</span>
-                        )}
-                      </td>
-                      {/* Courier */}
-                      <td className="px-4 py-3.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 bg-surface-alt border border-border rounded-lg flex items-center justify-center flex-shrink-0">
-                            <Package className="w-3.5 h-3.5 text-text-tertiary" />
+                          <div>
+                            <span className="text-[11px] text-text-tertiary italic">—</span>
+                            <span className="block text-[10px] text-text-tertiary mt-0.5">
+                              {b.vendor_api_configs?.name || b.courier_providers?.name || 'Local'}
+                            </span>
                           </div>
-                          <span className="text-[12px] text-text-secondary">
-                            {b.vendor_api_configs?.name || b.courier_providers?.name || 'Local'}
-                          </span>
-                        </div>
+                        )}
                       </td>
                       {/* Destination */}
                       <td className="px-4 py-3.5">
