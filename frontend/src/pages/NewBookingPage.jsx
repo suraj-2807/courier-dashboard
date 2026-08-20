@@ -694,7 +694,7 @@ export default function NewBookingPage() {
     invoice_date: form.invoice_date,
     invoice_currency: form.invoice_currency,
     hs_code: form.hs_code,
-    export_reason: form.export_reason,
+    export_reason: form.export_reason || form.invoice_note || '',
     terms_of_trade: form.terms_of_trade,
     invoice_type: form.invoice_type || 'INVOICE',
     invoice_note: form.invoice_note || '',

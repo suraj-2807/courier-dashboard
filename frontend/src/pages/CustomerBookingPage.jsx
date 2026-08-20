@@ -408,7 +408,7 @@ export default function CustomerBookingPage() {
         invoice_type: form.invoice_type || 'INVOICE',
         invoice_currency: form.invoice_currency,
         hs_code: form.hs_code,
-        export_reason: form.export_reason,
+        export_reason: form.export_reason || form.invoice_note || '',
         terms_of_trade: form.terms_of_trade,
         invoice_note: form.invoice_note || '',
         invoice_items: invoiceItems.filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0)

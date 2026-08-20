@@ -299,21 +299,21 @@ export default class PacificAdapter extends BaseAdapter {
       Currency: this._truncate(shipmentData.invoice_currency || 'INR', 3),
       ShipmentValue: String(declaredValue > 0 ? declaredValue.toFixed(0) : '100'),
       CODAmount: shipmentData.payment_mode === 'cod' ? parseFloat(shipmentData.cod_amount || shipmentData.total_amount || 0).toFixed(2) : '0.00',
-      CSBType: this._truncate(shipmentData.csb_type || shipmentData.export_reason || 'COMMERCIAL', 15),
+      CSBType: this._truncate(shipmentData.csb_type || 'COMMERCIAL', 15),
       TermofInvoice: this._truncate(shipmentData.terms_of_trade || 'CIF', 3),
       InvoiceNo: this._truncate(shipmentData.invoice_no || shipmentData.order_id || shipmentData.tracking_number || '', 15),
       InvoiceDate: this._formatDateDDMMYYYY(invoiceDateStr),
-      CompanyCode: this._truncate(shipmentData.company_code || credentials.company_code || vendorName || 'PC', 3),
-      IsCommercial: 1,
+      CompanyCode: this._truncate(shipmentData.company_code || credentials.company_code || vendorName || 'BS', 3),
+      IsCommercial: shipmentData.is_commercial !== undefined && shipmentData.is_commercial !== '' ? (parseInt(shipmentData.is_commercial) || 0) : 0,
       IsMedical: shipmentData.is_medical !== '' && shipmentData.is_medical !== undefined ? (parseInt(shipmentData.is_medical) || 0) : 0,
       OTP: shipmentData.otp || "",
       LSPType: shipmentData.lsp_type || "I",
-      RequiredPerforma: "Y",
-      RequiredLable: "Y",
+      RequiredPerforma: "y",
+      RequiredLable: "y",
       KYCDocumentType: docType,
       KYCImage: "",
       ImageType: "PDF",
-      ExportReason: this._truncate(shipmentData.export_reason || 'COMMERCIAL', 150),
+      ExportReason: this._normalizeExportReason(shipmentData.export_reason || shipmentData.invoice_note),
       KYCImage1: "",
       ImageType1: "PDF",
       EAWBNO: this._truncate(shipmentData.eawb_no || shipmentData.invoice_no || shipmentData.order_id || shipmentData.tracking_number || '', 15),
@@ -446,6 +446,26 @@ export default class PacificAdapter extends BaseAdapter {
   _truncate(str, length, fallback = '') {
     if (str === null || str === undefined) return fallback
     return String(str).slice(0, length).trim()
+  }
+
+  _normalizeExportReason(reason) {
+    if (!reason || typeof reason !== 'string') return 'FREE SAMPLE OF NO COMMERICAL VALUE'
+    const trimmed = reason.trim()
+    if (!trimmed) return 'FREE SAMPLE OF NO COMMERICAL VALUE'
+
+    const upper = trimmed.toUpperCase()
+    // Pacific Express rejects bare "COMMERCIAL" with 'Invalid Export Reason..!'
+    // Map standard commercial / sample / default terms to Pacific's accepted string
+    if (upper === 'COMMERCIAL' || upper === 'COMMERCIAL SALE' || upper === 'SAMPLE' || upper === 'FREE SAMPLE' || upper.includes('SAMPLE')) {
+      return 'FREE SAMPLE OF NO COMMERICAL VALUE'
+    }
+    if (upper.includes('NO COMMER')) {
+      return 'FREE SAMPLE OF NO COMMERICAL VALUE'
+    }
+    if (upper === 'GIFT' || upper.includes('GIFT')) {
+      return 'FREE SAMPLE OF NO COMMERICAL VALUE'
+    }
+    return this._truncate(trimmed, 150) || 'FREE SAMPLE OF NO COMMERICAL VALUE'
   }
 
   _formatDateDDMMYYYY(dateString) {
