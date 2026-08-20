@@ -18,6 +18,8 @@ const ADAPTERS = {
   'acx': FlySwiftAdapter,         // ACX International Courier
   'acxintl': FlySwiftAdapter,     // ACX International Courier alias
   'acx_international': FlySwiftAdapter,
+  'bhabani': FlySwiftAdapter,     // Bhabani Express (ITDServices platform)
+  'bhabhani': FlySwiftAdapter,    // Bhabani Express alias
   'pacific': PacificAdapter,
   'pacifc': PacificAdapter,       // Support typo variation as requested
   // 'bluedart': BlueDartAdapter,
