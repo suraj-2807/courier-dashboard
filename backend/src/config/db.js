@@ -110,6 +110,9 @@ export async function initializeDb() {
       { name: 'invoice_items', type: "JSON DEFAULT NULL" },
       { name: 'parcels', type: "JSON DEFAULT NULL" },
       { name: 'chargeable_weight', type: "DECIMAL(10,2) DEFAULT 0" },
+      { name: 'rate_per_kg', type: "DECIMAL(10,2) DEFAULT 0" },
+      { name: 'extra_charge', type: "DECIMAL(10,2) DEFAULT 0" },
+      { name: 'final_chargeable_weight', type: "DECIMAL(10,2) DEFAULT 0" },
       { name: 'invoice_pdf_path', type: "VARCHAR(500) DEFAULT ''" },
       { name: 'is_locked', type: "BOOLEAN DEFAULT FALSE" }
     ]

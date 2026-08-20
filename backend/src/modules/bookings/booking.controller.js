@@ -35,6 +35,9 @@ function extractBookingFields(body) {
     package_type: body.package_type,
     total_amount: body.total_amount,
     shipping_charge: body.shipping_charge,
+    rate_per_kg: body.rate_per_kg,
+    extra_charge: body.extra_charge,
+    final_chargeable_weight: body.final_chargeable_weight,
     order_reference: body.order_reference,
     remarks: body.remarks,
     // Inline sender/receiver
@@ -348,12 +351,14 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
   let noOfPieces = parseInt(fields.no_of_pieces) || 1
 
   if (parcelsList.length > 0) {
-    const sumPWeight = parcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+    const sumPWeight = parcelsList.reduce((sum, p) => sum + Math.ceil(parseFloat(p.weight) || 0), 0)
     if (sumPWeight > 0) totalWeight = sumPWeight
     if (parcelsList.length > noOfPieces) noOfPieces = parcelsList.length
     if (totalLength <= 0 && parcelsList[0]?.length) totalLength = parseFloat(parcelsList[0].length) || 0
     if (totalBreadth <= 0 && (parcelsList[0]?.breadth || parcelsList[0]?.width)) totalBreadth = parseFloat(parcelsList[0].breadth || parcelsList[0].width) || 0
     if (totalHeight <= 0 && parcelsList[0]?.height) totalHeight = parseFloat(parcelsList[0].height) || 0
+  } else if (totalWeight > 0) {
+    totalWeight = Math.ceil(totalWeight)
   }
 
   return {
@@ -464,7 +469,7 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     // Parcels & Invoice Items
     parcels: fields.parcels,
     invoice_items: fields.invoice_items,
-    chargeable_weight: parseFloat(fields.chargeable_weight) || 0
+    chargeable_weight: parseFloat(fields.final_chargeable_weight) || parseFloat(fields.chargeable_weight) || totalWeight || 0
   }
 }
 
@@ -529,13 +534,19 @@ export const saveBooking = async (req, res) => {
     let finalPieces = parseInt(fields.no_of_pieces) || 1
 
     if (parsedParcelsList.length > 0) {
-      const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+      const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + Math.ceil(parseFloat(p.weight) || 0), 0)
       if (sumPWeight > 0) finalWeight = sumPWeight
       if (parsedParcelsList.length > finalPieces) finalPieces = parsedParcelsList.length
       if (finalLength <= 0 && parsedParcelsList[0]?.length) finalLength = parseFloat(parsedParcelsList[0].length) || 0
       if (finalBreadth <= 0 && (parsedParcelsList[0]?.breadth || parsedParcelsList[0]?.width)) finalBreadth = parseFloat(parsedParcelsList[0].breadth || parsedParcelsList[0].width) || 0
       if (finalHeight <= 0 && parsedParcelsList[0]?.height) finalHeight = parseFloat(parsedParcelsList[0].height) || 0
+    } else if (finalWeight > 0) {
+      finalWeight = Math.ceil(finalWeight)
     }
+
+    const finalChgWeight = parsedParcelsList.length > 1
+      ? parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.chargeable_weight) || Math.ceil(parseFloat(p.weight) || 0)), 0)
+      : (parseFloat(fields.chargeable_weight) || finalWeight || 0)
 
     let shipmentId
     let tracking_number
@@ -559,6 +570,7 @@ export const saveBooking = async (req, res) => {
           vendor_code = ?, service_code = ?, product_code = ?, weight = ?, chargeable_weight = ?, \`length\` = ?, breadth = ?, height = ?,
           no_of_pieces = ?, content_description = ?, declared_value = ?, cod_amount = ?,
           payment_mode = ?, package_type = ?, total_amount = ?, shipping_charge = ?,
+          rate_per_kg = ?, extra_charge = ?, final_chargeable_weight = ?,
           order_reference = ?, remarks = ?,
           sender_company = ?, sender_address_2 = ?, sender_gstin_type = ?, sender_gstin_no = ?,
           receiver_address_2 = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
@@ -574,7 +586,7 @@ export const saveBooking = async (req, res) => {
           fields.service_code || '',
           fields.product_code || '',
           finalWeight,
-          parseFloat(fields.chargeable_weight) || finalWeight || 0,
+          finalChgWeight,
           finalLength,
           finalBreadth,
           finalHeight,
@@ -586,6 +598,9 @@ export const saveBooking = async (req, res) => {
           fields.package_type || 'parcel',
           parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
           parseFloat(fields.shipping_charge) || 0,
+          parseFloat(fields.rate_per_kg) || 0,
+          parseFloat(fields.extra_charge) || 0,
+          parseFloat(fields.final_chargeable_weight) || finalChgWeight || 0,
           fields.order_reference || '',
           fields.remarks || '',
           fields.sender_company || '',
@@ -617,12 +632,13 @@ export const saveBooking = async (req, res) => {
           vendor_code, service_code, product_code, tracking_number, weight, chargeable_weight, \`length\`, breadth, height,
           no_of_pieces, content_description, declared_value, cod_amount,
           payment_mode, package_type, total_amount, shipping_charge,
+          rate_per_kg, extra_charge, final_chargeable_weight,
           order_reference, remarks, status, vendor_push_status, is_locked,
           sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
           receiver_address_2, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
           invoice_type, invoice_note, invoice_items, parcels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
           finalSenderId || null,
@@ -634,7 +650,7 @@ export const saveBooking = async (req, res) => {
           fields.product_code || '',
           tracking_number,
           finalWeight,
-          parseFloat(fields.chargeable_weight) || finalWeight || 0,
+          finalChgWeight,
           finalLength,
           finalBreadth,
           finalHeight,
@@ -646,6 +662,9 @@ export const saveBooking = async (req, res) => {
           fields.package_type || 'parcel',
           parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
           parseFloat(fields.shipping_charge) || 0,
+          parseFloat(fields.rate_per_kg) || 0,
+          parseFloat(fields.extra_charge) || 0,
+          parseFloat(fields.final_chargeable_weight) || finalChgWeight || 0,
           fields.order_reference || '',
           fields.remarks || '',
           'draft',
@@ -935,13 +954,19 @@ export const createBooking = async (req, res) => {
     let finalPieces = parseInt(fields.no_of_pieces) || 1
 
     if (parsedParcelsList.length > 0) {
-      const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+      const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + Math.ceil(parseFloat(p.weight) || 0), 0)
       if (sumPWeight > 0) finalWeight = sumPWeight
       if (parsedParcelsList.length > finalPieces) finalPieces = parsedParcelsList.length
       if (finalLength <= 0 && parsedParcelsList[0]?.length) finalLength = parseFloat(parsedParcelsList[0].length) || 0
       if (finalBreadth <= 0 && (parsedParcelsList[0]?.breadth || parsedParcelsList[0]?.width)) finalBreadth = parseFloat(parsedParcelsList[0].breadth || parsedParcelsList[0].width) || 0
       if (finalHeight <= 0 && parsedParcelsList[0]?.height) finalHeight = parseFloat(parsedParcelsList[0].height) || 0
+    } else if (finalWeight > 0) {
+      finalWeight = Math.ceil(finalWeight)
     }
+
+    const finalChgWeight = parsedParcelsList.length > 1
+      ? parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.chargeable_weight) || Math.ceil(parseFloat(p.weight) || 0)), 0)
+      : (parseFloat(fields.chargeable_weight) || finalWeight || 0)
 
     let shipmentId
     let tracking_number
@@ -968,6 +993,7 @@ export const createBooking = async (req, res) => {
           vendor_code = ?, service_code = ?, product_code = ?, weight = ?, chargeable_weight = ?, \`length\` = ?, breadth = ?, height = ?,
           no_of_pieces = ?, content_description = ?, declared_value = ?, cod_amount = ?,
           payment_mode = ?, package_type = ?, total_amount = ?, shipping_charge = ?,
+          rate_per_kg = ?, extra_charge = ?, final_chargeable_weight = ?,
           order_reference = ?, remarks = ?, status = ?, vendor_push_status = ?,
           sender_company = ?, sender_address_2 = ?, sender_gstin_type = ?, sender_gstin_no = ?,
           receiver_address_2 = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
@@ -983,7 +1009,7 @@ export const createBooking = async (req, res) => {
           fields.service_code || '',
           fields.product_code || '',
           finalWeight,
-          parseFloat(fields.chargeable_weight) || finalWeight || 0,
+          finalChgWeight,
           finalLength,
           finalBreadth,
           finalHeight,
@@ -995,6 +1021,9 @@ export const createBooking = async (req, res) => {
           fields.package_type || 'parcel',
           parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
           parseFloat(fields.shipping_charge) || 0,
+          parseFloat(fields.rate_per_kg) || 0,
+          parseFloat(fields.extra_charge) || 0,
+          parseFloat(fields.final_chargeable_weight) || finalChgWeight || 0,
           fields.order_reference || '',
           fields.remarks || '',
           fields.vendor_config_id ? 'processing' : 'booked',
@@ -1030,12 +1059,13 @@ export const createBooking = async (req, res) => {
           vendor_code, service_code, product_code, tracking_number, weight, chargeable_weight, \`length\`, breadth, height,
           no_of_pieces, content_description, declared_value, cod_amount,
           payment_mode, package_type, total_amount, shipping_charge,
+          rate_per_kg, extra_charge, final_chargeable_weight,
           order_reference, remarks, status, vendor_push_status, is_locked,
           sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
           receiver_address_2, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
           invoice_type, invoice_note, invoice_items, parcels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
           finalSenderId || null,
@@ -1047,7 +1077,7 @@ export const createBooking = async (req, res) => {
           fields.product_code || '',
           tracking_number,
           finalWeight,
-          parseFloat(fields.chargeable_weight) || finalWeight || 0,
+          finalChgWeight,
           finalLength,
           finalBreadth,
           finalHeight,
@@ -1059,6 +1089,9 @@ export const createBooking = async (req, res) => {
           fields.package_type || 'parcel',
           parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
           parseFloat(fields.shipping_charge) || 0,
+          parseFloat(fields.rate_per_kg) || 0,
+          parseFloat(fields.extra_charge) || 0,
+          parseFloat(fields.final_chargeable_weight) || finalChgWeight || 0,
           fields.order_reference || '',
           fields.remarks || '',
           fields.vendor_config_id ? 'processing' : 'booked',

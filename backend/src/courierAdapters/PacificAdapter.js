@@ -135,10 +135,12 @@ export default class PacificAdapter extends BaseAdapter {
     const numPieces = parcelsList.length > 0 ? parcelsList.length : (parseInt(shipmentData.no_of_pieces) || 1)
     let totalWeight = parseFloat(shipmentData.weight) || 0
     if (parcelsList.length > 0) {
-      const sumParcelWeight = parcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+      const sumParcelWeight = parcelsList.reduce((sum, p) => sum + Math.ceil(parseFloat(p.weight) || 0), 0)
       if (sumParcelWeight > 0) {
         totalWeight = sumParcelWeight
       }
+    } else if (totalWeight > 0) {
+      totalWeight = Math.ceil(totalWeight)
     }
     if (totalWeight <= 0) totalWeight = 1.0
 
@@ -156,11 +158,12 @@ export default class PacificAdapter extends BaseAdapter {
       new Date(new Date(bookingDateStr).getTime() + 10 * 24 * 60 * 60 * 1000)
     )
 
-    // Build Dimensions array (using individual box dimensions if provided)
+    // Build Dimensions array (using individual box dimensions if provided, rounded up)
     const dimensions = []
     if (parcelsList.length > 0) {
       parcelsList.forEach((p, idx) => {
-        const pWeight = parseFloat(p.weight) || parseFloat(perPieceWeight) || 1.0
+        const rawW = parseFloat(p.weight)
+        const pWeight = rawW > 0 ? Math.ceil(rawW) : (parseFloat(perPieceWeight) || 1.0)
         const pLength = parseFloat(p.length) || parseFloat(length) || 10.0
         const pWidth = parseFloat(p.breadth || p.width) || parseFloat(width) || 10.0
         const pHeight = parseFloat(p.height) || parseFloat(height) || 10.0
@@ -203,17 +206,9 @@ export default class PacificAdapter extends BaseAdapter {
     if (invoiceItemsList.length > 0) {
       invoiceItemsList.forEach((item, idx) => {
         const qty = String(parseFloat(item.quantity) || 1)
-        let unitRate = parseFloat(item.unit_rates || item.cost || item.rate || 0) || 0
-        let totalItemAmount = parseFloat(item.amount) || (parseFloat(qty) * unitRate) || 0
-        let itemWeight = parseFloat(item.unit_weight) || 0
-
-        if (unitRate <= 0 && declaredValue > 0) {
-          unitRate = declaredValue / invoiceItemsList.length
-          totalItemAmount = unitRate * parseFloat(qty)
-        }
-        if (itemWeight <= 0 && totalWeight > 0) {
-          itemWeight = totalWeight / invoiceItemsList.length
-        }
+        const unitRate = parseFloat(item.unit_rates || item.cost || item.rate || 0) || 0
+        const totalItemAmount = parseFloat(item.amount) || (parseFloat(qty) * unitRate) || 0
+        const itemWeight = parseFloat(item.unit_weight) || 0
         const boxNoClean = String(item.box_no || (idx + 1)).replace(/^box-?/i, '')
 
         performa.push({

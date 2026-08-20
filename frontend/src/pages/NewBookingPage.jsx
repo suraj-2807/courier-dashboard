@@ -96,6 +96,8 @@ const INITIAL_FORM = {
   payment_mode: 'prepaid',
   rate_per_kg: '',
   shipping_charge: '',
+  extra_charge: '',
+  final_chargeable_weight: '',
   total_amount: '',
   order_reference: '',
   remarks: '',
@@ -339,10 +341,20 @@ export default function NewBookingPage() {
       export_reason: b.export_reason || '',
 
       payment_mode: b.payment_mode || 'prepaid',
+      rate_per_kg: String(b.rate_per_kg || ''),
       shipping_charge: String(b.shipping_charge || ''),
+      extra_charge: String(b.extra_charge || ''),
+      final_chargeable_weight: String(b.final_chargeable_weight || b.chargeable_weight || ''),
       order_reference: b.order_reference || '',
       remarks: b.remarks || ''
     }))
+
+    if (b.final_chargeable_weight || b.chargeable_weight) {
+      setFinalChargeableWeight(String(b.final_chargeable_weight || b.chargeable_weight))
+    }
+    if (b.extra_charge !== undefined && b.extra_charge !== null && b.extra_charge !== '') {
+      setExtraCharge(String(b.extra_charge))
+    }
 
     if (b.parcels) {
       try {
@@ -599,6 +611,7 @@ export default function NewBookingPage() {
 
         return {
           ...prev,
+          weight: actCeil > 0 ? String(actCeil) : prev.weight,
           volumetric_weight: vol > 0 ? String(vol) : '',
           chargeable_weight: chg > 0 ? String(chg) : '',
           shipping_charge: updatedShipping
@@ -609,10 +622,10 @@ export default function NewBookingPage() {
 
   // Auto-sync final chargeable weight from computed chargeable weight
   useEffect(() => {
-    if (form.chargeable_weight) {
+    if (!editId && form.chargeable_weight) {
       setFinalChargeableWeight(form.chargeable_weight)
     }
-  }, [form.chargeable_weight])
+  }, [form.chargeable_weight, editId])
 
   // Sync total_amount and declared_value with invoice total
   useEffect(() => {
@@ -700,6 +713,8 @@ export default function NewBookingPage() {
     payment_mode: form.payment_mode,
     rate_per_kg: parseFloat(form.rate_per_kg) || 0,
     shipping_charge: shipCharge,
+    extra_charge: parseFloat(extraCharge) || 0,
+    final_chargeable_weight: parseFloat(finalChargeableWeight) || (parcels.length > 1 && totalParcelChg > 0 ? totalParcelChg : (parseFloat(form.chargeable_weight) || 0)),
     total_amount: totAmount,
     order_reference: form.order_reference,
     remarks: form.remarks,
