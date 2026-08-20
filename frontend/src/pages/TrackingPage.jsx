@@ -478,6 +478,80 @@ export default function TrackingPage() {
             </div>
           </div>
 
+          {/* ── Dimensions Breakdown (if returned by carrier) ────────── */}
+          {Array.isArray(tracking.dimensions) && tracking.dimensions.length > 0 && (
+            <div className="bg-surface border border-border rounded-2xl p-5">
+              <h2 className="text-[14px] font-bold text-text-primary mb-3 flex items-center gap-2">
+                <div className="w-7 h-7 bg-primary/8 rounded-lg flex items-center justify-center">
+                  <Box className="w-3.5 h-3.5 text-primary" />
+                </div>
+                Box Dimensions ({tracking.dimensions.length} {tracking.dimensions.length === 1 ? 'Box' : 'Boxes'})
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[12px]">
+                  <thead>
+                    <tr className="border-b border-border text-text-tertiary uppercase text-[10px] tracking-wider">
+                      <th className="py-2 px-3">Box #</th>
+                      <th className="py-2 px-3">Actual Weight (kg)</th>
+                      <th className="py-2 px-3">Length (cm)</th>
+                      <th className="py-2 px-3">Width (cm)</th>
+                      <th className="py-2 px-3">Height (cm)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50 font-medium">
+                    {tracking.dimensions.map((dim, dIdx) => (
+                      <tr key={dIdx} className="hover:bg-surface-alt/50">
+                        <td className="py-2.5 px-3 font-bold text-text-primary">Box {dIdx + 1}</td>
+                        <td className="py-2.5 px-3">{dim.ActualWeight || dim.weight || dim.actual_weight || '—'}</td>
+                        <td className="py-2.5 px-3">{dim.Vol_WeightL || dim.length || '—'}</td>
+                        <td className="py-2.5 px-3">{dim.Vol_WeightW || dim.width || dim.breadth || '—'}</td>
+                        <td className="py-2.5 px-3">{dim.Vol_WeightH || dim.height || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Performa Items (if returned by carrier) ──────────────── */}
+          {Array.isArray(tracking.performa) && tracking.performa.length > 0 && (
+            <div className="bg-surface border border-border rounded-2xl p-5">
+              <h2 className="text-[14px] font-bold text-text-primary mb-3 flex items-center gap-2">
+                <div className="w-7 h-7 bg-emerald-50 rounded-lg flex items-center justify-center">
+                  <Package className="w-3.5 h-3.5 text-emerald-600" />
+                </div>
+                Performa Invoice Items ({tracking.performa.length})
+              </h2>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[12px]">
+                  <thead>
+                    <tr className="border-b border-border text-text-tertiary uppercase text-[10px] tracking-wider">
+                      <th className="py-2 px-3">Box</th>
+                      <th className="py-2 px-3">Description</th>
+                      <th className="py-2 px-3">HSN Code</th>
+                      <th className="py-2 px-3 text-center">Qty</th>
+                      <th className="py-2 px-3 text-right">Rate</th>
+                      <th className="py-2 px-3 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50 font-medium">
+                    {tracking.performa.map((item, pIdx) => (
+                      <tr key={pIdx} className="hover:bg-surface-alt/50">
+                        <td className="py-2.5 px-3 font-bold text-text-primary">{item.BoxNo || `Box-${pIdx + 1}`}</td>
+                        <td className="py-2.5 px-3 text-text-secondary">{item.Description || item.description || '—'}</td>
+                        <td className="py-2.5 px-3 font-mono text-text-tertiary">{item.HSNCode || item.hsn_code || '—'}</td>
+                        <td className="py-2.5 px-3 text-center">{item.Quantity || item.quantity || 1} {item.Unit || 'PCS'}</td>
+                        <td className="py-2.5 px-3 text-right font-mono">{item.Rate || item.rate || '0.00'}</td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-text-primary">{item.Amount || item.amount || '0.00'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* ── Vendor Remark ───────────────────────────────────────── */}
           {tracking.shipmentInfo.remark && (
             <div className="bg-amber-50 border border-amber-200/50 rounded-2xl p-4 flex items-start gap-3">

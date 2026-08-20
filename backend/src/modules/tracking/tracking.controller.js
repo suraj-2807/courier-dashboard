@@ -25,8 +25,8 @@ function parseCredentials(raw) {
 // ─── Pacific Express Tracking ──────────────────────────────────────
 async function trackPacific(awb, config) {
   const creds = parseCredentials(config.auth_credentials)
-  const userId = creds.user_id || creds.username || creds.UserID || ''
-  const password = creds.password || creds.Password || ''
+  const userId = creds.user_id || creds.username || creds.UserID || 'P0503'
+  const password = creds.password || creds.Password || 'P0503@7199'
 
   const trackingUrl = 'https://eship.pacificexp.net/api/v1/Tracking/Tracking'
 
@@ -36,7 +36,7 @@ async function trackPacific(awb, config) {
     body: JSON.stringify({
       UserID: userId,
       Password: password,
-      AWBNo: String(awb),
+      AWBNo: String(awb).trim(),
       Type: 'A'
     })
   })
@@ -45,14 +45,23 @@ async function trackPacific(awb, config) {
     throw new Error(`Pacific tracking API returned status ${response.status}`)
   }
 
-  const data = await response.json()
-
-  if (data.ErrorCode !== '0' && data.ResponseCode !== 'RT01') {
-    throw new Error(data.ErrorDisc || 'Pacific tracking failed: invalid response')
+  const rawText = await response.text()
+  let data = {}
+  try {
+    data = JSON.parse(rawText)
+  } catch (e) {
+    throw new Error('Pacific tracking returned non-JSON response')
   }
 
-  const tracking = data.Tracking?.[0] || {}
-  const events = (data.Events || []).map(ev => ({
+  // Support both flat ResponseCode and nested data.Response
+  const resObj = data.Response || data
+
+  if (resObj.ErrorCode !== '0' && resObj.ResponseCode !== 'RT01' && String(resObj.ErrorDisc || '').toLowerCase() !== 'success') {
+    throw new Error(resObj.ErrorDisc || 'Pacific tracking failed: invalid response')
+  }
+
+  const tracking = (Array.isArray(resObj.Tracking) ? resObj.Tracking[0] : resObj.Tracking) || {}
+  const events = (Array.isArray(resObj.Events) ? resObj.Events : []).map(ev => ({
     date: ev.EventDate1 || ev.EventDate || '',
     time: ev.EventTime1 || ev.EventTime || '',
     location: ev.Location || '',
@@ -68,12 +77,13 @@ async function trackPacific(awb, config) {
 
   let currentStage = 'booked'
   if (statusLower.includes('delivered')) currentStage = 'delivered'
-  else if (statusLower.includes('out for delivery')) currentStage = 'out_for_delivery'
-  else if (statusLower.includes('departed') || statusLower.includes('arrived') || statusLower.includes('in transit') || statusLower.includes('import scan') || statusLower.includes('processing')) currentStage = 'in_transit'
+  else if (statusLower.includes('out for delivery') || statusLower.includes('today')) currentStage = 'out_for_delivery'
+  else if (statusLower.includes('departed') || statusLower.includes('arrived') || statusLower.includes('in transit') || statusLower.includes('import scan') || statusLower.includes('processing') || statusLower.includes('facility') || statusLower.includes('scan')) currentStage = 'in_transit'
   else if (statusLower.includes('origin scan') || statusLower.includes('received') || statusLower.includes('picked') || statusLower.includes('label')) currentStage = 'picked_up'
 
-  // Extract secondary AWB (FedEx / UPS AWB)
-  const secondaryAwb = tracking.VendorAWBNo1 || tracking.VendorAWBNo2 || ''
+  // Extract secondary AWB (FedEx / UPS / DHL AWB 2)
+  const secondaryAwb = tracking.VendorAWBNo2 || tracking.VendorAWBNo1 || tracking.VendorAWBNo || tracking.VendorAwbNo2 || tracking.VendorAwbNo1 || tracking.VendorAwbNo || ''
+  const secondaryCarrier = tracking.VendorName2 || tracking.VendorName || tracking.Vendor_Code1 || tracking.Vendor_Code || ''
 
   return {
     vendor: 'Pacific Express',
@@ -81,10 +91,10 @@ async function trackPacific(awb, config) {
     shipmentInfo: {
       awbNo: tracking.AWBNo || awb,
       vendorAwbNo: secondaryAwb,
-      secondaryCarrier: tracking.VendorName || tracking.VendorName2 || '',
+      secondaryCarrier: secondaryCarrier,
       bookingDate: tracking.BookingDate1 || tracking.BookingDate || '',
       origin: tracking.Origin || '',
-      originCountry: tracking.Origin_Country || '',
+      originCountry: tracking.Origin_Country || 'INDIA',
       destination: tracking.Destination || '',
       destinationCountry: tracking.Destination_Country || '',
       consignee: tracking.Consignee || '',
@@ -101,6 +111,8 @@ async function trackPacific(awb, config) {
       remark: tracking.Remark || ''
     },
     events,
+    dimensions: Array.isArray(resObj.Dimensions) ? resObj.Dimensions : [],
+    performa: Array.isArray(resObj.Performa) ? resObj.Performa : [],
     currentStatus: statusString,
     currentStage
   }
@@ -109,7 +121,7 @@ async function trackPacific(awb, config) {
 // ─── FlySwift Tracking ─────────────────────────────────────────────
 async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift') {
   const creds = parseCredentials(config.auth_credentials)
-  const apiCompanyId = creds.api_company_id || creds.company_id || creds.company_code || '5'
+  const apiCompanyId = creds.api_company_id || creds.company_id || creds.company_code || '1614'
   const customerCode = creds.customer_code || creds.customer_id || ''
 
   // Determine host dynamically from config auth_url or shipment_api_url
@@ -127,7 +139,7 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift')
   }
 
   const vendorDisplayName = config.name || defaultVendorName || 'Courier Partner'
-  const trackingUrl = `https://${host}/api/tracking_api/get_tracking_data?api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${awb}`
+  const trackingUrl = `https://${host}/api/tracking_api/get_tracking_data?api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(String(awb).trim())}`
 
   const response = await fetch(trackingUrl, {
     method: 'GET',
@@ -138,23 +150,57 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift')
     throw new Error(`${vendorDisplayName} tracking API returned status ${response.status}`)
   }
 
-  const data = await response.json()
+  let rawText = await response.text()
+  rawText = rawText.trim()
+  if (rawText.startsWith('"') && rawText.endsWith('"')) {
+    rawText = rawText.slice(1, -1)
+  }
+
+  let data = {}
+  try {
+    data = JSON.parse(rawText)
+  } catch (e) {
+    throw new Error(`${vendorDisplayName} tracking returned invalid JSON response`)
+  }
+
+  if (Array.isArray(data)) {
+    data = data[0] || {}
+  }
 
   const trackingData = data.data || data
   const shipment = trackingData.shipment || trackingData.docket || trackingData || {}
 
-  const rawEvents = trackingData.tracking_history || trackingData.events || trackingData.tracking || shipment.tracking_history || []
+  let rawEvents = trackingData.docket_events || trackingData.tracking_history || trackingData.events || trackingData.tracking || shipment.tracking_history || []
+  if (!Array.isArray(rawEvents) && typeof rawEvents === 'object' && rawEvents !== null) {
+    rawEvents = Object.values(rawEvents)
+  }
+
   const events = (Array.isArray(rawEvents) ? rawEvents : []).map(ev => ({
-    date: ev.date || ev.event_date || ev.created_at || '',
-    time: ev.time || ev.event_time || '',
-    location: ev.location || ev.city || ev.hub || '',
-    status: ev.status || ev.event || ev.description || '',
-    rawDate: ev.date || ev.event_date || '',
-    rawTime: ev.time || ev.event_time || ''
+    date: ev.event_at ? ev.event_at.split(' ')[0] : (ev.date || ev.event_date || ev.created_at || ''),
+    time: ev.event_at ? (ev.event_at.split(' ')[1] || '') : (ev.time || ev.event_time || ''),
+    location: ev.event_location || ev.location || ev.city || ev.hub || '',
+    status: ev.event_description || ev.status || ev.event || ev.description || '',
+    rawDate: ev.event_at || ev.date || ev.event_date || '',
+    rawTime: ev.event_time || ev.time || ''
   }))
 
+  let docketStatus = ''
+  let docketDeliveryDate = ''
+  let docketReceiver = ''
+  if (Array.isArray(trackingData.docket_info)) {
+    trackingData.docket_info.forEach(row => {
+      if (Array.isArray(row) && row.length >= 2) {
+        const k = String(row[0]).toLowerCase()
+        const v = String(row[1])
+        if (k.includes('status')) docketStatus = v
+        if (k.includes('delivery date') || k.includes('delivery')) docketDeliveryDate = v
+        if (k.includes('receiver') || k.includes('received')) docketReceiver = v
+      }
+    })
+  }
+
   const latestEvent = events[0] || {}
-  const statusString = shipment.status || latestEvent.status || 'In Progress'
+  const statusString = docketStatus || shipment.status || latestEvent.status || 'In Progress'
   const statusLower = statusString.toLowerCase()
 
   let currentStage = 'booked'
@@ -163,13 +209,15 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift')
   else if (statusLower.includes('transit') || statusLower.includes('departed') || statusLower.includes('arrived') || statusLower.includes('hub')) currentStage = 'in_transit'
   else if (statusLower.includes('picked') || statusLower.includes('booked') || statusLower.includes('manifest')) currentStage = 'picked_up'
 
+  const secondaryAwb = shipment.vendor_awb_2 || shipment.awb_2 || shipment.vendor_awb || shipment.vendor_awb_no || shipment.ref_no || ''
+
   return {
     vendor: vendorDisplayName,
-    vendorCode: (config.vendor_code || 'acx').toLowerCase(),
+    vendorCode: (config.vendor_code || 'flyswift').toLowerCase(),
     shipmentInfo: {
       awbNo: shipment.tracking_no || shipment.docket_no || String(awb),
-      vendorAwbNo: shipment.vendor_awb || shipment.ref_no || '',
-      secondaryCarrier: shipment.carrier || '',
+      vendorAwbNo: secondaryAwb,
+      secondaryCarrier: shipment.carrier || shipment.vendor_name || '',
       bookingDate: shipment.booking_date || shipment.created_at || '',
       origin: shipment.origin || shipment.origin_city || '',
       originCountry: shipment.origin_country || 'INDIA',
@@ -181,14 +229,15 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift')
       serviceName: shipment.service_name || shipment.service_type || '',
       weight: shipment.weight || shipment.actual_weight || '',
       refNo: shipment.reference_no || shipment.ref_no || '',
-      deliveryDate: shipment.delivery_date || '',
+      deliveryDate: docketDeliveryDate || shipment.delivery_date || '',
       deliveryTime: shipment.delivery_time || '',
-      receiverName: shipment.receiver_name || '',
+      receiverName: docketReceiver || shipment.receiver_name || '',
       expectedDeliveryDate: shipment.expected_delivery_date || shipment.edd || '',
       podAvailable: false,
       remark: shipment.remark || ''
     },
     events,
+    dimensions: Array.isArray(trackingData.dimensions) ? trackingData.dimensions : (Array.isArray(shipment.dimensions) ? shipment.dimensions : []),
     currentStatus: statusString,
     currentStage
   }
@@ -376,6 +425,29 @@ export const liveTrack = async (req, res) => {
       }
     }
 
+    // Helper to persist updated vendor AWB 2 and status back to DB
+    const persistShipmentTrackingUpdates = async (trackResult) => {
+      if (!matchedShipment) return
+      try {
+        const updates = []
+        const vals = []
+        if (trackResult.shipmentInfo?.vendorAwbNo && (!matchedShipment.vendor_awb_number || matchedShipment.vendor_awb_number === matchedShipment.tracking_number)) {
+          updates.push('vendor_awb_number = ?')
+          vals.push(trackResult.shipmentInfo.vendorAwbNo)
+        }
+        if (trackResult.currentStage === 'delivered' && matchedShipment.status !== 'delivered') {
+          updates.push('status = ?')
+          vals.push('delivered')
+        }
+        if (updates.length > 0) {
+          vals.push(matchedShipment.id)
+          await query(`UPDATE shipments SET ${updates.join(', ')} WHERE id = ?`, vals)
+        }
+      } catch (err) {
+        console.error('Failed to sync live tracking updates to shipment row:', err.message)
+      }
+    }
+
     // ── 4. Try tracking with matched config ──
     if (config) {
       const normalizedCode = (config.vendor_code || vendorCode || '').toLowerCase()
@@ -385,12 +457,13 @@ export const liveTrack = async (req, res) => {
         try {
           const result = await tracker(vendorAwbToTrack, config)
           if (matchedShipment) {
+            await persistShipmentTrackingUpdates(result)
             result.internalShipment = {
               id: matchedShipment.id,
               ourAwb: matchedShipment.tracking_number,
               orderId: matchedShipment.order_id,
               invoiceNo: matchedShipment.invoice_no,
-              vendorAwbNumber: matchedShipment.vendor_awb_number
+              vendorAwbNumber: result.shipmentInfo?.vendorAwbNo || matchedShipment.vendor_awb_number
             }
           }
           return res.json({ success: true, tracking: result })
@@ -419,12 +492,13 @@ export const liveTrack = async (req, res) => {
           const result = await tracker(targetAwb, cfg)
           if (result && (result.events?.length > 0 || result.shipmentInfo?.awbNo)) {
             if (matchedShipment) {
+              await persistShipmentTrackingUpdates(result)
               result.internalShipment = {
                 id: matchedShipment.id,
                 ourAwb: matchedShipment.tracking_number,
                 orderId: matchedShipment.order_id,
                 invoiceNo: matchedShipment.invoice_no,
-                vendorAwbNumber: matchedShipment.vendor_awb_number
+                vendorAwbNumber: result.shipmentInfo?.vendorAwbNo || matchedShipment.vendor_awb_number
               }
             }
             return res.json({ success: true, tracking: result })

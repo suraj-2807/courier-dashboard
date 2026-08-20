@@ -333,16 +333,39 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     ? fields.content_description
     : (derivedContent || fields.content_description || 'General Goods')
 
+  let parcelsList = []
+  if (fields.parcels) {
+    try {
+      parcelsList = typeof fields.parcels === 'string' ? JSON.parse(fields.parcels) : fields.parcels
+    } catch {}
+  }
+  if (!Array.isArray(parcelsList)) parcelsList = []
+
+  let totalWeight = parseFloat(fields.weight) || 0
+  let totalLength = parseFloat(fields.length) || 0
+  let totalBreadth = parseFloat(fields.breadth) || 0
+  let totalHeight = parseFloat(fields.height) || 0
+  let noOfPieces = parseInt(fields.no_of_pieces) || 1
+
+  if (parcelsList.length > 0) {
+    const sumPWeight = parcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+    if (sumPWeight > 0) totalWeight = sumPWeight
+    if (parcelsList.length > noOfPieces) noOfPieces = parcelsList.length
+    if (totalLength <= 0 && parcelsList[0]?.length) totalLength = parseFloat(parcelsList[0].length) || 0
+    if (totalBreadth <= 0 && (parcelsList[0]?.breadth || parcelsList[0]?.width)) totalBreadth = parseFloat(parcelsList[0].breadth || parcelsList[0].width) || 0
+    if (totalHeight <= 0 && parcelsList[0]?.height) totalHeight = parseFloat(parcelsList[0].height) || 0
+  }
+
   return {
     order_id: orderId,
     tracking_number: trackingNumber,
     reference_number: trackingNumber, // Our AWB as reference number
     order_reference: fields.order_reference || '',
-    weight: parseFloat(fields.weight) || 0,
-    length: parseFloat(fields.length) || 0,
-    breadth: parseFloat(fields.breadth) || 0,
-    height: parseFloat(fields.height) || 0,
-    no_of_pieces: parseInt(fields.no_of_pieces) || 1,
+    weight: totalWeight,
+    length: totalLength,
+    breadth: totalBreadth,
+    height: totalHeight,
+    no_of_pieces: noOfPieces,
     package_type: fields.package_type || 'parcel',
     payment_mode: fields.payment_mode || 'prepaid',
     shipping_charge: parseFloat(fields.shipping_charge) || parseFloat(fields.total_amount) || parseFloat(fields.declared_value) || 0,
@@ -495,6 +518,25 @@ export const saveBooking = async (req, res) => {
       ? JSON.stringify(fields.parcels)
       : (typeof fields.parcels === 'string' ? fields.parcels : null)
 
+    const parsedParcelsList = Array.isArray(fields.parcels)
+      ? fields.parcels
+      : (typeof fields.parcels === 'string' ? (JSON.parse(fields.parcels || '[]') || []) : [])
+
+    let finalWeight = parseFloat(fields.weight) || 0
+    let finalLength = parseFloat(fields.length) || 0
+    let finalBreadth = parseFloat(fields.breadth) || 0
+    let finalHeight = parseFloat(fields.height) || 0
+    let finalPieces = parseInt(fields.no_of_pieces) || 1
+
+    if (parsedParcelsList.length > 0) {
+      const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+      if (sumPWeight > 0) finalWeight = sumPWeight
+      if (parsedParcelsList.length > finalPieces) finalPieces = parsedParcelsList.length
+      if (finalLength <= 0 && parsedParcelsList[0]?.length) finalLength = parseFloat(parsedParcelsList[0].length) || 0
+      if (finalBreadth <= 0 && (parsedParcelsList[0]?.breadth || parsedParcelsList[0]?.width)) finalBreadth = parseFloat(parsedParcelsList[0].breadth || parsedParcelsList[0].width) || 0
+      if (finalHeight <= 0 && parsedParcelsList[0]?.height) finalHeight = parseFloat(parsedParcelsList[0].height) || 0
+    }
+
     let shipmentId
     let tracking_number
 
@@ -531,12 +573,12 @@ export const saveBooking = async (req, res) => {
           fields.vendor_code || '',
           fields.service_code || '',
           fields.product_code || '',
-          fields.weight || 0,
-          parseFloat(fields.chargeable_weight) || parseFloat(fields.weight) || 0,
-          fields.length || 0,
-          fields.breadth || 0,
-          fields.height || 0,
-          parseInt(fields.no_of_pieces) || 1,
+          finalWeight,
+          parseFloat(fields.chargeable_weight) || finalWeight || 0,
+          finalLength,
+          finalBreadth,
+          finalHeight,
+          finalPieces,
           contentDescription,
           parseFloat(fields.declared_value) || 0,
           parseFloat(fields.cod_amount) || 0,
@@ -591,12 +633,12 @@ export const saveBooking = async (req, res) => {
           fields.service_code || '',
           fields.product_code || '',
           tracking_number,
-          fields.weight || 0,
-          parseFloat(fields.chargeable_weight) || parseFloat(fields.weight) || 0,
-          fields.length || 0,
-          fields.breadth || 0,
-          fields.height || 0,
-          parseInt(fields.no_of_pieces) || 1,
+          finalWeight,
+          parseFloat(fields.chargeable_weight) || finalWeight || 0,
+          finalLength,
+          finalBreadth,
+          finalHeight,
+          finalPieces,
           contentDescription,
           parseFloat(fields.declared_value) || 0,
           parseFloat(fields.cod_amount) || 0,
@@ -882,6 +924,25 @@ export const createBooking = async (req, res) => {
       ? JSON.stringify(fields.parcels)
       : (typeof fields.parcels === 'string' ? fields.parcels : null)
 
+    const parsedParcelsList = Array.isArray(fields.parcels)
+      ? fields.parcels
+      : (typeof fields.parcels === 'string' ? (JSON.parse(fields.parcels || '[]') || []) : [])
+
+    let finalWeight = parseFloat(fields.weight) || 0
+    let finalLength = parseFloat(fields.length) || 0
+    let finalBreadth = parseFloat(fields.breadth) || 0
+    let finalHeight = parseFloat(fields.height) || 0
+    let finalPieces = parseInt(fields.no_of_pieces) || 1
+
+    if (parsedParcelsList.length > 0) {
+      const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+      if (sumPWeight > 0) finalWeight = sumPWeight
+      if (parsedParcelsList.length > finalPieces) finalPieces = parsedParcelsList.length
+      if (finalLength <= 0 && parsedParcelsList[0]?.length) finalLength = parseFloat(parsedParcelsList[0].length) || 0
+      if (finalBreadth <= 0 && (parsedParcelsList[0]?.breadth || parsedParcelsList[0]?.width)) finalBreadth = parseFloat(parsedParcelsList[0].breadth || parsedParcelsList[0].width) || 0
+      if (finalHeight <= 0 && parsedParcelsList[0]?.height) finalHeight = parseFloat(parsedParcelsList[0].height) || 0
+    }
+
     let shipmentId
     let tracking_number
     let order_id
@@ -921,12 +982,12 @@ export const createBooking = async (req, res) => {
           fields.vendor_code || '',
           fields.service_code || '',
           fields.product_code || '',
-          fields.weight || 0,
-          parseFloat(fields.chargeable_weight) || parseFloat(fields.weight) || 0,
-          fields.length || 0,
-          fields.breadth || 0,
-          fields.height || 0,
-          parseInt(fields.no_of_pieces) || 1,
+          finalWeight,
+          parseFloat(fields.chargeable_weight) || finalWeight || 0,
+          finalLength,
+          finalBreadth,
+          finalHeight,
+          finalPieces,
           contentDescription,
           parseFloat(fields.declared_value) || 0,
           parseFloat(fields.cod_amount) || 0,
@@ -985,12 +1046,12 @@ export const createBooking = async (req, res) => {
           fields.service_code || '',
           fields.product_code || '',
           tracking_number,
-          fields.weight || 0,
-          parseFloat(fields.chargeable_weight) || parseFloat(fields.weight) || 0,
-          fields.length || 0,
-          fields.breadth || 0,
-          fields.height || 0,
-          parseInt(fields.no_of_pieces) || 1,
+          finalWeight,
+          parseFloat(fields.chargeable_weight) || finalWeight || 0,
+          finalLength,
+          finalBreadth,
+          finalHeight,
+          finalPieces,
           contentDescription,
           parseFloat(fields.declared_value) || 0,
           parseFloat(fields.cod_amount) || 0,

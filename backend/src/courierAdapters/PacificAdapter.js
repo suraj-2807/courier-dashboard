@@ -122,9 +122,26 @@ export default class PacificAdapter extends BaseAdapter {
     const consigneeDocType = this._truncate(shipmentData.receiver_gstin_type || '', 50)
     const consigneeDocNumber = this._truncate(shipmentData.receiver_gstin_no || '', 15)
 
+    // Parse parcels for multi-box dimensions
+    let parcelsList = []
+    if (shipmentData.parcels) {
+      try {
+        parcelsList = typeof shipmentData.parcels === 'string' ? JSON.parse(shipmentData.parcels) : shipmentData.parcels
+      } catch {}
+    }
+    if (!Array.isArray(parcelsList)) parcelsList = []
+
     // Numbers and Specs
-    const numPieces = parseInt(shipmentData.no_of_pieces) || 1
-    const totalWeight = parseFloat(shipmentData.weight) || 1.0
+    const numPieces = parcelsList.length > 0 ? parcelsList.length : (parseInt(shipmentData.no_of_pieces) || 1)
+    let totalWeight = parseFloat(shipmentData.weight) || 0
+    if (parcelsList.length > 0) {
+      const sumParcelWeight = parcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+      if (sumParcelWeight > 0) {
+        totalWeight = sumParcelWeight
+      }
+    }
+    if (totalWeight <= 0) totalWeight = 1.0
+
     const perPieceWeight = (totalWeight / numPieces).toFixed(3)
     const length = parseFloat(shipmentData.length || 10).toFixed(3)
     const width = parseFloat(shipmentData.breadth || 10).toFixed(3)
@@ -139,17 +156,9 @@ export default class PacificAdapter extends BaseAdapter {
       new Date(new Date(bookingDateStr).getTime() + 10 * 24 * 60 * 60 * 1000)
     )
 
-    // Parse parcels for multi-box dimensions
-    let parcelsList = []
-    if (shipmentData.parcels) {
-      try {
-        parcelsList = typeof shipmentData.parcels === 'string' ? JSON.parse(shipmentData.parcels) : shipmentData.parcels
-      } catch {}
-    }
-
     // Build Dimensions array (using individual box dimensions if provided)
     const dimensions = []
-    if (Array.isArray(parcelsList) && parcelsList.length > 0) {
+    if (parcelsList.length > 0) {
       parcelsList.forEach((p, idx) => {
         const pWeight = parseFloat(p.weight) || parseFloat(perPieceWeight) || 1.0
         const pLength = parseFloat(p.length) || parseFloat(length) || 10.0
@@ -157,18 +166,18 @@ export default class PacificAdapter extends BaseAdapter {
         const pHeight = parseFloat(p.height) || parseFloat(height) || 10.0
         dimensions.push({
           ActualWeight: String(pWeight.toFixed(3)),
-          Vol_WeightL: String(pLength.toFixed(3)),
-          Vol_WeightW: String(pWidth.toFixed(3)),
-          Vol_WeightH: String(pHeight.toFixed(3))
+          Vol_WeightL: String(pLength.toFixed(2)),
+          Vol_WeightW: String(pWidth.toFixed(2)),
+          Vol_WeightH: String(pHeight.toFixed(2))
         })
       })
     } else {
       for (let i = 0; i < numPieces; i++) {
         dimensions.push({
           ActualWeight: String(perPieceWeight),
-          Vol_WeightL: String(length),
-          Vol_WeightW: String(width),
-          Vol_WeightH: String(height)
+          Vol_WeightL: String(parseFloat(length).toFixed(2)),
+          Vol_WeightW: String(parseFloat(width).toFixed(2)),
+          Vol_WeightH: String(parseFloat(height).toFixed(2))
         })
       }
     }
@@ -180,8 +189,9 @@ export default class PacificAdapter extends BaseAdapter {
         invoiceItemsList = typeof shipmentData.invoice_items === 'string' ? JSON.parse(shipmentData.invoice_items) : shipmentData.invoice_items
       } catch {}
     }
+    if (!Array.isArray(invoiceItemsList)) invoiceItemsList = []
 
-    const itemDescriptions = Array.isArray(invoiceItemsList) ? invoiceItemsList.map(item => item.description).filter(Boolean) : []
+    const itemDescriptions = invoiceItemsList.map(item => item.description).filter(Boolean)
     const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
     const contentDescription = (shipmentData.content_description && shipmentData.content_description !== 'General Goods' && shipmentData.content_description !== 'ITEMS / GOODS INSIDE')
       ? shipmentData.content_description
@@ -190,12 +200,20 @@ export default class PacificAdapter extends BaseAdapter {
     const declaredValue = parseFloat(shipmentData.declared_value || shipmentData.total_amount || shipmentData.shipping_charge || 0)
     const performa = []
 
-    if (Array.isArray(invoiceItemsList) && invoiceItemsList.length > 0) {
+    if (invoiceItemsList.length > 0) {
       invoiceItemsList.forEach((item, idx) => {
         const qty = String(parseFloat(item.quantity) || 1)
-        const unitRate = parseFloat(item.unit_rates || item.cost || item.rate || 0) || 0
-        const totalItemAmount = parseFloat(item.amount) || (parseFloat(qty) * unitRate) || 0
-        const itemWeight = parseFloat(item.unit_weight) || 0
+        let unitRate = parseFloat(item.unit_rates || item.cost || item.rate || 0) || 0
+        let totalItemAmount = parseFloat(item.amount) || (parseFloat(qty) * unitRate) || 0
+        let itemWeight = parseFloat(item.unit_weight) || 0
+
+        if (unitRate <= 0 && declaredValue > 0) {
+          unitRate = declaredValue / invoiceItemsList.length
+          totalItemAmount = unitRate * parseFloat(qty)
+        }
+        if (itemWeight <= 0 && totalWeight > 0) {
+          itemWeight = totalWeight / invoiceItemsList.length
+        }
         const boxNoClean = String(item.box_no || (idx + 1)).replace(/^box-?/i, '')
 
         performa.push({
@@ -204,15 +222,15 @@ export default class PacificAdapter extends BaseAdapter {
           HSNCode: this._truncate(item.hs_code || shipmentData.hs_code || '', 10),
           Quantity: qty,
           Unit: item.unit_type || item.unit || 'PCS',
-          Rate: unitRate > 0 ? unitRate.toFixed(2) : '0',
-          Amount: totalItemAmount > 0 ? totalItemAmount.toFixed(2) : '0',
-          Weight: itemWeight > 0 ? itemWeight.toFixed(3) : '0',
+          Rate: unitRate > 0 ? unitRate.toFixed(2) : '0.00',
+          Amount: totalItemAmount > 0 ? totalItemAmount.toFixed(2) : '0.00',
+          Weight: itemWeight > 0 ? itemWeight.toFixed(3) : '0.000',
           PerformaIGST: "0",
           PerformaIGSTAmount: "0"
         })
       })
     } else {
-      const perPieceValue = numPieces > 0 ? (declaredValue / numPieces).toFixed(2) : '0.00'
+      const perPieceValue = numPieces > 0 ? (declaredValue / numPieces).toFixed(2) : '10.00'
       for (let i = 0; i < numPieces; i++) {
         performa.push({
           BoxNo: `Box-${i + 1}`,
@@ -275,30 +293,30 @@ export default class PacificAdapter extends BaseAdapter {
       ServiceName: serviceName,
       ProductCode: productCode,
       Dox_Spx: productCode,
-      Pieces: String(numPieces),
+      Pieces: String(dimensions.length),
       Weight: totalWeight.toFixed(3),
       Content: this._truncate(contentDescription, 150),
       Currency: this._truncate(shipmentData.invoice_currency || 'INR', 3),
-      ShipmentValue: String(declaredValue.toFixed(0)),
+      ShipmentValue: String(declaredValue > 0 ? declaredValue.toFixed(0) : '100'),
       CODAmount: shipmentData.payment_mode === 'cod' ? parseFloat(shipmentData.cod_amount || shipmentData.total_amount || 0).toFixed(2) : '0.00',
       CSBType: this._truncate(shipmentData.csb_type || shipmentData.export_reason || 'COMMERCIAL', 15),
       TermofInvoice: this._truncate(shipmentData.terms_of_trade || 'CIF', 3),
-      InvoiceNo: this._truncate(shipmentData.invoice_no || shipmentData.order_id || '', 15),
+      InvoiceNo: this._truncate(shipmentData.invoice_no || shipmentData.order_id || shipmentData.tracking_number || '', 15),
       InvoiceDate: this._formatDateDDMMYYYY(invoiceDateStr),
       CompanyCode: this._truncate(shipmentData.company_code || credentials.company_code || vendorName || 'PC', 3),
-      IsCommercial: shipmentData.is_commercial !== '' && shipmentData.is_commercial !== undefined ? (parseInt(shipmentData.is_commercial) || 0) : ((shipmentData.export_reason === 'COMMERCIAL' || shipmentData.export_reason === 'commercial') ? 1 : 0),
+      IsCommercial: 1,
       IsMedical: shipmentData.is_medical !== '' && shipmentData.is_medical !== undefined ? (parseInt(shipmentData.is_medical) || 0) : 0,
       OTP: shipmentData.otp || "",
       LSPType: shipmentData.lsp_type || "I",
-      RequiredPerforma: shipmentData.required_performa || "y",
-      RequiredLable: shipmentData.required_label || "y",
+      RequiredPerforma: "Y",
+      RequiredLable: "Y",
       KYCDocumentType: docType,
       KYCImage: "",
       ImageType: "PDF",
-      ExportReason: this._truncate(shipmentData.export_reason || '', 150),
+      ExportReason: this._truncate(shipmentData.export_reason || 'COMMERCIAL', 150),
       KYCImage1: "",
       ImageType1: "PDF",
-      EAWBNO: this._truncate(shipmentData.eawb_no || shipmentData.invoice_no || shipmentData.order_id || '', 15),
+      EAWBNO: this._truncate(shipmentData.eawb_no || shipmentData.invoice_no || shipmentData.order_id || shipmentData.tracking_number || '', 15),
       EAWBDate: shipmentData.eawb_date ? this._formatDateDDMMYYYY(shipmentData.eawb_date) : eAwbDate,
       EAWBExpDate: shipmentData.eawb_exp_date ? this._formatDateDDMMYYYY(shipmentData.eawb_exp_date) : eAwbExpDate,
       Dimensions: dimensions,

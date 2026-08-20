@@ -456,23 +456,30 @@ function pe_fetch_tracking($result) {
         }
     }
     elseif ($svc==1007||$svc==1008) {
-        $d = json_encode(["UserID"=>$result->TUSER,"Password"=>$result->TPASS,"AWBNo"=>$result->VENDORID1]);
-        $url = ($svc==1007) ? "http://eship.pacificexp.net/api/v1/Tracking/Tracking" : "http://cloud.pacegroupintl.com/api/v1/Tracking/Tracking";
+        $d = json_encode(["UserID"=>$result->TUSER,"Password"=>$result->TPASS,"AWBNo"=>$result->VENDORID1,"Type"=>"A"]);
+        $url = ($svc==1007) ? "https://eship.pacificexp.net/api/v1/Tracking/Tracking" : "https://cloud.pacegroupintl.com/api/v1/Tracking/Tracking";
         $r = wp_remote_post($url,['body'=>$d,'headers'=>['Content-Type'=>'application/json'],'timeout'=>15]);
         if (!is_wp_error($r)) {
-            $b = json_decode(wp_remote_retrieve_body($r));
-            if (isset($b->Response->ErrorDisc)&&$b->Response->ErrorDisc=="Success") {
-                if (isset($b->Response->Events)) {
-                    foreach ($b->Response->Events as $s) {
-                        $history[] = ['date'=>date("M d, Y",strtotime($s->EventDate1)),'time'=>date("h:i A",strtotime($s->EventTime1)),
+            $raw = wp_remote_retrieve_body($r);
+            $b = json_decode($raw);
+            $res = isset($b->Response) ? $b->Response : $b;
+            if (isset($res->ErrorDisc) && (strtolower($res->ErrorDisc)=="success" || (isset($res->ResponseCode) && $res->ResponseCode=="RT01") || (isset($res->ErrorCode) && $res->ErrorCode=="0"))) {
+                if (isset($res->Events) && is_array($res->Events)) {
+                    foreach ($res->Events as $s) {
+                        $history[] = ['date'=>date("M d, Y",strtotime($s->EventDate1 ?? $s->EventDate ?? '')),'time'=>date("h:i A",strtotime($s->EventTime1 ?? $s->EventTime ?? '')),
                             'location'=>$s->Location??'','activity'=>str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'],'Agent',$s->Status??'')];
                     }
                 }
-                if (isset($b->Response->Tracking[0])) {
-                    $t=$b->Response->Tracking[0];
+                if (isset($res->Tracking[0])) {
+                    $t=$res->Tracking[0];
                     $result->STATUS=$t->Status??$result->STATUS;
                     $result->RECEIVER=$t->ReceiverName??'';
-                    $result->DELIVERYDATE=$t->DeliveryDate1??$result->DELIVERYDATE;
+                    $result->DELIVERYDATE=$t->DeliveryDate1??$t->DeliveryDate??$result->DELIVERYDATE;
+                    if (!empty($t->VendorAWBNo2)) {
+                        $result->VENDORID2 = $t->VendorAWBNo2;
+                    } elseif (!empty($t->VendorAWBNo1)) {
+                        $result->VENDORID2 = $t->VendorAWBNo1;
+                    }
                 }
             }
         }

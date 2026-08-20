@@ -665,12 +665,12 @@ export default function NewBookingPage() {
     receiver_gstin_type: form.receiver_gstin_type,
     receiver_gstin_no: form.receiver_gstin_no,
 
-    weight: parseFloat(form.weight) || 0,
-    chargeable_weight: parseFloat(form.chargeable_weight) || 0,
-    length: parseFloat(form.length) || 0,
-    breadth: parseFloat(form.breadth) || 0,
-    height: parseFloat(form.height) || 0,
-    no_of_pieces: parseInt(form.no_of_pieces) || 1,
+    weight: (parcels.length > 1 && totalParcelActual > 0) ? totalParcelActual : (parseFloat(form.weight) || (parcels[0] ? parseFloat(parcels[0].weight) : 0) || 0),
+    chargeable_weight: (parcels.length > 1 && totalParcelChg > 0) ? totalParcelChg : (parseFloat(form.chargeable_weight) || 0),
+    length: parseFloat(form.length) || (parcels[0] ? parseFloat(parcels[0].length) : 0) || 0,
+    breadth: parseFloat(form.breadth) || (parcels[0] ? parseFloat(parcels[0].breadth) : 0) || 0,
+    height: parseFloat(form.height) || (parcels[0] ? parseFloat(parcels[0].height) : 0) || 0,
+    no_of_pieces: Math.max(parcels.length, parseInt(form.no_of_pieces) || 1),
     content_description: (form.content_description && form.content_description !== 'General Goods' && form.content_description !== 'ITEMS / GOODS INSIDE')
       ? form.content_description
       : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'General Goods'),
