@@ -121,8 +121,8 @@ async function trackPacific(awb, config) {
 // ─── FlySwift Tracking ─────────────────────────────────────────────
 async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift') {
   const creds = parseCredentials(config.auth_credentials)
-  const apiCompanyId = creds.api_company_id || creds.company_id || creds.company_code || '1614'
-  const customerCode = creds.customer_code || creds.customer_id || ''
+  const apiCompanyId = creds.api_company_id || creds.customer_code || creds.customer_id || creds.company_code || creds.company_id || '1032'
+  const customerCode = creds.customer_code || creds.customer_id || creds.api_company_id || '1032'
 
   // Determine host dynamically from config auth_url or shipment_api_url
   let host = 'admin.flyswift.net'
@@ -170,71 +170,102 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift')
   const trackingData = data.data || data
   const shipment = trackingData.shipment || trackingData.docket || trackingData || {}
 
+  // Parse docket_info array into key-value map
+  const infoMap = {}
+  if (Array.isArray(trackingData.docket_info)) {
+    trackingData.docket_info.forEach(row => {
+      if (Array.isArray(row) && row.length >= 2) {
+        const k = String(row[0]).trim()
+        const v = String(row[1]).trim()
+        infoMap[k] = v
+      }
+    })
+  }
+
+  // Parse events (docket_events or tracking_history)
   let rawEvents = trackingData.docket_events || trackingData.tracking_history || trackingData.events || trackingData.tracking || shipment.tracking_history || []
   if (!Array.isArray(rawEvents) && typeof rawEvents === 'object' && rawEvents !== null) {
     rawEvents = Object.values(rawEvents)
   }
 
-  const events = (Array.isArray(rawEvents) ? rawEvents : []).map(ev => ({
-    date: ev.event_at ? ev.event_at.split(' ')[0] : (ev.date || ev.event_date || ev.created_at || ''),
-    time: ev.event_at ? (ev.event_at.split(' ')[1] || '') : (ev.time || ev.event_time || ''),
-    location: ev.event_location || ev.location || ev.city || ev.hub || '',
-    status: ev.event_description || ev.status || ev.event || ev.description || '',
-    rawDate: ev.event_at || ev.date || ev.event_date || '',
-    rawTime: ev.event_time || ev.time || ''
-  }))
+  const events = (Array.isArray(rawEvents) ? rawEvents : []).map(ev => {
+    let evDate = ''
+    let evTime = ''
+    if (ev.event_at) {
+      const parts = ev.event_at.split(' ')
+      evDate = parts[0] || ''
+      evTime = parts[1] || ''
+    } else {
+      evDate = ev.date || ev.event_date || ev.created_at || ''
+      evTime = ev.time || ev.event_time || ''
+    }
+    const location = ev.event_location || ev.add_city || ev.add_state_or_province_code || ev.add_country_code || (infoMap['Origin Hub'] ? `${infoMap['Origin Hub']} Hub` : '') || ''
+    return {
+      date: evDate,
+      time: evTime,
+      location: location,
+      status: ev.event_description || ev.status || ev.event || ev.event_state || 'Event Recorded',
+      rawDate: ev.event_at || evDate,
+      rawTime: evTime
+    }
+  })
 
-  let docketStatus = ''
-  let docketDeliveryDate = ''
-  let docketReceiver = ''
-  if (Array.isArray(trackingData.docket_info)) {
-    trackingData.docket_info.forEach(row => {
-      if (Array.isArray(row) && row.length >= 2) {
-        const k = String(row[0]).toLowerCase()
-        const v = String(row[1])
-        if (k.includes('status')) docketStatus = v
-        if (k.includes('delivery date') || k.includes('delivery')) docketDeliveryDate = v
-        if (k.includes('receiver') || k.includes('received')) docketReceiver = v
-      }
-    })
+  // Extract forwarding_no (Carrier AWB 2 e.g. UPS / FedEx / DHL)
+  const secondaryAwb = trackingData.forwarding_no || infoMap['Forwarding No.'] || shipment.vendor_awb_2 || shipment.awb_2 || shipment.vendor_awb || shipment.vendor_awb_no || shipment.ref_no || ''
+  const serviceName = infoMap['Service Name'] || shipment.service_name || shipment.service_type || ''
+
+  // Determine secondary carrier
+  let secondaryCarrier = ''
+  const serviceUpper = serviceName.toUpperCase()
+  if (serviceUpper.includes('UPS') || secondaryAwb.startsWith('1Z')) {
+    secondaryCarrier = 'UPS'
+  } else if (serviceUpper.includes('FEDEX') || serviceUpper.includes('FDX')) {
+    secondaryCarrier = 'FEDEX'
+  } else if (serviceUpper.includes('DHL')) {
+    secondaryCarrier = 'DHL'
+  } else if (serviceUpper.includes('ARAMEX')) {
+    secondaryCarrier = 'Aramex'
+  } else {
+    secondaryCarrier = shipment.carrier || (serviceName ? serviceName.split(' ')[0] : 'Carrier')
   }
 
   const latestEvent = events[0] || {}
-  const statusString = docketStatus || shipment.status || latestEvent.status || 'In Progress'
+  const statusString = infoMap['Status'] || latestEvent.status || shipment.status || 'In Progress'
   const statusLower = statusString.toLowerCase()
 
   let currentStage = 'booked'
   if (statusLower.includes('delivered') || statusLower.includes('dlvd')) currentStage = 'delivered'
   else if (statusLower.includes('out for delivery') || statusLower.includes('ofd')) currentStage = 'out_for_delivery'
-  else if (statusLower.includes('transit') || statusLower.includes('departed') || statusLower.includes('arrived') || statusLower.includes('hub')) currentStage = 'in_transit'
-  else if (statusLower.includes('picked') || statusLower.includes('booked') || statusLower.includes('manifest')) currentStage = 'picked_up'
+  else if (statusLower.includes('transit') || statusLower.includes('departed') || statusLower.includes('arrived') || statusLower.includes('hub') || statusLower.includes('facility') || statusLower.includes('customs')) currentStage = 'in_transit'
+  else if (statusLower.includes('picked') || statusLower.includes('label') || statusLower.includes('entry') || statusLower.includes('booked') || statusLower.includes('manifest')) currentStage = 'picked_up'
 
-  const secondaryAwb = shipment.vendor_awb_2 || shipment.awb_2 || shipment.vendor_awb || shipment.vendor_awb_no || shipment.ref_no || ''
+  const originCity = infoMap['Shipper City'] || (infoMap['Origin Hub'] ? `${infoMap['Origin Hub']} Hub` : '') || infoMap['Origin'] || shipment.origin || ''
+  const destCity = infoMap['Consignee City'] ? `${infoMap['Consignee City']}${infoMap['Consignee State'] ? ', ' + infoMap['Consignee State'] : ''}` : (infoMap['Destination'] || shipment.destination || '')
 
   return {
     vendor: vendorDisplayName,
     vendorCode: (config.vendor_code || 'flyswift').toLowerCase(),
     shipmentInfo: {
-      awbNo: shipment.tracking_no || shipment.docket_no || String(awb),
+      awbNo: trackingData.tracking_no || shipment.tracking_no || shipment.docket_no || String(awb),
       vendorAwbNo: secondaryAwb,
-      secondaryCarrier: shipment.carrier || shipment.vendor_name || '',
-      bookingDate: shipment.booking_date || shipment.created_at || '',
-      origin: shipment.origin || shipment.origin_city || '',
-      originCountry: shipment.origin_country || 'INDIA',
-      destination: shipment.destination || shipment.destination_city || '',
-      destinationCountry: shipment.destination_country || '',
-      consignee: shipment.consignee_name || shipment.receiver_name || '',
-      shipperName: shipment.shipper_name || shipment.sender_name || '',
-      vendorName: shipment.vendor_name || vendorDisplayName,
-      serviceName: shipment.service_name || shipment.service_type || '',
-      weight: shipment.weight || shipment.actual_weight || '',
-      refNo: shipment.reference_no || shipment.ref_no || '',
-      deliveryDate: docketDeliveryDate || shipment.delivery_date || '',
+      secondaryCarrier: secondaryCarrier,
+      bookingDate: infoMap['Booking Date'] || shipment.booking_date || shipment.created_at || '',
+      origin: originCity,
+      originCountry: infoMap['Shipper Country'] || infoMap['Origin'] || 'INDIA',
+      destination: destCity,
+      destinationCountry: infoMap['Consignee Country'] || infoMap['Destination'] || '',
+      consignee: infoMap['Consignee Name'] || infoMap['Consignee Company'] || shipment.consignee_name || shipment.receiver_name || '',
+      shipperName: infoMap['Shipper Name'] || infoMap['Shipper Company'] || shipment.shipper_name || shipment.sender_name || '',
+      vendorName: vendorDisplayName,
+      serviceName: serviceName,
+      weight: trackingData.chargeable_weight || shipment.weight || shipment.actual_weight || '',
+      refNo: trackingData.reference_no || shipment.reference_no || shipment.ref_no || '',
+      deliveryDate: infoMap['Delivery Date and Time'] || shipment.delivery_date || '',
       deliveryTime: shipment.delivery_time || '',
-      receiverName: docketReceiver || shipment.receiver_name || '',
-      expectedDeliveryDate: shipment.expected_delivery_date || shipment.edd || '',
-      podAvailable: false,
-      remark: shipment.remark || ''
+      receiverName: infoMap['Receiver Name'] || shipment.receiver_name || '',
+      expectedDeliveryDate: trackingData.expected_datetime || shipment.expected_delivery_date || shipment.edd || '',
+      podAvailable: Boolean(trackingData.pod_image || trackingData.pod_signature),
+      remark: infoMap['Delivery Remark'] || infoMap['Reason For Status'] || shipment.remark || ''
     },
     events,
     dimensions: Array.isArray(trackingData.dimensions) ? trackingData.dimensions : (Array.isArray(shipment.dimensions) ? shipment.dimensions : []),

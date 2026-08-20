@@ -437,21 +437,46 @@ function pe_fetch_tracking($result) {
         }
     }
     elseif ($svc==1009||$svc==1019) {
+        $customerCode = !empty($result->ACCODE) ? $result->ACCODE : '1032';
         $url = ($svc==1009)
-            ? "http://admin.sairajinternational.online/api/tracking_api/get_tracking_data?company=sairaj-international&customer_code={$result->ACCODE}&tracking_no={$result->VENDORID1}&api_company_id=44"
-            : "http://admin.flyswift.net/api/tracking_api/get_tracking_data?api_company_id=1614&customer_code={$result->ACCODE}&tracking_no={$result->VENDORID1}";
+            ? "http://admin.sairajinternational.online/api/tracking_api/get_tracking_data?company=sairaj-international&customer_code={$customerCode}&tracking_no={$result->VENDORID1}&api_company_id=44"
+            : "http://admin.flyswift.net/api/tracking_api/get_tracking_data?api_company_id={$customerCode}&customer_code={$customerCode}&tracking_no={$result->VENDORID1}";
         $r = wp_remote_get($url,['timeout'=>15]);
         if (!is_wp_error($r)) {
-            $body = wp_remote_retrieve_body($r); $body = substr($body,1,-1);
-            $d = json_decode($body);
-            if ($d&&$d->tracking_no==$result->VENDORID1&&isset($d->docket_events)) {
+            $raw = wp_remote_retrieve_body($r);
+            $raw = trim($raw);
+            if (substr($raw, 0, 1) === '"' && substr($raw, -1) === '"') {
+                $raw = substr($raw, 1, -1);
+            }
+            $d = json_decode($raw);
+            if (is_array($d) && isset($d[0])) {
+                $d = $d[0];
+            }
+            if ($d && isset($d->docket_events) && is_array($d->docket_events)) {
                 foreach ($d->docket_events as $s) {
-                    $history[] = ['date'=>date("M d, Y",strtotime($s->event_at)),'time'=>date("h:i A",strtotime($s->event_at)),
-                        'location'=>$s->event_location??'','activity'=>str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'],'Agent',$s->event_description??'')];
+                    $evDate = !empty($s->event_at) ? $s->event_at : (!empty($s->date) ? $s->date : '');
+                    $history[] = [
+                        'date' => date("M d, Y", strtotime($evDate)),
+                        'time' => date("h:i A", strtotime($evDate)),
+                        'location' => $s->event_location ?? '',
+                        'activity' => str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'],'Agent', $s->event_description ?? $s->event_state ?? '')
+                    ];
                 }
-                if (isset($d->docket_info[4][1])) $result->STATUS=$d->docket_info[4][1];
-                if (isset($d->docket_info[5][1])) $result->DELIVERYDATE=$d->docket_info[5][1];
-                if (isset($d->docket_info[6][1])) $result->RECEIVER=$d->docket_info[6][1];
+                if (!empty($d->forwarding_no)) {
+                    $result->VENDORID2 = $d->forwarding_no;
+                }
+                if (isset($d->docket_info) && is_array($d->docket_info)) {
+                    foreach ($d->docket_info as $info) {
+                        if (is_array($info) && count($info) >= 2) {
+                            $k = strtolower(trim($info[0]));
+                            $v = trim($info[1]);
+                            if (strpos($k, 'status') !== false && !empty($v)) $result->STATUS = $v;
+                            if (strpos($k, 'delivery date') !== false && !empty($v)) $result->DELIVERYDATE = $v;
+                            if (strpos($k, 'receiver name') !== false && !empty($v)) $result->RECEIVER = $v;
+                            if (strpos($k, 'forwarding no') !== false && !empty($v) && empty($result->VENDORID2)) $result->VENDORID2 = $v;
+                        }
+                    }
+                }
             }
         }
     }
