@@ -262,16 +262,16 @@ export default class FlySwiftAdapter extends BaseAdapter {
     if (Array.isArray(invoiceItemsList) && invoiceItemsList.length > 0) {
       invoiceItemsList.forEach((item, idx) => {
         const qty = String(parseFloat(item.quantity) || 1)
-        const unitRate = parseFloat(item.unit_rates || item.cost || item.rate || (parseFloat(item.amount) / (parseFloat(qty) || 1)) || 0)
+        const unitRate = parseFloat(item.unit_rates || item.cost || item.rate || 0) || 0
         const totalItemAmount = parseFloat(item.amount) || (parseFloat(qty) * unitRate) || 0
-        const itemWeight = String(parseFloat(item.unit_weight || (weight / invoiceItemsList.length) || perPieceWeight) || 0.5)
+        const itemWeight = String(parseFloat(item.unit_weight) || 0)
         const boxNoClean = String(item.box_no || (idx + 1)).replace(/^box-?/i, '')
 
         freeFormLineItems.push({
-          total: totalItemAmount.toFixed(2),
+          total: totalItemAmount > 0 ? totalItemAmount.toFixed(2) : '0.00',
           no_of_packages: qty,
           box_no: boxNoClean,
-          rate: unitRate.toFixed(2),
+          rate: unitRate > 0 ? unitRate.toFixed(2) : '0.00',
           hscode: item.hs_code || shipmentData.hs_code || '',
           description: item.description || contentDescription || 'Shipment',
           unit_of_measurement: item.unit_type || 'Pc',

@@ -199,12 +199,16 @@ export default function NewBookingPage() {
           if (!updated[index].unit_rates && updated[index].cost) {
             updated[index].unit_rates = updated[index].cost
           }
+        } else {
+          updated[index].amount = '0.00'
         }
       } else if (field === 'amount') {
         const qty = parseFloat(updated[index].quantity) || 1
         const amt = parseFloat(value) || 0
         if (amt > 0 && qty > 0) {
           updated[index].unit_rates = (amt / qty).toFixed(2)
+        } else {
+          updated[index].unit_rates = '0.00'
         }
       }
       return updated
@@ -600,9 +604,28 @@ export default function NewBookingPage() {
     }
   }, [invoiceTotalAmount])
 
+  const NO_AUTO_UPPERCASE_FIELDS = [
+    'sender_email',
+    'receiver_email',
+    'buyer_email',
+    'package_type',
+    'sender_gstin_type',
+    'receiver_gstin_type',
+    'payment_mode',
+    'vendor_config_id',
+    'service_code',
+    'product_code',
+    'terms_of_trade',
+    'invoice_currency',
+    'invoice_type',
+    'csb_type',
+    'export_reason',
+    'company_code'
+  ]
+
   const updateForm = (field, value) => {
     let val = value
-    if (typeof val === 'string' && !field.toLowerCase().includes('email')) {
+    if (typeof val === 'string' && !NO_AUTO_UPPERCASE_FIELDS.includes(field) && !field.toLowerCase().includes('email')) {
       val = val.toUpperCase()
     }
     setForm(prev => ({ ...prev, [field]: val }))
@@ -958,27 +981,6 @@ export default function NewBookingPage() {
                   />
                 </CompactField>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <CompactField label="Phone Number" required>
-                    <input
-                      type="tel"
-                      placeholder="+91 99999 99999"
-                      value={form.sender_phone}
-                      onChange={e => updateForm('sender_phone', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
-                    />
-                  </CompactField>
-                  <CompactField label="Email Address">
-                    <input
-                      type="email"
-                      placeholder="sender@example.com"
-                      value={form.sender_email}
-                      onChange={e => updateForm('sender_email', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
-                    />
-                  </CompactField>
-                </div>
-
                 <CompactField label="Address Line 1" required>
                   <input
                     type="text"
@@ -1037,6 +1039,27 @@ export default function NewBookingPage() {
                       placeholder="Search Country (e.g. India, USA)"
                       className="w-full bg-transparent focus:outline-none text-[13px] text-primary font-bold uppercase pr-6"
                       countryList={countryList}
+                    />
+                  </CompactField>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <CompactField label="Phone / Mobile Number" required>
+                    <input
+                      type="tel"
+                      placeholder="+91 99999 99999"
+                      value={form.sender_phone}
+                      onChange={e => updateForm('sender_phone', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
+                    />
+                  </CompactField>
+                  <CompactField label="Email Address">
+                    <input
+                      type="email"
+                      placeholder="sender@example.com"
+                      value={form.sender_email}
+                      onChange={e => updateForm('sender_email', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                 </div>
@@ -1104,27 +1127,6 @@ export default function NewBookingPage() {
                   />
                 </CompactField>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <CompactField label="Phone Number" required highlight={!form.receiver_phone}>
-                    <input
-                      type="tel"
-                      placeholder="+1 999 999 9999"
-                      value={form.receiver_phone}
-                      onChange={e => updateForm('receiver_phone', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
-                    />
-                  </CompactField>
-                  <CompactField label="Email Address">
-                    <input
-                      type="email"
-                      placeholder="receiver@example.com"
-                      value={form.receiver_email}
-                      onChange={e => updateForm('receiver_email', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
-                    />
-                  </CompactField>
-                </div>
-
                 <CompactField label="Address Line 1" required highlight={!form.receiver_address}>
                   <input
                     type="text"
@@ -1187,6 +1189,27 @@ export default function NewBookingPage() {
                   </CompactField>
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <CompactField label="Phone / Mobile Number" required highlight={!form.receiver_phone}>
+                    <input
+                      type="tel"
+                      placeholder="+1 999 999 9999"
+                      value={form.receiver_phone}
+                      onChange={e => updateForm('receiver_phone', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
+                    />
+                  </CompactField>
+                  <CompactField label="Email Address">
+                    <input
+                      type="email"
+                      placeholder="receiver@example.com"
+                      value={form.receiver_email}
+                      onChange={e => updateForm('receiver_email', e.target.value)}
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
+                    />
+                  </CompactField>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <CompactField label="Doc Type">
                     <select
@@ -1199,6 +1222,8 @@ export default function NewBookingPage() {
                       <option value="VAT">VAT</option>
                       <option value="Passport">Passport</option>
                       <option value="Aadhaar Number">Aadhaar</option>
+                      <option value="PAN">PAN</option>
+                      <option value="GSTIN">GSTIN</option>
                     </select>
                   </CompactField>
                   <CompactField label={/aadhaar|aadhar/i.test(form.receiver_gstin_type) ? 'Aadhaar No. (12 Digits)' : 'Document Number'}>

@@ -41,8 +41,8 @@ async function run() {
     if (payload.ConsigneeAdd1 !== '39 WEST 39 WEST 39 WEST 39 WES') throw new Error(`ConsigneeAdd1 split failed, got: ${payload.ConsigneeAdd1}`)
     if (payload.ConsigneeAdd2 !== 'T STREET') throw new Error(`ConsigneeAdd2 split failed, got: ${payload.ConsigneeAdd2}`)
 
-    // 3. Document / KYC assertions
-    if (payload.DocumentNumber !== '123456789012') throw new Error(`DocumentNumber fallback failed: expected 123456789012, got ${payload.DocumentNumber}`)
+    // 3. Document / KYC assertions (empty when omitted)
+    if (payload.DocumentNumber !== '') throw new Error(`DocumentNumber fallback failed: expected empty string, got ${payload.DocumentNumber}`)
 
     console.log('\nPayload validations: ALL PASSED!')
 

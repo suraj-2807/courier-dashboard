@@ -160,8 +160,10 @@ export async function generateWaybillPdf(params) {
         doc.fillColor(TEXT_DARK).fontSize(7.5).font('Helvetica').text(sAddress, sX, sY, { width: sColWidth - 12 })
         sY += (sender.address ? 32 : 16)
       }
-      const sPhone = sender.phone || '0123456789'
-      doc.fillColor(TEXT_DARK).fontSize(8).font('Helvetica-Bold').text(`Ph : ${sPhone}`, sX, curY + row2Height - 16)
+      const sPhone = sender.phone || ''
+      if (sPhone) {
+        doc.fillColor(TEXT_DARK).fontSize(8).font('Helvetica-Bold').text(`Ph : ${sPhone}`, sX, curY + row2Height - 16)
+      }
 
       // Consignee Block
       const cX = startX + sColWidth + 6
