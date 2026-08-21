@@ -254,21 +254,38 @@ export default function BookingDetailPage() {
             {booking.vendor_awb_number && (
               <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-lg">
                 <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider">Vendor AWB:</span>
-                <span className="text-[13px] font-mono font-extrabold text-[#1a237e]">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(booking.vendor_awb_number)
+                    toast.success('Vendor AWB copied!')
+                  }}
+                  className="inline-flex items-center gap-1 text-[13px] font-mono font-extrabold text-[#1a237e] hover:underline cursor-pointer"
+                  title="Copy Vendor AWB"
+                >
                   {booking.vendor_awb_number}
-                </span>
+                  <Copy className="w-3 h-3 text-indigo-500" />
+                </button>
               </div>
             )}
 
-            {/* Secondary Carrier AWB (e.g. FedEx / UPS from Pacific live response) */}
-            {liveTracking?.shipmentInfo?.vendorAwbNo && liveTracking.shipmentInfo.vendorAwbNo !== booking.vendor_awb_number && (
-              <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200 px-3 py-1 rounded-lg">
-                <span className="text-[11px] font-bold text-purple-800 uppercase tracking-wider">
-                  {liveTracking.shipmentInfo.secondaryCarrier || 'Carrier'} AWB:
+            {/* Secondary Carrier / Forwarding AWB (e.g. UPS / FedEx / Carrier AWB 2) */}
+            {(booking.vendor_awb_number_2 || booking.forwarding_no || (liveTracking?.shipmentInfo?.vendorAwbNo && liveTracking.shipmentInfo.vendorAwbNo !== booking.vendor_awb_number)) && (
+              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 px-3 py-1 rounded-lg">
+                <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
+                  {booking.secondary_carrier || liveTracking?.shipmentInfo?.secondaryCarrier || (/^1Z/i.test(booking.vendor_awb_number_2 || booking.forwarding_no || liveTracking?.shipmentInfo?.vendorAwbNo || '') ? 'UPS' : 'Forwarding')} AWB:
                 </span>
-                <span className="text-[13px] font-mono font-extrabold text-purple-900">
-                  {liveTracking.shipmentInfo.vendorAwbNo}
-                </span>
+                <button
+                  onClick={() => {
+                    const fwdNo = booking.vendor_awb_number_2 || booking.forwarding_no || liveTracking?.shipmentInfo?.vendorAwbNo
+                    navigator.clipboard.writeText(fwdNo)
+                    toast.success('Forwarding AWB copied!')
+                  }}
+                  className="inline-flex items-center gap-1 text-[13px] font-mono font-extrabold text-amber-900 hover:underline cursor-pointer"
+                  title="Copy Forwarding AWB"
+                >
+                  {booking.vendor_awb_number_2 || booking.forwarding_no || liveTracking?.shipmentInfo?.vendorAwbNo}
+                  <Copy className="w-3 h-3 text-amber-600" />
+                </button>
               </div>
             )}
           </div>

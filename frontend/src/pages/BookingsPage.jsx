@@ -13,7 +13,9 @@ import {
   Send,
   Eye,
   Loader2,
-  FileText
+  FileText,
+  Copy,
+  Check
 } from 'lucide-react'
 import { bookingsApi } from '../api/bookings.api'
 import StatusBadge from '../components/ui/StatusBadge'
@@ -23,6 +25,29 @@ import ErrorState from '../components/ui/ErrorState'
 import { formatCurrency, formatDate } from '../utils/formatters'
 import { exportShipmentsToExcel } from '../utils/exportShipmentsExcel'
 import toast from 'react-hot-toast'
+
+function CopyButton({ text, label = 'Copied to clipboard!' }) {
+  const [copied, setCopied] = useState(false)
+  if (!text) return null
+  const handleCopy = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    navigator.clipboard.writeText(String(text).trim())
+    setCopied(true)
+    toast.success(label)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="p-1 text-text-tertiary hover:text-primary hover:bg-surface-hover rounded transition-colors cursor-pointer inline-flex items-center"
+      title={`Copy ${text}`}
+    >
+      {copied ? <Check className="w-3.5 h-3.5 text-emerald-600 animate-scale-in" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  )
+}
 
 const STATUS_TABS = [
   { value: '', label: 'All Shipments' },
@@ -345,40 +370,50 @@ export default function BookingsPage() {
                         />
                       </td>
                       {/* Our AWB (7-digit) */}
-                      <td className="px-4 py-3.5">
-                        <Link
-                          to={`/bookings/${b.id}`}
-                          className="group/awb"
-                        >
-                          <span className="text-[13px] font-extrabold text-[#BB0013] hover:underline">
-                            {b.tracking_number || '—'}
-                          </span>
-                        </Link>
+                      <td className="px-4 py-3.5 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <Link
+                            to={`/bookings/${b.id}`}
+                            className="group/awb"
+                          >
+                            <span className="text-[13px] font-extrabold text-[#BB0013] hover:underline font-mono">
+                              {b.tracking_number || '—'}
+                            </span>
+                          </Link>
+                          {b.tracking_number && (
+                            <CopyButton text={b.tracking_number} label="Our AWB copied!" />
+                          )}
+                        </div>
                       </td>
-                      {/* Vendor / AWB */}
+                      {/* Vendor / AWB & Forwarding Number */}
                       <td className="px-4 py-3.5">
-                        {b.vendor_awb_number ? (
-                          <div>
-                            <span className="text-[12px] font-bold text-[#1a237e]">
-                              {b.vendor_awb_number}
-                            </span>
-                            <span className="block text-[10px] text-text-tertiary mt-0.5">
-                              {b.vendor_api_configs?.name || b.courier_providers?.name || 'Local'}
-                            </span>
-                            {b.vendor_awb_number_2 && (
-                              <span className="block text-[10px] text-text-tertiary mt-0.5 font-mono">
-                                FWD: {b.vendor_awb_number_2}
+                        <div className="space-y-1">
+                          {b.vendor_awb_number ? (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[12px] font-bold text-[#1a237e] font-mono">
+                                {b.vendor_awb_number}
                               </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div>
+                              <CopyButton text={b.vendor_awb_number} label="Vendor AWB copied!" />
+                            </div>
+                          ) : (
                             <span className="text-[11px] text-text-tertiary italic">—</span>
-                            <span className="block text-[10px] text-text-tertiary mt-0.5">
-                              {b.vendor_api_configs?.name || b.courier_providers?.name || 'Local'}
-                            </span>
-                          </div>
-                        )}
+                          )}
+
+                          {/* Forwarding Number (Vendor AWB 2 / UPS / FedEx / Carrier AWB) */}
+                          {(b.vendor_awb_number_2 || b.forwarding_no) && (
+                            <div className="inline-flex items-center gap-1 bg-amber-50/90 border border-amber-200 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold text-amber-900 shadow-2xs">
+                              <span className="text-[9px] uppercase font-sans tracking-wider text-amber-700 font-extrabold">
+                                {b.secondary_carrier || (/^1Z/i.test(b.vendor_awb_number_2 || b.forwarding_no) ? 'UPS AWB' : 'FWD')}:
+                              </span>
+                              <span className="select-all">{b.vendor_awb_number_2 || b.forwarding_no}</span>
+                              <CopyButton text={b.vendor_awb_number_2 || b.forwarding_no} label="Forwarding AWB copied!" />
+                            </div>
+                          )}
+
+                          <span className="block text-[10px] text-text-tertiary font-medium">
+                            {b.vendor_api_configs?.name || b.courier_providers?.name || 'Local'}
+                          </span>
+                        </div>
                       </td>
                       {/* Destination */}
                       <td className="px-4 py-3.5">

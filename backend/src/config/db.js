@@ -114,6 +114,9 @@ export async function initializeDb() {
       { name: 'extra_charge', type: "DECIMAL(10,2) DEFAULT 0" },
       { name: 'final_chargeable_weight', type: "DECIMAL(10,2) DEFAULT 0" },
       { name: 'invoice_pdf_path', type: "VARCHAR(500) DEFAULT ''" },
+      { name: 'vendor_awb_number_2', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'forwarding_no', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'secondary_carrier', type: "VARCHAR(100) DEFAULT ''" },
       { name: 'is_locked', type: "BOOLEAN DEFAULT FALSE" }
     ]
 

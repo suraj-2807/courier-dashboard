@@ -196,7 +196,7 @@ export default function NewBookingPage() {
     setInvoiceItems(prev => {
       const updated = [...prev]
       let val = value
-      if (typeof val === 'string' && !['quantity', 'unit_weight', 'cost', 'unit_rates', 'amount'].includes(field)) {
+      if (typeof val === 'string' && !['quantity', 'unit_weight', 'cost', 'unit_rates', 'amount', 'unit_type'].includes(field)) {
         val = val.toUpperCase()
       }
       updated[index] = { ...updated[index], [field]: val }
@@ -1898,14 +1898,27 @@ export default function NewBookingPage() {
                         className="w-full bg-transparent focus:outline-none text-xs font-mono text-center text-text-primary" />
                     </div>
                     <div className="px-1">
-                      <select value={item.unit_type} onChange={e => updateInvoiceItem(idx, 'unit_type', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs font-semibold cursor-pointer text-text-primary">
+                      <select
+                        value={item.unit_type || 'PCS'}
+                        onChange={e => updateInvoiceItem(idx, 'unit_type', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-xs font-semibold cursor-pointer text-text-primary"
+                      >
+                        <option value="">Select...</option>
+                        <option value="Pkt">Pkt</option>
+                        <option value="Pc">Pc</option>
                         <option value="PCS">PCS</option>
-                        <option value="KGS">KGS</option>
-                        <option value="MTR">MTR</option>
-                        <option value="SET">SET</option>
-                        <option value="BOX">BOX</option>
-                        <option value="PAIR">PAIR</option>
+                        <option value="Nos">Nos</option>
+                        <option value="Bottle">Bottle</option>
+                        <option value="Pair">Pair</option>
+                        <option value="Strip">Strip</option>
+                        <option value="Dozen">Dozen</option>
+                        <option value="Gross">Gross</option>
+                        <option value="Sets">Sets</option>
+                        <option value="Box">Box</option>
+                        <option value="KG">KG</option>
+                        <option value="Gram">Gram</option>
+                        <option value="Container">Container</option>
+                        <option value="Carats">Carats</option>
                       </select>
                     </div>
                     <div className="px-1">
