@@ -58,6 +58,74 @@ function resolveCountryCode(country) {
 }
 
 /**
+ * Helper to resolve vendor code, name, service id, and auth details for remote ERP.
+ */
+function resolveVendorDetails(vendorCode, vendorName) {
+  const code = (vendorCode || '').toLowerCase().trim()
+  const name = (vendorName || '').toLowerCase().trim()
+
+  if (code.includes('bhabani') || code.includes('bhavani') || name.includes('bhabani') || name.includes('bhavani')) {
+    return {
+      vendCode: 'BHABANI',
+      vendName: 'BHABANI',
+      service: 1021,
+      autotrack: 1,
+      accode: 'T001',
+      tuser: '',
+      tpass: '',
+      apikey: ''
+    }
+  }
+  if (code.includes('acx') || name.includes('acx')) {
+    return {
+      vendCode: 'ACX',
+      vendName: 'ACX',
+      service: 1020,
+      autotrack: 1,
+      accode: 'A0872',
+      tuser: '',
+      tpass: '',
+      apikey: ''
+    }
+  }
+  if (code.includes('flyswift') || code.includes('trackmate') || name.includes('flyswift') || name.includes('trackmate')) {
+    return {
+      vendCode: 'FLYSWIFT',
+      vendName: 'FLYSWIFT',
+      service: 1019,
+      autotrack: 1,
+      accode: '1032',
+      tuser: '',
+      tpass: '',
+      apikey: ''
+    }
+  }
+  if (code.includes('pacific') || code.includes('pacifc') || name.includes('pacific') || name.includes('pacifc')) {
+    return {
+      vendCode: 'PACIFIC',
+      vendName: 'PACIFIC',
+      service: 1007,
+      autotrack: 1,
+      accode: 'P0503',
+      tuser: 'P0503',
+      tpass: 'P0503@7199',
+      apikey: ''
+    }
+  }
+
+  return {
+    vendCode: (vendorCode || 'PXC').toUpperCase(),
+    vendName: (vendorName || vendorCode || 'PXC').toUpperCase(),
+    service: 0,
+    autotrack: 1,
+    accode: '',
+    tuser: '',
+    tpass: '',
+    apikey: ''
+  }
+}
+
+/**
  * Insert or update a shipment in the remote AWBENTRY table.
  * 
  * Concurrency & Safety Guarantee:
@@ -113,7 +181,7 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
     const destCode = resolveCountryCode(receiverCountry)
 
     const weight = parseFloat(shipment.weight) || 0
-    const chargeableWeight = parseFloat(shipment.chargeable_weight) || weight
+    const chargeableWeight = parseFloat(shipment.chargeable_weight) ? Math.ceil(parseFloat(shipment.chargeable_weight)) : (weight > 0 ? Math.ceil(weight) : 0)
     const shippingCharge = parseFloat(shipment.shipping_charge) || parseFloat(shipment.total_amount) || 0
     const totalAmount = parseFloat(shipment.total_amount) || shippingCharge
     const rate = weight > 0 && shippingCharge > 0 ? Math.round((shippingCharge / weight) * 100) / 100 : 0
@@ -127,14 +195,15 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
 
     const vendorAwb = shipment.vendor_awb_number || vendorResult.awbNumber || ''
     const vendorAwb2 = shipment.vendor_awb_number_2 || ''
-    const vendorCode = shipment.vendor_code || 'PXC'
-    const productCode = shipment.product_code || ''
+    const vendorDetails = resolveVendorDetails(shipment.vendor_code, shipment.vendor_name)
+    const productCode = shipment.product_code || 'SPX'
 
     // Check if AWBNO already exists in remote AWBENTRY
-    const [existingRows] = await pool.execute('SELECT AWBID, AWBNO FROM AWBENTRY WHERE AWBNO = ? LIMIT 1', [awbNo])
+    const [existingRows] = await pool.execute('SELECT AWBID, AWBNO, VENDORAWB1 FROM AWBENTRY WHERE AWBNO = ? LIMIT 1', [awbNo])
 
     if (existingRows.length > 0) {
       // Update existing record
+      const finalVendorAwb = vendorAwb || existingRows[0].VENDORAWB1 || String(awbNo)
       console.log(`[Remote AWBENTRY Sync] AWBNO ${awbNo} already exists in remote DB (AWBID: ${existingRows[0].AWBID}). Updating...`)
       await pool.execute(
         `UPDATE AWBENTRY SET
@@ -144,7 +213,8 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
           CNEENAME = ?, CNEEADDRESS1 = ?, CNEEADDRESS2 = ?, CNEEADDRESS3 = ?, CNEEADDRESS4 = ?,
           CNEEPINCODE = ?, CNEECITY = ?, CNEEPHONE1 = ?,
           PAYMENTTYPE = ?, ACTUALWEIGHT = ?, CHARGEWEIGHT = ?, RATE = ?, CHARGES = ?, TOTAL = ?, NETAMOUNT = ?,
-          VENDORAWB1 = ?, VENDORAWB2 = ?, REMARKS = ?, RECEIPTAMOUNT = ?, GSTNO = ?
+          VENDORAWB1 = ?, VENDORAWB2 = ?, REMARKS = ?, RECEIPTAMOUNT = ?, GSTNO = ?,
+          SERVICE = ?, AUTOTRACK = ?, TUSER = ?, TPASS = ?, ACCODE = ?, APIKEY = ?
         WHERE AWBNO = ?`,
         [
           bookingDate,
@@ -162,8 +232,8 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
           aadharNo || null,
           productCode,
           productCode,
-          vendorCode,
-          vendorCode,
+          vendorDetails.vendCode,
+          vendorDetails.vendName,
           destCode,
           receiverCountry,
           receiverName,
@@ -181,11 +251,17 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
           shippingCharge,
           totalAmount,
           totalAmount,
-          vendorAwb || String(awbNo),
+          finalVendorAwb,
           vendorAwb2,
           shipment.content_description || shipment.remarks || '',
           receiptAmount,
           gstNo || null,
+          vendorDetails.service,
+          vendorDetails.autotrack,
+          vendorDetails.tuser,
+          vendorDetails.tpass,
+          vendorDetails.accode,
+          vendorDetails.apikey,
           awbNo
         ]
       )
@@ -242,8 +318,8 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
       aadharNo || null, // SAADHARNO
       productCode, // PRODCODE
       productCode, // PRODNAME
-      vendorCode, // VENDCODE
-      vendorCode, // VENDNAME
+      vendorDetails.vendCode, // VENDCODE
+      vendorDetails.vendName, // VENDNAME
       destCode, // DESTCODE
       receiverCountry, // DESTNAME
       receiverName, // CNEENAME
@@ -256,8 +332,8 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
       receiverPhone, // CNEEPHONE1
       '', // CNEEPHONE2
       paymentType, // PAYMENTTYPE
-      weight, // ACTUALWEIGHT
-      chargeableWeight, // CHARGEWEIGHT
+      weight, // ACTUALWEIGHT (exact decimal)
+      chargeableWeight, // CHARGEWEIGHT (ceiled)
       rate, // RATE
       shippingCharge, // CHARGES
       0.00, // SERVICECHARGE
@@ -281,15 +357,15 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
       '', // BRANCHCODE
       'MTX', // ALIAS
       0, // TCCSLABEL
-      0, // SERVICE
-      2, // AUTOTRACK
+      vendorDetails.service, // SERVICE
+      vendorDetails.autotrack, // AUTOTRACK
       0, // PODTOWEB
       0, // SHOWFWD
       0, // BOOKINGMAIL
-      'P0503', // TUSER
-      'P0503@7199', // TPASS
-      'P0503', // ACCODE
-      '' // APIKEY
+      vendorDetails.tuser, // TUSER
+      vendorDetails.tpass, // TPASS
+      vendorDetails.accode, // ACCODE
+      vendorDetails.apikey // APIKEY
     ]
 
     const [result] = await pool.execute(insertSql, params)
