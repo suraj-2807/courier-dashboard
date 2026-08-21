@@ -337,14 +337,20 @@ export default function BookingDetailPage() {
           )}
 
           <button
-            onClick={() => {
-              refetch()
-              refetchLiveTracking()
+            onClick={async () => {
+              const toastId = toast.loading('Pushing live tracking sync to carrier API...')
+              try {
+                await Promise.all([refetch(), refetchLiveTracking()])
+                toast.success('Live tracking & shipment updated!', { id: toastId })
+              } catch {
+                toast.error('Failed to sync live tracking', { id: toastId })
+              }
             }}
-            className="inline-flex items-center gap-2 px-3.5 py-2 border border-border rounded-xl text-[12px] font-bold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
+            disabled={isLiveRefetching}
+            className="inline-flex items-center gap-2 px-3.5 py-2 border border-border rounded-xl text-[12px] font-bold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isLiveRefetching ? 'animate-spin' : ''}`} />
-            Refresh
+            {isLiveRefetching ? 'Syncing...' : 'Refresh'}
           </button>
         </div>
       </div>

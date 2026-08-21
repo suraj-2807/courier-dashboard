@@ -467,6 +467,7 @@ export default function ApiSettingsPage() {
       auth_url: form.auth_url,
       auth_token_path: form.auth_token_path,
       shipment_api_url: form.shipment_api_url,
+      tracking_api_url: form.tracking_api_url,
       shipment_api_method: form.shipment_api_method,
       response_tracking_path: form.response_tracking_path,
       response_success_path: form.response_success_path,

@@ -18,10 +18,20 @@ const ADAPTERS = {
   'acx': FlySwiftAdapter,         // ACX International Courier
   'acxintl': FlySwiftAdapter,     // ACX International Courier alias
   'acx_international': FlySwiftAdapter,
+  'acxinternational': FlySwiftAdapter,
+  'acx_courier': FlySwiftAdapter,
   'bhabani': FlySwiftAdapter,     // Bhabani Express (ITDServices platform)
   'bhabhani': FlySwiftAdapter,    // Bhabani Express alias
+  'bhavani': FlySwiftAdapter,     // Bhavani spelling variation
+  'bhabaniexpress': FlySwiftAdapter,
+  'bhabhaniexpress': FlySwiftAdapter,
+  'bhabani_express': FlySwiftAdapter,
+  'bhavaniexpress': FlySwiftAdapter,
+  'bhavani_express': FlySwiftAdapter,
   'pacific': PacificAdapter,
   'pacifc': PacificAdapter,       // Support typo variation as requested
+  'pacificexpress': PacificAdapter,
+  'pacific_express': PacificAdapter,
   // 'bluedart': BlueDartAdapter,
   // 'delhivery': DelhiveryAdapter,
 }

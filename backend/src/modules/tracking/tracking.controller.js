@@ -28,8 +28,12 @@ async function trackPacific(awb, config) {
   const userId = creds.user_id || creds.username || creds.UserID || 'P0503'
   const password = creds.password || creds.Password || 'P0503@7199'
 
-  const trackingUrl = config.tracking_api_url || 'https://eship.pacificexp.net/api/v1/Tracking/Tracking'
+  let trackingUrl = config.tracking_api_url || 'https://eship.pacificexp.net/api/v1/Tracking/Tracking'
+  if (trackingUrl && !trackingUrl.startsWith('http://') && !trackingUrl.startsWith('https://')) {
+    trackingUrl = `https://${trackingUrl}`
+  }
 
+  const startTime = Date.now()
   const response = await fetch(trackingUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -40,6 +44,8 @@ async function trackPacific(awb, config) {
       Type: 'A'
     })
   })
+
+  const latencyMs = Date.now() - startTime
 
   if (!response.ok) {
     throw new Error(`Pacific tracking API returned status ${response.status}`)
@@ -114,46 +120,85 @@ async function trackPacific(awb, config) {
     dimensions: Array.isArray(resObj.Dimensions) ? resObj.Dimensions : [],
     performa: Array.isArray(resObj.Performa) ? resObj.Performa : [],
     currentStatus: statusString,
-    currentStage
+    currentStage,
+    apiLog: {
+      success: true,
+      vendorName: 'Pacific Express',
+      vendorCode: 'pacific',
+      endpoint: trackingUrl,
+      httpStatus: response.status,
+      latencyMs,
+      timestamp: new Date().toISOString(),
+      awb: String(awb).trim(),
+      eventsCount: events.length,
+      status: statusString,
+      message: `Live tracking synced from Pacific Express API (${events.length} events, ${latencyMs}ms)`
+    }
   }
 }
 
-// ─── FlySwift Tracking ─────────────────────────────────────────────
-async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift') {
-  const creds = parseCredentials(config.auth_credentials)
-  const apiCompanyId = creds.api_company_id || creds.customer_code || creds.customer_id || creds.company_code || creds.company_id || '1032'
-  const customerCode = creds.customer_code || creds.customer_id || creds.api_company_id || '1032'
+// ─── FlySwift / Trackmate / Bhabani / ACX (ITDServices Platform) ────
+async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Partner') {
+  const creds = parseCredentials(config?.auth_credentials)
+  const apiCompanyId = creds.api_company_id || creds.company_code || creds.company_id || creds.customer_code || creds.customer_id || '1032'
+  const customerCode = creds.customer_code || creds.customer_id || creds.company_code || creds.api_company_id || '1032'
 
   // Determine host dynamically from config auth_url or shipment_api_url
   let host = 'admin.flyswift.net'
-  if (config.auth_url) {
+  if (config?.auth_url) {
     try {
-      const parsedUrl = new URL(config.auth_url)
+      const urlStr = config.auth_url.startsWith('http') ? config.auth_url : `https://${config.auth_url}`
+      const parsedUrl = new URL(urlStr)
       host = parsedUrl.host
     } catch {}
-  } else if (config.shipment_api_url) {
+  } else if (config?.shipment_api_url) {
     try {
-      const parsedUrl = new URL(config.shipment_api_url)
+      const urlStr = config.shipment_api_url.startsWith('http') ? config.shipment_api_url : `https://${config.shipment_api_url}`
+      const parsedUrl = new URL(urlStr)
       host = parsedUrl.host
     } catch {}
   }
 
-  const vendorDisplayName = config.name || defaultVendorName || 'Courier Partner'
+  const vendorDisplayName = config?.name || defaultVendorName || 'Courier Partner'
+  const cleanAwb = String(awb).trim()
 
   // Use explicit tracking_api_url if configured, otherwise construct from host
   let trackingUrl
-  if (config.tracking_api_url) {
-    // If the URL already contains query params, append; otherwise build full URL
-    const sep = config.tracking_api_url.includes('?') ? '&' : '?'
-    trackingUrl = `${config.tracking_api_url}${sep}api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(String(awb).trim())}`
+  if (config?.tracking_api_url && config.tracking_api_url.trim() !== '') {
+    let configuredUrl = config.tracking_api_url.trim()
+    if (!configuredUrl.startsWith('http://') && !configuredUrl.startsWith('https://')) {
+      configuredUrl = `https://${configuredUrl}`
+    }
+
+    if (configuredUrl.includes('{tracking_no}') || configuredUrl.includes('{awb}')) {
+      trackingUrl = configuredUrl
+        .replace('{tracking_no}', encodeURIComponent(cleanAwb))
+        .replace('{awb}', encodeURIComponent(cleanAwb))
+        .replace('{api_company_id}', encodeURIComponent(apiCompanyId))
+        .replace('{customer_code}', encodeURIComponent(customerCode))
+    } else if (configuredUrl.includes('api_company_id') || configuredUrl.includes('tracking_no')) {
+      // Already has some query params, append tracking_no if missing
+      if (!configuredUrl.includes('tracking_no=')) {
+        const sep = configuredUrl.includes('?') ? '&' : '?'
+        trackingUrl = `${configuredUrl}${sep}tracking_no=${encodeURIComponent(cleanAwb)}`
+      } else {
+        trackingUrl = configuredUrl
+      }
+    } else {
+      const sep = configuredUrl.includes('?') ? '&' : '?'
+      trackingUrl = `${configuredUrl}${sep}api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(cleanAwb)}`
+    }
   } else {
-    trackingUrl = `https://${host}/api/tracking_api/get_tracking_data?api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(String(awb).trim())}`
+    trackingUrl = `https://${host}/api/tracking_api/get_tracking_data?api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(cleanAwb)}`
   }
 
+  const startTime = Date.now()
   const response = await fetch(trackingUrl, {
     method: 'GET',
     headers: { 'Content-Type': 'application/json' }
   })
+
+  const latencyMs = Date.now() - startTime
 
   if (!response.ok) {
     throw new Error(`${vendorDisplayName} tracking API returned status ${response.status}`)
@@ -253,9 +298,9 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift')
 
   return {
     vendor: vendorDisplayName,
-    vendorCode: (config.vendor_code || 'flyswift').toLowerCase(),
+    vendorCode: (config?.vendor_code || 'flyswift').toLowerCase(),
     shipmentInfo: {
-      awbNo: trackingData.tracking_no || shipment.tracking_no || shipment.docket_no || String(awb),
+      awbNo: trackingData.tracking_no || shipment.tracking_no || shipment.docket_no || cleanAwb,
       vendorAwbNo: secondaryAwb,
       secondaryCarrier: secondaryCarrier,
       bookingDate: infoMap['Booking Date'] || shipment.booking_date || shipment.created_at || '',
@@ -279,21 +324,37 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'FlySwift')
     events,
     dimensions: Array.isArray(trackingData.dimensions) ? trackingData.dimensions : (Array.isArray(shipment.dimensions) ? shipment.dimensions : []),
     currentStatus: statusString,
-    currentStage
+    currentStage,
+    apiLog: {
+      success: true,
+      vendorName: vendorDisplayName,
+      vendorCode: (config?.vendor_code || '').toLowerCase(),
+      endpoint: trackingUrl,
+      httpStatus: response.status,
+      latencyMs,
+      timestamp: new Date().toISOString(),
+      awb: cleanAwb,
+      eventsCount: events.length,
+      status: statusString,
+      message: `Live tracking synced from ${vendorDisplayName} API (${events.length} events, ${latencyMs}ms)`
+    }
   }
 }
 
-// ─── Vendor Dispatcher ─────────────────────────────────────────────
-const VENDOR_TRACKERS = {
-  pacific: trackPacific,
-  pacifc: trackPacific,
-  flyswift: trackTrackmateVendor,
-  trackmate: trackTrackmateVendor,
-  acx: trackTrackmateVendor,
-  acxintl: trackTrackmateVendor,
-  acx_international: trackTrackmateVendor,
-  bhabani: trackTrackmateVendor,
-  bhabani_express: trackTrackmateVendor
+// ─── Dynamic Tracker Resolver ───────────────────────────────────────
+function resolveTracker(config, vendorCode = '') {
+  const code = (vendorCode || config?.vendor_code || '').toLowerCase().trim()
+  const name = (config?.name || '').toLowerCase()
+  const trackingUrl = (config?.tracking_api_url || '').toLowerCase()
+  const authUrl = (config?.auth_url || '').toLowerCase()
+
+  // Pacific Express
+  if (code.includes('pacific') || name.includes('pacific') || trackingUrl.includes('pacificexp') || authUrl.includes('pacificexp')) {
+    return trackPacific
+  }
+
+  // All ITDServices / FlySwift / Trackmate / ACX / Bhabani / Bhavani / etc.
+  return trackTrackmateVendor
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -467,7 +528,7 @@ export const liveTrack = async (req, res) => {
       }
     }
 
-    // Helper to persist updated vendor AWB 2 and status back to DB
+    // Helper to persist updated vendor AWB 2, status, and events back to DB
     const persistShipmentTrackingUpdates = async (trackResult) => {
       if (!matchedShipment) return
       try {
@@ -480,24 +541,48 @@ export const liveTrack = async (req, res) => {
         if (trackResult.currentStage === 'delivered' && matchedShipment.status !== 'delivered') {
           updates.push('status = ?')
           vals.push('delivered')
+        } else if (trackResult.currentStage === 'in_transit' && matchedShipment.status === 'draft') {
+          updates.push('status = ?')
+          vals.push('in_transit')
         }
         if (updates.length > 0) {
           vals.push(matchedShipment.id)
           await query(`UPDATE shipments SET ${updates.join(', ')} WHERE id = ?`, vals)
         }
+
+        // Sync live events into tracking_events table if events exist
+        if (Array.isArray(trackResult.events) && trackResult.events.length > 0) {
+          for (const ev of trackResult.events) {
+            const evStatus = ev.status || 'Event recorded'
+            const evLocation = ev.location || ''
+            const evDate = ev.rawDate || ev.date || new Date().toISOString().split('T')[0]
+            const evTime = ev.rawTime || ev.time || '00:00:00'
+            const combinedTime = `${evDate} ${evTime}`.trim()
+
+            const existing = await query(
+              `SELECT id FROM tracking_events WHERE shipment_id = ? AND status = ? AND location = ? LIMIT 1`,
+              [matchedShipment.id, evStatus, evLocation]
+            )
+            if (existing.length === 0) {
+              await query(
+                `INSERT INTO tracking_events (shipment_id, status, location, event_time, description) VALUES (?, ?, ?, ?, ?)`,
+                [matchedShipment.id, evStatus, evLocation, combinedTime, evStatus]
+              )
+            }
+          }
+        }
       } catch (err) {
-        console.error('Failed to sync live tracking updates to shipment row:', err.message)
+        console.error('Failed to sync live tracking updates to DB:', err.message)
       }
     }
 
     // ── 4. Try tracking with matched config ──
     if (config) {
-      const normalizedCode = (config.vendor_code || vendorCode || '').toLowerCase()
-      const tracker = VENDOR_TRACKERS[normalizedCode]
-
-      if (tracker) {
-        try {
-          const result = await tracker(vendorAwbToTrack, config)
+      const tracker = resolveTracker(config, vendorCode)
+      try {
+        const result = await tracker(vendorAwbToTrack, config)
+        if (result && (result.events?.length > 0 || result.shipmentInfo?.awbNo)) {
+          console.log(`[LIVE TRACK] Synced AWB "${vendorAwbToTrack}" via ${result.vendor} API (Status: ${result.currentStatus}, Events: ${result.events?.length || 0})`)
           if (matchedShipment) {
             await persistShipmentTrackingUpdates(result)
             result.internalShipment = {
@@ -509,9 +594,9 @@ export const liveTrack = async (req, res) => {
             }
           }
           return res.json({ success: true, tracking: result })
-        } catch (trackErr) {
-          console.warn(`Direct tracker ${normalizedCode} failed for AWB ${vendorAwbToTrack}:`, trackErr.message)
         }
+      } catch (trackErr) {
+        console.warn(`Direct tracker failed for AWB ${vendorAwbToTrack} on config ${config.name}:`, trackErr.message)
       }
     }
 
@@ -521,9 +606,7 @@ export const liveTrack = async (req, res) => {
     )
 
     for (const cfg of allConfigs) {
-      const code = (cfg.vendor_code || '').toLowerCase()
-      const tracker = VENDOR_TRACKERS[code]
-      if (!tracker) continue
+      const tracker = resolveTracker(cfg)
 
       // Try tracking with vendorAwbToTrack first, and searchStr as fallback
       const awbsToAttempt = [vendorAwbToTrack]
@@ -533,6 +616,7 @@ export const liveTrack = async (req, res) => {
         try {
           const result = await tracker(targetAwb, cfg)
           if (result && (result.events?.length > 0 || result.shipmentInfo?.awbNo)) {
+            console.log(`[LIVE TRACK] Fallback synced AWB "${targetAwb}" via ${result.vendor} API (Status: ${result.currentStatus}, Events: ${result.events?.length || 0})`)
             if (matchedShipment) {
               await persistShipmentTrackingUpdates(result)
               result.internalShipment = {
@@ -546,7 +630,7 @@ export const liveTrack = async (req, res) => {
             return res.json({ success: true, tracking: result })
           }
         } catch (err) {
-          // Continue to next
+          // Continue to next config
         }
       }
     }
