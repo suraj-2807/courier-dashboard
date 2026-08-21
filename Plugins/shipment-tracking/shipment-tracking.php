@@ -462,6 +462,88 @@ function pe_tl_dot_class($activity) {
 // Geocoding handled via wp_ajax endpoint (pe_ajax_geocode) — see map shortcode below.
 
 // ========================================
+// PARSE FLYSWIFT / ITD SERVICES API EVENTS
+// ========================================
+function pe_parse_flyswift_events($body, &$result, $vendor_label = 'FlySwift') {
+    $history = [];
+    if (empty($body)) return $history;
+
+    $body_clean = trim($body);
+    if (substr($body_clean, 0, 1) === '"' && substr($body_clean, -1) === '"') {
+        $body_clean = json_decode($body_clean);
+    }
+    $d = is_string($body_clean) ? json_decode($body_clean) : (is_object($body_clean) || is_array($body_clean) ? $body_clean : json_decode($body));
+
+    // Handle array wrapping e.g. [{"errors":false,"docket_events":[...]}]
+    if (is_array($d) && isset($d[0])) {
+        $d = $d[0];
+    }
+
+    $events = null;
+    if (is_object($d) && isset($d->docket_events) && is_array($d->docket_events)) {
+        $events = $d->docket_events;
+    } elseif (is_array($d) && isset($d['docket_events']) && is_array($d['docket_events'])) {
+        $events = $d['docket_events'];
+    }
+
+    $info = null;
+    if (is_object($d) && isset($d->docket_info) && is_array($d->docket_info)) {
+        $info = $d->docket_info;
+    } elseif (is_array($d) && isset($d['docket_info']) && is_array($d['docket_info'])) {
+        $info = $d['docket_info'];
+    }
+
+    if ($info) {
+        foreach ($info as $info_pair) {
+            $key = '';
+            $val = '';
+            if (is_array($info_pair) && count($info_pair) >= 2) {
+                $key = strtolower(trim((string)$info_pair[0]));
+                $val = trim((string)$info_pair[1]);
+            } elseif (is_object($info_pair) && isset($info_pair->key)) {
+                $key = strtolower(trim((string)$info_pair->key));
+                $val = trim((string)($info_pair->value ?? ''));
+            }
+            if ($key === 'status' && !empty($val)) {
+                $result->STATUS = $val;
+            } elseif (($key === 'delivery date and time' || $key === 'delivery date' || $key === 'delivery_date') && !empty($val)) {
+                $result->DELIVERYDATE = $val;
+            } elseif (($key === 'receiver name' || $key === 'receiver_name' || $key === 'recipient') && !empty($val)) {
+                $result->RECEIVER = $val;
+            } elseif (($key === 'forwarding no.' || $key === 'forwarding no' || $key === 'forwarding_no') && !empty($val)) {
+                $result->VENDORID2 = $val;
+            }
+        }
+    }
+
+    if ($events) {
+        foreach ($events as $s) {
+            $s_obj = (object)$s;
+            $ev_date = !empty($s_obj->event_at) ? $s_obj->event_at : ($s_obj->created_at ?? '');
+            $ev_loc = !empty($s_obj->event_location) ? $s_obj->event_location : (!empty($s_obj->add_city) ? $s_obj->add_city : '');
+            $ev_desc = !empty($s_obj->event_description) ? $s_obj->event_description : ($s_obj->event_remark ?? 'In Transit');
+
+            $history[] = [
+                'date' => !empty($ev_date) ? date("M d, Y", strtotime($ev_date)) : '',
+                'time' => !empty($ev_date) ? date("h:i A", strtotime($ev_date)) : '',
+                'location' => $ev_loc,
+                'activity' => str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'], 'Agent', $ev_desc)
+            ];
+        }
+
+        // If status wasn't in docket_info, take from latest event
+        if (empty($result->STATUS) && !empty($history)) {
+            $latest_ev = reset($history);
+            $result->STATUS = $latest_ev['activity'] ?? 'In Transit';
+        }
+        PE_Data::log($vendor_label . ' Events Parsed Successfully', ['events_count' => count($history), 'status' => $result->STATUS ?? '']);
+    } else {
+        PE_Data::log($vendor_label . ' API returned no docket_events', ['decoded_sample' => is_object($d) || is_array($d) ? array_keys((array)$d) : $d]);
+    }
+
+    return $history;
+}
+
 // ========================================
 // FETCH API TRACKING
 // ========================================
@@ -501,29 +583,7 @@ function pe_fetch_tracking($result) {
             $code = wp_remote_retrieve_response_code($r);
             $body = wp_remote_retrieve_body($r);
             PE_Data::log('Bhabani API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
-            
-            $body_clean = trim($body);
-            if (substr($body_clean, 0, 1) === '"' && substr($body_clean, -1) === '"') {
-                $body_clean = json_decode($body_clean);
-            }
-            $d = is_string($body_clean) ? json_decode($body_clean) : (is_object($body_clean) ? $body_clean : json_decode($body));
-            
-            if ($d && isset($d->docket_events) && is_array($d->docket_events)) {
-                foreach ($d->docket_events as $s) {
-                    $history[] = [
-                        'date' => date("M d, Y", strtotime($s->event_at)),
-                        'time' => date("h:i A", strtotime($s->event_at)),
-                        'location' => $s->event_location ?? '',
-                        'activity' => str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'], 'Agent', $s->event_description ?? '')
-                    ];
-                }
-                if (isset($d->docket_info[4][1])) $result->STATUS = $d->docket_info[4][1];
-                if (isset($d->docket_info[5][1])) $result->DELIVERYDATE = $d->docket_info[5][1];
-                if (isset($d->docket_info[6][1])) $result->RECEIVER = $d->docket_info[6][1];
-                PE_Data::log('Bhabani Events Parsed Successfully', ['events_count' => count($history), 'status' => $result->STATUS ?? '']);
-            } else {
-                PE_Data::log('Bhabani API returned no docket_events array', ['decoded' => $d]);
-            }
+            $history = pe_parse_flyswift_events($body, $result, 'Bhabani Express');
         }
     }
     // 2. ACX INTERNATIONAL
@@ -540,33 +600,11 @@ function pe_fetch_tracking($result) {
             $code = wp_remote_retrieve_response_code($r);
             $body = wp_remote_retrieve_body($r);
             PE_Data::log('ACX API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
-            
-            $body_clean = trim($body);
-            if (substr($body_clean, 0, 1) === '"' && substr($body_clean, -1) === '"') {
-                $body_clean = json_decode($body_clean);
-            }
-            $d = is_string($body_clean) ? json_decode($body_clean) : (is_object($body_clean) ? $body_clean : json_decode($body));
-            
-            if ($d && isset($d->docket_events) && is_array($d->docket_events)) {
-                foreach ($d->docket_events as $s) {
-                    $history[] = [
-                        'date' => date("M d, Y", strtotime($s->event_at)),
-                        'time' => date("h:i A", strtotime($s->event_at)),
-                        'location' => $s->event_location ?? '',
-                        'activity' => str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'], 'Agent', $s->event_description ?? '')
-                    ];
-                }
-                if (isset($d->docket_info[4][1])) $result->STATUS = $d->docket_info[4][1];
-                if (isset($d->docket_info[5][1])) $result->DELIVERYDATE = $d->docket_info[5][1];
-                if (isset($d->docket_info[6][1])) $result->RECEIVER = $d->docket_info[6][1];
-                PE_Data::log('ACX Events Parsed Successfully', ['events_count' => count($history), 'status' => $result->STATUS ?? '']);
-            } else {
-                PE_Data::log('ACX API returned no docket_events array', ['decoded' => $d]);
-            }
+            $history = pe_parse_flyswift_events($body, $result, 'ACX International');
         }
     }
     // 3. FLYSWIFT / TRACKMATE
-    elseif ($svc == 1019 || strpos($vend, 'flyswift') !== false || strpos($vend, 'trackmate') !== false) {
+    elseif ($svc == 1019 || strpos($vend, 'flyswift') !== false || strpos($vend, 'trackmate') !== false || strpos($vend, 'fly') !== false) {
         $accode = !empty($result->ACCODE) ? trim($result->ACCODE) : '1032';
         $company_id = '1614';
         $url = "http://admin.flyswift.net/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
@@ -579,29 +617,7 @@ function pe_fetch_tracking($result) {
             $code = wp_remote_retrieve_response_code($r);
             $body = wp_remote_retrieve_body($r);
             PE_Data::log('FlySwift API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
-            
-            $body_clean = trim($body);
-            if (substr($body_clean, 0, 1) === '"' && substr($body_clean, -1) === '"') {
-                $body_clean = json_decode($body_clean);
-            }
-            $d = is_string($body_clean) ? json_decode($body_clean) : (is_object($body_clean) ? $body_clean : json_decode($body));
-            
-            if ($d && isset($d->docket_events) && is_array($d->docket_events)) {
-                foreach ($d->docket_events as $s) {
-                    $history[] = [
-                        'date' => date("M d, Y", strtotime($s->event_at)),
-                        'time' => date("h:i A", strtotime($s->event_at)),
-                        'location' => $s->event_location ?? '',
-                        'activity' => str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'], 'Agent', $s->event_description ?? '')
-                    ];
-                }
-                if (isset($d->docket_info[4][1])) $result->STATUS = $d->docket_info[4][1];
-                if (isset($d->docket_info[5][1])) $result->DELIVERYDATE = $d->docket_info[5][1];
-                if (isset($d->docket_info[6][1])) $result->RECEIVER = $d->docket_info[6][1];
-                PE_Data::log('FlySwift Events Parsed Successfully', ['events_count' => count($history), 'status' => $result->STATUS ?? '']);
-            } else {
-                PE_Data::log('FlySwift API returned no docket_events array', ['decoded' => $d]);
-            }
+            $history = pe_parse_flyswift_events($body, $result, 'FlySwift');
         }
     }
     // 4. PACIFIC EXPRESS
@@ -658,25 +674,10 @@ function pe_fetch_tracking($result) {
         if (is_wp_error($r)) {
             PE_Data::log('Sairaj API HTTP Error', ['error' => $r->get_error_message()]);
         } else {
+            $code = wp_remote_retrieve_response_code($r);
             $body = wp_remote_retrieve_body($r);
-            $body_clean = trim($body);
-            if (substr($body_clean, 0, 1) === '"' && substr($body_clean, -1) === '"') {
-                $body_clean = substr($body_clean, 1, -1);
-            }
-            $d = json_decode($body_clean);
-            if ($d && isset($d->docket_events) && is_array($d->docket_events)) {
-                foreach ($d->docket_events as $s) {
-                    $history[] = [
-                        'date' => date("M d, Y", strtotime($s->event_at)),
-                        'time' => date("h:i A", strtotime($s->event_at)),
-                        'location' => $s->event_location ?? '',
-                        'activity' => str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'], 'Agent', $s->event_description ?? '')
-                    ];
-                }
-                if (isset($d->docket_info[4][1])) $result->STATUS = $d->docket_info[4][1];
-                if (isset($d->docket_info[5][1])) $result->DELIVERYDATE = $d->docket_info[5][1];
-                if (isset($d->docket_info[6][1])) $result->RECEIVER = $d->docket_info[6][1];
-            }
+            PE_Data::log('Sairaj API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
+            $history = pe_parse_flyswift_events($body, $result, 'Sairaj International');
         }
     }
     // 6. SAIN
