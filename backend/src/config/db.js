@@ -311,6 +311,35 @@ export async function initializeDb() {
       }
     }
 
+    // ── System Settings Table ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS system_settings (
+        setting_key VARCHAR(100) PRIMARY KEY,
+        setting_value TEXT,
+        description VARCHAR(255) DEFAULT '',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )`)
+      
+      const defaultSettings = [
+        [
+          'allow_post_push_billing_edit',
+          'true',
+          'Allow editing Final Chargeable Weight, Rate/Kg, Shipping Charge, Extra Charge, and Final Shipping on locked/pushed shipments'
+        ]
+      ]
+      for (const [key, val, desc] of defaultSettings) {
+        await execute(
+          'INSERT IGNORE INTO system_settings (setting_key, setting_value, description) VALUES (?, ?, ?)',
+          [key, val, desc]
+        )
+      }
+      console.log('system_settings table ready and seeded.')
+    } catch (sysErr) {
+      if (sysErr.code !== 'ER_TABLE_EXISTS_ERROR') {
+        console.error('system_settings migration failed:', sysErr.message)
+      }
+    }
+
     console.log('DB initialization successfully completed!')
   } catch (err) {
     console.error('DB Initialization/Migration Failed:', err)

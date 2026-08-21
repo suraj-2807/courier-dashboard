@@ -40,6 +40,8 @@ import {
 import StatusBadge from '../components/ui/StatusBadge'
 import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters'
 import toast from 'react-hot-toast'
+import { systemSettingsApi } from '../api/systemSettings.api'
+import { useQuery } from '@tanstack/react-query'
 
 // ─── Progress Stage Definitions ─────────────────────────────────────
 const STAGES = [
@@ -70,6 +72,62 @@ export default function BookingDetailPage() {
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [downloadingBill, setDownloadingBill] = useState(false)
   const [downloadingLabels, setDownloadingLabels] = useState(false)
+
+  // Billing edit modal state
+  const [showBillingModal, setShowBillingModal] = useState(false)
+  const [savingBilling, setSavingBilling] = useState(false)
+  const [billingForm, setBillingForm] = useState({
+    final_chargeable_weight: '',
+    rate_per_kg: '',
+    shipping_charge: '',
+    extra_charge: '',
+    total_amount: ''
+  })
+
+  // System settings query
+  const { data: sysSettingsData } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: systemSettingsApi.getAll
+  })
+  const allowPostPushEdit = sysSettingsData?.settings?.allow_post_push_billing_edit !== false
+
+  const openBillingModal = () => {
+    if (!booking) return
+    const chgWt = booking.final_chargeable_weight || booking.chargeable_weight || booking.weight || ''
+    const rate = booking.rate_per_kg || ''
+    const shipping = booking.shipping_charge || ''
+    const extra = booking.extra_charge || ''
+    const total = booking.total_amount || ''
+    setBillingForm({
+      final_chargeable_weight: String(chgWt),
+      rate_per_kg: String(rate),
+      shipping_charge: String(shipping),
+      extra_charge: String(extra),
+      total_amount: String(total)
+    })
+    setShowBillingModal(true)
+  }
+
+  const handleSaveBilling = async (e) => {
+    e?.preventDefault()
+    setSavingBilling(true)
+    try {
+      await bookingsApi.updateBilling(booking.id, {
+        final_chargeable_weight: parseFloat(billingForm.final_chargeable_weight) || 0,
+        rate_per_kg: parseFloat(billingForm.rate_per_kg) || 0,
+        shipping_charge: parseFloat(billingForm.shipping_charge) || 0,
+        extra_charge: parseFloat(billingForm.extra_charge) || 0,
+        total_amount: parseFloat(billingForm.total_amount) || 0
+      })
+      toast.success('Billing details updated & synced to remote AWBENTRY!')
+      setShowBillingModal(false)
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to update billing details')
+    } finally {
+      setSavingBilling(false)
+    }
+  }
 
   // Live vendor tracking hook
   const awbToTrack = booking?.vendor_awb_number || booking?.tracking_number || ''
@@ -417,6 +475,67 @@ export default function BookingDetailPage() {
             )}
           </div>
 
+          {/* Pricing & Billing Details Card */}
+          <div className="bg-surface border border-border rounded-2xl p-5 shadow-xs">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <h2 className="text-[14px] font-bold text-text-primary flex items-center gap-2">
+                <div className="w-7 h-7 bg-emerald-50 rounded-lg flex items-center justify-center">
+                  <CreditCard className="w-3.5 h-3.5 text-emerald-600" />
+                </div>
+                Pricing & Billing Details
+              </h2>
+
+              {/* Edit Billing Button */}
+              {(!booking.is_locked || allowPostPushEdit) && (
+                <button
+                  onClick={openBillingModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
+                  title="Edit weights, rates, and shipping charges"
+                >
+                  <Edit className="w-3.5 h-3.5" />
+                  Edit Billing Charges
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div className="bg-surface-alt p-3 rounded-xl border border-border-light">
+                <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Final Chargeable Wt</p>
+                <p className="text-[15px] font-extrabold text-navy mt-1">
+                  {booking.final_chargeable_weight ? `${booking.final_chargeable_weight} kg` : (booking.chargeable_weight ? `${booking.chargeable_weight} kg` : `${booking.weight || 0} kg`)}
+                </p>
+              </div>
+
+              <div className="bg-surface-alt p-3 rounded-xl border border-border-light">
+                <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Rate / Kg</p>
+                <p className="text-[15px] font-extrabold text-text-primary mt-1">
+                  ₹{parseFloat(booking.rate_per_kg || 0).toFixed(2)}
+                </p>
+              </div>
+
+              <div className="bg-surface-alt p-3 rounded-xl border border-border-light">
+                <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Shipping Charge</p>
+                <p className="text-[15px] font-extrabold text-primary mt-1">
+                  ₹{parseFloat(booking.shipping_charge || 0).toFixed(2)}
+                </p>
+              </div>
+
+              <div className="bg-surface-alt p-3 rounded-xl border border-border-light">
+                <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Extra Charge</p>
+                <p className="text-[15px] font-extrabold text-amber-700 mt-1">
+                  ₹{parseFloat(booking.extra_charge || 0).toFixed(2)}
+                </p>
+              </div>
+
+              <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-200 col-span-2 sm:col-span-1">
+                <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Final Shipping</p>
+                <p className="text-[16px] font-black text-emerald-700 mt-1">
+                  ₹{parseFloat(booking.total_amount || 0).toFixed(2)}
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Multi-Box (Parcels) Breakdown Card */}
           {Array.isArray(booking.parcels) && booking.parcels.length > 0 && (
             <div className="bg-surface border border-border rounded-2xl p-5">
@@ -548,19 +667,17 @@ export default function BookingDetailPage() {
                   return (
                     <div key={stage.key} className="flex flex-col items-center relative z-10">
                       <div
-                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${
-                          isCurrent
+                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${isCurrent
                             ? 'bg-primary text-white ring-2 ring-primary/20 shadow-xs'
                             : isCompleted
                               ? 'bg-primary text-white'
                               : 'bg-surface border border-border text-text-tertiary'
-                        }`}
+                          }`}
                       >
                         <StageIcon className="w-3.5 h-3.5" />
                       </div>
-                      <span className={`text-[9px] font-bold mt-1 text-center ${
-                        isCompleted ? 'text-primary' : 'text-text-tertiary'
-                      }`}>
+                      <span className={`text-[9px] font-bold mt-1 text-center ${isCompleted ? 'text-primary' : 'text-text-tertiary'
+                        }`}>
                         {stage.label}
                       </span>
                     </div>
@@ -595,11 +712,10 @@ export default function BookingDetailPage() {
                     {/* Line + dot */}
                     <div className="flex flex-col items-center">
                       <div
-                        className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${
-                          isLatest
+                        className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-all ${isLatest
                             ? `${color.dot} text-white ring-4 ${color.ring}`
                             : 'bg-surface-alt border border-border text-text-tertiary'
-                        }`}
+                          }`}
                       >
                         <CheckCircle2 className="w-3 h-3" />
                       </div>
@@ -639,9 +755,8 @@ export default function BookingDetailPage() {
                   <div key={event.id} className="flex gap-3">
                     <div className="flex flex-col items-center">
                       <div
-                        className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
-                          isLatest ? 'bg-primary text-white shadow-xs' : 'bg-surface-alt text-text-tertiary border border-border'
-                        }`}
+                        className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${isLatest ? 'bg-primary text-white shadow-xs' : 'bg-surface-alt text-text-tertiary border border-border'
+                          }`}
                       >
                         <CheckCircle2 className="w-3 h-3" />
                       </div>
@@ -720,13 +835,12 @@ function VendorResponseCard({ booking, vendorConfig, liveTracking }) {
           </div>
           Vendor API Gateway
         </h2>
-        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide ${
-          isSuccess
+        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-md uppercase tracking-wide ${isSuccess
             ? 'bg-emerald-50 text-emerald-600'
             : isFailed
               ? 'bg-red-50 text-red-500'
               : 'bg-amber-50 text-amber-600'
-        }`}>
+          }`}>
           {pushStatus || 'pending'}
         </span>
       </div>

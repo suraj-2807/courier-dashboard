@@ -58,12 +58,78 @@ function resolveCountryCode(country) {
 }
 
 /**
+ * Resolve full country name for DESTNAME display in remote ERP.
+ * Maps both 2-letter ISO codes and full names to the canonical display name.
+ */
+function resolveCountryName(country) {
+  if (!country) return 'INDIA'
+  const c = String(country).trim().toUpperCase()
+
+  const COUNTRY_MAP = {
+    'IN': 'INDIA', 'IND': 'INDIA', 'INDIA': 'INDIA',
+    'US': 'UNITED STATES', 'USA': 'UNITED STATES', 'UNITED STATES': 'UNITED STATES', 'UNITED STATES OF AMERICA': 'UNITED STATES',
+    'AE': 'UNITED ARAB EMIRATES', 'UAE': 'UNITED ARAB EMIRATES', 'UNITED ARAB EMIRATES': 'UNITED ARAB EMIRATES',
+    'GB': 'UNITED KINGDOM', 'UK': 'UNITED KINGDOM', 'UNITED KINGDOM': 'UNITED KINGDOM', 'GREAT BRITAIN': 'UNITED KINGDOM',
+    'CA': 'CANADA', 'CANADA': 'CANADA',
+    'AU': 'AUSTRALIA', 'AUSTRALIA': 'AUSTRALIA',
+    'FR': 'FRANCE', 'FRANCE': 'FRANCE',
+    'DE': 'GERMANY', 'GERMANY': 'GERMANY',
+    'SA': 'SAUDI ARABIA', 'SAUDI ARABIA': 'SAUDI ARABIA',
+    'SG': 'SINGAPORE', 'SINGAPORE': 'SINGAPORE',
+    'MY': 'MALAYSIA', 'MALAYSIA': 'MALAYSIA',
+    'NP': 'NEPAL', 'NEPAL': 'NEPAL',
+    'BD': 'BANGLADESH', 'BANGLADESH': 'BANGLADESH',
+    'LK': 'SRI LANKA', 'SRI LANKA': 'SRI LANKA',
+    'CN': 'CHINA', 'CHINA': 'CHINA',
+    'JP': 'JAPAN', 'JAPAN': 'JAPAN',
+    'KR': 'SOUTH KOREA', 'SOUTH KOREA': 'SOUTH KOREA',
+    'NZ': 'NEW ZEALAND', 'NEW ZEALAND': 'NEW ZEALAND',
+    'ZA': 'SOUTH AFRICA', 'SOUTH AFRICA': 'SOUTH AFRICA',
+    'NG': 'NIGERIA', 'NIGERIA': 'NIGERIA',
+    'KE': 'KENYA', 'KENYA': 'KENYA',
+    'QA': 'QATAR', 'QATAR': 'QATAR',
+    'BH': 'BAHRAIN', 'BAHRAIN': 'BAHRAIN',
+    'KW': 'KUWAIT', 'KUWAIT': 'KUWAIT',
+    'OM': 'OMAN', 'OMAN': 'OMAN',
+    'HK': 'HONG KONG', 'HONG KONG': 'HONG KONG',
+    'TH': 'THAILAND', 'THAILAND': 'THAILAND',
+    'PH': 'PHILIPPINES', 'PHILIPPINES': 'PHILIPPINES',
+    'ID': 'INDONESIA', 'INDONESIA': 'INDONESIA',
+    'IT': 'ITALY', 'ITALY': 'ITALY',
+    'ES': 'SPAIN', 'SPAIN': 'SPAIN',
+    'NL': 'NETHERLANDS', 'NETHERLANDS': 'NETHERLANDS',
+    'SE': 'SWEDEN', 'SWEDEN': 'SWEDEN',
+    'CH': 'SWITZERLAND', 'SWITZERLAND': 'SWITZERLAND',
+    'BE': 'BELGIUM', 'BELGIUM': 'BELGIUM',
+    'AT': 'AUSTRIA', 'AUSTRIA': 'AUSTRIA'
+  }
+
+  return COUNTRY_MAP[c] || c
+}
+
+/**
  * Helper to resolve vendor code, name, service id, and auth details for remote ERP.
+ * Matches vendor codes from the API settings (e.g. 'PC' for Pacific, 'ACX', 'FM' for FlySwift).
  */
 function resolveVendorDetails(vendorCode, vendorName) {
   const code = (vendorCode || '').toLowerCase().trim()
   const name = (vendorName || '').toLowerCase().trim()
 
+  // Pacific Courier – vendor_code could be 'PC', 'pacific', 'pacifc', etc.
+  if (code === 'pc' || code.includes('pacific') || code.includes('pacifc') || name.includes('pacific') || name.includes('pacifc')) {
+    return {
+      vendCode: 'PACIFIC',
+      vendName: 'PACIFIC',
+      service: 1007,
+      autotrack: 1,
+      accode: 'P0503',
+      tuser: 'P0503',
+      tpass: 'P0503@7199',
+      apikey: ''
+    }
+  }
+
+  // Bhabani
   if (code.includes('bhabani') || code.includes('bhavani') || name.includes('bhabani') || name.includes('bhavani')) {
     return {
       vendCode: 'BHABANI',
@@ -76,7 +142,9 @@ function resolveVendorDetails(vendorCode, vendorName) {
       apikey: ''
     }
   }
-  if (code.includes('acx') || name.includes('acx')) {
+
+  // ACX
+  if (code === 'acx' || code.includes('acx') || name.includes('acx')) {
     return {
       vendCode: 'ACX',
       vendName: 'ACX',
@@ -88,7 +156,9 @@ function resolveVendorDetails(vendorCode, vendorName) {
       apikey: ''
     }
   }
-  if (code.includes('flyswift') || code.includes('trackmate') || name.includes('flyswift') || name.includes('trackmate')) {
+
+  // FlySwift / TrackMate – vendor_code could be 'FM', 'flyswift', 'trackmate', etc.
+  if (code === 'fm' || code.includes('flyswift') || code.includes('trackmate') || name.includes('flyswift') || name.includes('trackmate')) {
     return {
       vendCode: 'FLYSWIFT',
       vendName: 'FLYSWIFT',
@@ -100,15 +170,17 @@ function resolveVendorDetails(vendorCode, vendorName) {
       apikey: ''
     }
   }
-  if (code.includes('pacific') || code.includes('pacifc') || name.includes('pacific') || name.includes('pacifc')) {
+
+  // Sairaj
+  if (code.includes('sairaj') || name.includes('sairaj')) {
     return {
-      vendCode: 'PACIFIC',
-      vendName: 'PACIFIC',
-      service: 1007,
+      vendCode: 'SAIRAJ',
+      vendName: 'SAIRAJ',
+      service: 1022,
       autotrack: 1,
-      accode: 'P0503',
-      tuser: 'P0503',
-      tpass: 'P0503@7199',
+      accode: '',
+      tuser: '',
+      tpass: '',
       apikey: ''
     }
   }
@@ -128,11 +200,19 @@ function resolveVendorDetails(vendorCode, vendorName) {
 /**
  * Insert or update a shipment in the remote AWBENTRY table.
  * 
- * Concurrency & Safety Guarantee:
- * - Uses standard atomic single-row parameterized queries.
- * - Never acquires table locks, never alters schemas, never interferes with other concurrent systems.
- * - AWBID auto-increment works independently for all systems.
- * - Wrapped in try-catch so it will never crash or halt the local application.
+ * IMPORTANT: Column-to-parameter alignment is CRITICAL. Every column in the SQL
+ * must map 1:1 to its corresponding parameter value in the exact same position.
+ * 
+ * AWBENTRY field mapping (receiver section):
+ *   CNEENAME      → receiverName
+ *   CNEEADDRESS1  → receiverAddress1 (main address line)
+ *   CNEEADDRESS2  → receiverAddress2 (address line 2)
+ *   CNEEADDRESS3  → receiverState
+ *   CNEEADDRESS4  → receiverCountry (destination country name)
+ *   CNEEPINCODE   → receiverPincode
+ *   CNEECITY      → receiverCity
+ *   CNEEPHONE1    → receiverPhone
+ *   CNEEPHONE2    → (empty)
  *
  * @param {Object} shipment - Full shipment object with sender/receiver fields
  * @param {Object} vendorResult - Vendor API push result (awbNumber, etc.)
@@ -152,9 +232,8 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
       return { success: false, message: 'Invalid AWBNO' }
     }
 
-    // Extract fields
+    // ── Extract Sender Fields ──
     const sender = shipment.senders || shipment.sender || {}
-    const receiver = shipment.receivers || shipment.receiver || {}
 
     const senderName = shipment.s_name || sender.name || shipment.sender_name || shipment.sender_company || ''
     const senderAddress1 = shipment.s_address || sender.address || shipment.sender_address || ''
@@ -165,26 +244,37 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
     const senderPhone = shipment.s_phone || sender.phone || shipment.sender_phone || '0'
     const senderCountry = shipment.s_country || sender.country || shipment.sender_country || 'INDIA'
 
-    const senderGstinType = shipment.sender_gstin_type || ''
-    const senderGstinNo = shipment.sender_gstin_no || ''
-    const aadharNo = /aadhaar|aadhar/i.test(senderGstinType) ? senderGstinNo.replace(/\D/g, '') : ''
+    // GSTIN / Aadhar detection
+    const senderGstinType = (shipment.sender_gstin_type || '').trim()
+    const senderGstinNo = (shipment.sender_gstin_no || '').trim()
+    // Match any variant: Aadhaar, Aadhar, AADHAR, aadhaar, etc.
+    const isAadhar = /aadh/i.test(senderGstinType)
+    const aadharNo = isAadhar ? senderGstinNo.replace(/\D/g, '') : ''
     const gstNo = /gst/i.test(senderGstinType) ? senderGstinNo : ''
+
+    // ── Extract Receiver Fields ──
+    const receiver = shipment.receivers || shipment.receiver || {}
 
     const receiverName = shipment.r_name || receiver.name || shipment.receiver_name || shipment.receiver_company || ''
     const receiverAddress1 = shipment.r_address || receiver.address || shipment.receiver_address || ''
     const receiverAddress2 = shipment.receiver_address_2 || shipment.r_address_2 || ''
-    const receiverAddress3 = shipment.r_state || receiver.state || shipment.receiver_state || ''
+    const receiverState = shipment.r_state || receiver.state || shipment.receiver_state || ''
     const receiverCity = shipment.r_city || receiver.city || shipment.receiver_city || ''
     const receiverPincode = shipment.r_pincode || receiver.pincode || shipment.receiver_pincode || ''
     const receiverPhone = shipment.r_phone || receiver.phone || shipment.receiver_phone || ''
     const receiverCountry = shipment.r_country || receiver.country || shipment.receiver_country || ''
-    const destCode = resolveCountryCode(receiverCountry)
 
+    const destCode = resolveCountryCode(receiverCountry)
+    const destName = resolveCountryName(receiverCountry)
+
+    // ── Financial / Weight Fields ──
     const weight = parseFloat(shipment.weight) || 0
-    const chargeableWeight = parseFloat(shipment.chargeable_weight) ? Math.ceil(parseFloat(shipment.chargeable_weight)) : (weight > 0 ? Math.ceil(weight) : 0)
-    const shippingCharge = parseFloat(shipment.shipping_charge) || parseFloat(shipment.total_amount) || 0
-    const totalAmount = parseFloat(shipment.total_amount) || shippingCharge
-    const rate = weight > 0 && shippingCharge > 0 ? Math.round((shippingCharge / weight) * 100) / 100 : 0
+    const finalChgWt = parseFloat(shipment.final_chargeable_weight) || parseFloat(shipment.chargeable_weight) || (weight > 0 ? weight : 0)
+    const chargeableWeight = finalChgWt > 0 ? Math.ceil(finalChgWt) : 0
+    const shippingCharge = parseFloat(shipment.shipping_charge) || 0
+    const extraCharge = parseFloat(shipment.extra_charge) || 0
+    const totalAmount = parseFloat(shipment.total_amount) || (shippingCharge + extraCharge)
+    const rate = parseFloat(shipment.rate_per_kg) || (chargeableWeight > 0 && shippingCharge > 0 ? Math.round((shippingCharge / chargeableWeight) * 100) / 100 : 0)
 
     const paymentMode = String(shipment.payment_mode || 'prepaid').toLowerCase()
     const paymentType = paymentMode === 'cod' ? 1 : (paymentMode === 'credit' ? 2 : 0)
@@ -198,78 +288,124 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
     const vendorDetails = resolveVendorDetails(shipment.vendor_code, shipment.vendor_name)
     const productCode = shipment.product_code || 'SPX'
 
+    // ── Debug log to verify mappings ──
+    console.log(`[Remote AWBENTRY Sync] Mapping for AWBNO ${awbNo}:`, JSON.stringify({
+      VENDCODE: vendorDetails.vendCode,
+      SERVICE: vendorDetails.service,
+      ACCODE: vendorDetails.accode,
+      DESTCODE: destCode,
+      DESTNAME: destName,
+      CNEECITY: receiverCity,
+      CNEEPINCODE: receiverPincode,
+      CNEEPHONE1: receiverPhone,
+      CNEEADDRESS4: destName,
+      CHARGEWEIGHT: chargeableWeight,
+      RATE: rate,
+      CHARGES: shippingCharge,
+      ADJUSTMENT: extraCharge,
+      TOTAL: totalAmount,
+      vendor_code_raw: shipment.vendor_code
+    }))
+
     // Check if AWBNO already exists in remote AWBENTRY
     const [existingRows] = await pool.execute('SELECT AWBID, AWBNO, VENDORAWB1 FROM AWBENTRY WHERE AWBNO = ? LIMIT 1', [awbNo])
 
     if (existingRows.length > 0) {
-      // Update existing record
+      // ── UPDATE existing record ──
       const finalVendorAwb = vendorAwb || existingRows[0].VENDORAWB1 || String(awbNo)
-      console.log(`[Remote AWBENTRY Sync] AWBNO ${awbNo} already exists in remote DB (AWBID: ${existingRows[0].AWBID}). Updating...`)
+      console.log(`[Remote AWBENTRY Sync] AWBNO ${awbNo} already exists (AWBID: ${existingRows[0].AWBID}). Updating...`)
+
       await pool.execute(
         `UPDATE AWBENTRY SET
           AWBDATE = ?, CARTONS = ?, ORIGIN = ?, CUSTCODE = ?, CUSTNAME = ?,
-          SNAME = ?, SADDRESS1 = ?, SADDRESS2 = ?, SADDRESS3 = ?, SCITY = ?, SPINCODE = ?, SPHONE1 = ?, SAADHARNO = ?,
+          SNAME = ?, SADDRESS1 = ?, SADDRESS2 = ?, SADDRESS3 = ?,
+          SCITY = ?, SPINCODE = ?, SPHONE1 = ?, SPHONE2 = ?, SAADHARNO = ?,
           PRODCODE = ?, PRODNAME = ?, VENDCODE = ?, VENDNAME = ?, DESTCODE = ?, DESTNAME = ?,
-          CNEENAME = ?, CNEEADDRESS1 = ?, CNEEADDRESS2 = ?, CNEEADDRESS3 = ?, CNEEADDRESS4 = ?,
-          CNEEPINCODE = ?, CNEECITY = ?, CNEEPHONE1 = ?,
-          PAYMENTTYPE = ?, ACTUALWEIGHT = ?, CHARGEWEIGHT = ?, RATE = ?, CHARGES = ?, TOTAL = ?, NETAMOUNT = ?,
-          VENDORAWB1 = ?, VENDORAWB2 = ?, REMARKS = ?, RECEIPTAMOUNT = ?, GSTNO = ?,
+          CNEENAME = ?, CNEEADDRESS1 = ?, CNEEADDRESS2 = ?, CNEEADDRESS3 = ?,
+          CNEEADDRESS4 = ?, CNEEPINCODE = ?, CNEECITY = ?, CNEEPHONE1 = ?, CNEEPHONE2 = ?,
+          PAYMENTTYPE = ?, ACTUALWEIGHT = ?, CHARGEWEIGHT = ?, RATE = ?, CHARGES = ?,
+          ADJUSTMENT = ?, TOTAL = ?, NETAMOUNT = ?,
+          VENDORAWB1 = ?, VENDORAWB2 = ?, REMARKS = ?, RECEIPTAMOUNT = ?,
+          GSTNO = ?, GSTTYPE = ?,
           SERVICE = ?, AUTOTRACK = ?, TUSER = ?, TPASS = ?, ACCODE = ?, APIKEY = ?
         WHERE AWBNO = ?`,
         [
-          bookingDate,
-          pieces,
-          'SRT',
-          'W001',
-          'WALKING CUSTOMER',
-          senderName,
-          senderAddress1,
-          senderAddress2,
-          senderState,
-          senderCity,
-          senderPincode,
-          senderPhone,
-          aadharNo || null,
-          productCode,
-          productCode,
-          vendorDetails.vendCode,
-          vendorDetails.vendName,
-          destCode,
-          receiverCountry,
-          receiverName,
-          receiverAddress1,
-          receiverAddress2,
-          receiverAddress3,
-          receiverCity,
-          receiverPincode,
-          receiverCity,
-          receiverPhone,
-          paymentType,
-          weight,
-          chargeableWeight,
-          rate,
-          shippingCharge,
-          totalAmount,
-          totalAmount,
-          finalVendorAwb,
-          vendorAwb2,
-          shipment.content_description || shipment.remarks || '',
-          receiptAmount,
-          gstNo || null,
-          vendorDetails.service,
-          vendorDetails.autotrack,
-          vendorDetails.tuser,
-          vendorDetails.tpass,
-          vendorDetails.accode,
-          vendorDetails.apikey,
-          awbNo
+          // Row 1: Date, pieces, origin, customer
+          bookingDate,              // AWBDATE
+          pieces,                   // CARTONS
+          'SRT',                    // ORIGIN
+          'W001',                   // CUSTCODE
+          'WALKING CUSTOMER',       // CUSTNAME
+
+          // Row 2: Sender details
+          senderName,               // SNAME
+          senderAddress1,           // SADDRESS1
+          senderAddress2,           // SADDRESS2
+          senderState,              // SADDRESS3
+          senderCity,               // SCITY
+          senderPincode,            // SPINCODE
+          senderPhone,              // SPHONE1
+          '',                       // SPHONE2  (always empty)
+          aadharNo || null,         // SAADHARNO
+
+          // Row 3: Product & Vendor
+          productCode,              // PRODCODE
+          productCode,              // PRODNAME
+          vendorDetails.vendCode,   // VENDCODE
+          vendorDetails.vendName,   // VENDNAME
+          destCode,                 // DESTCODE  (2-letter code: US, GB, AE, etc.)
+          destName,                 // DESTNAME  (full name: UNITED STATES, etc.)
+
+          // Row 4: Consignee / Receiver
+          receiverName,             // CNEENAME
+          receiverAddress1,         // CNEEADDRESS1
+          receiverAddress2,         // CNEEADDRESS2
+          receiverState,            // CNEEADDRESS3  (state)
+          destName,                 // CNEEADDRESS4  (country name for display)
+          receiverPincode,          // CNEEPINCODE
+          receiverCity,             // CNEECITY
+          receiverPhone,            // CNEEPHONE1
+          '',                       // CNEEPHONE2
+
+          // Row 5: Payment & Weight
+          paymentType,              // PAYMENTTYPE
+          weight,                   // ACTUALWEIGHT
+          chargeableWeight,         // CHARGEWEIGHT (ceiled)
+          rate,                     // RATE
+          shippingCharge,           // CHARGES
+
+          // Row 6: Amounts
+          extraCharge,              // ADJUSTMENT
+          totalAmount,              // TOTAL
+          totalAmount,              // NETAMOUNT
+
+          // Row 7: AWBs, remarks
+          finalVendorAwb,           // VENDORAWB1
+          vendorAwb2,               // VENDORAWB2
+          shipment.content_description || shipment.remarks || '',  // REMARKS
+          receiptAmount,            // RECEIPTAMOUNT
+
+          // Row 8: GST
+          gstNo || null,            // GSTNO
+          /gst/i.test(senderGstinType) ? 1 : 0,  // GSTTYPE
+
+          // Row 9: Vendor tracking config
+          vendorDetails.service,    // SERVICE
+          vendorDetails.autotrack,  // AUTOTRACK
+          vendorDetails.tuser,      // TUSER
+          vendorDetails.tpass,      // TPASS
+          vendorDetails.accode,     // ACCODE
+          vendorDetails.apikey,     // APIKEY
+
+          // WHERE clause
+          awbNo                     // WHERE AWBNO = ?
         ]
       )
       console.log(`[Remote AWBENTRY Sync] Successfully updated AWBNO ${awbNo} in remote DB.`)
       return { success: true, action: 'updated', awbNo }
     }
 
-    // Insert new record into AWBENTRY
+    // ── INSERT new record into AWBENTRY ──
     console.log(`[Remote AWBENTRY Sync] Inserting new AWBNO ${awbNo} into remote AWBENTRY...`)
     const insertSql = `
       INSERT INTO AWBENTRY (
@@ -300,72 +436,91 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
     `
 
     const params = [
-      0, // DESTINATIONTYPE (0: International)
-      awbNo, // AWBNO
-      bookingDate, // AWBDATE
-      pieces, // CARTONS
-      'SRT', // ORIGIN
-      'W001', // CUSTCODE
-      'WALKING CUSTOMER', // CUSTNAME
-      senderName, // SNAME
-      senderAddress1, // SADDRESS1
-      senderAddress2, // SADDRESS2
-      senderState, // SADDRESS3
-      senderCity, // SCITY
-      senderPincode, // SPINCODE
-      senderPhone, // SPHONE1
-      '', // SPHONE2
-      aadharNo || null, // SAADHARNO
-      productCode, // PRODCODE
-      productCode, // PRODNAME
-      vendorDetails.vendCode, // VENDCODE
-      vendorDetails.vendName, // VENDNAME
-      destCode, // DESTCODE
-      receiverCountry, // DESTNAME
-      receiverName, // CNEENAME
-      receiverAddress1, // CNEEADDRESS1
-      receiverAddress2, // CNEEADDRESS2
-      receiverAddress3, // CNEEADDRESS3
-      receiverCity, // CNEEADDRESS4
-      receiverPincode, // CNEEPINCODE
-      receiverCity, // CNEECITY
-      receiverPhone, // CNEEPHONE1
-      '', // CNEEPHONE2
-      paymentType, // PAYMENTTYPE
-      weight, // ACTUALWEIGHT (exact decimal)
-      chargeableWeight, // CHARGEWEIGHT (ceiled)
-      rate, // RATE
-      shippingCharge, // CHARGES
-      0.00, // SERVICECHARGE
-      0.00, // COMMCHARGE
-      totalAmount, // TOTAL
-      0.00, // ADJUSTMENT
-      0.00, // SURCHARGE
-      0.00, // SERVICETAX
-      totalAmount, // NETAMOUNT
+      // Row 1: Header info (7 values)
+      0,                          // DESTINATIONTYPE (0 = International)
+      awbNo,                      // AWBNO
+      bookingDate,                // AWBDATE
+      pieces,                     // CARTONS
+      'SRT',                      // ORIGIN
+      'W001',                     // CUSTCODE
+      'WALKING CUSTOMER',         // CUSTNAME
+
+      // Row 2: Sender details (9 values)
+      senderName,                 // SNAME
+      senderAddress1,             // SADDRESS1
+      senderAddress2,             // SADDRESS2
+      senderState,                // SADDRESS3
+      senderCity,                 // SCITY
+      senderPincode,              // SPINCODE
+      senderPhone,                // SPHONE1
+      '',                         // SPHONE2  (always empty)
+      aadharNo || null,           // SAADHARNO
+
+      // Row 3: Product & Vendor (6 values)
+      productCode,                // PRODCODE
+      productCode,                // PRODNAME
+      vendorDetails.vendCode,     // VENDCODE
+      vendorDetails.vendName,     // VENDNAME
+      destCode,                   // DESTCODE  (2-letter: US, GB, AE, etc.)
+      destName,                   // DESTNAME  (full: UNITED STATES, etc.)
+
+      // Row 4: Receiver / Consignee (9 values)
+      receiverName,               // CNEENAME
+      receiverAddress1,           // CNEEADDRESS1
+      receiverAddress2,           // CNEEADDRESS2
+      receiverState,              // CNEEADDRESS3  (receiver state)
+      destName,                   // CNEEADDRESS4  (receiver country name)
+      receiverPincode,            // CNEEPINCODE
+      receiverCity,               // CNEECITY
+      receiverPhone,              // CNEEPHONE1
+      '',                         // CNEEPHONE2  (empty)
+
+      // Row 5: Payment & Weight (5 values)
+      paymentType,                // PAYMENTTYPE
+      weight,                     // ACTUALWEIGHT (exact decimal)
+      chargeableWeight,           // CHARGEWEIGHT (ceiled integer)
+      rate,                       // RATE
+      shippingCharge,             // CHARGES
+
+      // Row 6: Service charges & totals (7 values)
+      0.00,                       // SERVICECHARGE
+      0.00,                       // COMMCHARGE
+      totalAmount,                // TOTAL
+      extraCharge,                // ADJUSTMENT
+      0.00,                       // SURCHARGE
+      0.00,                       // SERVICETAX
+      totalAmount,                // NETAMOUNT
+
+      // Row 7: Vendor AWB & Remarks (4 values)
       vendorAwb || String(awbNo), // VENDORAWB1
-      vendorAwb2, // VENDORAWB2
-      shipment.content_description || shipment.remarks || '', // REMARKS
-      receiptAmount, // RECEIPTAMOUNT
-      0.00, // SGST
-      0.00, // CGST
-      0.00, // IGST
-      gstNo || null, // GSTNO
-      0, // GSTTYPE
-      0, // ENTRYTYPE
-      0, // DOWNLOAD
-      '', // BRANCHCODE
-      'MTX', // ALIAS
-      0, // TCCSLABEL
-      vendorDetails.service, // SERVICE
-      vendorDetails.autotrack, // AUTOTRACK
-      0, // PODTOWEB
-      0, // SHOWFWD
-      0, // BOOKINGMAIL
-      vendorDetails.tuser, // TUSER
-      vendorDetails.tpass, // TPASS
-      vendorDetails.accode, // ACCODE
-      vendorDetails.apikey // APIKEY
+      vendorAwb2,                 // VENDORAWB2
+      shipment.content_description || shipment.remarks || '',  // REMARKS
+      receiptAmount,              // RECEIPTAMOUNT
+
+      // Row 8: GST (5 values)
+      0.00,                       // SGST
+      0.00,                       // CGST
+      0.00,                       // IGST
+      gstNo || null,              // GSTNO
+      /gst/i.test(senderGstinType) ? 1 : 0,  // GSTTYPE
+
+      // Row 9: System fields (10 values)
+      0,                          // ENTRYTYPE
+      0,                          // DOWNLOAD
+      '',                         // BRANCHCODE
+      'MTX',                      // ALIAS
+      0,                          // TCCSLABEL
+      vendorDetails.service,      // SERVICE  (e.g. 1007 for Pacific)
+      vendorDetails.autotrack,    // AUTOTRACK
+      0,                          // PODTOWEB
+      0,                          // SHOWFWD
+      0,                          // BOOKINGMAIL
+
+      // Row 10: Auth details (4 values)
+      vendorDetails.tuser,        // TUSER
+      vendorDetails.tpass,        // TPASS
+      vendorDetails.accode,       // ACCODE
+      vendorDetails.apikey        // APIKEY
     ]
 
     const [result] = await pool.execute(insertSql, params)
@@ -440,4 +595,3 @@ export async function syncToRemoteParcelHistory(shipment, activity = 'SHIPMENT B
     return { success: false, error: err.message }
   }
 }
-

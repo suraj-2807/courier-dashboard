@@ -10,7 +10,8 @@ import {
   getInvoicePdf,
   getWaybillPdf,
   getBoxLabelsPdf,
-  updateBookingStatus
+  updateBookingStatus,
+  updateBookingBilling
 } from './booking.controller.js'
 
 const router = express.Router()
@@ -24,5 +25,6 @@ router.get('/:id/invoice-pdf', authMiddleware, getInvoicePdf)
 router.get('/:id/bill-pdf', authMiddleware, getWaybillPdf)
 router.get('/:id/labels-pdf', authMiddleware, getBoxLabelsPdf)
 router.patch('/:id/status', authMiddleware, updateBookingStatus)
+router.patch('/:id/billing', authMiddleware, updateBookingBilling)
 
 export default router

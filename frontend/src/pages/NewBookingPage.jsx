@@ -5,6 +5,7 @@ import { useCreateBooking, useSaveBooking, usePushBookingToApi } from '../hooks/
 import { getActiveVendors } from '../api/apiSettings.api'
 import { bookingsApi } from '../api/bookings.api'
 import { countryCodesApi } from '../api/countryCodes.api'
+import { systemSettingsApi } from '../api/systemSettings.api'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
 import {
   ArrowLeft,
@@ -275,7 +276,16 @@ export default function NewBookingPage() {
     enabled: !!editId
   })
 
+  // Fetch System Settings (e.g. allow_post_push_billing_edit)
+  const { data: sysSettingsData } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: systemSettingsApi.getAll
+  })
+  const allowPostPushEdit = sysSettingsData?.settings?.allow_post_push_billing_edit !== false
+
   const isLocked = !!editBookingData?.is_locked
+  const isGeneralLocked = isLocked
+  const isBillingLocked = isLocked && !allowPostPushEdit
 
   // Pre-fill form when editing an existing shipment
   useEffect(() => {
@@ -880,6 +890,32 @@ export default function NewBookingPage() {
     }
   }
 
+  // SAVE BILLING CHARGES ONLY (For locked/dispatched shipments)
+  const handleSaveBillingLocked = async () => {
+    const finalChg = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
+    const rate = parseFloat(form.rate_per_kg) || 0
+    const ship = parseFloat(form.shipping_charge) || 0
+    const extra = parseFloat(extraCharge) || 0
+    const total = parseFloat((ship + extra).toFixed(2))
+
+    setSavingDraft(true)
+    try {
+      await bookingsApi.updateBilling(editId, {
+        final_chargeable_weight: finalChg,
+        rate_per_kg: rate,
+        shipping_charge: ship,
+        extra_charge: extra,
+        total_amount: total
+      })
+      toast.success('Billing charges updated & synced to remote AWBENTRY!')
+      navigate('/bookings')
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err.message || 'Failed to update billing details')
+    } finally {
+      setSavingDraft(false)
+    }
+  }
+
   // PUSH TO API — saves + pushes to vendor API in one step, locks the booking
   const handleSubmit = async (e) => {
     if (e) e.preventDefault()
@@ -966,30 +1002,42 @@ export default function NewBookingPage() {
 
       {/* ── Locked Shipment Notice Banner ── */}
       {isLocked && (
-        <div className="bg-amber-500/10 border border-amber-500/25 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+        <div className={`rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs ${
+          allowPostPushEdit
+            ? 'bg-emerald-500/10 border border-emerald-500/25'
+            : 'bg-amber-500/10 border border-amber-500/25'
+        }`}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-700 flex-shrink-0">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+              allowPostPushEdit ? 'bg-emerald-500/20 text-emerald-700' : 'bg-amber-500/20 text-amber-700'
+            }`}>
               <Lock className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-navy">Shipment is Locked (API Pushed)</h4>
+              <h4 className="text-sm font-bold text-navy">
+                {allowPostPushEdit ? 'Shipment is Locked (API Pushed) — Post-Push Billing Edit Mode' : 'Shipment is Locked (API Pushed)'}
+              </h4>
               <p className="text-xs text-text-secondary mt-0.5">
-                All inputs are disabled to protect dispatched carrier data. Admin can inspect all shipper, consignee, package, charges, and invoice details.
+                {allowPostPushEdit
+                  ? 'Shipper, Consignee, and Package details are locked to protect carrier records. You can modify Final Chargeable Wt, Rate/Kg, Shipping Charge, Extra Charge, and Final Shipping below. Click "Save Billing Changes" to save and sync with remote AWBENTRY.'
+                  : 'All inputs are disabled to protect dispatched carrier data. Admin can inspect all shipper, consignee, package, charges, and invoice details.'}
               </p>
             </div>
           </div>
-          <span className="text-xs font-extrabold uppercase px-3 py-1 bg-amber-500 text-white rounded-full tracking-wider shadow-xs self-start sm:self-center">
-            Read-Only
+          <span className={`text-xs font-extrabold uppercase px-3 py-1 text-white rounded-full tracking-wider shadow-xs self-start sm:self-center ${
+            allowPostPushEdit ? 'bg-emerald-600' : 'bg-amber-500'
+          }`}>
+            {allowPostPushEdit ? 'Billing Editable' : 'Read-Only'}
           </span>
         </div>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
-        <fieldset disabled={isLocked} className="contents">
         {/* ── Main 3 Columns Layout ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
           {/* ── Column 1: Sender / Shipper Details ── */}
+          <fieldset disabled={isGeneralLocked} className="contents">
           <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs flex flex-col justify-between">
             <div>
               <RedBadge title="Shipper Details" icon={User} />
@@ -1134,8 +1182,10 @@ export default function NewBookingPage() {
               </div>
             </div>
           </div>
+          </fieldset>
 
           {/* ── Column 2: Receiver / Consignee Details ── */}
+          <fieldset disabled={isGeneralLocked} className="contents">
           <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs flex flex-col justify-between">
             <div>
               <RedBadge title="Consignee Details" icon={MapPin} />
@@ -1280,6 +1330,7 @@ export default function NewBookingPage() {
               </div>
             </div>
           </div>
+          </fieldset>
 
           {/* ── Column 3: Courier & Vendor API Details ── */}
           <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs flex flex-col justify-between">
@@ -1287,6 +1338,7 @@ export default function NewBookingPage() {
               <RedBadge title="Courier & Vendor API" icon={Plug} />
 
               <div className="space-y-2.5">
+                <fieldset disabled={isGeneralLocked} className="contents">
                 {/* Vendor API Config Selection */}
                 <CompactField label="Courier Vendor API">
                   <select
@@ -1458,8 +1510,10 @@ export default function NewBookingPage() {
                     )}
                   </>
                 )}
+                </fieldset>
 
-                {/* Payment Mode & Charges */}
+                {/* Payment Mode & Charges — Editable even when shipment is locked if allowPostPushEdit is enabled */}
+                <fieldset disabled={isBillingLocked} className="contents">
                 <div className="space-y-2">
                   <CompactField label="Payment Mode">
                     <select
@@ -1564,6 +1618,9 @@ export default function NewBookingPage() {
                     </CompactField>
                   </div>
                 </div>
+                </fieldset>
+
+                <fieldset disabled={isGeneralLocked} className="contents">
 
                 {form.payment_mode === 'cod' && (
                   <CompactField label="COD Amount (₹)" required>
@@ -1597,13 +1654,15 @@ export default function NewBookingPage() {
                     />
                   </CompactField>
                 </div>
+                </fieldset>
               </div>
             </div>
           </div>
 
         </div>
 
-        {/* ── Main Section 2: Package & Weight Specs ── */}
+        {/* ── Main Section 2: Package & Weight Specs & Commercial Invoice ── */}
+        <fieldset disabled={isGeneralLocked} className="contents">
         <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs">
           <RedBadge title="Package & Weight Specifications" icon={Package} />
 
@@ -1996,7 +2055,27 @@ export default function NewBookingPage() {
 
           <div className="flex items-center gap-3">
             {isLocked ? (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                {allowPostPushEdit && (
+                  <button
+                    type="button"
+                    onClick={handleSaveBillingLocked}
+                    disabled={savingDraft || submitting}
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {savingDraft ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Saving & Syncing...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        Save Billing Changes
+                      </>
+                    )}
+                  </button>
+                )}
                 <Link
                   to={`/bookings/${editId}`}
                   className="px-4 py-2.5 rounded-xl border border-border bg-surface hover:bg-surface-hover text-navy text-xs font-bold transition-colors flex items-center gap-2"

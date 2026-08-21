@@ -5,6 +5,7 @@ import { generateInvoicePdf } from '../../services/invoicePdf.service.js'
 import { generateWaybillPdf } from '../../services/waybillPdf.service.js'
 import { generateBoxLabelsPdf } from '../../services/boxLabelPdf.service.js'
 import { syncToRemoteAwbEntry, syncToRemoteParcelHistory } from '../../services/remoteAwbEntry.service.js'
+import { isSettingEnabled } from '../systemSettings/systemSettings.controller.js'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
@@ -605,7 +606,64 @@ export const saveBooking = async (req, res) => {
         return res.status(404).json({ success: false, message: 'Shipment not found' })
       }
       if (existing[0].is_locked) {
-        return res.status(400).json({ success: false, message: 'This shipment is locked and cannot be edited.' })
+        const allowed = await isSettingEnabled('allow_post_push_billing_edit', true)
+        if (!allowed) {
+          return res.status(400).json({ success: false, message: 'This shipment is locked and cannot be edited.' })
+        }
+
+        // Post-push billing edit mode: Update only the billing fields & remote AWBENTRY
+        const finalChgWt = parseFloat(fields.final_chargeable_weight) || parseFloat(fields.chargeable_weight) || 0
+        const ratePerKg = parseFloat(fields.rate_per_kg) || 0
+        const shippingCharge = parseFloat(fields.shipping_charge) || 0
+        const extraCharge = parseFloat(fields.extra_charge) || 0
+        const totalAmount = parseFloat(fields.total_amount) || (shippingCharge + extraCharge)
+
+        await execute(
+          `UPDATE shipments SET
+            final_chargeable_weight = ?,
+            chargeable_weight = ?,
+            rate_per_kg = ?,
+            shipping_charge = ?,
+            extra_charge = ?,
+            total_amount = ?
+           WHERE id = ?`,
+          [
+            finalChgWt,
+            finalChgWt > 0 ? Math.ceil(finalChgWt) : 0,
+            ratePerKg,
+            shippingCharge,
+            extraCharge,
+            totalAmount,
+            existingId
+          ]
+        )
+
+        const updatedRows = await query(
+          `SELECT s.*, 
+            snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
+            snd.address as s_address, snd.city as s_city, snd.state as s_state,
+            snd.pincode as s_pincode, snd.country as s_country,
+            rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
+            rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
+            rcv.pincode as r_pincode, rcv.country as r_country
+           FROM shipments s
+           LEFT JOIN senders snd ON s.sender_id = snd.id
+           LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+           WHERE s.id = ?`,
+          [existingId]
+        )
+        const updatedShipment = updatedRows[0] || {}
+        try {
+          await syncToRemoteAwbEntry(updatedShipment)
+        } catch (syncErr) {
+          console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
+        }
+        return res.json({
+          success: true,
+          message: 'Billing charges updated and synced to remote AWBENTRY (Shipment details remain locked)',
+          booking: updatedShipment,
+          awb_number: updatedShipment.tracking_number
+        })
       }
 
       shipmentId = existing[0].id
@@ -1724,5 +1782,128 @@ export const getBoxLabelsPdf = async (req, res) => {
     return res.download(pdfPath, `BoxLabels_${ctx.b.tracking_number}.pdf`)
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+/**
+ * Update billing and rate details on a shipment.
+ * Works even after vendor push/lock if `allow_post_push_billing_edit` setting is enabled.
+ * Also synchronizes the new financial figures immediately to the remote Hostinger AWBENTRY table.
+ */
+export const updateBookingBilling = async (req, res) => {
+  try {
+    const { id } = req.params
+    const body = req.body || {}
+
+    // Find existing shipment
+    const rows = await query(
+      `SELECT s.*, 
+        snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
+        snd.address as s_address, snd.city as s_city, snd.state as s_state,
+        snd.pincode as s_pincode, snd.country as s_country,
+        rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
+        rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
+        rcv.pincode as r_pincode, rcv.country as r_country
+       FROM shipments s
+       LEFT JOIN senders snd ON s.sender_id = snd.id
+       LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       WHERE s.id = ?`,
+      [id]
+    )
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Shipment not found' })
+    }
+
+    const current = rows[0]
+
+    // If shipment is locked, verify if post-push billing edit feature is turned on in settings
+    if (current.is_locked) {
+      const allowed = await isSettingEnabled('allow_post_push_billing_edit', true)
+      if (!allowed) {
+        return res.status(403).json({
+          success: false,
+          message: 'Post-push billing editing is currently disabled in Settings. Turn on "Allow Post-Push Billing Edit" in Settings to modify locked shipments.'
+        })
+      }
+    }
+
+    // Extract updated billing parameters
+    const finalChgWt = body.final_chargeable_weight !== undefined
+      ? parseFloat(body.final_chargeable_weight) || 0
+      : (parseFloat(current.final_chargeable_weight) || parseFloat(current.chargeable_weight) || 0)
+
+    const ratePerKg = body.rate_per_kg !== undefined
+      ? parseFloat(body.rate_per_kg) || 0
+      : (parseFloat(current.rate_per_kg) || 0)
+
+    const shippingCharge = body.shipping_charge !== undefined
+      ? parseFloat(body.shipping_charge) || 0
+      : (parseFloat(current.shipping_charge) || 0)
+
+    const extraCharge = body.extra_charge !== undefined
+      ? parseFloat(body.extra_charge) || 0
+      : (parseFloat(current.extra_charge) || 0)
+
+    const totalAmount = body.total_amount !== undefined
+      ? parseFloat(body.total_amount) || 0
+      : (parseFloat(current.total_amount) || (shippingCharge + extraCharge))
+
+    // Update the local shipments table
+    await execute(
+      `UPDATE shipments SET
+        final_chargeable_weight = ?,
+        chargeable_weight = ?,
+        rate_per_kg = ?,
+        shipping_charge = ?,
+        extra_charge = ?,
+        total_amount = ?
+       WHERE id = ?`,
+      [
+        finalChgWt,
+        finalChgWt > 0 ? Math.ceil(finalChgWt) : 0,
+        ratePerKg,
+        shippingCharge,
+        extraCharge,
+        totalAmount,
+        id
+      ]
+    )
+
+    // Fetch updated shipment object
+    const updatedRows = await query(
+      `SELECT s.*, 
+        snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
+        snd.address as s_address, snd.city as s_city, snd.state as s_state,
+        snd.pincode as s_pincode, snd.country as s_country,
+        rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
+        rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
+        rcv.pincode as r_pincode, rcv.country as r_country
+       FROM shipments s
+       LEFT JOIN senders snd ON s.sender_id = snd.id
+       LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       WHERE s.id = ?`,
+      [id]
+    )
+
+    const updatedShipment = updatedRows[0] || {}
+
+    // Synchronize the updated billing immediately to remote Hostinger AWBENTRY
+    let remoteSyncSuccess = false
+    try {
+      const syncResult = await syncToRemoteAwbEntry(updatedShipment)
+      remoteSyncSuccess = syncResult?.success ?? true
+    } catch (syncErr) {
+      console.error('[Remote AWBENTRY Billing Sync Error]:', syncErr.message)
+    }
+
+    return res.json({
+      success: true,
+      message: 'Billing details updated successfully' + (remoteSyncSuccess ? ' and synced to remote AWBENTRY' : ''),
+      booking: updatedShipment
+    })
+  } catch (err) {
+    console.error('Error updating booking billing:', err)
+    return res.status(500).json({ success: false, message: 'Failed to update billing details' })
   }
 }
