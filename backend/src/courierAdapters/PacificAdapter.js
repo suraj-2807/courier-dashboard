@@ -135,12 +135,10 @@ export default class PacificAdapter extends BaseAdapter {
     const numPieces = parcelsList.length > 0 ? parcelsList.length : (parseInt(shipmentData.no_of_pieces) || 1)
     let totalWeight = parseFloat(shipmentData.weight) || 0
     if (parcelsList.length > 0) {
-      const sumParcelWeight = parcelsList.reduce((sum, p) => sum + Math.ceil(parseFloat(p.weight) || 0), 0)
+      const sumParcelWeight = parcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
       if (sumParcelWeight > 0) {
-        totalWeight = sumParcelWeight
+        totalWeight = Math.round(sumParcelWeight * 1000) / 1000
       }
-    } else if (totalWeight > 0) {
-      totalWeight = Math.ceil(totalWeight)
     }
     if (totalWeight <= 0) totalWeight = 1.0
 
@@ -158,12 +156,12 @@ export default class PacificAdapter extends BaseAdapter {
       new Date(new Date(bookingDateStr).getTime() + 10 * 24 * 60 * 60 * 1000)
     )
 
-    // Build Dimensions array (using individual box dimensions if provided, rounded up)
+    // Build Dimensions array (using exact individual box dimensions if provided)
     const dimensions = []
     if (parcelsList.length > 0) {
       parcelsList.forEach((p, idx) => {
         const rawW = parseFloat(p.weight)
-        const pWeight = rawW > 0 ? Math.ceil(rawW) : (parseFloat(perPieceWeight) || 1.0)
+        const pWeight = rawW > 0 ? rawW : (parseFloat(perPieceWeight) || 1.0)
         const pLength = parseFloat(p.length) || parseFloat(length) || 10.0
         const pWidth = parseFloat(p.breadth || p.width) || parseFloat(width) || 10.0
         const pHeight = parseFloat(p.height) || parseFloat(height) || 10.0

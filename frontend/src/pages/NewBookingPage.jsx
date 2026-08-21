@@ -551,10 +551,9 @@ export default function NewBookingPage() {
       if (l > 0 && b > 0 && h > 0) {
         vol = Math.round(((l * b * h) / 5000) * 100) / 100
       }
-      // Round up each box: ceil(actual) and ceil(vol)
-      const actCeil = act > 0 ? Math.ceil(act) : 0
-      const volCeil = vol > 0 ? Math.ceil(vol) : 0
-      const chg = Math.max(actCeil, volCeil)
+      // Round up ONLY chargeable weight (ceil max of actual & vol)
+      const maxWeight = Math.max(act, vol)
+      const chg = maxWeight > 0 ? Math.ceil(maxWeight) : 0
 
       item.volumetric_weight = vol > 0 ? String(vol) : ''
       item.chargeable_weight = chg > 0 ? String(chg) : ''
@@ -563,10 +562,10 @@ export default function NewBookingPage() {
     })
   }
 
-  // Calculate totals from parcels array (per-box weights already ceiled for chargeable)
-  const totalParcelActual = parcels.reduce((sum, p) => sum + Math.ceil(parseFloat(p.weight) || 0), 0)
-  const totalParcelVol = parcels.reduce((sum, p) => sum + (parseFloat(p.volumetric_weight) || 0), 0)
-  const totalParcelChg = parcels.reduce((sum, p) => sum + (parseFloat(p.chargeable_weight) || 0), 0)
+  // Calculate totals from parcels array (exact actual and vol weight, rounded chargeable)
+  const totalParcelActual = Math.round(parcels.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0) * 1000) / 1000
+  const totalParcelVol = Math.round(parcels.reduce((sum, p) => sum + (parseFloat(p.volumetric_weight) || 0), 0) * 100) / 100
+  const totalParcelChg = parcels.reduce((sum, p) => sum + (parseFloat(p.chargeable_weight) || Math.ceil(Math.max(parseFloat(p.weight) || 0, parseFloat(p.volumetric_weight) || 0))), 0)
 
   // Keep main form summary fields synced with per-parcel totals and recalculate shipping charges if rate_per_kg is set
   useEffect(() => {
@@ -574,7 +573,7 @@ export default function NewBookingPage() {
       setForm(prev => {
         const chgWt = totalParcelChg > 0 ? String(totalParcelChg) : ''
         const rate = parseFloat(prev.rate_per_kg) || 0
-        const chgNum = parseFloat(chgWt) || (totalParcelActual > 0 ? totalParcelActual : 0)
+        const chgNum = parseFloat(chgWt) || (totalParcelActual > 0 ? Math.ceil(totalParcelActual) : 0)
         const updatedShipping = (rate > 0 && chgNum > 0)
           ? (rate * chgNum).toFixed(2)
           : prev.shipping_charge
@@ -597,21 +596,19 @@ export default function NewBookingPage() {
       if (l > 0 && b > 0 && h > 0) {
         vol = Math.round(((l * b * h) / 5000) * 100) / 100
       }
-      // Round up for chargeable
-      const actCeil = act > 0 ? Math.ceil(act) : 0
-      const volCeil = vol > 0 ? Math.ceil(vol) : 0
-      const chg = Math.max(actCeil, volCeil)
+      const maxWeight = Math.max(act, vol)
+      const chg = maxWeight > 0 ? Math.ceil(maxWeight) : 0
 
       setForm(prev => {
         const rate = parseFloat(prev.rate_per_kg) || 0
-        const chgNum = chg > 0 ? chg : actCeil
+        const chgNum = chg > 0 ? chg : (act > 0 ? Math.ceil(act) : 0)
         const updatedShipping = (rate > 0 && chgNum > 0)
           ? (rate * chgNum).toFixed(2)
           : prev.shipping_charge
 
         return {
           ...prev,
-          weight: actCeil > 0 ? String(actCeil) : prev.weight,
+          weight: act > 0 ? String(act) : prev.weight,
           volumetric_weight: vol > 0 ? String(vol) : '',
           chargeable_weight: chg > 0 ? String(chg) : '',
           shipping_charge: updatedShipping
@@ -699,22 +696,22 @@ export default function NewBookingPage() {
     receiver_gstin_type: form.receiver_gstin_type,
     receiver_gstin_no: form.receiver_gstin_no,
 
-    weight: (parcels.length > 1 && totalParcelActual > 0) ? totalParcelActual : Math.ceil(parseFloat(form.weight) || (parcels[0] ? parseFloat(parcels[0].weight) : 0) || 0),
-    chargeable_weight: (parcels.length > 1 && totalParcelChg > 0) ? totalParcelChg : (parseFloat(form.chargeable_weight) || 0),
+    weight: (parcels.length > 1 && totalParcelActual > 0) ? String(totalParcelActual) : String(parseFloat(form.weight) || (parcels[0] ? parseFloat(parcels[0].weight) : 0) || 0),
+    chargeable_weight: (parcels.length > 1 && totalParcelChg > 0) ? totalParcelChg : (parseFloat(form.chargeable_weight) ? Math.ceil(parseFloat(form.chargeable_weight)) : 0),
     length: parseFloat(form.length) || (parcels[0] ? parseFloat(parcels[0].length) : 0) || 0,
     breadth: parseFloat(form.breadth) || (parcels[0] ? parseFloat(parcels[0].breadth) : 0) || 0,
     height: parseFloat(form.height) || (parcels[0] ? parseFloat(parcels[0].height) : 0) || 0,
     no_of_pieces: Math.max(parcels.length, parseInt(form.no_of_pieces) || 1),
     content_description: (form.content_description && form.content_description !== 'General Goods' && form.content_description !== 'ITEMS / GOODS INSIDE')
       ? form.content_description
-      : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'General Goods'),
+      : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'Books'),
     declared_value: decVal,
     package_type: form.package_type,
     payment_mode: form.payment_mode,
     rate_per_kg: parseFloat(form.rate_per_kg) || 0,
     shipping_charge: shipCharge,
     extra_charge: parseFloat(extraCharge) || 0,
-    final_chargeable_weight: parseFloat(finalChargeableWeight) || (parcels.length > 1 && totalParcelChg > 0 ? totalParcelChg : (parseFloat(form.chargeable_weight) || 0)),
+    final_chargeable_weight: parseFloat(finalChargeableWeight) ? Math.ceil(parseFloat(finalChargeableWeight)) : (parcels.length > 1 && totalParcelChg > 0 ? totalParcelChg : (parseFloat(form.chargeable_weight) ? Math.ceil(parseFloat(form.chargeable_weight)) : 0)),
     total_amount: totAmount,
     order_reference: form.order_reference,
     remarks: form.remarks,
@@ -745,7 +742,8 @@ export default function NewBookingPage() {
       const b = parseFloat(pBreadth) || 0
       const h = parseFloat(pHeight) || 0
       const vol = (l > 0 && b > 0 && h > 0) ? Math.round(((l * b * h) / 5000) * 100) / 100 : 0
-      const chg = Math.max(act, vol)
+      const maxWeight = Math.max(act, vol)
+      const chg = maxWeight > 0 ? Math.ceil(maxWeight) : 0
 
       return {
         parcel_no: idx + 1,

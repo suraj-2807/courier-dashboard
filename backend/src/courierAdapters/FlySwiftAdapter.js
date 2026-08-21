@@ -190,11 +190,6 @@ export default class FlySwiftAdapter extends BaseAdapter {
   }
 
   buildPayload(shipmentData, authContext) {
-    if (this.config.request_template && Object.keys(this.config.request_template).length > 0) {
-      const generic = new GenericAdapter(this.config)
-      return generic.buildPayload(shipmentData, authContext)
-    }
-
     const bookingDate = shipmentData.booking_date || new Date().toISOString().split('T')[0]
     const bookingTime = shipmentData.booking_time || new Date().toTimeString().split(' ')[0]
     const pcs = String(parseInt(shipmentData.no_of_pieces) || 1)
@@ -203,8 +198,8 @@ export default class FlySwiftAdapter extends BaseAdapter {
     const invoiceNo = shipmentData.invoice_no || shipmentData.order_id || ''
     const invoiceDate = shipmentData.invoice_date || bookingDate
 
-    const originCode = toIsoCountryCode(shipmentData.sender_country) || 'IN'
-    const destCode = toIsoCountryCode(shipmentData.receiver_country || shipmentData.buyer_country_code || shipmentData.buyer_destination_code) || ''
+    const originCode = shipmentData.origin_code || toIsoCountryCode(shipmentData.sender_country) || 'IN'
+    const destCode = shipmentData.destination_code || toIsoCountryCode(shipmentData.receiver_country || shipmentData.buyer_country_code || shipmentData.buyer_destination_code) || ''
 
     // Parse parcels for multi-box dimensions
     let parcelsList = []
@@ -213,20 +208,24 @@ export default class FlySwiftAdapter extends BaseAdapter {
         parcelsList = typeof shipmentData.parcels === 'string' ? JSON.parse(shipmentData.parcels) : shipmentData.parcels
       } catch {}
     }
+    if (!Array.isArray(parcelsList)) parcelsList = []
 
     // Build docket_items array from shipment dimensions (or parcels if multi-box)
     const docketItems = []
-    const numPieces = parseInt(shipmentData.no_of_pieces) || 1
-    const perPieceWeight = String(Math.round((weight / numPieces) * 100) / 100)
+    const numPieces = parseInt(shipmentData.no_of_pieces) || (parcelsList.length > 0 ? parcelsList.length : 1)
+    const totalActualWeight = parcelsList.length > 0
+      ? parcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+      : weight
+    const perPieceWeight = String(numPieces > 0 ? (Math.round((totalActualWeight / numPieces) * 1000) / 1000) : totalActualWeight)
 
-    if (Array.isArray(parcelsList) && parcelsList.length > 0) {
+    if (parcelsList.length > 0) {
       parcelsList.forEach((p, idx) => {
         docketItems.push({
-          actual_weight: String(parseFloat(p.weight || perPieceWeight) || 0.5),
+          actual_weight: String(parseFloat(p.weight) || perPieceWeight || 0.5),
           length: String(parseFloat(p.length || shipmentData.length) || 1),
           width: String(parseFloat(p.breadth || p.width || shipmentData.breadth) || 1),
           height: String(parseFloat(p.height || shipmentData.height) || 1),
-          number_of_boxes: '1'
+          number_of_boxes: String(p.number_of_boxes || '1')
         })
       })
     } else {
@@ -248,18 +247,28 @@ export default class FlySwiftAdapter extends BaseAdapter {
         invoiceItemsList = typeof shipmentData.invoice_items === 'string' ? JSON.parse(shipmentData.invoice_items) : shipmentData.invoice_items
       } catch {}
     }
+    if (!Array.isArray(invoiceItemsList)) invoiceItemsList = []
 
-    const itemDescriptions = Array.isArray(invoiceItemsList) ? invoiceItemsList.map(item => item.description).filter(Boolean) : []
+    const itemDescriptions = invoiceItemsList.map(item => item.description).filter(Boolean)
     const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
-    const contentDescription = (shipmentData.content_description && shipmentData.content_description !== 'General Goods' && shipmentData.content_description !== 'ITEMS / GOODS INSIDE')
-      ? shipmentData.content_description
-      : (derivedContent || shipmentData.content_description || 'Shipment')
+    
+    // Resolve exact content description
+    let contentDescription = ''
+    if (shipmentData.content_description && !['general goods', 'items / goods inside', 'goods'].includes(shipmentData.content_description.trim().toLowerCase())) {
+      contentDescription = shipmentData.content_description.trim()
+    } else if (derivedContent) {
+      contentDescription = derivedContent
+    } else if (shipmentData.content_description) {
+      contentDescription = shipmentData.content_description.trim()
+    } else {
+      contentDescription = 'Books'
+    }
 
     // Build free_form_line_items (required by FlySwift for invoice)
-    const perItemValue = String(Math.round((declaredValue / numPieces) * 100) / 100)
+    const perItemValue = numPieces > 0 ? (Math.round((declaredValue / numPieces) * 100) / 100).toFixed(2) : declaredValue.toFixed(2)
     const freeFormLineItems = []
 
-    if (Array.isArray(invoiceItemsList) && invoiceItemsList.length > 0) {
+    if (invoiceItemsList.length > 0) {
       invoiceItemsList.forEach((item, idx) => {
         const qty = String(parseFloat(item.quantity) || 1)
         const unitRate = parseFloat(item.unit_rates || item.cost || item.rate || 0) || 0
@@ -268,15 +277,15 @@ export default class FlySwiftAdapter extends BaseAdapter {
         const boxNoClean = String(item.box_no || (idx + 1)).replace(/^box-?/i, '')
 
         freeFormLineItems.push({
-          total: totalItemAmount > 0 ? totalItemAmount.toFixed(2) : '0.00',
+          total: totalItemAmount > 0 ? totalItemAmount.toFixed(2) : (unitRate > 0 ? (unitRate * parseFloat(qty)).toFixed(2) : '0.00'),
           no_of_packages: qty,
           box_no: boxNoClean,
-          rate: unitRate > 0 ? unitRate.toFixed(2) : '0.00',
-          hscode: item.hs_code || shipmentData.hs_code || '',
-          description: item.description || contentDescription || 'Shipment',
-          unit_of_measurement: item.unit_type || 'Pc',
+          rate: unitRate > 0 ? unitRate.toFixed(2) : (parseFloat(qty) > 0 && totalItemAmount > 0 ? (totalItemAmount / parseFloat(qty)).toFixed(2) : '0.00'),
+          hscode: item.hs_code || item.hscode || shipmentData.hs_code || '',
+          description: item.description || contentDescription || 'Books',
+          unit_of_measurement: item.unit_type || item.unit_of_measurement || 'Pc',
           unit_weight: itemWeight,
-          igst_amount: '0.00'
+          igst_amount: item.igst_amount ? String(item.igst_amount) : '0.00'
         })
       })
     } else {
@@ -287,7 +296,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
           box_no: String(i + 1),
           rate: perItemValue,
           hscode: shipmentData.hs_code || '',
-          description: contentDescription || 'Shipment',
+          description: contentDescription || 'Books',
           unit_of_measurement: 'Pc',
           unit_weight: perPieceWeight,
           igst_amount: '0.00'
@@ -295,22 +304,19 @@ export default class FlySwiftAdapter extends BaseAdapter {
       }
     }
 
-    // Default FlySwift create_docket payload structure
+    // Default FlySwift / ACX / Bhabani create_docket payload structure
     const payload = {
       tracking_no: shipmentData.tracking_number || shipmentData.order_id || '',
       reference_name: shipmentData.sender_name || shipmentData.order_reference || '',
       origin_code: originCode,
-      origin: originCode,
       product_code: shipmentData.product_code || '',
       destination_code: destCode,
-      destination: destCode,
-      destination_country: destCode,
       booking_date: bookingDate,
       booking_time: bookingTime,
       pcs: pcs,
       shipment_value: String(declaredValue),
       shipment_value_currency: shipmentData.invoice_currency || 'INR',
-      actual_weight: String(weight),
+      actual_weight: String(totalActualWeight),
       shipment_invoice_no: invoiceNo,
       shipment_invoice_date: invoiceDate,
       shipment_content: contentDescription,
@@ -318,8 +324,8 @@ export default class FlySwiftAdapter extends BaseAdapter {
       new_docket_free_form_invoice: '1',
       free_form_currency: shipmentData.invoice_currency || 'INR',
       terms_of_trade: shipmentData.terms_of_trade || 'FOB',
-      api_service_code: shipmentData.service_code || '',
-      api_vendor_code: shipmentData.vendor_code || '',
+      api_service_code: shipmentData.service_code || shipmentData.api_service_code || '',
+      api_vendor_code: shipmentData.vendor_code || shipmentData.api_vendor_code || '',
 
       // Shipper (Sender)
       shipper_name: shipmentData.sender_name || '',
@@ -352,51 +358,68 @@ export default class FlySwiftAdapter extends BaseAdapter {
       consignee_gstin_no: shipmentData.receiver_gstin_no || '',
 
       // Pickup Address (same as sender by default)
-      pickup_address_name: shipmentData.sender_name || '',
-      pickup_address_code: shipmentData.sender_company || shipmentData.sender_name || '',
-      pickup_address_contact_no: shipmentData.sender_phone || '',
-      pickup_address_email: shipmentData.sender_email || '',
-      pickup_address_address_line_1: shipmentData.sender_address || '',
-      pickup_address_address_line_2: shipmentData.sender_address_2 || '',
-      pickup_address_address_line_3: shipmentData.sender_address_3 || '',
-      pickup_address_city: shipmentData.sender_city || '',
-      pickup_address_state: shipmentData.sender_state || '',
+      pickup_address_name: shipmentData.pickup_address_name || shipmentData.sender_name || '',
+      pickup_address_code: shipmentData.pickup_address_code || shipmentData.sender_company || shipmentData.sender_name || '',
+      pickup_address_contact_no: shipmentData.pickup_address_contact_no || shipmentData.sender_phone || '',
+      pickup_address_email: shipmentData.pickup_address_email || shipmentData.sender_email || '',
+      pickup_address_address_line_1: shipmentData.pickup_address_address_line_1 || shipmentData.sender_address || '',
+      pickup_address_address_line_2: shipmentData.pickup_address_address_line_2 || shipmentData.sender_address_2 || '',
+      pickup_address_address_line_3: shipmentData.pickup_address_address_line_3 || shipmentData.sender_address_3 || '',
+      pickup_address_city: shipmentData.pickup_address_city || shipmentData.sender_city || '',
+      pickup_address_state: shipmentData.pickup_address_state || shipmentData.sender_state || '',
       pickup_address_country: originCode,
-      pickup_address_zip_code: shipmentData.sender_pincode || '',
-      pickup_address_gstin_type: shipmentData.sender_gstin_type || '',
-      pickup_address_gstin_no: shipmentData.sender_gstin_no || '',
+      pickup_address_zip_code: shipmentData.pickup_address_zip_code || shipmentData.sender_pincode || '',
+      pickup_address_gstin_type: shipmentData.pickup_address_gstin_type || shipmentData.sender_gstin_type || '',
+      pickup_address_gstin_no: shipmentData.pickup_address_gstin_no || shipmentData.sender_gstin_no || '',
 
       // DHL-specific fields
-      dhl_otp: shipmentData.otp || '',
-      dhl_service: shipmentData.dhl_service || shipmentData.terms_of_trade || '',
+      dhl_otp: shipmentData.otp || shipmentData.dhl_otp || '',
+      dhl_service: shipmentData.dhl_service || shipmentData.terms_of_trade || 'DDP',
 
       // Nested arrays
       docket_items: docketItems,
       free_form_line_items: freeFormLineItems,
       kyc_details: (() => {
-        // Build KYC details from sender/receiver document info
+        if (Array.isArray(shipmentData.kyc_details) && shipmentData.kyc_details.length > 0) {
+          return shipmentData.kyc_details
+        }
+        if (typeof shipmentData.kyc_details === 'string') {
+          try {
+            const parsed = JSON.parse(shipmentData.kyc_details)
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed
+          } catch {}
+        }
         const kycDocs = []
-        if (shipmentData.sender_gstin_type && shipmentData.sender_gstin_no) {
+        const docType = shipmentData.sender_gstin_type || shipmentData.receiver_gstin_type || 'Aadhaar Number'
+        const docNo = shipmentData.sender_gstin_no || shipmentData.receiver_gstin_no || ''
+        if (docNo) {
           kycDocs.push({
-            document_type: shipmentData.sender_gstin_type,
-            document_no: shipmentData.sender_gstin_no,
+            document_type: docType,
+            document_no: docNo,
             document_sub_type: 'doc_1',
             document_name: '',
-            file_path: ''
+            file_path: shipmentData.kyc_file_1 || 'https://google.com/media//2024/02/2024-02-03-17-11-341.jpg'
           })
-          // Second KYC entry (back of document)
           kycDocs.push({
-            document_type: shipmentData.sender_gstin_type,
-            document_no: shipmentData.sender_gstin_no,
+            document_type: docType,
+            document_no: docNo,
             document_sub_type: 'doc_2',
             document_name: '',
-            file_path: ''
+            file_path: shipmentData.kyc_file_2 || 'https://google.com/media//2024/02/2024-02-03-17-11-342.jpg'
           })
         }
         return kycDocs
       })(),
       multiple_invoice: (() => {
-        // Build multiple invoice entries if invoice data exists
+        if (Array.isArray(shipmentData.multiple_invoice) && shipmentData.multiple_invoice.length > 0) {
+          return shipmentData.multiple_invoice
+        }
+        if (typeof shipmentData.multiple_invoice === 'string') {
+          try {
+            const parsed = JSON.parse(shipmentData.multiple_invoice)
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed
+          } catch {}
+        }
         const invoices = []
         if (invoiceNo) {
           invoices.push({
@@ -404,7 +427,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
             mul_invoice_no: invoiceNo,
             mul_order_no: shipmentData.order_reference || shipmentData.order_id || '',
             mul_currecny: shipmentData.invoice_currency || 'INR',
-            mul_invoice_amount: String(declaredValue),
+            mul_invoice_amount: declaredValue > 0 ? declaredValue.toFixed(2) : '0.00',
             mul_eway_bill: shipmentData.eawb_no || ''
           })
         }

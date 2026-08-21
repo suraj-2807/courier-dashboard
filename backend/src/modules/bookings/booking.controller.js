@@ -330,11 +330,21 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
       invoiceItemsList = typeof fields.invoice_items === 'string' ? JSON.parse(fields.invoice_items) : fields.invoice_items
     } catch {}
   }
-  const itemDescriptions = Array.isArray(invoiceItemsList) ? invoiceItemsList.map(i => i.description).filter(Boolean) : []
+  if (!Array.isArray(invoiceItemsList)) invoiceItemsList = []
+
+  const itemDescriptions = invoiceItemsList.map(i => i.description).filter(Boolean)
   const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
-  const contentDescription = (fields.content_description && fields.content_description !== 'General Goods' && fields.content_description !== 'ITEMS / GOODS INSIDE')
-    ? fields.content_description
-    : (derivedContent || fields.content_description || 'General Goods')
+  
+  let contentDescription = ''
+  if (fields.content_description && !['general goods', 'items / goods inside', 'goods'].includes(fields.content_description.trim().toLowerCase())) {
+    contentDescription = fields.content_description.trim()
+  } else if (derivedContent) {
+    contentDescription = derivedContent
+  } else if (fields.content_description) {
+    contentDescription = fields.content_description.trim()
+  } else {
+    contentDescription = 'Books'
+  }
 
   let parcelsList = []
   if (fields.parcels) {
@@ -351,14 +361,33 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
   let noOfPieces = parseInt(fields.no_of_pieces) || 1
 
   if (parcelsList.length > 0) {
-    const sumPWeight = parcelsList.reduce((sum, p) => sum + Math.ceil(parseFloat(p.weight) || 0), 0)
-    if (sumPWeight > 0) totalWeight = sumPWeight
+    const sumPWeight = parcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+    if (sumPWeight > 0) totalWeight = Math.round(sumPWeight * 1000) / 1000
     if (parcelsList.length > noOfPieces) noOfPieces = parcelsList.length
     if (totalLength <= 0 && parcelsList[0]?.length) totalLength = parseFloat(parcelsList[0].length) || 0
     if (totalBreadth <= 0 && (parcelsList[0]?.breadth || parcelsList[0]?.width)) totalBreadth = parseFloat(parcelsList[0].breadth || parcelsList[0].width) || 0
     if (totalHeight <= 0 && parcelsList[0]?.height) totalHeight = parseFloat(parcelsList[0].height) || 0
-  } else if (totalWeight > 0) {
-    totalWeight = Math.ceil(totalWeight)
+  }
+
+  // Chargeable weight rounded off / ceiled
+  let chargeableWeight = parseFloat(fields.final_chargeable_weight) || parseFloat(fields.chargeable_weight) || 0
+  if (!chargeableWeight) {
+    if (parcelsList.length > 0) {
+      chargeableWeight = parcelsList.reduce((sum, p) => {
+        const act = parseFloat(p.weight) || 0
+        const l = parseFloat(p.length) || 0
+        const b = parseFloat(p.breadth || p.width) || 0
+        const h = parseFloat(p.height) || 0
+        const vol = (l > 0 && b > 0 && h > 0) ? (l * b * h) / 5000 : 0
+        return sum + Math.ceil(parseFloat(p.chargeable_weight) || Math.max(act, vol))
+      }, 0)
+    } else {
+      let vol = 0
+      if (totalLength > 0 && totalBreadth > 0 && totalHeight > 0) {
+        vol = (totalLength * totalBreadth * totalHeight) / 5000
+      }
+      chargeableWeight = Math.ceil(Math.max(totalWeight, vol))
+    }
   }
 
   return {
@@ -395,6 +424,7 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     sender_country: fields.sender_country || 'INDIA',
     sender_company: fields.sender_company || '',
     sender_address_2: fields.sender_address_2 || '',
+    sender_address_3: fields.sender_address_3 || '',
     sender_gstin_type: fields.sender_gstin_type || '',
     sender_gstin_no: fields.sender_gstin_no || '',
     // Receiver
@@ -406,7 +436,9 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     receiver_state: fields.receiver_state || '',
     receiver_pincode: fields.receiver_pincode || '',
     receiver_country: fields.receiver_country || 'INDIA',
+    receiver_company: fields.receiver_company || '',
     receiver_address_2: fields.receiver_address_2 || '',
+    receiver_address_3: fields.receiver_address_3 || '',
     receiver_gstin_type: fields.receiver_gstin_type || '',
     receiver_gstin_no: fields.receiver_gstin_no || '',
     // Invoice
@@ -415,7 +447,7 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     invoice_currency: fields.invoice_currency || 'INR',
     hs_code: fields.hs_code || '',
     export_reason: fields.export_reason || '',
-    terms_of_trade: fields.terms_of_trade || '',
+    terms_of_trade: fields.terms_of_trade || 'FOB',
     // eAWB
     eawb_no: fields.eawb_no || '',
     eawb_date: fields.eawb_date || '',
@@ -467,9 +499,12 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     required_performa: fields.required_performa || '',
     required_label: fields.required_label || '',
     // Parcels & Invoice Items
-    parcels: fields.parcels,
-    invoice_items: fields.invoice_items,
-    chargeable_weight: parseFloat(fields.final_chargeable_weight) || parseFloat(fields.chargeable_weight) || totalWeight || 0
+    parcels: parcelsList,
+    invoice_items: invoiceItemsList,
+    kyc_details: fields.kyc_details,
+    multiple_invoice: fields.multiple_invoice,
+    chargeable_weight: chargeableWeight,
+    final_chargeable_weight: chargeableWeight
   }
 }
 
@@ -515,9 +550,16 @@ export const saveBooking = async (req, res) => {
       : (typeof fields.invoice_items === 'string' ? (JSON.parse(fields.invoice_items || '[]') || []) : [])
     const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => i.description).filter(Boolean) : []
     const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
-    const contentDescription = (fields.content_description && fields.content_description !== 'General Goods' && fields.content_description !== 'ITEMS / GOODS INSIDE')
-      ? fields.content_description
-      : (derivedContent || fields.content_description || 'General Goods')
+    let contentDescription = ''
+    if (fields.content_description && !['general goods', 'items / goods inside', 'goods'].includes(fields.content_description.trim().toLowerCase())) {
+      contentDescription = fields.content_description.trim()
+    } else if (derivedContent) {
+      contentDescription = derivedContent
+    } else if (fields.content_description) {
+      contentDescription = fields.content_description.trim()
+    } else {
+      contentDescription = 'Books'
+    }
 
     const parcelsJson = Array.isArray(fields.parcels)
       ? JSON.stringify(fields.parcels)
@@ -534,19 +576,24 @@ export const saveBooking = async (req, res) => {
     let finalPieces = parseInt(fields.no_of_pieces) || 1
 
     if (parsedParcelsList.length > 0) {
-      const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + Math.ceil(parseFloat(p.weight) || 0), 0)
-      if (sumPWeight > 0) finalWeight = sumPWeight
+      const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+      if (sumPWeight > 0) finalWeight = Math.round(sumPWeight * 1000) / 1000
       if (parsedParcelsList.length > finalPieces) finalPieces = parsedParcelsList.length
       if (finalLength <= 0 && parsedParcelsList[0]?.length) finalLength = parseFloat(parsedParcelsList[0].length) || 0
       if (finalBreadth <= 0 && (parsedParcelsList[0]?.breadth || parsedParcelsList[0]?.width)) finalBreadth = parseFloat(parsedParcelsList[0].breadth || parsedParcelsList[0].width) || 0
       if (finalHeight <= 0 && parsedParcelsList[0]?.height) finalHeight = parseFloat(parsedParcelsList[0].height) || 0
-    } else if (finalWeight > 0) {
-      finalWeight = Math.ceil(finalWeight)
     }
 
     const finalChgWeight = parsedParcelsList.length > 1
-      ? parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.chargeable_weight) || Math.ceil(parseFloat(p.weight) || 0)), 0)
-      : (parseFloat(fields.chargeable_weight) || finalWeight || 0)
+      ? parsedParcelsList.reduce((sum, p) => {
+          const act = parseFloat(p.weight) || 0
+          const l = parseFloat(p.length) || 0
+          const b = parseFloat(p.breadth || p.width) || 0
+          const h = parseFloat(p.height) || 0
+          const vol = (l > 0 && b > 0 && h > 0) ? (l * b * h) / 5000 : 0
+          return sum + Math.ceil(parseFloat(p.chargeable_weight) || Math.max(act, vol))
+        }, 0)
+      : (parseFloat(fields.chargeable_weight) ? Math.ceil(parseFloat(fields.chargeable_weight)) : Math.ceil(finalWeight) || 0)
 
     let shipmentId
     let tracking_number
@@ -935,9 +982,16 @@ export const createBooking = async (req, res) => {
       : (typeof fields.invoice_items === 'string' ? (JSON.parse(fields.invoice_items || '[]') || []) : [])
     const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => i.description).filter(Boolean) : []
     const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
-    const contentDescription = (fields.content_description && fields.content_description !== 'General Goods' && fields.content_description !== 'ITEMS / GOODS INSIDE')
-      ? fields.content_description
-      : (derivedContent || fields.content_description || 'General Goods')
+    let contentDescription = ''
+    if (fields.content_description && !['general goods', 'items / goods inside', 'goods'].includes(fields.content_description.trim().toLowerCase())) {
+      contentDescription = fields.content_description.trim()
+    } else if (derivedContent) {
+      contentDescription = derivedContent
+    } else if (fields.content_description) {
+      contentDescription = fields.content_description.trim()
+    } else {
+      contentDescription = 'Books'
+    }
 
     const parcelsJson = Array.isArray(fields.parcels)
       ? JSON.stringify(fields.parcels)
@@ -954,19 +1008,24 @@ export const createBooking = async (req, res) => {
     let finalPieces = parseInt(fields.no_of_pieces) || 1
 
     if (parsedParcelsList.length > 0) {
-      const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + Math.ceil(parseFloat(p.weight) || 0), 0)
-      if (sumPWeight > 0) finalWeight = sumPWeight
+      const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
+      if (sumPWeight > 0) finalWeight = Math.round(sumPWeight * 1000) / 1000
       if (parsedParcelsList.length > finalPieces) finalPieces = parsedParcelsList.length
       if (finalLength <= 0 && parsedParcelsList[0]?.length) finalLength = parseFloat(parsedParcelsList[0].length) || 0
       if (finalBreadth <= 0 && (parsedParcelsList[0]?.breadth || parsedParcelsList[0]?.width)) finalBreadth = parseFloat(parsedParcelsList[0].breadth || parsedParcelsList[0].width) || 0
       if (finalHeight <= 0 && parsedParcelsList[0]?.height) finalHeight = parseFloat(parsedParcelsList[0].height) || 0
-    } else if (finalWeight > 0) {
-      finalWeight = Math.ceil(finalWeight)
     }
 
     const finalChgWeight = parsedParcelsList.length > 1
-      ? parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.chargeable_weight) || Math.ceil(parseFloat(p.weight) || 0)), 0)
-      : (parseFloat(fields.chargeable_weight) || finalWeight || 0)
+      ? parsedParcelsList.reduce((sum, p) => {
+          const act = parseFloat(p.weight) || 0
+          const l = parseFloat(p.length) || 0
+          const b = parseFloat(p.breadth || p.width) || 0
+          const h = parseFloat(p.height) || 0
+          const vol = (l > 0 && b > 0 && h > 0) ? (l * b * h) / 5000 : 0
+          return sum + Math.ceil(parseFloat(p.chargeable_weight) || Math.max(act, vol))
+        }, 0)
+      : (parseFloat(fields.chargeable_weight) ? Math.ceil(parseFloat(fields.chargeable_weight)) : Math.ceil(finalWeight) || 0)
 
     let shipmentId
     let tracking_number

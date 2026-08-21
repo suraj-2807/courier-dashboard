@@ -214,7 +214,8 @@ export default function CustomerBookingPage() {
       if (l > 0 && b > 0 && h > 0) {
         vol = Math.round(((l * b * h) / 5000) * 100) / 100
       }
-      const chg = Math.max(act, vol)
+      const maxWeight = Math.max(act, vol)
+      const chg = maxWeight > 0 ? Math.ceil(maxWeight) : 0
 
       item.volumetric_weight = vol > 0 ? String(vol) : ''
       item.chargeable_weight = chg > 0 ? String(chg) : ''
@@ -224,9 +225,9 @@ export default function CustomerBookingPage() {
   }
 
   // Calculate totals from parcels array
-  const totalParcelActual = parcels.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
-  const totalParcelVol = parcels.reduce((sum, p) => sum + (parseFloat(p.volumetric_weight) || 0), 0)
-  const totalParcelChg = parcels.reduce((sum, p) => sum + (parseFloat(p.chargeable_weight) || 0), 0)
+  const totalParcelActual = Math.round(parcels.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0) * 1000) / 1000
+  const totalParcelVol = Math.round(parcels.reduce((sum, p) => sum + (parseFloat(p.volumetric_weight) || 0), 0) * 100) / 100
+  const totalParcelChg = parcels.reduce((sum, p) => sum + (parseFloat(p.chargeable_weight) || Math.ceil(Math.max(parseFloat(p.weight) || 0, parseFloat(p.volumetric_weight) || 0))), 0)
 
   // Keep main form summary fields synced with per-parcel totals
   useEffect(() => {
@@ -248,10 +249,12 @@ export default function CustomerBookingPage() {
       if (l > 0 && b > 0 && h > 0) {
         vol = Math.round(((l * b * h) / 5000) * 100) / 100
       }
-      const chg = Math.max(act, vol)
+      const maxWeight = Math.max(act, vol)
+      const chg = maxWeight > 0 ? Math.ceil(maxWeight) : 0
 
       setForm(prev => ({
         ...prev,
+        weight: act > 0 ? String(act) : prev.weight,
         volumetric_weight: vol > 0 ? String(vol) : '',
         chargeable_weight: chg > 0 ? String(chg) : '',
         shipping_charge: prev.shipping_charge || (chg > 0 ? String(chg) : '')
@@ -327,8 +330,8 @@ export default function CustomerBookingPage() {
       }
     }
 
-    setSubmitting(true)
     try {
+      setSubmitting(true)
       const params = new URLSearchParams(window.location.search)
       const apiPayload = {
         customer_id: params.get('cust_id') ? parseInt(params.get('cust_id')) : null,
@@ -364,14 +367,14 @@ export default function CustomerBookingPage() {
 
         package_type: form.package_type,
         weight: (parcels.length > 1 && totalParcelActual > 0) ? totalParcelActual : (parseFloat(form.weight) || (parcels[0] ? parseFloat(parcels[0].weight) : 0) || 0),
-        chargeable_weight: (parcels.length > 1 && totalParcelChg > 0) ? totalParcelChg : (parseFloat(form.chargeable_weight) || 0),
+        chargeable_weight: (parcels.length > 1 && totalParcelChg > 0) ? totalParcelChg : (parseFloat(form.chargeable_weight) ? Math.ceil(parseFloat(form.chargeable_weight)) : 0),
         length: parseFloat(form.length) || (parcels[0] ? parseFloat(parcels[0].length) : 0) || 0,
         breadth: parseFloat(form.breadth) || (parcels[0] ? parseFloat(parcels[0].breadth) : 0) || 0,
         height: parseFloat(form.height) || (parcels[0] ? parseFloat(parcels[0].height) : 0) || 0,
         no_of_pieces: Math.max(parcels.length, parseInt(form.no_of_pieces) || 1),
         content_description: (form.content_description && form.content_description !== 'General Goods' && form.content_description !== 'ITEMS / GOODS INSIDE')
           ? form.content_description
-          : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'General Goods'),
+          : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'Books'),
         declared_value: parseFloat(form.declared_value) || 0,
         is_fragile: form.is_fragile,
         remarks: form.remarks,
@@ -389,7 +392,8 @@ export default function CustomerBookingPage() {
           const b = parseFloat(pBreadth) || 0
           const h = parseFloat(pHeight) || 0
           const vol = (l > 0 && b > 0 && h > 0) ? Math.round(((l * b * h) / 5000) * 100) / 100 : 0
-          const chg = Math.max(act, vol)
+          const maxWeight = Math.max(act, vol)
+          const chg = maxWeight > 0 ? Math.ceil(maxWeight) : 0
 
           return {
             parcel_no: idx + 1,
