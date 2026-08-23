@@ -623,7 +623,7 @@ export default function BookingDetailPage() {
 
             <button
               type="button"
-              onClick={() => navigate('/bookings')}
+              onClick={() => navigate(-1)}
               className="px-3 py-1.5 rounded-xl text-[11px] font-bold text-text-secondary hover:text-primary hover:bg-surface-hover transition-colors cursor-pointer"
             >
               Back to Shipments

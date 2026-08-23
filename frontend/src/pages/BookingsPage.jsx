@@ -64,13 +64,12 @@ const STATUS_TABS = [
 
 export default function BookingsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const urlSearch = searchParams.get('search') || ''
-  const [page, setPage] = useState(1)
-  const [search, setSearch] = useState(urlSearch)
-  const [searchInput, setSearchInput] = useState(urlSearch)
-  const [statusFilter, setStatusFilter] = useState('')
+  const page = Math.max(1, parseInt(searchParams.get('page')) || 1)
+  const search = searchParams.get('search') || ''
+  const statusFilter = searchParams.get('status') || ''
+
+  const [searchInput, setSearchInput] = useState(search)
   const [selectedIds, setSelectedIds] = useState([])
-  const [bulkMenuOpen, setBulkMenuOpen] = useState(false)
   const [isExporting, setIsExporting] = useState(false)
   const limit = 10
   const navigate = useNavigate()
@@ -78,11 +77,8 @@ export default function BookingsPage() {
   const [pushingId, setPushingId] = useState(null)
 
   useEffect(() => {
-    const q = searchParams.get('search') || ''
-    setSearch(q)
-    setSearchInput(q)
-    setPage(1)
-  }, [searchParams])
+    setSearchInput(search)
+  }, [search])
 
   const { data, isLoading, isError, refetch } = useBookings({
     page,
@@ -94,7 +90,6 @@ export default function BookingsPage() {
   const handleExportExcel = async () => {
     setIsExporting(true)
     try {
-      // Fetch all records matching the current filters
       const res = await bookingsApi.getAll({
         page: 1,
         limit: 5000,
@@ -171,18 +166,58 @@ export default function BookingsPage() {
     }
   }
 
-  const handleSearch = (e) => {
-    if (e.key === 'Enter' || e.type === 'submit') {
-      e.preventDefault()
-      setSearch(searchInput)
-      setPage(1)
-    }
+  const setPage = (newPageOrFn) => {
+    const targetPage = typeof newPageOrFn === 'function' ? newPageOrFn(page) : newPageOrFn
+    const validPage = Math.max(1, parseInt(targetPage) || 1)
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (validPage > 1) {
+        next.set('page', String(validPage))
+      } else {
+        next.delete('page')
+      }
+      return next
+    })
   }
 
   const handleTabChange = (val) => {
-    setStatusFilter(val)
-    setPage(1)
     setSelectedIds([])
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (val) {
+        next.set('status', val)
+      } else {
+        next.delete('status')
+      }
+      next.delete('page') // Reset to page 1 on tab filter change
+      return next
+    })
+  }
+
+  const handleSearch = (e) => {
+    if (e.key === 'Enter' || e.type === 'submit') {
+      e.preventDefault()
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev)
+        if (searchInput.trim()) {
+          next.set('search', searchInput.trim())
+        } else {
+          next.delete('search')
+        }
+        next.delete('page')
+        return next
+      })
+    }
+  }
+
+  const handleClearSearch = () => {
+    setSearchInput('')
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      next.delete('search')
+      next.delete('page')
+      return next
+    })
   }
 
   const toggleSelectAll = () => {
