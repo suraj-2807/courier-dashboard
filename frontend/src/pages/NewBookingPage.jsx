@@ -6,6 +6,7 @@ import { getActiveVendors } from '../api/apiSettings.api'
 import { bookingsApi } from '../api/bookings.api'
 import { sendersApi } from '../api/senders.api'
 import { receiversApi } from '../api/receivers.api'
+import { productsApi } from '../api/products.api'
 import { countryCodesApi } from '../api/countryCodes.api'
 import { systemSettingsApi } from '../api/systemSettings.api'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
@@ -277,6 +278,15 @@ export default function NewBookingPage() {
   const [receiverSuggestionsOpen, setReceiverSuggestionsOpen] = useState(false)
   const receiverContainerRef = useRef(null)
 
+  // Products query for invoice item autocomplete
+  const { data: productsData } = useQuery({
+    queryKey: ['products'],
+    queryFn: () => productsApi.getAll().then(res => res.data)
+  })
+  const allProducts = productsData?.products || []
+  const [activeItemSuggestionIndex, setActiveItemSuggestionIndex] = useState(null)
+  const itemSuggestionsRef = useRef(null)
+
   // Click outside listener to close autocomplete dropdowns
   useEffect(() => {
     function handleClickOutside(e) {
@@ -286,10 +296,44 @@ export default function NewBookingPage() {
       if (receiverContainerRef.current && !receiverContainerRef.current.contains(e.target)) {
         setReceiverSuggestionsOpen(false)
       }
+      if (itemSuggestionsRef.current && !itemSuggestionsRef.current.contains(e.target)) {
+        setActiveItemSuggestionIndex(null)
+      }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  // Helper to match products for invoice item description
+  const getMatchingProducts = (desc) => {
+    if (!desc || !desc.trim()) return []
+    const q = desc.trim().toLowerCase()
+    const destCountry = (form.receiver_country || '').trim().toUpperCase()
+
+    return allProducts.filter(p => {
+      const matchText = (p.name || '').toLowerCase().includes(q) || (p.hs_code || '').includes(q)
+      if (!matchText) return false
+
+      const pCountry = (p.country || '').trim().toUpperCase()
+      const matchCountry = !pCountry || pCountry === 'ALL' || !destCountry || pCountry === destCountry
+      return matchCountry
+    }).slice(0, 8)
+  }
+
+  // Select Product for Invoice Item (ONLY autofills Description and HSN Code)
+  const selectProductForItem = (idx, product) => {
+    setInvoiceItems(prev => {
+      const updated = [...prev]
+      updated[idx] = {
+        ...updated[idx],
+        description: product.name,
+        hs_code: product.hs_code
+      }
+      return updated
+    })
+    setActiveItemSuggestionIndex(null)
+    toast.success(`Set HSN ${product.hs_code} for "${product.name}"`)
+  }
 
   // Filtered Senders Autocomplete
   const filteredSenders = useMemo(() => {
@@ -2184,10 +2228,59 @@ export default function NewBookingPage() {
                         ))}
                       </select>
                     </div>
-                    <div className="px-1">
-                      <input type="text" placeholder="Item description" value={item.description} onChange={e => updateInvoiceItem(idx, 'description', e.target.value)}
+                    <div className="px-1 relative">
+                      <input
+                        type="text"
+                        placeholder="Item description"
+                        value={item.description}
                         ref={el => invoiceDescRefs.current[idx] = el}
-                        className="w-full bg-transparent focus:outline-none text-[13px] text-navy font-medium" />
+                        onFocus={() => {
+                          if (getMatchingProducts(item.description).length > 0) {
+                            setActiveItemSuggestionIndex(idx)
+                          }
+                        }}
+                        onChange={e => {
+                          updateInvoiceItem(idx, 'description', e.target.value)
+                          setActiveItemSuggestionIndex(idx)
+                        }}
+                        className="w-full bg-transparent focus:outline-none text-[13px] text-navy font-medium"
+                      />
+
+                      {/* Product Autocomplete Dropdown (only auto-fills description & HSN code) */}
+                      {activeItemSuggestionIndex === idx && getMatchingProducts(item.description).length > 0 && (
+                        <div
+                          ref={itemSuggestionsRef}
+                          className="absolute left-0 top-full mt-1 w-[260px] bg-surface border border-border rounded-xl shadow-2xl z-50 max-h-56 overflow-y-auto divide-y divide-border animate-fade-in text-left"
+                        >
+                          <div className="px-3 py-1.5 bg-primary/10 text-[10px] font-extrabold text-primary uppercase tracking-wider flex items-center justify-between sticky top-0 backdrop-blur-xs">
+                            <span>Suggested Products (HSN)</span>
+                          </div>
+                          {getMatchingProducts(item.description).map((p) => (
+                            <div
+                              key={p.id}
+                              onMouseDown={(e) => {
+                                e.preventDefault()
+                                selectProductForItem(idx, p)
+                              }}
+                              className="px-3 py-2 hover:bg-surface-alt cursor-pointer transition-colors"
+                            >
+                              <div className="font-extrabold text-[12px] text-navy leading-snug">
+                                {p.name}
+                              </div>
+                              <div className="flex items-center gap-2 mt-0.5 text-[11px]">
+                                <span className="font-mono font-bold text-primary text-[11px] bg-primary/5 px-1 rounded">
+                                  HSN: {p.hs_code}
+                                </span>
+                                {p.country && p.country !== 'ALL' && (
+                                  <span className="text-[9px] uppercase font-bold text-text-tertiary px-1 rounded bg-surface-alt border border-border-light">
+                                    {p.country}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="px-1">
                       <input type="text" placeholder="" value={item.hs_code} onChange={e => updateInvoiceItem(idx, 'hs_code', e.target.value)}

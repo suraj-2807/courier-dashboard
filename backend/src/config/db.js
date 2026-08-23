@@ -281,7 +281,7 @@ export async function initializeDb() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY idx_country_name (country_name)
       )`)
-      
+
       const countRes = await query('SELECT COUNT(*) as total FROM country_codes')
       if (countRes[0].total === 0) {
         const defaultSeeds = [
@@ -319,7 +319,7 @@ export async function initializeDb() {
         description VARCHAR(255) DEFAULT '',
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       )`)
-      
+
       const defaultSettings = [
         [
           'allow_post_push_billing_edit',
@@ -399,6 +399,28 @@ export async function initializeDb() {
       console.log('senders & receivers deduplication cleanup completed.')
     } catch (dedupErr) {
       console.error('deduplication cleanup warning:', dedupErr.message)
+    }
+
+    // ── Products & HSN Codes Table ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS products (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        hs_code VARCHAR(50) NOT NULL,
+        country VARCHAR(50) DEFAULT '',
+        description TEXT DEFAULT NULL,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_product_name (name),
+        INDEX idx_hs_code (hs_code),
+        INDEX idx_country (country)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+      console.log('products table ready.')
+    } catch (prodErr) {
+      if (prodErr.code !== 'ER_TABLE_EXISTS_ERROR') {
+        console.error('products table migration failed:', prodErr.message)
+      }
     }
 
     console.log('DB initialization successfully completed!')

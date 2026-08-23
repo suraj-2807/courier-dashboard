@@ -13,6 +13,7 @@ import RatesPage from '../pages/RatesPage'
 import CustomerBookingPage from '../pages/CustomerBookingPage'
 import BookingRequestsPage from '../pages/BookingRequestsPage'
 import UsersPage from '../pages/UsersPage'
+import ProductsPage from '../pages/ProductsPage'
 
 export default function AppRoutes() {
   return (
@@ -113,6 +114,16 @@ export default function AppRoutes() {
           <ProtectedRoute>
             <DashboardLayout>
               <UsersPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/products"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <ProductsPage />
             </DashboardLayout>
           </ProtectedRoute>
         }

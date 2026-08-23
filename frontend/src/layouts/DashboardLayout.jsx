@@ -14,6 +14,7 @@ import {
   LogOut,
   User,
   Users,
+  Tag,
   ChevronDown,
   Menu,
   X,
@@ -28,6 +29,7 @@ const navItems = [
   { label: 'Customer Requests', path: '/booking-requests', icon: ClipboardList },
   { label: 'Tracking', path: '/tracking', icon: MapPin },
   { label: 'Users & Contacts', path: '/users', icon: Users },
+  { label: 'Products & HSN', path: '/products', icon: Tag },
   { label: 'Rates', path: '/rates', icon: IndianRupee },
   { label: 'API Settings', path: '/api-settings', icon: Settings }
 ]
