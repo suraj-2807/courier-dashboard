@@ -152,8 +152,18 @@ export default function BookingDetailPage() {
     await openVendorDocument(booking, 'invoice')
   }
 
-  const handleOpenVendorBill = async () => {
-    await openVendorDocument(booking, 'shipping bill')
+  // Official Shipping Bill (Ours)
+  const handleOpenOurBill = async () => {
+    const toastId = toast.loading('Opening Shipping Bill...')
+    try {
+      const res = await bookingsApi.downloadWaybill(booking.id)
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      toast.success('Shipping Bill opened in new tab', { id: toastId })
+    } catch (err) {
+      toast.error('Failed to open Shipping Bill', { id: toastId })
+    }
   }
 
   const handleOpenVendorLabels = async () => {
@@ -321,11 +331,11 @@ export default function BookingDetailPage() {
             Invoice
           </button>
 
-          {/* Open Vendor Shipping Bill in New Tab */}
+          {/* Official Shipping Bill (Ours) — open in new tab */}
           <button
-            onClick={handleOpenVendorBill}
+            onClick={handleOpenOurBill}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-navy hover:bg-navy-light text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-            title="Open Vendor Shipping Bill in New Tab"
+            title="Open Shipping Bill (Ours) in New Tab"
           >
             <FileText className="w-3.5 h-3.5" />
             Shipping Bill

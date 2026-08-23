@@ -133,10 +133,26 @@ export default function BookingsPage() {
     }
   }
 
+  // Open our official Shipping Bill (Waybill) PDF
+  const handleOpenOurBillRow = async (b) => {
+    const toastId = toast.loading('Opening Shipping Bill...')
+    try {
+      const res = await bookingsApi.downloadWaybill(b.id)
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      toast.success('Shipping Bill opened in new tab', { id: toastId })
+    } catch (err) {
+      toast.error('Failed to open Shipping Bill', { id: toastId })
+    }
+  }
+
+  // Open Vendor Invoice (from API response)
   const handleOpenInvoiceRow = (b) => {
     openVendorDocument(b, 'invoice')
   }
 
+  // Open Vendor Label (from API response)
   const handleOpenLabelRow = (b) => {
     openVendorDocument(b, 'label')
   }
@@ -580,14 +596,24 @@ export default function BookingsPage() {
                                 <Eye className="w-4 h-4" />
                               </Link>
 
+                              {/* Our Official Shipping Bill */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenOurBillRow(b)}
+                                className="p-1.5 text-navy hover:text-primary hover:bg-navy/5 rounded-lg transition-colors cursor-pointer"
+                                title="Open Shipping Bill (Ours)"
+                              >
+                                <FileText className="w-4 h-4" />
+                              </button>
+
                               {/* Vendor Invoice — open in new tab */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenInvoiceRow(b)}
-                                className="p-1.5 text-navy hover:text-primary hover:bg-navy/5 rounded-lg transition-colors cursor-pointer"
+                                className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
                                 title="Open Vendor Invoice"
                               >
-                                <FileText className="w-4 h-4" />
+                                <Download className="w-4 h-4" />
                               </button>
 
                               {/* Vendor Label — open in new tab */}
