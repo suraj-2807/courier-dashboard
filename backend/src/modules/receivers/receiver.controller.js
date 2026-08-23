@@ -1,22 +1,46 @@
 import { query, execute } from '../../config/db.js'
 
+export const searchReceivers = async (req, res) => {
+  try {
+    const { q } = req.query
+    if (!q || q.trim().length < 1) {
+      return res.json({ success: true, receivers: [] })
+    }
+    const search = `%${q.trim()}%`
+    const rows = await query(
+      `SELECT * FROM receivers
+       WHERE name LIKE ? OR company LIKE ? OR phone LIKE ?
+       ORDER BY name ASC LIMIT 10`,
+      [search, search, search]
+    )
+    return res.json({ success: true, receivers: rows })
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
 export const createReceiver =
   async (req, res) => {
     try {
       const {
         name,
+        company,
         phone,
         email,
         address,
+        address_2,
         city,
         state,
-        pincode
+        pincode,
+        country,
+        gstin_type,
+        gstin_no
       } = req.body
 
       const result = await execute(
-        `INSERT INTO receivers (name, phone, email, address, city, state, pincode)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [name, phone || '', email || '', address || '', city || '', state || '', pincode || '']
+        `INSERT INTO receivers (name, company, phone, email, address, address_2, city, state, pincode, country, gstin_type, gstin_no)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, company || '', phone || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || '', gstin_type || '', gstin_no || '']
       )
 
       const rows = await query(
@@ -143,3 +167,27 @@ export const deleteReceiver =
       })
     }
   }
+
+export const bulkImportReceivers = async (req, res) => {
+  try {
+    const { receivers: importData } = req.body
+    if (!Array.isArray(importData) || importData.length === 0) {
+      return res.status(400).json({ success: false, message: 'No data to import' })
+    }
+
+    let imported = 0
+    for (const r of importData) {
+      if (!r.name) continue
+      await execute(
+        `INSERT INTO receivers (name, company, phone, email, address, address_2, city, state, pincode, country, gstin_type, gstin_no)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [r.name || '', r.company || '', r.phone || '', r.email || '', r.address || '', r.address_2 || '', r.city || '', r.state || '', r.pincode || '', r.country || '', r.gstin_type || '', r.gstin_no || '']
+      )
+      imported++
+    }
+
+    return res.json({ success: true, message: `${imported} receivers imported successfully`, imported })
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}

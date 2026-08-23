@@ -13,6 +13,7 @@ import {
   Plus,
   LogOut,
   User,
+  Users,
   ChevronDown,
   Menu,
   X,
@@ -26,9 +27,8 @@ const navItems = [
   { label: 'Shipments', path: '/bookings', icon: Package },
   { label: 'Customer Requests', path: '/booking-requests', icon: ClipboardList },
   { label: 'Tracking', path: '/tracking', icon: MapPin },
-  { label: 'Senders', path: '/senders', icon: Truck },
+  { label: 'Users & Contacts', path: '/users', icon: Users },
   { label: 'Rates', path: '/rates', icon: IndianRupee },
-  { label: 'Courier Integrations', path: '/integrations', icon: Link2 },
   { label: 'API Settings', path: '/api-settings', icon: Settings }
 ]
 

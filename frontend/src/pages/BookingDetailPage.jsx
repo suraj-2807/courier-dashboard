@@ -271,12 +271,12 @@ export default function BookingDetailPage() {
       {/* Top Bar */}
       <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
         <div>
-          <Link
-            to="/bookings"
-            className="inline-flex items-center gap-1.5 text-[12px] font-bold text-text-tertiary hover:text-primary transition-colors mb-1.5"
+          <button
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-1.5 text-[12px] font-bold text-text-tertiary hover:text-primary transition-colors mb-1.5 cursor-pointer"
           >
-            <ArrowLeft className="w-3.5 h-3.5" /> Back to Bookings
-          </Link>
+            <ArrowLeft className="w-3.5 h-3.5" /> Back
+          </button>
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-[24px] font-extrabold text-text-primary leading-tight">
               Order #{booking.order_id || booking.id}
@@ -485,17 +485,6 @@ export default function BookingDetailPage() {
                 Pricing & Billing Details
               </h2>
 
-              {/* Edit Billing Button */}
-              {(!booking.is_locked || allowPostPushEdit) && (
-                <button
-                  onClick={openBillingModal}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
-                  title="Edit weights, rates, and shipping charges"
-                >
-                  <Edit className="w-3.5 h-3.5" />
-                  Edit Billing Charges
-                </button>
-              )}
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

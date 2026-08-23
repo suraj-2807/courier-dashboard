@@ -4,6 +4,8 @@ import authMiddleware from '../../middlewares/auth.middleware.js'
 import {
   createReceiver,
   getReceivers,
+  searchReceivers,
+  bulkImportReceivers,
   getReceiverById,
   updateReceiver,
   deleteReceiver
@@ -11,34 +13,13 @@ import {
 
 const router = express.Router()
 
-router.post(
-  '/',
-  authMiddleware,
-  createReceiver
-)
+router.get('/search', authMiddleware, searchReceivers)
+router.post('/bulk-import', authMiddleware, bulkImportReceivers)
 
-router.get(
-  '/',
-  authMiddleware,
-  getReceivers
-)
-
-router.get(
-  '/:id',
-  authMiddleware,
-  getReceiverById
-)
-
-router.put(
-  '/:id',
-  authMiddleware,
-  updateReceiver
-)
-
-router.delete(
-  '/:id',
-  authMiddleware,
-  deleteReceiver
-)
+router.post('/', authMiddleware, createReceiver)
+router.get('/', authMiddleware, getReceivers)
+router.get('/:id', authMiddleware, getReceiverById)
+router.put('/:id', authMiddleware, updateReceiver)
+router.delete('/:id', authMiddleware, deleteReceiver)
 
 export default router

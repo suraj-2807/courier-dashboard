@@ -40,7 +40,11 @@ export const useSaveBooking = () => {
 export const usePushBookingToApi = () => {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id) => bookingsApi.pushToApi(id).then((res) => res.data),
+    mutationFn: (param) => {
+      const id = typeof param === 'object' && param !== null ? param.id : param
+      const payload = typeof param === 'object' && param !== null ? param.payload : undefined
+      return bookingsApi.pushToApi(id, payload).then((res) => res.data)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bookings'] })
       queryClient.invalidateQueries({ queryKey: ['booking'] })

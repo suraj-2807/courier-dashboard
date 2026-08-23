@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useCreateBooking, useSaveBooking, usePushBookingToApi } from '../hooks/useBookings'
 import { getActiveVendors } from '../api/apiSettings.api'
 import { bookingsApi } from '../api/bookings.api'
+import { sendersApi } from '../api/senders.api'
+import { receiversApi } from '../api/receivers.api'
 import { countryCodesApi } from '../api/countryCodes.api'
 import { systemSettingsApi } from '../api/systemSettings.api'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
@@ -242,6 +244,104 @@ export default function NewBookingPage() {
   })
   const countryList = countryCodesData?.countryCodes || []
   const countryLookupMap = countryCodesData?.lookupMap || {}
+
+  // Senders for autocomplete
+  const { data: sendersData } = useQuery({
+    queryKey: ['senders'],
+    queryFn: () => sendersApi.getAll().then(res => res.data)
+  })
+  const allSenders = sendersData?.senders || []
+  const [senderSuggestionsOpen, setSenderSuggestionsOpen] = useState(false)
+  const senderContainerRef = useRef(null)
+
+  // Receivers for autocomplete
+  const { data: receiversData } = useQuery({
+    queryKey: ['receivers'],
+    queryFn: () => receiversApi.getAll().then(res => res.data)
+  })
+  const allReceivers = receiversData?.receivers || []
+  const [receiverSuggestionsOpen, setReceiverSuggestionsOpen] = useState(false)
+  const receiverContainerRef = useRef(null)
+
+  // Click outside listener to close autocomplete dropdowns
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (senderContainerRef.current && !senderContainerRef.current.contains(e.target)) {
+        setSenderSuggestionsOpen(false)
+      }
+      if (receiverContainerRef.current && !receiverContainerRef.current.contains(e.target)) {
+        setReceiverSuggestionsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // Filtered Senders Autocomplete
+  const filteredSenders = useMemo(() => {
+    if (!form.sender_name || form.sender_name.trim().length < 1) return []
+    const q = form.sender_name.toLowerCase().trim()
+    return allSenders.filter(s =>
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.company || '').toLowerCase().includes(q) ||
+      (s.phone || '').includes(q) ||
+      (s.city || '').toLowerCase().includes(q)
+    ).slice(0, 8)
+  }, [allSenders, form.sender_name])
+
+  // Filtered Receivers Autocomplete
+  const filteredReceivers = useMemo(() => {
+    if (!form.receiver_name || form.receiver_name.trim().length < 1) return []
+    const q = form.receiver_name.toLowerCase().trim()
+    return allReceivers.filter(r =>
+      (r.name || '').toLowerCase().includes(q) ||
+      (r.company || '').toLowerCase().includes(q) ||
+      (r.phone || '').includes(q) ||
+      (r.city || '').toLowerCase().includes(q)
+    ).slice(0, 8)
+  }, [allReceivers, form.receiver_name])
+
+  // Select Sender Handler
+  const handleSelectSender = (sender) => {
+    setForm(prev => ({
+      ...prev,
+      sender_name: sender.name || '',
+      sender_company: sender.company || '',
+      sender_phone: sender.phone || '',
+      sender_email: sender.email || '',
+      sender_address: sender.address || '',
+      sender_address_2: sender.address_2 || '',
+      sender_city: sender.city || '',
+      sender_pincode: sender.pincode || '',
+      sender_state: sender.state || '',
+      sender_country: sender.country || 'INDIA',
+      sender_gstin_type: sender.gstin_type || '',
+      sender_gstin_no: sender.gstin_no || ''
+    }))
+    setSenderSuggestionsOpen(false)
+    toast.success(`Autofilled details for sender "${sender.name}"!`)
+  }
+
+  // Select Receiver Handler
+  const handleSelectReceiver = (receiver) => {
+    setForm(prev => ({
+      ...prev,
+      receiver_name: receiver.name || '',
+      receiver_company: receiver.company || '',
+      receiver_phone: receiver.phone || '',
+      receiver_email: receiver.email || '',
+      receiver_address: receiver.address || '',
+      receiver_address_2: receiver.address_2 || '',
+      receiver_city: receiver.city || '',
+      receiver_pincode: receiver.pincode || '',
+      receiver_state: receiver.state || '',
+      receiver_country: receiver.country || '',
+      receiver_gstin_type: receiver.gstin_type || '',
+      receiver_gstin_no: receiver.gstin_no || ''
+    }))
+    setReceiverSuggestionsOpen(false)
+    toast.success(`Autofilled details for receiver "${receiver.name}"!`)
+  }
 
   const resolveCountryCode = (val) => {
     if (!val) return ''
@@ -1043,15 +1143,70 @@ export default function NewBookingPage() {
               <RedBadge title="Shipper Details" icon={User} />
 
               <div className="space-y-2.5">
-                <CompactField label="Sender Full Name" required>
-                  <input
-                    type="text"
-                    placeholder="Sender Full Name"
-                    value={form.sender_name}
-                    onChange={e => updateForm('sender_name', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-[13px] text-navy font-semibold"
-                  />
-                </CompactField>
+                <div ref={senderContainerRef} className="relative">
+                  <CompactField label="Sender Full Name" required>
+                    <input
+                      type="text"
+                      placeholder="Type name to autofill or enter new..."
+                      value={form.sender_name}
+                      onFocus={() => { if (filteredSenders.length > 0) setSenderSuggestionsOpen(true) }}
+                      onChange={e => {
+                        updateForm('sender_name', e.target.value)
+                        setSenderSuggestionsOpen(true)
+                      }}
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-navy font-semibold"
+                    />
+                  </CompactField>
+
+                  {/* Sender Autocomplete Dropdown */}
+                  {senderSuggestionsOpen && filteredSenders.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border rounded-xl shadow-2xl z-50 max-h-64 overflow-y-auto divide-y divide-border animate-fade-in">
+                      <div className="px-3 py-1.5 bg-red-50/70 text-[10px] font-extrabold text-primary uppercase tracking-wider flex items-center justify-between sticky top-0 backdrop-blur-xs">
+                        <span>Saved Senders (Click to Autofill)</span>
+                        <span className="text-[9px] text-text-tertiary">{filteredSenders.length} found</span>
+                      </div>
+                      {filteredSenders.map((s) => (
+                        <div
+                          key={s.id}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            handleSelectSender(s)
+                          }}
+                          className="px-3 py-2.5 hover:bg-surface-alt cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="font-extrabold text-[13px] text-navy truncate">
+                              {s.name}
+                            </div>
+                            {s.company && (
+                              <span className="text-[10px] uppercase font-bold text-text-tertiary px-1.5 py-0.5 bg-surface-alt rounded border border-border-light shrink-0">
+                                {s.company}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-[11px] text-text-secondary flex-wrap">
+                            {s.phone && <span className="font-mono text-emerald-700 font-bold">{s.phone}</span>}
+                            {s.phone && (s.city || s.state) && <span>•</span>}
+                            {(s.city || s.state) && <span>{[s.city, s.state].filter(Boolean).join(', ')}</span>}
+                            {s.gstin_no && (
+                              <>
+                                <span>•</span>
+                                <span className="font-mono text-[10px] text-text-tertiary bg-gray-100 px-1 rounded">
+                                  {s.gstin_type || 'Doc'}: {s.gstin_no}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          {s.address && (
+                            <div className="text-[10px] text-text-tertiary truncate mt-0.5">
+                              {s.address}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <CompactField label="Company Name">
                   <input
@@ -1191,15 +1346,72 @@ export default function NewBookingPage() {
               <RedBadge title="Consignee Details" icon={MapPin} />
 
               <div className="space-y-2.5">
-                <CompactField label="Receiver Full Name" required highlight={!form.receiver_name && !form.receiver_company}>
-                  <input
-                    type="text"
-                    placeholder="Receiver Full Name"
-                    value={form.receiver_name}
-                    onChange={e => updateForm('receiver_name', e.target.value)}
-                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-semibold"
-                  />
-                </CompactField>
+                <div ref={receiverContainerRef} className="relative">
+                  <CompactField label="Receiver Full Name" required highlight={!form.receiver_name && !form.receiver_company}>
+                    <input
+                      type="text"
+                      placeholder="Type name to autofill or enter new..."
+                      value={form.receiver_name}
+                      onFocus={() => { if (filteredReceivers.length > 0) setReceiverSuggestionsOpen(true) }}
+                      onChange={e => {
+                        updateForm('receiver_name', e.target.value)
+                        setReceiverSuggestionsOpen(true)
+                      }}
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-semibold"
+                    />
+                  </CompactField>
+
+                  {/* Receiver Autocomplete Dropdown */}
+                  {receiverSuggestionsOpen && filteredReceivers.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border rounded-xl shadow-2xl z-50 max-h-64 overflow-y-auto divide-y divide-border animate-fade-in">
+                      <div className="px-3 py-1.5 bg-emerald-50/70 text-[10px] font-extrabold text-emerald-800 uppercase tracking-wider flex items-center justify-between sticky top-0 backdrop-blur-xs">
+                        <span>Saved Receivers (Click to Autofill)</span>
+                        <span className="text-[9px] text-text-tertiary">{filteredReceivers.length} found</span>
+                      </div>
+                      {filteredReceivers.map((r) => (
+                        <div
+                          key={r.id}
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            handleSelectReceiver(r)
+                          }}
+                          className="px-3 py-2.5 hover:bg-surface-alt cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="font-extrabold text-[13px] text-navy truncate">
+                              {r.name}
+                            </div>
+                            {r.company && (
+                              <span className="text-[10px] uppercase font-bold text-text-tertiary px-1.5 py-0.5 bg-surface-alt rounded border border-border-light shrink-0">
+                                {r.company}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 text-[11px] text-text-secondary flex-wrap">
+                            {r.phone && <span className="font-mono text-emerald-700 font-bold">{r.phone}</span>}
+                            {r.phone && (r.city || r.country) && <span>•</span>}
+                            {(r.city || r.country) && (
+                              <span>{[r.city, r.state, r.country].filter(Boolean).join(', ')}</span>
+                            )}
+                            {r.gstin_no && (
+                              <>
+                                <span>•</span>
+                                <span className="font-mono text-[10px] text-text-tertiary bg-gray-100 px-1 rounded">
+                                  {r.gstin_type || 'Doc'}: {r.gstin_no}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          {r.address && (
+                            <div className="text-[10px] text-text-tertiary truncate mt-0.5">
+                              {r.address}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <CompactField label="Company Name">
                   <input
@@ -1349,9 +1561,22 @@ export default function NewBookingPage() {
                       updateForm('vendor_config_id', newId)
                       const newVendor = activeVendors.find(v => String(v.id) === String(newId))
                       const isPacific = newVendor?.name?.toLowerCase().includes('pacific') || newVendor?.vendor_code?.toLowerCase()?.includes('pacific')
-                      updateForm('vendor_code', isPacific ? 'PC' : '')
-                      updateForm('service_code', '')
-                      updateForm('product_code', '')
+                      updateForm('vendor_code', isPacific ? 'PC' : (newVendor?.vendor_code || ''))
+                      
+                      let defService = ''
+                      const services = Array.isArray(newVendor?.available_services) ? newVendor.available_services : []
+                      if (services.length > 0) {
+                        defService = services[0].code || services[0].id || services[0].service || ''
+                      }
+                      updateForm('service_code', defService)
+
+                      let defProduct = ''
+                      const products = Array.isArray(newVendor?.available_product_codes) ? newVendor.available_product_codes : []
+                      if (products.length > 0) {
+                        defProduct = products[0].code || products[0].id || products[0].product || ''
+                      }
+                      updateForm('product_code', defProduct)
+
                       setCustomVendorMode(false)
                       setCustomServiceMode(false)
                       setCustomProductMode(false)

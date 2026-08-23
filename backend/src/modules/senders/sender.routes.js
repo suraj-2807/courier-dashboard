@@ -4,6 +4,8 @@ import authMiddleware from '../../middlewares/auth.middleware.js'
 import {
   createSender,
   getSenders,
+  searchSenders,
+  bulkImportSenders,
   getSenderById,
   updateSender,
   deleteSender
@@ -11,34 +13,13 @@ import {
 
 const router = express.Router()
 
-router.post(
-  '/',
-  authMiddleware,
-  createSender
-)
+router.get('/search', authMiddleware, searchSenders)
+router.post('/bulk-import', authMiddleware, bulkImportSenders)
 
-router.get(
-  '/',
-  authMiddleware,
-  getSenders
-)
-
-router.get(
-  '/:id',
-  authMiddleware,
-  getSenderById
-)
-
-router.put(
-  '/:id',
-  authMiddleware,
-  updateSender
-)
-
-router.delete(
-  '/:id',
-  authMiddleware,
-  deleteSender
-)
+router.post('/', authMiddleware, createSender)
+router.get('/', authMiddleware, getSenders)
+router.get('/:id', authMiddleware, getSenderById)
+router.put('/:id', authMiddleware, updateSender)
+router.delete('/:id', authMiddleware, deleteSender)
 
 export default router

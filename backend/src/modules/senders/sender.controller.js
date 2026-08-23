@@ -1,22 +1,46 @@
 import { query, execute } from '../../config/db.js'
 
+export const searchSenders = async (req, res) => {
+  try {
+    const { q } = req.query
+    if (!q || q.trim().length < 1) {
+      return res.json({ success: true, senders: [] })
+    }
+    const search = `%${q.trim()}%`
+    const rows = await query(
+      `SELECT * FROM senders
+       WHERE name LIKE ? OR company LIKE ? OR phone LIKE ?
+       ORDER BY name ASC LIMIT 10`,
+      [search, search, search]
+    )
+    return res.json({ success: true, senders: rows })
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
 export const createSender =
   async (req, res) => {
     try {
       const {
         name,
+        company,
         phone,
         email,
         address,
+        address_2,
         city,
         state,
-        pincode
+        pincode,
+        country,
+        gstin_type,
+        gstin_no
       } = req.body
 
       const result = await execute(
-        `INSERT INTO senders (name, phone, email, address, city, state, pincode)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [name, phone || '', email || '', address || '', city || '', state || '', pincode || '']
+        `INSERT INTO senders (name, company, phone, email, address, address_2, city, state, pincode, country, gstin_type, gstin_no)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, company || '', phone || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || 'INDIA', gstin_type || '', gstin_no || '']
       )
 
       const rows = await query(
@@ -143,3 +167,27 @@ export const deleteSender =
       })
     }
   }
+
+export const bulkImportSenders = async (req, res) => {
+  try {
+    const { senders: importData } = req.body
+    if (!Array.isArray(importData) || importData.length === 0) {
+      return res.status(400).json({ success: false, message: 'No data to import' })
+    }
+
+    let imported = 0
+    for (const s of importData) {
+      if (!s.name) continue
+      await execute(
+        `INSERT INTO senders (name, company, phone, email, address, address_2, city, state, pincode, country, gstin_type, gstin_no)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [s.name || '', s.company || '', s.phone || '', s.email || '', s.address || '', s.address_2 || '', s.city || '', s.state || '', s.pincode || '', s.country || 'INDIA', s.gstin_type || '', s.gstin_no || '']
+      )
+      imported++
+    }
+
+    return res.json({ success: true, message: `${imported} senders imported successfully`, imported })
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}

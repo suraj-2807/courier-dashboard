@@ -340,6 +340,48 @@ export async function initializeDb() {
       }
     }
 
+    // ── Senders table column auto-migration ──
+    try {
+      const senderCols = await query("SHOW COLUMNS FROM senders")
+      const senderColNames = senderCols.map(col => (col.Field || col.field).toLowerCase())
+      const requiredSenderCols = [
+        { name: 'company', type: "VARCHAR(255) DEFAULT ''" },
+        { name: 'address_2', type: "TEXT DEFAULT NULL" },
+        { name: 'country', type: "VARCHAR(50) DEFAULT 'INDIA'" },
+        { name: 'gstin_type', type: "VARCHAR(50) DEFAULT ''" },
+        { name: 'gstin_no', type: "VARCHAR(50) DEFAULT ''" }
+      ]
+      for (const col of requiredSenderCols) {
+        if (!senderColNames.includes(col.name.toLowerCase())) {
+          await execute(`ALTER TABLE senders ADD COLUMN ${col.name} ${col.type}`)
+          console.log(`senders.${col.name} column added.`)
+        }
+      }
+    } catch (sErr) {
+      console.error('senders column migration failed:', sErr.message)
+    }
+
+    // ── Receivers table column auto-migration ──
+    try {
+      const receiverCols = await query("SHOW COLUMNS FROM receivers")
+      const receiverColNames = receiverCols.map(col => (col.Field || col.field).toLowerCase())
+      const requiredReceiverCols = [
+        { name: 'company', type: "VARCHAR(255) DEFAULT ''" },
+        { name: 'address_2', type: "TEXT DEFAULT NULL" },
+        { name: 'country', type: "VARCHAR(50) DEFAULT ''" },
+        { name: 'gstin_type', type: "VARCHAR(50) DEFAULT ''" },
+        { name: 'gstin_no', type: "VARCHAR(50) DEFAULT ''" }
+      ]
+      for (const col of requiredReceiverCols) {
+        if (!receiverColNames.includes(col.name.toLowerCase())) {
+          await execute(`ALTER TABLE receivers ADD COLUMN ${col.name} ${col.type}`)
+          console.log(`receivers.${col.name} column added.`)
+        }
+      }
+    } catch (rErr) {
+      console.error('receivers column migration failed:', rErr.message)
+    }
+
     console.log('DB initialization successfully completed!')
   } catch (err) {
     console.error('DB Initialization/Migration Failed:', err)

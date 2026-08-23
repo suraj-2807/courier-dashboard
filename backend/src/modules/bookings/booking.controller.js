@@ -645,10 +645,13 @@ export const saveBooking = async (req, res) => {
             snd.pincode as s_pincode, snd.country as s_country,
             rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
             rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
-            rcv.pincode as r_pincode, rcv.country as r_country
+            rcv.pincode as r_pincode, rcv.country as r_country,
+            vac.name as vendor_name, vac.vendor_code as vac_vendor_code,
+            vac.auth_credentials as vac_auth_credentials, vac.available_services as vac_services
            FROM shipments s
            LEFT JOIN senders snd ON s.sender_id = snd.id
            LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+           LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
            WHERE s.id = ?`,
           [existingId]
         )
@@ -806,7 +809,7 @@ export const saveBooking = async (req, res) => {
       console.error('Invoice PDF generation failed:', pdfErr.message)
     }
 
-    // Refetch the saved shipment with sender & receiver details
+    // Refetch the saved shipment with sender, receiver & vendor config details
     const updatedRows = await query(
       `SELECT s.*, 
         snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
@@ -814,10 +817,13 @@ export const saveBooking = async (req, res) => {
         snd.pincode as s_pincode, snd.country as s_country,
         rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
         rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
-        rcv.pincode as r_pincode, rcv.country as r_country
+        rcv.pincode as r_pincode, rcv.country as r_country,
+        vac.name as vendor_name, vac.vendor_code as vac_vendor_code,
+        vac.auth_credentials as vac_auth_credentials, vac.available_services as vac_services
        FROM shipments s
        LEFT JOIN senders snd ON s.sender_id = snd.id
        LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
        WHERE s.id = ?`,
       [shipmentId]
     )
@@ -866,7 +872,7 @@ export const pushBookingToApi = async (req, res) => {
     const { id } = req.params
     const { vendor_config_id, vendor_code, service_code, product_code } = req.body || {}
 
-    // Fetch the existing booking
+    // Fetch the existing booking with vendor details
     const rows = await query(
       `SELECT s.*, 
         snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
@@ -874,10 +880,13 @@ export const pushBookingToApi = async (req, res) => {
         snd.pincode as s_pincode, snd.country as s_country,
         rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
         rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
-        rcv.pincode as r_pincode, rcv.country as r_country
+        rcv.pincode as r_pincode, rcv.country as r_country,
+        vac.name as vendor_name, vac.vendor_code as vac_vendor_code,
+        vac.auth_credentials as vac_auth_credentials, vac.available_services as vac_services
        FROM shipments s
        LEFT JOIN senders snd ON s.sender_id = snd.id
        LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
        WHERE s.id = ?`,
       [id]
     )
@@ -892,13 +901,32 @@ export const pushBookingToApi = async (req, res) => {
       return res.status(400).json({ success: false, message: 'This booking is already locked (pushed to API). No changes can be made.' })
     }
 
-    if (vendor_config_id) {
+    const targetVendorConfigId = vendor_config_id || booking.vendor_config_id
+    let targetVendorCode = vendor_code || booking.vendor_code || booking.vac_vendor_code || ''
+    let targetServiceCode = service_code || booking.service_code || ''
+    let targetProductCode = product_code || booking.product_code || ''
+
+    if (targetVendorConfigId) {
+      const vacRows = await query('SELECT * FROM vendor_api_configs WHERE id = ?', [targetVendorConfigId])
+      if (vacRows.length > 0) {
+        const vac = vacRows[0]
+        if (!targetVendorCode) targetVendorCode = vac.vendor_code || ''
+        if (!targetServiceCode && vac.available_services) {
+          let svcs = vac.available_services
+          if (typeof svcs === 'string') {
+            try { svcs = JSON.parse(svcs) } catch {}
+          }
+          if (Array.isArray(svcs) && svcs.length > 0) {
+            targetServiceCode = svcs[0].code || svcs[0].id || svcs[0].service || ''
+          }
+        }
+      }
       await execute('UPDATE shipments SET vendor_config_id = ?, vendor_code = ?, service_code = ?, product_code = ? WHERE id = ?',
-        [vendor_config_id, vendor_code || '', service_code || '', product_code || '', id])
-      booking.vendor_config_id = vendor_config_id
-      booking.vendor_code = vendor_code || booking.vendor_code
-      booking.service_code = service_code || booking.service_code
-      booking.product_code = product_code || booking.product_code
+        [targetVendorConfigId, targetVendorCode, targetServiceCode, targetProductCode, id])
+      booking.vendor_config_id = targetVendorConfigId
+      booking.vendor_code = targetVendorCode
+      booking.service_code = targetServiceCode
+      booking.product_code = targetProductCode
     }
 
     if (!booking.vendor_config_id) {
@@ -943,8 +971,8 @@ export const pushBookingToApi = async (req, res) => {
     if (vendorResult.success) {
       // Success → update status to booked, lock the booking
       await execute(
-        `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success' WHERE id = ?`,
-        [id]
+        `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ? WHERE id = ?`,
+        [targetVendorCode, targetServiceCode, targetProductCode, id]
       )
 
       await execute(
@@ -953,7 +981,7 @@ export const pushBookingToApi = async (req, res) => {
         [id, 'AWB Assigned', `Pushed to vendor API. Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Vendor API']
       )
 
-      // Refetch with sender/receiver details
+      // Refetch with sender/receiver & vendor details
       const updatedRows = await query(
         `SELECT s.*, 
           snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
@@ -961,10 +989,13 @@ export const pushBookingToApi = async (req, res) => {
           snd.pincode as s_pincode, snd.country as s_country,
           rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
           rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
-          rcv.pincode as r_pincode, rcv.country as r_country
+          rcv.pincode as r_pincode, rcv.country as r_country,
+          vac.name as vendor_name, vac.vendor_code as vac_vendor_code,
+          vac.auth_credentials as vac_auth_credentials, vac.available_services as vac_services
          FROM shipments s
          LEFT JOIN senders snd ON s.sender_id = snd.id
          LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+         LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
          WHERE s.id = ?`,
         [id]
       )
@@ -1277,13 +1308,31 @@ export const createBooking = async (req, res) => {
 
         // Sync to Remote Operations AWBENTRY and parcel_history table (Hostinger DB)
         try {
-          await syncToRemoteAwbEntry({
+          const fullShipmentRows = await query(
+            `SELECT s.*, 
+              snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
+              snd.address as s_address, snd.city as s_city, snd.state as s_state,
+              snd.pincode as s_pincode, snd.country as s_country,
+              rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
+              rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
+              rcv.pincode as r_pincode, rcv.country as r_country,
+              vac.name as vendor_name, vac.vendor_code as vac_vendor_code,
+              vac.auth_credentials as vac_auth_credentials, vac.available_services as vac_services
+             FROM shipments s
+             LEFT JOIN senders snd ON s.sender_id = snd.id
+             LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+             LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
+             WHERE s.id = ?`,
+            [shipmentId]
+          )
+          const syncShipment = fullShipmentRows[0] || {
             ...fields,
             id: shipmentId,
             tracking_number,
             order_id,
             vendor_awb_number: vendorResult.awbNumber || fields.vendor_code || ''
-          }, vendorResult)
+          }
+          await syncToRemoteAwbEntry(syncShipment, vendorResult)
         } catch (syncErr) {
           console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
         }
@@ -1878,10 +1927,13 @@ export const updateBookingBilling = async (req, res) => {
         snd.pincode as s_pincode, snd.country as s_country,
         rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
         rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
-        rcv.pincode as r_pincode, rcv.country as r_country
+        rcv.pincode as r_pincode, rcv.country as r_country,
+        vac.name as vendor_name, vac.vendor_code as vac_vendor_code,
+        vac.auth_credentials as vac_auth_credentials, vac.available_services as vac_services
        FROM shipments s
        LEFT JOIN senders snd ON s.sender_id = snd.id
        LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
        WHERE s.id = ?`,
       [id]
     )

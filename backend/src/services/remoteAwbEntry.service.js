@@ -107,93 +107,158 @@ function resolveCountryName(country) {
   return COUNTRY_MAP[c] || c
 }
 
+import { query } from '../config/db.js'
+
 /**
  * Helper to resolve vendor code, name, service id, and auth details for remote ERP.
- * Matches vendor codes from the API settings (e.g. 'PC' for Pacific, 'ACX', 'FM' for FlySwift).
+ * Matches vendor codes, names, or service codes (e.g. 1007, 1019, 1020, 1021, 1022, 1001, 1008).
  */
-function resolveVendorDetails(vendorCode, vendorName) {
+export function resolveVendorDetails(vendorCode, vendorName, serviceCode = null, authCredentials = null) {
   const code = (vendorCode || '').toLowerCase().trim()
   const name = (vendorName || '').toLowerCase().trim()
+  const svcStr = (serviceCode !== undefined && serviceCode !== null) ? String(serviceCode).toLowerCase().trim() : ''
+  const svcInt = parseInt(svcStr) || 0
 
-  // Pacific Courier – vendor_code could be 'PC', 'pacific', 'pacifc', etc.
-  if (code === 'pc' || code.includes('pacific') || code.includes('pacifc') || name.includes('pacific') || name.includes('pacifc')) {
-    return {
-      vendCode: 'PACIFIC',
-      vendName: 'PACIFIC',
-      service: 1007,
-      autotrack: 1,
-      accode: 'P0503',
-      tuser: 'P0503',
-      tpass: 'P0503@7199',
-      apikey: ''
+  // Parse authCredentials if provided (string or object)
+  let creds = {}
+  if (authCredentials) {
+    if (typeof authCredentials === 'string') {
+      try { creds = JSON.parse(authCredentials) } catch {}
+    } else if (typeof authCredentials === 'object') {
+      creds = authCredentials
     }
   }
 
-  // Bhabani
-  if (code.includes('bhabani') || code.includes('bhavani') || name.includes('bhabani') || name.includes('bhavani')) {
+  // Helper to extract credentials by various key names
+  const getCred = (...keys) => {
+    for (const k of keys) {
+      if (creds && creds[k]) return String(creds[k]).trim()
+    }
+    return ''
+  }
+
+  // 1. Pacific Courier / Pace
+  if (
+    code === 'pc' || code.includes('pacific') || code.includes('pacifc') ||
+    name.includes('pacific') || name.includes('pacifc') ||
+    svcInt === 1007 || svcInt === 1008 ||
+    svcStr.includes('pacific') || svcStr.includes('pace')
+  ) {
+    const isPace = code.includes('pace') || name.includes('pace') || svcInt === 1008
+    return {
+      vendCode: isPace ? 'PACE' : 'PACIFIC',
+      vendName: isPace ? 'PACE GROUP' : 'PACIFIC',
+      service: svcInt > 0 ? svcInt : (isPace ? 1008 : 1007),
+      autotrack: 1,
+      accode: getCred('accode', 'customer_code', 'acc_code', 'userId', 'UserID') || 'P0503',
+      tuser: getCred('tuser', 'username', 'user', 'UserID', 'userId') || 'P0503',
+      tpass: getCred('tpass', 'password', 'Password') || 'P0503@7199',
+      apikey: getCred('apikey', 'api_key', 'apiKey') || ''
+    }
+  }
+
+  // 2. Bhabani Express
+  if (
+    code.includes('bhabani') || code.includes('bhavani') ||
+    name.includes('bhabani') || name.includes('bhavani') ||
+    svcInt === 1021 || svcStr.includes('bhabani') || svcStr.includes('bhavani')
+  ) {
     return {
       vendCode: 'BHABANI',
       vendName: 'BHABANI',
-      service: 1021,
+      service: svcInt > 0 ? svcInt : 1021,
       autotrack: 1,
-      accode: 'T001',
-      tuser: '',
-      tpass: '',
-      apikey: ''
+      accode: getCred('accode', 'customer_code', 'acc_code') || 'T001',
+      tuser: getCred('tuser', 'username') || '',
+      tpass: getCred('tpass', 'password') || '',
+      apikey: getCred('apikey', 'api_key') || ''
     }
   }
 
-  // ACX
-  if (code === 'acx' || code.includes('acx') || name.includes('acx')) {
+  // 3. ACX International
+  if (
+    code === 'acx' || code.includes('acx') ||
+    name.includes('acx') ||
+    svcInt === 1020 || svcStr.includes('acx')
+  ) {
     return {
       vendCode: 'ACX',
       vendName: 'ACX',
-      service: 1020,
+      service: svcInt > 0 ? svcInt : 1020,
       autotrack: 1,
-      accode: 'A0872',
-      tuser: '',
-      tpass: '',
-      apikey: ''
+      accode: getCred('accode', 'customer_code', 'acc_code') || 'A0872',
+      tuser: getCred('tuser', 'username') || '',
+      tpass: getCred('tpass', 'password') || '',
+      apikey: getCred('apikey', 'api_key') || ''
     }
   }
 
-  // FlySwift / TrackMate – vendor_code could be 'FM', 'flyswift', 'trackmate', etc.
-  if (code === 'fm' || code.includes('flyswift') || code.includes('trackmate') || name.includes('flyswift') || name.includes('trackmate')) {
+  // 4. FlySwift / TrackMate
+  if (
+    code === 'fm' || code.includes('flyswift') || code.includes('trackmate') || code.includes('fly') ||
+    name.includes('flyswift') || name.includes('trackmate') || name.includes('fly') ||
+    svcInt === 1019 || svcStr.includes('flyswift') || svcStr.includes('trackmate')
+  ) {
     return {
       vendCode: 'FLYSWIFT',
       vendName: 'FLYSWIFT',
-      service: 1019,
+      service: svcInt > 0 ? svcInt : 1019,
       autotrack: 1,
-      accode: '1032',
-      tuser: '',
-      tpass: '',
-      apikey: ''
+      accode: getCred('accode', 'customer_code', 'acc_code') || '1032',
+      tuser: getCred('tuser', 'username') || '',
+      tpass: getCred('tpass', 'password') || '',
+      apikey: getCred('apikey', 'api_key') || ''
     }
   }
 
-  // Sairaj
-  if (code.includes('sairaj') || name.includes('sairaj')) {
+  // 5. Sairaj International
+  if (
+    code.includes('sairaj') || name.includes('sairaj') ||
+    svcInt === 1022 || svcInt === 1009 || svcStr.includes('sairaj')
+  ) {
     return {
       vendCode: 'SAIRAJ',
       vendName: 'SAIRAJ',
-      service: 1022,
+      service: svcInt > 0 ? svcInt : 1022,
       autotrack: 1,
-      accode: '',
-      tuser: '',
-      tpass: '',
-      apikey: ''
+      accode: getCred('accode', 'customer_code', 'acc_code') || '44',
+      tuser: getCred('tuser', 'username') || '',
+      tpass: getCred('tpass', 'password') || '',
+      apikey: getCred('apikey', 'api_key') || ''
     }
   }
 
+  // 6. Sain Express
+  if (
+    code.includes('sain') || name.includes('sain') ||
+    svcInt === 1001 || svcStr.includes('sain')
+  ) {
+    return {
+      vendCode: 'SAIN',
+      vendName: 'SAIN',
+      service: svcInt > 0 ? svcInt : 1001,
+      autotrack: 1,
+      accode: getCred('accode', 'customer_code', 'acc_code') || '',
+      tuser: getCred('tuser', 'username') || '',
+      tpass: getCred('tpass', 'password') || '',
+      apikey: getCred('apikey', 'api_key') || ''
+    }
+  }
+
+  // Fallback / custom service resolution
+  const finalSvc = svcInt > 0 ? svcInt : 0
+  const finalCode = (vendorCode || 'PXC').toUpperCase()
+  const finalName = (vendorName || vendorCode || 'PXC').toUpperCase()
+
   return {
-    vendCode: (vendorCode || 'PXC').toUpperCase(),
-    vendName: (vendorName || vendorCode || 'PXC').toUpperCase(),
-    service: 0,
+    vendCode: finalCode,
+    vendName: finalName,
+    service: finalSvc,
     autotrack: 1,
-    accode: '',
-    tuser: '',
-    tpass: '',
-    apikey: ''
+    accode: getCred('accode', 'customer_code', 'acc_code') || '',
+    tuser: getCred('tuser', 'username') || '',
+    tpass: getCred('tpass', 'password') || '',
+    apikey: getCred('apikey', 'api_key') || ''
   }
 }
 
@@ -283,16 +348,50 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
     const bookingDate = shipment.booking_date || shipment.invoice_date || (shipment.created_at ? String(shipment.created_at).split('T')[0] : new Date().toISOString().split('T')[0])
     const pieces = parseInt(shipment.no_of_pieces) || 1
 
+    // ── Resolve Vendor & Service Details ──
+    let vendorName = shipment.vendor_name || ''
+    let vendorCode = shipment.vendor_code || shipment.vac_vendor_code || ''
+    let serviceCode = shipment.service_code || ''
+    let authCredentials = shipment.vac_auth_credentials || null
+
+    if (shipment.vendor_config_id && (!vendorName || !vendorCode || !serviceCode)) {
+      try {
+        const configRows = await query(
+          'SELECT name, vendor_code, available_services, auth_credentials FROM vendor_api_configs WHERE id = ? LIMIT 1',
+          [shipment.vendor_config_id]
+        )
+        if (configRows && configRows.length > 0) {
+          const cfg = configRows[0]
+          if (!vendorName) vendorName = cfg.name || ''
+          if (!vendorCode) vendorCode = cfg.vendor_code || ''
+          if (!authCredentials) authCredentials = cfg.auth_credentials
+          if (!serviceCode && cfg.available_services) {
+            let svcs = cfg.available_services
+            if (typeof svcs === 'string') {
+              try { svcs = JSON.parse(svcs) } catch {}
+            }
+            if (Array.isArray(svcs) && svcs.length > 0) {
+              serviceCode = svcs[0].code || svcs[0].id || svcs[0].service || ''
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Remote AWBENTRY Sync] Failed to fetch vendor_api_configs from local DB:', err.message)
+      }
+    }
+
     const vendorAwb = shipment.vendor_awb_number || vendorResult.awbNumber || ''
     const vendorAwb2 = shipment.vendor_awb_number_2 || ''
-    const vendorDetails = resolveVendorDetails(shipment.vendor_code, shipment.vendor_name)
+    const vendorDetails = resolveVendorDetails(vendorCode, vendorName, serviceCode, authCredentials)
     const productCode = shipment.product_code || 'SPX'
 
     // ── Debug log to verify mappings ──
     console.log(`[Remote AWBENTRY Sync] Mapping for AWBNO ${awbNo}:`, JSON.stringify({
       VENDCODE: vendorDetails.vendCode,
+      VENDNAME: vendorDetails.vendName,
       SERVICE: vendorDetails.service,
       ACCODE: vendorDetails.accode,
+      VENDORAWB1: vendorAwb,
       DESTCODE: destCode,
       DESTNAME: destName,
       CNEECITY: receiverCity,
@@ -304,7 +403,8 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
       CHARGES: shippingCharge,
       ADJUSTMENT: extraCharge,
       TOTAL: totalAmount,
-      vendor_code_raw: shipment.vendor_code
+      vendor_code_raw: vendorCode,
+      service_code_raw: serviceCode
     }))
 
     // Check if AWBNO already exists in remote AWBENTRY

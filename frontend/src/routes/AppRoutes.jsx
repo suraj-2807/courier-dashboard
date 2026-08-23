@@ -12,6 +12,7 @@ import ApiSettingsPage from '../pages/ApiSettingsPage'
 import RatesPage from '../pages/RatesPage'
 import CustomerBookingPage from '../pages/CustomerBookingPage'
 import BookingRequestsPage from '../pages/BookingRequestsPage'
+import UsersPage from '../pages/UsersPage'
 
 export default function AppRoutes() {
   return (
@@ -105,6 +106,20 @@ export default function AppRoutes() {
             </DashboardLayout>
           </ProtectedRoute>
         }
+      />
+      <Route
+        path="/users"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <UsersPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/senders"
+        element={<Navigate to="/users" replace />}
       />
 
       {/* Customer-facing routes (public — auth handled by WP plugin) */}
