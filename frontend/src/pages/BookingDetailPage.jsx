@@ -44,6 +44,7 @@ import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters'
 import toast from 'react-hot-toast'
 import { systemSettingsApi } from '../api/systemSettings.api'
 import { useQuery } from '@tanstack/react-query'
+import { openVendorDocument } from '../utils/openVendorDocument'
 
 // ─── Progress Stage Definitions ─────────────────────────────────────
 const STAGES = [
@@ -71,9 +72,6 @@ export default function BookingDetailPage() {
   const { data, isLoading, isError, refetch } = useBookingById(id)
   const booking = data?.booking
   const pushToApiMutation = usePushBookingToApi()
-  const [downloadingPdf, setDownloadingPdf] = useState(false)
-  const [downloadingBill, setDownloadingBill] = useState(false)
-  const [downloadingLabels, setDownloadingLabels] = useState(false)
 
   // Billing edit modal state
   const [showBillingModal, setShowBillingModal] = useState(false)
@@ -150,64 +148,16 @@ export default function BookingDetailPage() {
     }
   }
 
-  const handleDownloadInvoice = async () => {
-    setDownloadingPdf(true)
-    try {
-      const res = await bookingsApi.downloadInvoice(id)
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', `Invoice_${booking.tracking_number}.pdf`)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
-      toast.success('Invoice PDF downloaded!')
-    } catch (err) {
-      toast.error(err?.response?.data?.message || 'Failed to download invoice PDF')
-    } finally {
-      setDownloadingPdf(false)
-    }
+  const handleOpenVendorInvoice = async () => {
+    await openVendorDocument(booking, 'invoice')
   }
 
-  const handleDownloadBill = async () => {
-    setDownloadingBill(true)
-    try {
-      const res = await bookingsApi.downloadWaybill(id)
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', `Waybill_${booking.tracking_number}.pdf`)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
-      toast.success('Shipping Bill downloaded!')
-    } catch (err) {
-      toast.error(err?.response?.data?.message || 'Failed to download Shipping Bill')
-    } finally {
-      setDownloadingBill(false)
-    }
+  const handleOpenVendorBill = async () => {
+    await openVendorDocument(booking, 'shipping bill')
   }
 
-  const handleDownloadLabels = async () => {
-    setDownloadingLabels(true)
-    try {
-      const res = await bookingsApi.downloadBoxLabels(id)
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', `BoxLabels_${booking.tracking_number}.pdf`)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
-      toast.success('Box Labels downloaded!')
-    } catch (err) {
-      toast.error(err?.response?.data?.message || 'Failed to download Box Labels')
-    } finally {
-      setDownloadingLabels(false)
-    }
+  const handleOpenVendorLabels = async () => {
+    await openVendorDocument(booking, 'box label')
   }
 
   const handlePushToApi = async () => {
@@ -361,36 +311,33 @@ export default function BookingDetailPage() {
             {booking.is_locked ? 'View Full Form (Locked)' : 'Edit Shipment'}
           </Link>
 
-          {/* Download Invoice PDF */}
+          {/* Open Vendor Invoice in New Tab */}
           <button
-            onClick={handleDownloadInvoice}
-            disabled={downloadingPdf}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-surface hover:bg-surface-hover border border-border text-navy text-[12px] font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
-            title="Download Invoice PDF"
+            onClick={handleOpenVendorInvoice}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-surface hover:bg-surface-hover border border-border text-navy text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
+            title="Open Vendor Invoice in New Tab"
           >
-            {downloadingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+            <Download className="w-3.5 h-3.5" />
             Invoice
           </button>
 
-          {/* Download Shipping Bill */}
+          {/* Open Vendor Shipping Bill in New Tab */}
           <button
-            onClick={handleDownloadBill}
-            disabled={downloadingBill}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-navy hover:bg-navy-light text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-            title="Download Official Shipping Bill / Waybill"
+            onClick={handleOpenVendorBill}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-navy hover:bg-navy-light text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+            title="Open Vendor Shipping Bill in New Tab"
           >
-            {downloadingBill ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+            <FileText className="w-3.5 h-3.5" />
             Shipping Bill
           </button>
 
-          {/* Download Box Labels */}
+          {/* Open Vendor Box Labels in New Tab */}
           <button
-            onClick={handleDownloadLabels}
-            disabled={downloadingLabels}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-            title="Download Box Shipping Labels"
+            onClick={handleOpenVendorLabels}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+            title="Open Vendor Box Labels in New Tab"
           >
-            {downloadingLabels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Package className="w-3.5 h-3.5" />}
+            <Package className="w-3.5 h-3.5" />
             Box Labels ({booking.no_of_pieces || 1})
           </button>
 

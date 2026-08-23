@@ -27,6 +27,7 @@ import EmptyState from '../components/ui/EmptyState'
 import ErrorState from '../components/ui/ErrorState'
 import { formatCurrency, formatDate } from '../utils/formatters'
 import { exportShipmentsToExcel } from '../utils/exportShipmentsExcel'
+import { openVendorDocument } from '../utils/openVendorDocument'
 import toast from 'react-hot-toast'
 
 function CopyButton({ text, label = 'Copied to clipboard!' }) {
@@ -132,63 +133,12 @@ export default function BookingsPage() {
     }
   }
 
-  // Helper: extract vendor label base64 from booking data
-  const getVendorLabelBase64 = (b) => {
-    // 1. Check vendor_label_url (could be data URI or file path)
-    if (b.vendor_label_url) {
-      if (b.vendor_label_url.startsWith('data:application/pdf;base64,')) {
-        return b.vendor_label_url.replace('data:application/pdf;base64,', '')
-      }
-      // File path — open directly via backend
-      return null
-    }
-    // 2. Check vendor_raw_response for labels array
-    let rawResp = b.vendor_raw_response
-    if (typeof rawResp === 'string') {
-      try { rawResp = JSON.parse(rawResp) } catch { return null }
-    }
-    if (rawResp && Array.isArray(rawResp.labels) && rawResp.labels.length > 0) {
-      const labelObj = rawResp.labels[0]
-      if (labelObj && labelObj.label) return labelObj.label
-    }
-    return null
-  }
-
-  // Open vendor label/invoice PDF in a new tab
-  const openVendorPdfInNewTab = (b, type = 'label') => {
-    // 1. Try base64 from vendor_raw_response or vendor_label_url data URI
-    const base64 = getVendorLabelBase64(b)
-    if (base64) {
-      try {
-        const byteChars = atob(base64)
-        const byteNums = new Array(byteChars.length)
-        for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i)
-        const byteArray = new Uint8Array(byteNums)
-        const blob = new Blob([byteArray], { type: 'application/pdf' })
-        const url = URL.createObjectURL(blob)
-        window.open(url, '_blank')
-        return
-      } catch (err) {
-        console.error('Failed to decode base64 label:', err)
-      }
-    }
-    // 2. Try vendor_label_url as a file path (served by backend)
-    if (b.vendor_label_url && !b.vendor_label_url.startsWith('data:')) {
-      const apiBase = import.meta.env.VITE_API_BASE_URL || '/api'
-      const baseOrigin = apiBase.startsWith('http') ? new URL(apiBase).origin : ''
-      const fileUrl = `${baseOrigin}${b.vendor_label_url}`
-      window.open(fileUrl, '_blank')
-      return
-    }
-    toast.error(`No vendor ${type} available for this shipment`)
-  }
-
   const handleOpenInvoiceRow = (b) => {
-    openVendorPdfInNewTab(b, 'invoice')
+    openVendorDocument(b, 'invoice')
   }
 
   const handleOpenLabelRow = (b) => {
-    openVendorPdfInNewTab(b, 'label')
+    openVendorDocument(b, 'label')
   }
 
   const setPage = (newPageOrFn) => {

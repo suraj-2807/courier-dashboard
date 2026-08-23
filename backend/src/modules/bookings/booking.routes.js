@@ -10,6 +10,7 @@ import {
   getInvoicePdf,
   getWaybillPdf,
   getBoxLabelsPdf,
+  getVendorDocument,
   updateBookingStatus,
   updateBookingBilling,
   trashBookings,
@@ -27,6 +28,7 @@ router.post('/delete-permanent', authMiddleware, deletePermanentBookings)
 router.post('/:id/push', authMiddleware, pushBookingToApi)
 router.get('/', authMiddleware, getBookings)
 router.get('/:id', authMiddleware, getBookingById)
+router.get('/:id/vendor-document', authMiddleware, getVendorDocument)
 router.get('/:id/invoice-pdf', authMiddleware, getInvoicePdf)
 router.get('/:id/bill-pdf', authMiddleware, getWaybillPdf)
 router.get('/:id/labels-pdf', authMiddleware, getBoxLabelsPdf)

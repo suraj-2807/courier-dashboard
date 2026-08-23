@@ -2050,6 +2050,98 @@ export const getBoxLabelsPdf = async (req, res) => {
 }
 
 /**
+ * Stream/Open Vendor Label or Invoice PDF in browser tab.
+ * Extracts base64 or file path from vendor response / DB and sends inline PDF.
+ */
+export const getVendorDocument = async (req, res) => {
+  try {
+    const { id } = req.params
+
+    const rows = await query(
+      'SELECT * FROM shipments WHERE id = ? OR tracking_number = ? OR order_id = ? OR vendor_awb_number = ?',
+      [id, id, id, id]
+    )
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Shipment not found' })
+    }
+
+    const b = rows[0]
+
+    const serveBase64Pdf = (base64Str, filename) => {
+      let clean = String(base64Str).replace(/^data:application\/pdf;base64,/, '').trim()
+      const buffer = Buffer.from(clean, 'base64')
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', `inline; filename="${filename || 'vendor_document.pdf'}"`)
+      return res.send(buffer)
+    }
+
+    // 1. Check vendor_label_url
+    if (b.vendor_label_url) {
+      const vUrl = String(b.vendor_label_url).trim()
+      if (vUrl.startsWith('data:application/pdf;base64,') || (vUrl.length > 200 && !vUrl.startsWith('http') && !vUrl.startsWith('/'))) {
+        return serveBase64Pdf(vUrl, `VendorDoc_${b.tracking_number || b.id}.pdf`)
+      }
+      if (vUrl.startsWith('http://') || vUrl.startsWith('https://')) {
+        return res.redirect(vUrl)
+      }
+      // Local file check
+      const localPath = path.resolve(process.cwd(), vUrl.replace(/^\//, ''))
+      if (fs.existsSync(localPath)) {
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `inline; filename="VendorDoc_${b.tracking_number || b.id}.pdf"`)
+        return res.sendFile(localPath)
+      }
+      const backendLocalPath = path.resolve(__dirname, '..', '..', vUrl.replace(/^\//, ''))
+      if (fs.existsSync(backendLocalPath)) {
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `inline; filename="VendorDoc_${b.tracking_number || b.id}.pdf"`)
+        return res.sendFile(backendLocalPath)
+      }
+    }
+
+    // 2. Check vendor_raw_response
+    if (b.vendor_raw_response) {
+      let raw = b.vendor_raw_response
+      if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw) } catch {}
+      }
+
+      if (raw && typeof raw === 'object') {
+        // Check labels array
+        if (Array.isArray(raw.labels) && raw.labels.length > 0) {
+          const item = raw.labels.find(l => l && (l.label || l.pdf || l.invoice)) || raw.labels[0]
+          const b64 = item?.label || item?.pdf || item?.invoice || (typeof item === 'string' ? item : '')
+          if (b64) return serveBase64Pdf(b64, `VendorDoc_${b.tracking_number || b.id}.pdf`)
+        }
+        if (raw.data && Array.isArray(raw.data.labels) && raw.data.labels.length > 0) {
+          const item = raw.data.labels[0]
+          const b64 = item?.label || item?.pdf || item?.invoice || (typeof item === 'string' ? item : '')
+          if (b64) return serveBase64Pdf(b64, `VendorDoc_${b.tracking_number || b.id}.pdf`)
+        }
+        // Direct properties
+        const directVal = raw.label || raw.Label || raw.AuxLbl || raw.invoice || raw.Invoice || raw.pdf ||
+                          raw.data?.label || raw.data?.invoice || raw.data?.label_url || raw.data?.invoice_url ||
+                          raw.Response?.Label || raw.Response?.Invoice
+        if (directVal) {
+          const val = String(directVal).trim()
+          if (val.startsWith('http://') || val.startsWith('https://')) {
+            return res.redirect(val)
+          }
+          return serveBase64Pdf(val, `VendorDoc_${b.tracking_number || b.id}.pdf`)
+        }
+      }
+    }
+
+    return res.status(404).json({
+      success: false,
+      message: 'No vendor invoice or label document returned by carrier API for this shipment.'
+    })
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+/**
  * Update billing and rate details on a shipment.
  * Works even after vendor push/lock if `allow_post_push_billing_edit` setting is enabled.
  * Also synchronizes the new financial figures immediately to the remote Hostinger AWBENTRY table.

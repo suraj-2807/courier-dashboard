@@ -412,6 +412,9 @@ export default class PacificAdapter extends BaseAdapter {
 
     // Extract Label URL / Base64 pdf data
     let labelUrl = response.Label || response.AuxLbl || response.label || ''
+    if (!labelUrl && Array.isArray(response.labels) && response.labels.length > 0) {
+      labelUrl = response.labels[0]?.label || ''
+    }
     if (labelUrl && !labelUrl.startsWith('http') && !labelUrl.startsWith('data:')) {
       // If it's raw base64 data, convert to data URI
       labelUrl = `data:application/pdf;base64,${labelUrl}`

@@ -198,11 +198,18 @@ export default class GenericAdapter extends BaseAdapter {
       || this._getNestedValue(responseBody, 'tracking_url')
       || ''
 
-    const labelUrl = this._getNestedValue(responseBody, 'data.label_url')
+    let labelUrl = this._getNestedValue(responseBody, 'data.label_url')
       || this._getNestedValue(responseBody, 'labelUrl')
       || this._getNestedValue(responseBody, 'label_url')
       || this._getNestedValue(responseBody, 'data.pdf_url')
       || ''
+
+    if (!labelUrl && Array.isArray(responseBody?.labels) && responseBody.labels.length > 0) {
+      const rawLbl = responseBody.labels[0]?.label || ''
+      if (rawLbl) {
+        labelUrl = rawLbl.startsWith('http') || rawLbl.startsWith('data:') ? rawLbl : `data:application/pdf;base64,${rawLbl}`
+      }
+    }
 
     return {
       success,

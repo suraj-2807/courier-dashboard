@@ -34,6 +34,14 @@ app.use((req, res, next) => {
 
 app.use('/api', routes)
 
+// Serve uploads (e.g. vendor label PDFs)
+const uploadsPath = path.resolve(__dirname, '..', 'uploads')
+if (!fs.existsSync(uploadsPath)) {
+  fs.mkdirSync(uploadsPath, { recursive: true })
+}
+app.use('/uploads', express.static(uploadsPath))
+app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')))
+
 const distPath = path.resolve(__dirname, '..', 'dist')
 const distIndexPath = path.resolve(distPath, 'index.html')
 console.log('--- SPA DIST INDEX CHECK ---')
