@@ -117,7 +117,9 @@ export async function initializeDb() {
       { name: 'vendor_awb_number_2', type: "VARCHAR(100) DEFAULT ''" },
       { name: 'forwarding_no', type: "VARCHAR(100) DEFAULT ''" },
       { name: 'secondary_carrier', type: "VARCHAR(100) DEFAULT ''" },
-      { name: 'is_locked', type: "BOOLEAN DEFAULT FALSE" }
+      { name: 'is_locked', type: "BOOLEAN DEFAULT FALSE" },
+      { name: 'is_trashed', type: "TINYINT(1) DEFAULT 0" },
+      { name: 'trashed_at', type: "DATETIME DEFAULT NULL" }
     ]
 
     for (const col of requiredShipmentCols) {

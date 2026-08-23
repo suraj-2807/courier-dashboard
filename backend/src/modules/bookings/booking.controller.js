@@ -1503,18 +1503,25 @@ export const getBookings = async (req, res) => {
     const safeSortBy = allowedSortColumns.includes(sort_by) ? sort_by : 'created_at'
     const safeSortOrder = sort_order === 'asc' ? 'ASC' : 'DESC'
 
-    let whereClause = ''
+    let whereConditions = []
     const params = []
 
+    if (status === 'trashed') {
+      whereConditions.push('s.is_trashed = 1')
+    } else {
+      whereConditions.push('(s.is_trashed = 0 OR s.is_trashed IS NULL)')
+      if (status) {
+        whereConditions.push('s.status = ?')
+        params.push(status)
+      }
+    }
+
     if (search) {
-      whereClause += ' WHERE (s.order_id LIKE ? OR s.tracking_number LIKE ? OR s.vendor_awb_number LIKE ?)'
+      whereConditions.push('(s.order_id LIKE ? OR s.tracking_number LIKE ? OR s.vendor_awb_number LIKE ?)')
       params.push(`%${search}%`, `%${search}%`, `%${search}%`)
     }
 
-    if (status) {
-      whereClause += whereClause ? ' AND s.status = ?' : ' WHERE s.status = ?'
-      params.push(status)
-    }
+    const whereClause = whereConditions.length > 0 ? ` WHERE ${whereConditions.join(' AND ')}` : ''
 
     const countRows = await query(
       `SELECT COUNT(*) as total FROM shipments s${whereClause}`,
@@ -1713,6 +1720,36 @@ export const getBookingById = async (req, res) => {
       )
     } catch {}
 
+    // Fetch adjacent active bookings (prev and next by id)
+    let adjacent = { prev_id: null, next_id: null, prev_tracking: null, next_tracking: null, prev_order: null, next_order: null }
+    try {
+      const prevRows = await query(
+        `SELECT id, tracking_number, order_id FROM shipments 
+         WHERE id < ? AND (is_trashed = 0 OR is_trashed IS NULL) 
+         ORDER BY id DESC LIMIT 1`,
+        [b.id]
+      )
+      if (prevRows.length > 0) {
+        adjacent.prev_id = prevRows[0].id
+        adjacent.prev_tracking = prevRows[0].tracking_number
+        adjacent.prev_order = prevRows[0].order_id
+      }
+
+      const nextRows = await query(
+        `SELECT id, tracking_number, order_id FROM shipments 
+         WHERE id > ? AND (is_trashed = 0 OR is_trashed IS NULL) 
+         ORDER BY id ASC LIMIT 1`,
+        [b.id]
+      )
+      if (nextRows.length > 0) {
+        adjacent.next_id = nextRows[0].id
+        adjacent.next_tracking = nextRows[0].tracking_number
+        adjacent.next_order = nextRows[0].order_id
+      }
+    } catch (adjErr) {
+      console.error('Error fetching adjacent bookings:', adjErr.message)
+    }
+
     return res.json({
       success: true,
       booking: {
@@ -1723,7 +1760,8 @@ export const getBookingById = async (req, res) => {
         receivers,
         courier_providers,
         vendor_api_configs,
-        tracking_events: trackingEvents
+        tracking_events: trackingEvents,
+        adjacent
       }
     })
   } catch (error) {
@@ -1731,6 +1769,91 @@ export const getBookingById = async (req, res) => {
       success: false,
       message: error.message
     })
+  }
+}
+
+/**
+ * Move selected booking(s) to Trash
+ */
+export const trashBookings = async (req, res) => {
+  try {
+    let ids = req.body.ids || []
+    if (req.body.id) ids = [req.body.id]
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'No shipment IDs provided' })
+    }
+
+    const placeholders = ids.map(() => '?').join(',')
+    await execute(
+      `UPDATE shipments SET is_trashed = 1, trashed_at = NOW() WHERE id IN (${placeholders})`,
+      ids
+    )
+
+    return res.json({
+      success: true,
+      message: `Moved ${ids.length} shipment(s) to Trash`
+    })
+  } catch (error) {
+    console.error('Error trashing bookings:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+/**
+ * Restore selected booking(s) from Trash
+ */
+export const restoreBookings = async (req, res) => {
+  try {
+    let ids = req.body.ids || []
+    if (req.body.id) ids = [req.body.id]
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'No shipment IDs provided' })
+    }
+
+    const placeholders = ids.map(() => '?').join(',')
+    await execute(
+      `UPDATE shipments SET is_trashed = 0, trashed_at = NULL WHERE id IN (${placeholders})`,
+      ids
+    )
+
+    return res.json({
+      success: true,
+      message: `Restored ${ids.length} shipment(s) from Trash`
+    })
+  } catch (error) {
+    console.error('Error restoring bookings:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+/**
+ * Permanently Delete selected booking(s)
+ */
+export const deletePermanentBookings = async (req, res) => {
+  try {
+    let ids = req.body.ids || []
+    if (req.body.id) ids = [req.body.id]
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'No shipment IDs provided' })
+    }
+
+    const placeholders = ids.map(() => '?').join(',')
+    try {
+      await execute(`DELETE FROM tracking_events WHERE shipment_id IN (${placeholders})`, ids)
+    } catch {}
+
+    await execute(
+      `DELETE FROM shipments WHERE id IN (${placeholders})`,
+      ids
+    )
+
+    return res.json({
+      success: true,
+      message: `Permanently deleted ${ids.length} shipment(s)`
+    })
+  } catch (error) {
+    console.error('Error deleting bookings permanently:', error)
+    return res.status(500).json({ success: false, message: error.message })
   }
 }
 

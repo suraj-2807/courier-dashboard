@@ -11,13 +11,19 @@ import {
   getWaybillPdf,
   getBoxLabelsPdf,
   updateBookingStatus,
-  updateBookingBilling
+  updateBookingBilling,
+  trashBookings,
+  restoreBookings,
+  deletePermanentBookings
 } from './booking.controller.js'
 
 const router = express.Router()
 
 router.post('/', authMiddleware, createBooking)
 router.post('/save', authMiddleware, saveBooking)
+router.post('/trash', authMiddleware, trashBookings)
+router.post('/restore', authMiddleware, restoreBookings)
+router.post('/delete-permanent', authMiddleware, deletePermanentBookings)
 router.post('/:id/push', authMiddleware, pushBookingToApi)
 router.get('/', authMiddleware, getBookings)
 router.get('/:id', authMiddleware, getBookingById)

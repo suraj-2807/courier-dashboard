@@ -15,7 +15,10 @@ import {
   Loader2,
   FileText,
   Copy,
-  Check
+  Check,
+  Trash2,
+  RotateCcw,
+  AlertTriangle
 } from 'lucide-react'
 import { bookingsApi } from '../api/bookings.api'
 import StatusBadge from '../components/ui/StatusBadge'
@@ -55,7 +58,8 @@ const STATUS_TABS = [
   { value: 'booked', label: 'Booked' },
   { value: 'processing', label: 'Processing' },
   { value: 'in_transit', label: 'In Transit' },
-  { value: 'delivered', label: 'Delivered' }
+  { value: 'delivered', label: 'Delivered' },
+  { value: 'trashed', label: 'Trash', isTrash: true }
 ]
 
 export default function BookingsPage() {
@@ -189,16 +193,90 @@ export default function BookingsPage() {
 
   const allSelected = data?.bookings?.length > 0 && selectedIds.length === data.bookings.length
 
+  const handleTrashBulk = async () => {
+    if (selectedIds.length === 0) return
+    if (!window.confirm(`Move ${selectedIds.length} selected shipment(s) to Trash?`)) return
+    try {
+      await bookingsApi.trash(selectedIds)
+      toast.success(`Moved ${selectedIds.length} shipment(s) to Trash`)
+      setSelectedIds([])
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to move to Trash')
+    }
+  }
+
+  const handleTrashSingle = async (booking) => {
+    if (!window.confirm(`Move shipment #${booking.tracking_number || booking.id} to Trash?`)) return
+    try {
+      await bookingsApi.trash(booking.id)
+      toast.success(`Shipment #${booking.tracking_number || booking.id} moved to Trash`)
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to move to Trash')
+    }
+  }
+
+  const handleRestoreBulk = async () => {
+    if (selectedIds.length === 0) return
+    try {
+      await bookingsApi.restore(selectedIds)
+      toast.success(`Restored ${selectedIds.length} shipment(s) from Trash`)
+      setSelectedIds([])
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to restore shipments')
+    }
+  }
+
+  const handleRestoreSingle = async (booking) => {
+    try {
+      await bookingsApi.restore(booking.id)
+      toast.success(`Shipment #${booking.tracking_number || booking.id} restored`)
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to restore shipment')
+    }
+  }
+
+  const handleDeletePermanentBulk = async () => {
+    if (selectedIds.length === 0) return
+    if (!window.confirm(`⚠️ PERMANENT ACTION: Are you sure you want to permanently delete ${selectedIds.length} shipment(s)? This cannot be undone!`)) return
+    try {
+      await bookingsApi.deletePermanent(selectedIds)
+      toast.success(`Permanently deleted ${selectedIds.length} shipment(s)`)
+      setSelectedIds([])
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to permanently delete shipments')
+    }
+  }
+
+  const handleDeletePermanentSingle = async (booking) => {
+    if (!window.confirm(`⚠️ PERMANENT ACTION: Are you sure you want to permanently delete shipment #${booking.tracking_number || booking.id}? This cannot be undone!`)) return
+    try {
+      await bookingsApi.deletePermanent(booking.id)
+      toast.success(`Permanently deleted shipment #${booking.tracking_number || booking.id}`)
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to delete shipment')
+    }
+  }
+
+  const isTrashTab = statusFilter === 'trashed'
+
   return (
     <div className="animate-fade-in">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-[26px] font-extrabold text-text-primary leading-tight">
-            Shipment Bookings
+            {isTrashTab ? 'Trash / Deleted Shipments' : 'Shipment Bookings'}
           </h1>
           <p className="text-[13px] text-text-secondary mt-1">
-            Manage, track, and analyze all active freight movements.
+            {isTrashTab
+              ? 'View, restore, or permanently remove discarded shipments.'
+              : 'Manage, track, and analyze all active freight movements.'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -214,33 +292,36 @@ export default function BookingsPage() {
             ) : (
               <Download className="w-3.5 h-3.5 text-navy" />
             )}
-            <span>{isExporting ? 'Exporting...' : 'Export Excel'}</span>
+            <span>Export Excel</span>
           </button>
-          <Link
-            to="/bookings/new"
-            className="flex items-center gap-1.5 px-4 py-[7px] bg-primary text-white rounded-xl text-[12px] font-bold hover:bg-primary-dark transition-colors cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-            Create Shipment
-          </Link>
+          {!isTrashTab && (
+            <Link
+              to="/bookings/new"
+              className="flex items-center gap-1.5 px-4 py-[7px] bg-primary hover:bg-primary-dark text-white rounded-xl text-[12px] font-bold transition-all shadow-sm cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create Shipment</span>
+            </Link>
+          )}
         </div>
       </div>
 
       {/* Filters Bar */}
       <div className="bg-surface border border-border rounded-2xl mb-4">
-        <div className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="p-4 flex flex-col lg:flex-row lg:items-center gap-3">
           {/* Status Tabs */}
-          <div className="flex items-center bg-surface-alt border border-border rounded-xl overflow-hidden">
+          <div className="flex items-center bg-surface-alt border border-border rounded-xl overflow-x-auto">
             {STATUS_TABS.map((tab) => (
               <button
                 key={tab.value}
                 onClick={() => handleTabChange(tab.value)}
-                className={`px-3.5 py-[7px] text-[12px] font-semibold transition-all cursor-pointer whitespace-nowrap ${
+                className={`px-3.5 py-[7px] text-[12px] font-semibold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                   statusFilter === tab.value
-                    ? 'bg-primary text-white'
-                    : 'text-text-secondary hover:bg-surface-hover'
+                    ? (tab.isTrash ? 'bg-danger text-white' : 'bg-primary text-white')
+                    : (tab.isTrash ? 'text-danger hover:bg-danger-bg' : 'text-text-secondary hover:bg-surface-hover')
                 }`}
               >
+                {tab.isTrash && <Trash2 className="w-3.5 h-3.5" />}
                 {tab.label}
               </button>
             ))}
@@ -270,32 +351,37 @@ export default function BookingsPage() {
             </div>
           </form>
 
-          {/* Bulk Actions */}
-          <div className="relative">
-            <button
-              onClick={() => setBulkMenuOpen(!bulkMenuOpen)}
-              className="flex items-center gap-1.5 px-3.5 py-[7px] border border-border rounded-xl text-[12px] font-semibold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
-            >
-              Bulk Actions
-              <ChevronDown className="w-3 h-3" />
-            </button>
-            {bulkMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-30" onClick={() => setBulkMenuOpen(false)} />
-                <div className="absolute right-0 top-10 w-44 bg-surface rounded-xl border border-border shadow-xl z-40 py-1 animate-slide-down">
-                  <button className="w-full text-left px-4 py-2 text-[12px] text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer">
-                    Mark as Delivered
+          {/* Bulk Selection Actions */}
+          {selectedIds.length > 0 && (
+            <div className="flex items-center gap-2 animate-fade-in flex-wrap">
+              {isTrashTab ? (
+                <>
+                  <button
+                    onClick={handleRestoreBulk}
+                    className="flex items-center gap-1.5 px-3.5 py-[7px] bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[12px] font-bold shadow-xs transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Restore ({selectedIds.length})
                   </button>
-                  <button className="w-full text-left px-4 py-2 text-[12px] text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer">
-                    Mark as In Transit
+                  <button
+                    onClick={handleDeletePermanentBulk}
+                    className="flex items-center gap-1.5 px-3.5 py-[7px] bg-red-700 hover:bg-red-800 text-white rounded-xl text-[12px] font-bold shadow-xs transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete Permanently ({selectedIds.length})
                   </button>
-                  <button className="w-full text-left px-4 py-2 text-[12px] text-danger hover:bg-danger-bg transition-colors cursor-pointer">
-                    Cancel Selected
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+                </>
+              ) : (
+                <button
+                  onClick={handleTrashBulk}
+                  className="flex items-center gap-1.5 px-3.5 py-[7px] bg-danger hover:bg-danger-hover text-white rounded-xl text-[12px] font-bold shadow-xs transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Move to Trash ({selectedIds.length})
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -440,61 +526,99 @@ export default function BookingsPage() {
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          {/* View details */}
-                          <Link
-                            to={`/bookings/${b.id}`}
-                            className="p-1.5 text-text-secondary hover:text-navy hover:bg-surface-hover rounded-lg transition-colors"
-                            title="View Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Link>
+                          {isTrashTab ? (
+                            <>
+                              {/* Restore button */}
+                              <button
+                                type="button"
+                                onClick={() => handleRestoreSingle(b)}
+                                className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Restore Shipment"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Restore</span>
+                              </button>
 
-                          {/* Shipping Bill */}
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadBillRow(b)}
-                            className="p-1.5 text-navy hover:text-primary hover:bg-navy/5 rounded-lg transition-colors"
-                            title="Download Shipping Bill"
-                          >
-                            <FileText className="w-4 h-4" />
-                          </button>
+                              {/* Permanent delete button */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePermanentSingle(b)}
+                                className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-800 border border-red-200 rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Permanently Delete Shipment"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                                <span>Delete Forever</span>
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              {/* View details */}
+                              <Link
+                                to={`/bookings/${b.id}`}
+                                className="p-1.5 text-text-secondary hover:text-navy hover:bg-surface-hover rounded-lg transition-colors"
+                                title="View Details"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Link>
 
-                          {/* Box Labels */}
-                          <button
-                            type="button"
-                            onClick={() => handleDownloadLabelsRow(b)}
-                            className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors"
-                            title={`Download ${b.no_of_pieces || 1} Box Labels`}
-                          >
-                            <Package className="w-4 h-4" />
-                          </button>
+                              {/* Shipping Bill */}
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadBillRow(b)}
+                                className="p-1.5 text-navy hover:text-primary hover:bg-navy/5 rounded-lg transition-colors"
+                                title="Download Shipping Bill"
+                              >
+                                <FileText className="w-4 h-4" />
+                              </button>
 
-                          {/* Edit / View Booking Form */}
-                          <Link
-                            to={`/bookings/edit/${b.id}`}
-                            className="p-1.5 text-navy hover:text-primary hover:bg-primary/5 rounded-lg transition-colors font-bold flex items-center gap-1 text-[11px]"
-                            title={Boolean(b.is_locked) ? "View Booking Form (Locked)" : "Edit Booking"}
-                          >
-                            <Edit className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">{Boolean(b.is_locked) ? 'Form' : 'Edit'}</span>
-                          </Link>
+                              {/* Box Labels */}
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadLabelsRow(b)}
+                                className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors"
+                                title={`Download ${b.no_of_pieces || 1} Box Labels`}
+                              >
+                                <Package className="w-4 h-4" />
+                              </button>
 
-                          {/* If unlocked / draft: Show Push button */}
-                          {!Boolean(b.is_locked) && (
-                            <button
-                              type="button"
-                              disabled={pushingId === b.id}
-                              onClick={() => handlePushRow(b)}
-                              className="px-2.5 py-1 bg-primary hover:bg-primary-dark text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                              title="Push to Vendor API"
-                            >
-                              {pushingId === b.id ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Send className="w-3 h-3" />
+                              {/* Edit / View Booking Form */}
+                              <Link
+                                to={`/bookings/edit/${b.id}`}
+                                className="p-1.5 text-navy hover:text-primary hover:bg-primary/5 rounded-lg transition-colors font-bold flex items-center gap-1 text-[11px]"
+                                title={Boolean(b.is_locked) ? "View Booking Form (Locked)" : "Edit Booking"}
+                              >
+                                <Edit className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">{Boolean(b.is_locked) ? 'Form' : 'Edit'}</span>
+                              </Link>
+
+                              {/* If unlocked / draft: Show Push button */}
+                              {!Boolean(b.is_locked) && (
+                                <button
+                                  type="button"
+                                  disabled={pushingId === b.id}
+                                  onClick={() => handlePushRow(b)}
+                                  className="px-2.5 py-1 bg-primary hover:bg-primary-dark text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                  title="Push to Vendor API"
+                                >
+                                  {pushingId === b.id ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                  ) : (
+                                    <Send className="w-3 h-3" />
+                                  )}
+                                  <span>Push</span>
+                                </button>
                               )}
-                              <span>Push</span>
-                            </button>
+
+                              {/* Move to Trash */}
+                              <button
+                                type="button"
+                                onClick={() => handleTrashSingle(b)}
+                                className="p-1.5 text-text-tertiary hover:text-danger hover:bg-danger-bg rounded-lg transition-colors cursor-pointer"
+                                title="Move to Trash"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>

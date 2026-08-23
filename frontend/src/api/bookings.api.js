@@ -10,5 +10,8 @@ export const bookingsApi = {
   downloadWaybill: (id) => api.get(`/bookings/${id}/bill-pdf`, { responseType: 'blob' }),
   downloadBoxLabels: (id) => api.get(`/bookings/${id}/labels-pdf`, { responseType: 'blob' }),
   updateStatus: (id, data) => api.patch(`/bookings/${id}/status`, data),
-  updateBilling: (id, data) => api.patch(`/bookings/${id}/billing`, data)
+  updateBilling: (id, data) => api.patch(`/bookings/${id}/billing`, data),
+  trash: (ids) => api.post('/bookings/trash', { ids: Array.isArray(ids) ? ids : [ids] }),
+  restore: (ids) => api.post('/bookings/restore', { ids: Array.isArray(ids) ? ids : [ids] }),
+  deletePermanent: (ids) => api.post('/bookings/delete-permanent', { ids: Array.isArray(ids) ? ids : [ids] })
 }
