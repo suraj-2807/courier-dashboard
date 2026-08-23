@@ -132,38 +132,63 @@ export default function BookingsPage() {
     }
   }
 
-  const handleDownloadBillRow = async (b) => {
-    try {
-      const res = await bookingsApi.downloadWaybill(b.id)
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', `Waybill_${b.tracking_number}.pdf`)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
-      toast.success('Shipping Bill downloaded!')
-    } catch (err) {
-      toast.error('Failed to download Shipping Bill')
+  // Helper: extract vendor label base64 from booking data
+  const getVendorLabelBase64 = (b) => {
+    // 1. Check vendor_label_url (could be data URI or file path)
+    if (b.vendor_label_url) {
+      if (b.vendor_label_url.startsWith('data:application/pdf;base64,')) {
+        return b.vendor_label_url.replace('data:application/pdf;base64,', '')
+      }
+      // File path — open directly via backend
+      return null
     }
+    // 2. Check vendor_raw_response for labels array
+    let rawResp = b.vendor_raw_response
+    if (typeof rawResp === 'string') {
+      try { rawResp = JSON.parse(rawResp) } catch { return null }
+    }
+    if (rawResp && Array.isArray(rawResp.labels) && rawResp.labels.length > 0) {
+      const labelObj = rawResp.labels[0]
+      if (labelObj && labelObj.label) return labelObj.label
+    }
+    return null
   }
 
-  const handleDownloadLabelsRow = async (b) => {
-    try {
-      const res = await bookingsApi.downloadBoxLabels(b.id)
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', `BoxLabels_${b.tracking_number}.pdf`)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
-      toast.success('Box Labels PDF downloaded!')
-    } catch (err) {
-      toast.error('Failed to download Box Labels')
+  // Open vendor label/invoice PDF in a new tab
+  const openVendorPdfInNewTab = (b, type = 'label') => {
+    // 1. Try base64 from vendor_raw_response or vendor_label_url data URI
+    const base64 = getVendorLabelBase64(b)
+    if (base64) {
+      try {
+        const byteChars = atob(base64)
+        const byteNums = new Array(byteChars.length)
+        for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i)
+        const byteArray = new Uint8Array(byteNums)
+        const blob = new Blob([byteArray], { type: 'application/pdf' })
+        const url = URL.createObjectURL(blob)
+        window.open(url, '_blank')
+        return
+      } catch (err) {
+        console.error('Failed to decode base64 label:', err)
+      }
     }
+    // 2. Try vendor_label_url as a file path (served by backend)
+    if (b.vendor_label_url && !b.vendor_label_url.startsWith('data:')) {
+      const apiBase = import.meta.env.VITE_API_BASE_URL || '/api'
+      const baseOrigin = apiBase.startsWith('http') ? new URL(apiBase).origin : ''
+      const fileUrl = `${baseOrigin}${b.vendor_label_url}`
+      window.open(fileUrl, '_blank')
+      return
+    }
+    toast.error(`No vendor ${type} available for this shipment`)
+  }
+
+  const handleOpenInvoiceRow = (b) => {
+    openVendorPdfInNewTab(b, 'invoice')
+  }
+
+  const handleOpenLabelRow = (b) => {
+    openVendorPdfInNewTab(b, 'label')
   }
 
   const setPage = (newPageOrFn) => {
@@ -605,22 +630,22 @@ export default function BookingsPage() {
                                 <Eye className="w-4 h-4" />
                               </Link>
 
-                              {/* Shipping Bill */}
+                              {/* Vendor Invoice — open in new tab */}
                               <button
                                 type="button"
-                                onClick={() => handleDownloadBillRow(b)}
-                                className="p-1.5 text-navy hover:text-primary hover:bg-navy/5 rounded-lg transition-colors"
-                                title="Download Shipping Bill"
+                                onClick={() => handleOpenInvoiceRow(b)}
+                                className="p-1.5 text-navy hover:text-primary hover:bg-navy/5 rounded-lg transition-colors cursor-pointer"
+                                title="Open Vendor Invoice"
                               >
                                 <FileText className="w-4 h-4" />
                               </button>
 
-                              {/* Box Labels */}
+                              {/* Vendor Label — open in new tab */}
                               <button
                                 type="button"
-                                onClick={() => handleDownloadLabelsRow(b)}
-                                className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors"
-                                title={`Download ${b.no_of_pieces || 1} Box Labels`}
+                                onClick={() => handleOpenLabelRow(b)}
+                                className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                                title="Open Vendor Label"
                               >
                                 <Package className="w-4 h-4" />
                               </button>
