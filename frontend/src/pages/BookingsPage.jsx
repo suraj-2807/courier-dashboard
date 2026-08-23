@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useBookings, usePushBookingToApi } from '../hooks/useBookings'
 import {
   Search,
@@ -63,9 +63,11 @@ const STATUS_TABS = [
 ]
 
 export default function BookingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlSearch = searchParams.get('search') || ''
   const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
-  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState(urlSearch)
+  const [searchInput, setSearchInput] = useState(urlSearch)
   const [statusFilter, setStatusFilter] = useState('')
   const [selectedIds, setSelectedIds] = useState([])
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false)
@@ -74,6 +76,13 @@ export default function BookingsPage() {
   const navigate = useNavigate()
   const pushToApiMutation = usePushBookingToApi()
   const [pushingId, setPushingId] = useState(null)
+
+  useEffect(() => {
+    const q = searchParams.get('search') || ''
+    setSearch(q)
+    setSearchInput(q)
+    setPage(1)
+  }, [searchParams])
 
   const { data, isLoading, isError, refetch } = useBookings({
     page,

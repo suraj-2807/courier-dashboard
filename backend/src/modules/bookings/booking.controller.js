@@ -1723,25 +1723,49 @@ export const getBookingById = async (req, res) => {
     // Fetch adjacent active bookings (prev and next by id)
     let adjacent = { prev_id: null, next_id: null, prev_tracking: null, next_tracking: null, prev_order: null, next_order: null }
     try {
-      const prevRows = await query(
-        `SELECT id, tracking_number, order_id FROM shipments 
-         WHERE id < ? AND (is_trashed = 0 OR is_trashed IS NULL) 
-         ORDER BY id DESC LIMIT 1`,
-        [b.id]
-      )
-      if (prevRows.length > 0) {
+      const currentNumericId = parseInt(b.id) || b.id
+
+      let prevRows = []
+      try {
+        prevRows = await query(
+          `SELECT id, tracking_number, order_id FROM shipments 
+           WHERE id < ? AND (is_trashed = 0 OR is_trashed IS NULL) 
+           ORDER BY id DESC LIMIT 1`,
+          [currentNumericId]
+        )
+      } catch {
+        prevRows = await query(
+          `SELECT id, tracking_number, order_id FROM shipments 
+           WHERE id < ? 
+           ORDER BY id DESC LIMIT 1`,
+          [currentNumericId]
+        )
+      }
+
+      if (prevRows && prevRows.length > 0) {
         adjacent.prev_id = prevRows[0].id
         adjacent.prev_tracking = prevRows[0].tracking_number
         adjacent.prev_order = prevRows[0].order_id
       }
 
-      const nextRows = await query(
-        `SELECT id, tracking_number, order_id FROM shipments 
-         WHERE id > ? AND (is_trashed = 0 OR is_trashed IS NULL) 
-         ORDER BY id ASC LIMIT 1`,
-        [b.id]
-      )
-      if (nextRows.length > 0) {
+      let nextRows = []
+      try {
+        nextRows = await query(
+          `SELECT id, tracking_number, order_id FROM shipments 
+           WHERE id > ? AND (is_trashed = 0 OR is_trashed IS NULL) 
+           ORDER BY id ASC LIMIT 1`,
+          [currentNumericId]
+        )
+      } catch {
+        nextRows = await query(
+          `SELECT id, tracking_number, order_id FROM shipments 
+           WHERE id > ? 
+           ORDER BY id ASC LIMIT 1`,
+          [currentNumericId]
+        )
+      }
+
+      if (nextRows && nextRows.length > 0) {
         adjacent.next_id = nextRows[0].id
         adjacent.next_tracking = nextRows[0].tracking_number
         adjacent.next_order = nextRows[0].order_id

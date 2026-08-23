@@ -602,6 +602,49 @@ export default function BookingDetailPage() {
               iconColor="text-emerald-600"
             />
           </div>
+
+          {/* Previous & Next Booking Navigation (Under Sender & Receiver) */}
+          <div className="bg-surface rounded-2xl border border-border p-4 shadow-xs flex items-center justify-between gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => booking?.adjacent?.prev_id && navigate(`/bookings/${booking.adjacent.prev_id}`)}
+              disabled={!booking?.adjacent?.prev_id}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-surface-alt hover:bg-surface-hover border border-border rounded-xl text-[12px] font-bold text-navy transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs group"
+              title={booking?.adjacent?.prev_tracking ? `Previous: #${booking.adjacent.prev_order || booking.adjacent.prev_tracking}` : 'No previous shipment'}
+            >
+              <ChevronLeft className="w-4 h-4 text-primary group-hover:-translate-x-0.5 transition-transform" />
+              <div className="text-left">
+                <span className="block text-[9px] uppercase font-extrabold text-text-tertiary">Previous</span>
+                <span className="block text-[12px] font-bold text-navy truncate max-w-[140px]">
+                  {booking?.adjacent?.prev_order ? `#${booking.adjacent.prev_order}` : (booking?.adjacent?.prev_tracking || 'None')}
+                </span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => navigate('/bookings')}
+              className="px-3 py-1.5 rounded-xl text-[11px] font-bold text-text-secondary hover:text-primary hover:bg-surface-hover transition-colors cursor-pointer"
+            >
+              Back to Shipments
+            </button>
+
+            <button
+              type="button"
+              onClick={() => booking?.adjacent?.next_id && navigate(`/bookings/${booking.adjacent.next_id}`)}
+              disabled={!booking?.adjacent?.next_id}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-surface-alt hover:bg-surface-hover border border-border rounded-xl text-[12px] font-bold text-navy transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs group text-right"
+              title={booking?.adjacent?.next_tracking ? `Next: #${booking.adjacent.next_order || booking.adjacent.next_tracking}` : 'No next shipment'}
+            >
+              <div className="text-right">
+                <span className="block text-[9px] uppercase font-extrabold text-text-tertiary">Next</span>
+                <span className="block text-[12px] font-bold text-navy truncate max-w-[140px]">
+                  {booking?.adjacent?.next_order ? `#${booking.adjacent.next_order}` : (booking?.adjacent?.next_tracking || 'None')}
+                </span>
+              </div>
+              <ChevronRight className="w-4 h-4 text-primary group-hover:translate-x-0.5 transition-transform" />
+            </button>
+          </div>
         </div>
 
         {/* Right — Live Tracking & Timeline Section */}
@@ -946,49 +989,6 @@ function VendorResponseCard({ booking, vendorConfig, liveTracking }) {
           )}
         </div>
       )}
-
-      {/* ── Bottom Navigation Bar (Previous & Next Booking) ── */}
-      <div className="mt-8 bg-surface rounded-2xl border border-border p-4 shadow-xs flex items-center justify-between gap-4 flex-wrap">
-        <button
-          type="button"
-          onClick={() => booking?.adjacent?.prev_id && navigate(`/bookings/${booking.adjacent.prev_id}`)}
-          disabled={!booking?.adjacent?.prev_id}
-          className="inline-flex items-center gap-2.5 px-4 py-2.5 bg-surface-alt hover:bg-surface-hover border border-border rounded-xl text-[13px] font-bold text-navy transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs group"
-          title={booking?.adjacent?.prev_tracking ? `Previous: #${booking.adjacent.prev_order || booking.adjacent.prev_tracking}` : 'No previous shipment'}
-        >
-          <ChevronLeft className="w-4 h-4 text-primary group-hover:-translate-x-0.5 transition-transform" />
-          <div className="text-left">
-            <span className="block text-[10px] uppercase font-extrabold text-text-tertiary">Previous</span>
-            <span className="block text-[12px] font-bold text-navy truncate max-w-[160px]">
-              {booking?.adjacent?.prev_order ? `#${booking.adjacent.prev_order}` : (booking?.adjacent?.prev_tracking || 'None')}
-            </span>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => navigate('/bookings')}
-          className="px-4 py-2 rounded-xl text-[12px] font-bold text-text-secondary hover:text-primary hover:bg-surface-hover transition-colors cursor-pointer"
-        >
-          Back to Shipments
-        </button>
-
-        <button
-          type="button"
-          onClick={() => booking?.adjacent?.next_id && navigate(`/bookings/${booking.adjacent.next_id}`)}
-          disabled={!booking?.adjacent?.next_id}
-          className="inline-flex items-center gap-2.5 px-4 py-2.5 bg-surface-alt hover:bg-surface-hover border border-border rounded-xl text-[13px] font-bold text-navy transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs group text-right"
-          title={booking?.adjacent?.next_tracking ? `Next: #${booking.adjacent.next_order || booking.adjacent.next_tracking}` : 'No next shipment'}
-        >
-          <div className="text-right">
-            <span className="block text-[10px] uppercase font-extrabold text-text-tertiary">Next</span>
-            <span className="block text-[12px] font-bold text-navy truncate max-w-[160px]">
-              {booking?.adjacent?.next_order ? `#${booking.adjacent.next_order}` : (booking?.adjacent?.next_tracking || 'None')}
-            </span>
-          </div>
-          <ChevronRight className="w-4 h-4 text-primary group-hover:translate-x-0.5 transition-transform" />
-        </button>
-      </div>
     </div>
   )
 }

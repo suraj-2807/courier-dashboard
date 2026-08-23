@@ -45,6 +45,16 @@ export default function DashboardLayout({ children }) {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
+  const [globalSearch, setGlobalSearch] = useState('')
+
+  const handleGlobalSearch = (e) => {
+    if (e.key === 'Enter' || e.type === 'submit') {
+      e.preventDefault()
+      if (globalSearch.trim()) {
+        navigate(`/bookings?search=${encodeURIComponent(globalSearch.trim())}`)
+      }
+    }
+  }
 
   const handleLogout = () => {
     logout()
@@ -172,14 +182,26 @@ export default function DashboardLayout({ children }) {
             </button>
 
             {/* Search */}
-            <div className="hidden sm:flex items-center gap-2 bg-surface-alt border border-border rounded-xl px-3.5 py-[7px] w-[320px] focus-within:border-primary/30 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
+            <form onSubmit={handleGlobalSearch} className="hidden sm:flex items-center gap-2 bg-surface-alt border border-border rounded-xl px-3.5 py-[7px] w-[340px] focus-within:border-primary/30 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
               <Search className="w-[15px] h-[15px] text-text-tertiary flex-shrink-0" />
               <input
                 type="text"
                 placeholder="Search tracking IDs, couriers..."
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                onKeyDown={handleGlobalSearch}
                 className="bg-transparent text-[13px] text-text-primary placeholder:text-text-tertiary outline-none w-full"
               />
-            </div>
+              {globalSearch && (
+                <button
+                  type="button"
+                  onClick={() => setGlobalSearch('')}
+                  className="text-text-tertiary hover:text-text-secondary cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </form>
           </div>
 
           <div className="flex items-center gap-1">
