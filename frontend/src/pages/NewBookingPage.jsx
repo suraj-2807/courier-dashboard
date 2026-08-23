@@ -314,26 +314,24 @@ export default function NewBookingPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // Helper to match products for invoice item description
+  // Helper to match products for invoice item description (only when 2+ chars typed)
   const getMatchingProducts = (desc) => {
-    const q = (desc || '').trim().toLowerCase()
+    if (!desc || desc.trim().length < 2) return []
+    const q = desc.trim().toLowerCase()
     const rawDest = (form.receiver_country || '').trim().toUpperCase()
     const destCode = resolveCountryCode(rawDest) || rawDest
 
     return allProducts.filter(p => {
-      // If user typed something, match against product name or HSN code
-      if (q) {
-        const nameMatch = (p.name || '').toLowerCase().includes(q)
-        const hsMatch = (p.hs_code || '').includes(q)
-        if (!nameMatch && !hsMatch) return false
-      }
+      const nameMatch = (p.name || '').toLowerCase().includes(q)
+      const hsMatch = (p.hs_code || '').includes(q)
+      if (!nameMatch && !hsMatch) return false
 
       // Match destination country or global products
       const pCountry = (p.country || '').trim().toUpperCase()
       if (!pCountry || pCountry === 'ALL') return true
       if (!destCode) return true
       return pCountry === destCode || pCountry === rawDest
-    }).slice(0, 10)
+    }).slice(0, 6)
   }
 
   // Select Product for Invoice Item (ONLY autofills Description and HSN Code)
@@ -2252,13 +2250,7 @@ export default function NewBookingPage() {
                         type="text"
                         placeholder="Item description"
                         value={item.description}
-                        list="products-catalog-datalist"
                         ref={el => invoiceDescRefs.current[idx] = el}
-                        onFocus={() => {
-                          if (getMatchingProducts(item.description).length > 0) {
-                            setActiveItemSuggestionIndex(idx)
-                          }
-                        }}
                         onChange={e => {
                           updateInvoiceItem(idx, 'description', e.target.value)
                           setActiveItemSuggestionIndex(idx)
@@ -2380,15 +2372,6 @@ export default function NewBookingPage() {
                   <div></div>
                 </div>
               </div>
-
-              {/* Datalist for Native Browser Product & HSN Autocomplete */}
-              <datalist id="products-catalog-datalist">
-                {allProducts.map(p => (
-                  <option key={p.id} value={p.name}>
-                    {p.hs_code ? `HSN: ${p.hs_code}` : ''} {p.country && p.country !== 'ALL' ? `(${p.country})` : ''}
-                  </option>
-                ))}
-              </datalist>
 
               {/* Add Item Button */}
               <button
