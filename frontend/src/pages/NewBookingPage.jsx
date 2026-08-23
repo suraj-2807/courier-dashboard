@@ -204,6 +204,16 @@ export default function NewBookingPage() {
         val = val.toUpperCase()
       }
       updated[index] = { ...updated[index], [field]: val }
+
+      // Auto-detect HSN code if description matches a saved product
+      if (field === 'description' && val) {
+        const cleanVal = String(val).trim().toLowerCase()
+        const matched = allProducts.find(p => p.name?.toLowerCase().trim() === cleanVal)
+        if (matched && matched.hs_code) {
+          updated[index].hs_code = matched.hs_code
+        }
+      }
+
       // Auto-calculate amount = quantity * unit_rates (or cost)
       if (field === 'quantity' || field === 'unit_rates' || field === 'cost') {
         const qty = parseFloat(field === 'quantity' ? value : updated[index].quantity) || 1
@@ -306,18 +316,24 @@ export default function NewBookingPage() {
 
   // Helper to match products for invoice item description
   const getMatchingProducts = (desc) => {
-    if (!desc || !desc.trim()) return []
-    const q = desc.trim().toLowerCase()
-    const destCountry = (form.receiver_country || '').trim().toUpperCase()
+    const q = (desc || '').trim().toLowerCase()
+    const rawDest = (form.receiver_country || '').trim().toUpperCase()
+    const destCode = resolveCountryCode(rawDest) || rawDest
 
     return allProducts.filter(p => {
-      const matchText = (p.name || '').toLowerCase().includes(q) || (p.hs_code || '').includes(q)
-      if (!matchText) return false
+      // If user typed something, match against product name or HSN code
+      if (q) {
+        const nameMatch = (p.name || '').toLowerCase().includes(q)
+        const hsMatch = (p.hs_code || '').includes(q)
+        if (!nameMatch && !hsMatch) return false
+      }
 
+      // Match destination country or global products
       const pCountry = (p.country || '').trim().toUpperCase()
-      const matchCountry = !pCountry || pCountry === 'ALL' || !destCountry || pCountry === destCountry
-      return matchCountry
-    }).slice(0, 8)
+      if (!pCountry || pCountry === 'ALL') return true
+      if (!destCode) return true
+      return pCountry === destCode || pCountry === rawDest
+    }).slice(0, 10)
   }
 
   // Select Product for Invoice Item (ONLY autofills Description and HSN Code)
@@ -332,7 +348,7 @@ export default function NewBookingPage() {
       return updated
     })
     setActiveItemSuggestionIndex(null)
-    toast.success(`Set HSN ${product.hs_code} for "${product.name}"`)
+    toast.success(`Selected "${product.name}" (HSN: ${product.hs_code})`)
   }
 
   // Filtered Senders Autocomplete
@@ -2195,7 +2211,7 @@ export default function NewBookingPage() {
               </div>
 
               {/* Invoice Items Table */}
-              <div className="border border-border rounded-xl overflow-hidden bg-surface">
+              <div className="border border-border rounded-xl bg-surface">
                 {/* Table Header */}
                 <div className="bg-navy text-white grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] text-[10px] font-bold uppercase tracking-wider">
                   <div className="px-1.5 py-2.5 text-center">SR</div>
@@ -2213,7 +2229,10 @@ export default function NewBookingPage() {
 
                 {/* Item Rows */}
                 {invoiceItems.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] border-t border-border-light text-[13px] items-center hover:bg-surface-hover transition-colors py-1">
+                  <div
+                    key={idx}
+                    className={`grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] border-t border-border-light text-[13px] items-center hover:bg-surface-hover transition-colors py-1 ${activeItemSuggestionIndex === idx ? 'relative z-50' : 'relative z-0'}`}
+                  >
                     <div className="px-1.5 py-1 text-center text-xs font-bold text-text-tertiary">{item.sr_no}</div>
                     <div className="px-1">
                       <select
@@ -2233,6 +2252,7 @@ export default function NewBookingPage() {
                         type="text"
                         placeholder="Item description"
                         value={item.description}
+                        list="products-catalog-datalist"
                         ref={el => invoiceDescRefs.current[idx] = el}
                         onFocus={() => {
                           if (getMatchingProducts(item.description).length > 0) {
@@ -2250,10 +2270,10 @@ export default function NewBookingPage() {
                       {activeItemSuggestionIndex === idx && getMatchingProducts(item.description).length > 0 && (
                         <div
                           ref={itemSuggestionsRef}
-                          className="absolute left-0 top-full mt-1 w-[260px] bg-surface border border-border rounded-xl shadow-2xl z-50 max-h-56 overflow-y-auto divide-y divide-border animate-fade-in text-left"
+                          className="absolute left-0 top-full mt-1 w-[280px] bg-surface border border-border rounded-xl shadow-2xl z-50 max-h-56 overflow-y-auto divide-y divide-border animate-fade-in text-left"
                         >
                           <div className="px-3 py-1.5 bg-primary/10 text-[10px] font-extrabold text-primary uppercase tracking-wider flex items-center justify-between sticky top-0 backdrop-blur-xs">
-                            <span>Suggested Products (HSN)</span>
+                            <span>Suggested Products ({getMatchingProducts(item.description).length})</span>
                           </div>
                           {getMatchingProducts(item.description).map((p) => (
                             <div
@@ -2268,7 +2288,7 @@ export default function NewBookingPage() {
                                 {p.name}
                               </div>
                               <div className="flex items-center gap-2 mt-0.5 text-[11px]">
-                                <span className="font-mono font-bold text-primary text-[11px] bg-primary/5 px-1 rounded">
+                                <span className="font-mono font-bold text-primary text-[11px] bg-primary/5 px-1.5 py-0.2 rounded border border-primary/20">
                                   HSN: {p.hs_code}
                                 </span>
                                 {p.country && p.country !== 'ALL' && (
@@ -2360,6 +2380,15 @@ export default function NewBookingPage() {
                   <div></div>
                 </div>
               </div>
+
+              {/* Datalist for Native Browser Product & HSN Autocomplete */}
+              <datalist id="products-catalog-datalist">
+                {allProducts.map(p => (
+                  <option key={p.id} value={p.name}>
+                    {p.hs_code ? `HSN: ${p.hs_code}` : ''} {p.country && p.country !== 'ALL' ? `(${p.country})` : ''}
+                  </option>
+                ))}
+              </datalist>
 
               {/* Add Item Button */}
               <button
