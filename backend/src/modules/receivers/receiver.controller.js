@@ -7,10 +7,14 @@ export const searchReceivers = async (req, res) => {
       return res.json({ success: true, receivers: [] })
     }
     const search = `%${q.trim()}%`
+    // Deduplicated search by latest receiver per name
     const rows = await query(
-      `SELECT * FROM receivers
-       WHERE name LIKE ? OR company LIKE ? OR phone LIKE ?
-       ORDER BY name ASC LIMIT 10`,
+      `SELECT r.* FROM receivers r
+       INNER JOIN (
+         SELECT MAX(id) as max_id FROM receivers GROUP BY LOWER(TRIM(name))
+       ) latest ON r.id = latest.max_id
+       WHERE r.name LIKE ? OR r.company LIKE ? OR r.phone LIKE ?
+       ORDER BY r.name ASC LIMIT 10`,
       [search, search, search]
     )
     return res.json({ success: true, receivers: rows })
@@ -37,10 +41,30 @@ export const createReceiver =
         gstin_no
       } = req.body
 
+      if (!name || !name.trim()) {
+        return res.status(400).json({ success: false, message: 'Name is required' })
+      }
+
+      // Check if a receiver with the same name already exists to prevent duplicate rows
+      const existing = await query(
+        'SELECT id FROM receivers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1',
+        [name.trim()]
+      )
+
+      if (existing.length > 0) {
+        await execute(
+          `UPDATE receivers SET company = ?, phone = ?, email = ?, address = ?, address_2 = ?, city = ?, state = ?, pincode = ?, country = ?, gstin_type = ?, gstin_no = ?
+           WHERE id = ?`,
+          [company || '', phone || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || '', gstin_type || '', gstin_no || '', existing[0].id]
+        )
+        const rows = await query('SELECT * FROM receivers WHERE id = ?', [existing[0].id])
+        return res.status(200).json({ success: true, receiver: rows[0] })
+      }
+
       const result = await execute(
         `INSERT INTO receivers (name, company, phone, email, address, address_2, city, state, pincode, country, gstin_type, gstin_no)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, company || '', phone || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || '', gstin_type || '', gstin_no || '']
+        [name.trim(), company || '', phone || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || '', gstin_type || '', gstin_no || '']
       )
 
       const rows = await query(
@@ -63,8 +87,13 @@ export const createReceiver =
 export const getReceivers =
   async (req, res) => {
     try {
+      // Deduplicated list grouping by name
       const rows = await query(
-        'SELECT * FROM receivers ORDER BY created_at DESC'
+        `SELECT r.* FROM receivers r
+         INNER JOIN (
+           SELECT MAX(id) as max_id FROM receivers GROUP BY LOWER(TRIM(name))
+         ) latest ON r.id = latest.max_id
+         ORDER BY r.created_at DESC`
       )
 
       return res.json({
@@ -150,15 +179,20 @@ export const deleteReceiver =
     try {
       const { id } = req.params
 
-      await execute(
-        'DELETE FROM receivers WHERE id = ?',
-        [id]
-      )
+      // Also remove any other duplicates with same name when deleted
+      const receiver = await query('SELECT name FROM receivers WHERE id = ?', [id])
+      if (receiver.length > 0) {
+        await execute(
+          'DELETE FROM receivers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))',
+          [receiver[0].name]
+        )
+      } else {
+        await execute('DELETE FROM receivers WHERE id = ?', [id])
+      }
 
       return res.json({
         success: true,
-        message:
-          'Receiver deleted successfully'
+        message: 'Receiver deleted successfully'
       })
     } catch (error) {
       return res.status(500).json({
@@ -177,16 +211,30 @@ export const bulkImportReceivers = async (req, res) => {
 
     let imported = 0
     for (const r of importData) {
-      if (!r.name) continue
-      await execute(
-        `INSERT INTO receivers (name, company, phone, email, address, address_2, city, state, pincode, country, gstin_type, gstin_no)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [r.name || '', r.company || '', r.phone || '', r.email || '', r.address || '', r.address_2 || '', r.city || '', r.state || '', r.pincode || '', r.country || '', r.gstin_type || '', r.gstin_no || '']
+      if (!r.name || !r.name.trim()) continue
+
+      const existing = await query(
+        'SELECT id FROM receivers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1',
+        [r.name.trim()]
       )
+
+      if (existing.length > 0) {
+        await execute(
+          `UPDATE receivers SET company = ?, phone = ?, email = ?, address = ?, address_2 = ?, city = ?, state = ?, pincode = ?, country = ?, gstin_type = ?, gstin_no = ?
+           WHERE id = ?`,
+          [r.company || '', r.phone || '', r.email || '', r.address || '', r.address_2 || '', r.city || '', r.state || '', r.pincode || '', r.country || '', r.gstin_type || '', r.gstin_no || '', existing[0].id]
+        )
+      } else {
+        await execute(
+          `INSERT INTO receivers (name, company, phone, email, address, address_2, city, state, pincode, country, gstin_type, gstin_no)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [r.name.trim(), r.company || '', r.phone || '', r.email || '', r.address || '', r.address_2 || '', r.city || '', r.state || '', r.pincode || '', r.country || '', r.gstin_type || '', r.gstin_no || '']
+        )
+      }
       imported++
     }
 
-    return res.json({ success: true, message: `${imported} receivers imported successfully`, imported })
+    return res.json({ success: true, message: `${imported} receivers processed successfully`, imported })
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message })
   }

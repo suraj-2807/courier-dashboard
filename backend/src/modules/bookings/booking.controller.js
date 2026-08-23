@@ -137,22 +137,26 @@ function extractBookingFields(body) {
 }
 
 /**
- * Upsert sender if inline fields provided
+ * Upsert sender if inline fields provided (deduplicates by name)
  */
 async function upsertSender(fields) {
   if (fields.sender_id) {
     if (fields.sender_name) {
       await execute(
-        `UPDATE senders SET name = ?, email = ?, phone = ?, address = ?, city = ?, pincode = ?, state = ?, country = ? WHERE id = ?`,
+        `UPDATE senders SET name = ?, company = ?, email = ?, phone = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
         [
           fields.sender_name,
+          fields.sender_company || '',
           fields.sender_email || '',
           fields.sender_phone || '',
           fields.sender_address || '',
+          fields.sender_address_2 || '',
           fields.sender_city || '',
           fields.sender_pincode || '',
           fields.sender_state || '',
           fields.sender_country || 'INDIA',
+          fields.sender_gstin_type || '',
+          fields.sender_gstin_no || '',
           fields.sender_id
         ]
       )
@@ -160,41 +164,75 @@ async function upsertSender(fields) {
     return fields.sender_id
   }
   if (!fields.sender_name) return null
+
+  // Check if sender already exists with same name to prevent duplicates
+  const existing = await query(
+    `SELECT id FROM senders WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`,
+    [fields.sender_name]
+  )
+  if (existing && existing.length > 0) {
+    await execute(
+      `UPDATE senders SET company = ?, email = ?, phone = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
+      [
+        fields.sender_company || '',
+        fields.sender_email || '',
+        fields.sender_phone || '',
+        fields.sender_address || '',
+        fields.sender_address_2 || '',
+        fields.sender_city || '',
+        fields.sender_pincode || '',
+        fields.sender_state || '',
+        fields.sender_country || 'INDIA',
+        fields.sender_gstin_type || '',
+        fields.sender_gstin_no || '',
+        existing[0].id
+      ]
+    )
+    return existing[0].id
+  }
   
   const result = await execute(
-    `INSERT INTO senders (name, email, phone, address, city, pincode, state, country)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO senders (name, company, email, phone, address, address_2, city, pincode, state, country, gstin_type, gstin_no)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       fields.sender_name,
+      fields.sender_company || '',
       fields.sender_email || '',
       fields.sender_phone || '',
       fields.sender_address || '',
+      fields.sender_address_2 || '',
       fields.sender_city || '',
       fields.sender_pincode || '',
       fields.sender_state || '',
-      fields.sender_country || 'INDIA'
+      fields.sender_country || 'INDIA',
+      fields.sender_gstin_type || '',
+      fields.sender_gstin_no || ''
     ]
   )
   return result.insertId
 }
 
 /**
- * Upsert receiver if inline fields provided
+ * Upsert receiver if inline fields provided (deduplicates by name)
  */
 async function upsertReceiver(fields) {
   if (fields.receiver_id) {
     if (fields.receiver_name) {
       await execute(
-        `UPDATE receivers SET name = ?, email = ?, phone = ?, address = ?, city = ?, pincode = ?, state = ?, country = ? WHERE id = ?`,
+        `UPDATE receivers SET name = ?, company = ?, email = ?, phone = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
         [
           fields.receiver_name,
+          fields.receiver_company || '',
           fields.receiver_email || '',
           fields.receiver_phone || '',
           fields.receiver_address || '',
+          fields.receiver_address_2 || '',
           fields.receiver_city || '',
           fields.receiver_pincode || '',
           fields.receiver_state || '',
-          fields.receiver_country || 'INDIA',
+          fields.receiver_country || '',
+          fields.receiver_gstin_type || '',
+          fields.receiver_gstin_no || '',
           fields.receiver_id
         ]
       )
@@ -202,19 +240,49 @@ async function upsertReceiver(fields) {
     return fields.receiver_id
   }
   if (!fields.receiver_name) return null
+
+  // Check if receiver already exists with same name to prevent duplicates
+  const existing = await query(
+    `SELECT id FROM receivers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1`,
+    [fields.receiver_name]
+  )
+  if (existing && existing.length > 0) {
+    await execute(
+      `UPDATE receivers SET company = ?, email = ?, phone = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
+      [
+        fields.receiver_company || '',
+        fields.receiver_email || '',
+        fields.receiver_phone || '',
+        fields.receiver_address || '',
+        fields.receiver_address_2 || '',
+        fields.receiver_city || '',
+        fields.receiver_pincode || '',
+        fields.receiver_state || '',
+        fields.receiver_country || '',
+        fields.receiver_gstin_type || '',
+        fields.receiver_gstin_no || '',
+        existing[0].id
+      ]
+    )
+    return existing[0].id
+  }
   
   const result = await execute(
-    `INSERT INTO receivers (name, email, phone, address, city, pincode, state, country)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO receivers (name, company, email, phone, address, address_2, city, pincode, state, country, gstin_type, gstin_no)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       fields.receiver_name,
+      fields.receiver_company || '',
       fields.receiver_email || '',
       fields.receiver_phone || '',
       fields.receiver_address || '',
+      fields.receiver_address_2 || '',
       fields.receiver_city || '',
       fields.receiver_pincode || '',
       fields.receiver_state || '',
-      fields.receiver_country || 'INDIA'
+      fields.receiver_country || '',
+      fields.receiver_gstin_type || '',
+      fields.receiver_gstin_no || ''
     ]
   )
   return result.insertId

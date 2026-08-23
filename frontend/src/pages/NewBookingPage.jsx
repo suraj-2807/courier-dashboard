@@ -250,7 +250,14 @@ export default function NewBookingPage() {
     queryKey: ['senders'],
     queryFn: () => sendersApi.getAll().then(res => res.data)
   })
-  const allSenders = sendersData?.senders || []
+  const allSenders = useMemo(() => {
+    const map = new Map()
+    for (const s of (sendersData?.senders || [])) {
+      const key = (s.name || '').trim().toLowerCase()
+      if (key && !map.has(key)) map.set(key, s)
+    }
+    return Array.from(map.values())
+  }, [sendersData])
   const [senderSuggestionsOpen, setSenderSuggestionsOpen] = useState(false)
   const senderContainerRef = useRef(null)
 
@@ -259,7 +266,14 @@ export default function NewBookingPage() {
     queryKey: ['receivers'],
     queryFn: () => receiversApi.getAll().then(res => res.data)
   })
-  const allReceivers = receiversData?.receivers || []
+  const allReceivers = useMemo(() => {
+    const map = new Map()
+    for (const r of (receiversData?.receivers || [])) {
+      const key = (r.name || '').trim().toLowerCase()
+      if (key && !map.has(key)) map.set(key, r)
+    }
+    return Array.from(map.values())
+  }, [receiversData])
   const [receiverSuggestionsOpen, setReceiverSuggestionsOpen] = useState(false)
   const receiverContainerRef = useRef(null)
 

@@ -65,19 +65,31 @@ export default function UsersPage() {
   })
   const countryList = countryCodesData?.countryCodes || []
 
+  // Helper to deduplicate list by name
+  const deduplicateContacts = (list = []) => {
+    const map = new Map()
+    for (const item of list) {
+      const key = (item.name || '').trim().toLowerCase()
+      if (key && !map.has(key)) {
+        map.set(key, item)
+      }
+    }
+    return Array.from(map.values())
+  }
+
   // Senders Query
   const { data: sendersData, isLoading: loadingSenders } = useQuery({
     queryKey: ['senders'],
     queryFn: () => sendersApi.getAll().then(res => res.data)
   })
-  const senders = sendersData?.senders || []
+  const senders = useMemo(() => deduplicateContacts(sendersData?.senders || []), [sendersData])
 
   // Receivers Query
   const { data: receiversData, isLoading: loadingReceivers } = useQuery({
     queryKey: ['receivers'],
     queryFn: () => receiversApi.getAll().then(res => res.data)
   })
-  const receivers = receiversData?.receivers || []
+  const receivers = useMemo(() => deduplicateContacts(receiversData?.receivers || []), [receiversData])
 
   const currentList = activeTab === 'senders' ? senders : receivers
   const isLoading = activeTab === 'senders' ? loadingSenders : loadingReceivers

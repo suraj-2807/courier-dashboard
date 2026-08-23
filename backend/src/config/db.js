@@ -382,6 +382,25 @@ export async function initializeDb() {
       console.error('receivers column migration failed:', rErr.message)
     }
 
+    // ── Auto-cleanup duplicates in senders and receivers ──
+    try {
+      // Remove duplicate senders keeping only the highest ID for each name
+      await execute(`
+        DELETE s1 FROM senders s1
+        INNER JOIN senders s2
+        WHERE s1.id < s2.id AND LOWER(TRIM(s1.name)) = LOWER(TRIM(s2.name))
+      `)
+      // Remove duplicate receivers keeping only the highest ID for each name
+      await execute(`
+        DELETE r1 FROM receivers r1
+        INNER JOIN receivers r2
+        WHERE r1.id < r2.id AND LOWER(TRIM(r1.name)) = LOWER(TRIM(r2.name))
+      `)
+      console.log('senders & receivers deduplication cleanup completed.')
+    } catch (dedupErr) {
+      console.error('deduplication cleanup warning:', dedupErr.message)
+    }
+
     console.log('DB initialization successfully completed!')
   } catch (err) {
     console.error('DB Initialization/Migration Failed:', err)
