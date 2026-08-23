@@ -204,14 +204,12 @@ export default function ProductsPage() {
       const record = { ...EMPTY_FORM }
       headers.forEach((header, colIndex) => {
         const val = values[colIndex] || ''
-        if (header.includes('name') || header.includes('product') || header.includes('item')) {
+        if (header.includes('desc') || header.includes('name') || header.includes('product') || header.includes('item')) {
           record.name = val
-        } else if (header.includes('hs') || header.includes('hsn') || header.includes('tariff')) {
+        } else if (header.includes('hs') || header.includes('hsn') || header.includes('tariff') || header.includes('code')) {
           record.hs_code = val
-        } else if (header.includes('country')) {
+        } else if (header.includes('country') || header.includes('dest')) {
           record.country = val
-        } else if (header.includes('desc') || header.includes('note')) {
-          record.description = val
         }
       })
 
@@ -224,11 +222,11 @@ export default function ProductsPage() {
   }
 
   const downloadSampleCSV = () => {
-    const headers = 'product_name,hs_code,country,description'
-    const sample1 = 'Cotton Men T-Shirt,61091000,US,100% Cotton Knitted T-Shirt'
-    const sample2 = 'Leather Handbag,42022100,GB,Genuine Leather Ladies Handbag'
-    const sample3 = 'Handicraft Wooden Box,44209090,,Decorative Sheesham Wood Box'
-    const sample4 = 'Ayurvedic Herbal Soap,34011110,AE,Natural Herbal Body Soap'
+    const headers = 'description,hsn_code,country'
+    const sample1 = 'Cotton Men T-Shirt,61091000,US'
+    const sample2 = 'Leather Handbag,42022100,GB'
+    const sample3 = 'Handicraft Wooden Box,44209090,ALL'
+    const sample4 = 'Ayurvedic Herbal Soap,34011110,AE'
     const content = `${headers}\n${sample1}\n${sample2}\n${sample3}\n${sample4}`
 
     const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' })
@@ -362,17 +360,16 @@ export default function ProductsPage() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-surface-alt/70 border-b border-border text-[11px] font-extrabold text-text-tertiary uppercase tracking-wider">
-                  <th className="py-3.5 px-4">Product Name / Item Description</th>
+                  <th className="py-3.5 px-4">Item Description</th>
                   <th className="py-3.5 px-4">HSN / Tariff Code</th>
                   <th className="py-3.5 px-4">Country Scope</th>
-                  <th className="py-3.5 px-4">Notes / Details</th>
                   <th className="py-3.5 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border text-[13px]">
                 {filteredProducts.map((item) => (
                   <tr key={item.id} className="hover:bg-surface-alt/40 transition-colors group">
-                    {/* Product Name */}
+                    {/* Item Description */}
                     <td className="py-3.5 px-4">
                       <div className="font-extrabold text-navy leading-snug">
                         {item.name}
@@ -381,7 +378,7 @@ export default function ProductsPage() {
 
                     {/* HSN Code */}
                     <td className="py-3.5 px-4">
-                      <span className="font-mono font-extrabold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-lg text-[12px]">
+                      <span className="font-mono font-extrabold text-primary bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-lg text-[13px]">
                         {item.hs_code}
                       </span>
                     </td>
@@ -395,14 +392,9 @@ export default function ProductsPage() {
                       ) : (
                         <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 text-[11px] bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
                           <Globe className="w-3 h-3 text-emerald-600" />
-                          Global (All)
+                          Global (All Countries)
                         </span>
                       )}
-                    </td>
-
-                    {/* Description */}
-                    <td className="py-3.5 px-4 text-text-secondary text-[12px] max-w-[260px] truncate">
-                      {item.description || '—'}
                     </td>
 
                     {/* Actions */}
@@ -444,10 +436,10 @@ export default function ProductsPage() {
                 </div>
                 <div>
                   <h2 className="text-[16px] font-extrabold text-navy">
-                    {editingItem ? 'Edit Product & HSN' : 'Add New Product & HSN'}
+                    {editingItem ? 'Edit Item & HSN Code' : 'Add Item & HSN Code'}
                   </h2>
                   <p className="text-[11px] text-text-tertiary">
-                    This will appear in autocomplete suggestions when creating invoice items.
+                    This exact description and HSN code will auto-fill in invoice items.
                   </p>
                 </div>
               </div>
@@ -463,7 +455,7 @@ export default function ProductsPage() {
             <form onSubmit={handleFormSubmit} className="p-6 space-y-4">
               <div>
                 <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                  Product / Item Name <span className="text-primary">*</span>
+                  Item Description <span className="text-primary">*</span>
                 </label>
                 <input
                   type="text"
@@ -502,19 +494,6 @@ export default function ProductsPage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                  Description / Remarks (Optional)
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Optional material specs, composition, or custom notes"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 resize-none"
-                />
-              </div>
-
               {/* Footer */}
               <div className="pt-4 border-t border-border flex items-center justify-end gap-3">
                 <button
@@ -530,7 +509,7 @@ export default function ProductsPage() {
                   className="px-5 py-2 rounded-xl text-[13px] font-bold text-white bg-primary hover:bg-primary-dark transition-all duration-200 shadow-sm hover:shadow-primary/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Save Product
+                  Save Item
                 </button>
               </div>
             </form>
