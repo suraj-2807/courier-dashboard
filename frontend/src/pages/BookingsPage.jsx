@@ -462,7 +462,7 @@ export default function BookingsPage() {
                         className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
                       />
                     </th>
-                    {['Our AWB', 'Vendor / AWB', 'Destination', 'Status', 'Date', 'Actions'].map((h) => (
+                    {['Our AWB', 'Vendor / AWB', 'Shipper', 'Consignee', 'Status', 'Date', 'Actions'].map((h) => (
                       <th
                         key={h}
                         className={`px-4 py-3 text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] whitespace-nowrap ${
@@ -497,7 +497,7 @@ export default function BookingsPage() {
                             to={`/bookings/${b.id}`}
                             className="group/awb"
                           >
-                            <span className="text-[13px] font-extrabold text-[#BB0013] hover:underline font-mono">
+                            <span className="text-[13px] font-extrabold text-[#BB0013] hover:underline">
                               {b.tracking_number || '—'}
                             </span>
                           </Link>
@@ -511,7 +511,7 @@ export default function BookingsPage() {
                         <div className="space-y-1">
                           {b.vendor_awb_number ? (
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-[12px] font-bold text-[#1a237e] font-mono">
+                              <span className="text-[12px] font-bold text-[#1a237e]">
                                 {b.vendor_awb_number}
                               </span>
                               <CopyButton text={b.vendor_awb_number} label="Vendor AWB copied!" />
@@ -522,7 +522,7 @@ export default function BookingsPage() {
 
                           {/* Forwarding Number (Vendor AWB 2 / UPS / FedEx / Carrier AWB) */}
                           {(b.vendor_awb_number_2 || b.forwarding_no) && (
-                            <div className="inline-flex items-center gap-1 bg-amber-50/90 border border-amber-200 px-2 py-0.5 rounded-md text-[11px] font-mono font-bold text-amber-900 shadow-2xs">
+                            <div className="inline-flex items-center gap-1 bg-amber-50/90 border border-amber-200 px-2 py-0.5 rounded-md text-[11px] font-bold text-amber-900 shadow-2xs">
                               <span className="text-[9px] uppercase font-sans tracking-wider text-amber-700 font-extrabold">
                                 {b.secondary_carrier || (/^1Z/i.test(b.vendor_awb_number_2 || b.forwarding_no) ? 'UPS AWB' : 'FWD')}:
                               </span>
@@ -536,14 +536,25 @@ export default function BookingsPage() {
                           </span>
                         </div>
                       </td>
-                      {/* Destination */}
+                      {/* Shipper */}
                       <td className="px-4 py-3.5">
                         <div>
-                          <p className="text-[12px] text-text-primary font-medium">
-                            {b.receivers?.city || '—'}
+                          <p className="text-[12px] text-text-primary font-bold">
+                            {b.senders?.name || b.sender_name || '—'}
                           </p>
-                          <p className="text-[10px] text-text-tertiary mt-0.5">
-                            {b.receivers?.name || '—'}
+                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5">
+                            {b.senders?.country || b.sender_country || 'INDIA'}
+                          </p>
+                        </div>
+                      </td>
+                      {/* Consignee */}
+                      <td className="px-4 py-3.5">
+                        <div>
+                          <p className="text-[12px] text-text-primary font-bold">
+                            {b.receivers?.name || b.receiver_name || '—'}
+                          </p>
+                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5">
+                            {b.receivers?.country || b.receiver_country || b.receivers?.city || '—'}
                           </p>
                         </div>
                       </td>

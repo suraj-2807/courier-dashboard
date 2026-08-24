@@ -1329,7 +1329,7 @@ export default function NewBookingPage() {
                       placeholder="Pincode"
                       value={form.sender_pincode}
                       onChange={e => updateForm('sender_pincode', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                 </div>
@@ -1362,7 +1362,7 @@ export default function NewBookingPage() {
                       placeholder="+91 99999 99999"
                       value={form.sender_phone}
                       onChange={e => updateForm('sender_phone', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                   <CompactField label="Email Address">
@@ -1405,7 +1405,7 @@ export default function NewBookingPage() {
                         }
                         updateForm('sender_gstin_no', val)
                       }}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                 </div>
@@ -1534,7 +1534,7 @@ export default function NewBookingPage() {
                       placeholder="Zip / Pincode"
                       value={form.receiver_pincode}
                       onChange={e => updateForm('receiver_pincode', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                 </div>
@@ -1567,7 +1567,7 @@ export default function NewBookingPage() {
                       placeholder="+1 999 999 9999"
                       value={form.receiver_phone}
                       onChange={e => updateForm('receiver_phone', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                   <CompactField label="Email Address">
@@ -1610,7 +1610,7 @@ export default function NewBookingPage() {
                         }
                         updateForm('receiver_gstin_no', val)
                       }}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                 </div>
@@ -1941,7 +1941,7 @@ export default function NewBookingPage() {
                       placeholder="e.g. ORD-1002"
                       value={form.order_reference}
                       onChange={e => updateForm('order_reference', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-mono"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                   <CompactField label="Remarks">
@@ -2349,7 +2349,7 @@ export default function NewBookingPage() {
                     </div>
                     <div className="px-1">
                       <input type="text" placeholder="" value={item.hs_code} onChange={e => updateInvoiceItem(idx, 'hs_code', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs font-mono text-center text-text-primary" />
+                        className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary" />
                     </div>
                     <div className="px-1">
                       <select
@@ -2419,9 +2419,9 @@ export default function NewBookingPage() {
                 <div className="grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] border-t-2 border-border bg-surface-alt text-[11px] font-extrabold items-center py-2">
                   <div className="col-span-5"></div>
                   <div className="px-1.5 py-1 text-right text-navy uppercase tracking-wider">Total Wt</div>
-                  <div className="px-1.5 py-1 text-right text-navy font-mono">{invoiceTotalWeight.toFixed(2)}</div>
+                  <div className="px-1.5 py-1 text-right text-navy">{invoiceTotalWeight.toFixed(2)}</div>
                   <div className="col-span-2 px-1.5 py-1 text-right text-navy uppercase tracking-wider">Total Amount</div>
-                  <div className="px-1.5 py-1 text-right text-primary text-xs font-bold font-mono">{invoiceTotalAmount.toFixed(2)}</div>
+                  <div className="px-1.5 py-1 text-right text-primary text-xs font-bold">{invoiceTotalAmount.toFixed(2)}</div>
                   <div></div>
                 </div>
               </div>
