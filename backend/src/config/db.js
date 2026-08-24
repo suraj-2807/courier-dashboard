@@ -92,11 +92,28 @@ export async function initializeDb() {
       { name: 'content_description', type: "VARCHAR(500) DEFAULT ''" },
       { name: 'declared_value', type: "DECIMAL(12,2) DEFAULT 0" },
       { name: 'cod_amount', type: "DECIMAL(12,2) DEFAULT 0" },
+      { name: 'sender_name', type: "VARCHAR(255) DEFAULT ''" },
       { name: 'sender_company', type: "VARCHAR(255) DEFAULT ''" },
+      { name: 'sender_phone', type: "VARCHAR(50) DEFAULT ''" },
+      { name: 'sender_email', type: "VARCHAR(255) DEFAULT ''" },
+      { name: 'sender_address', type: "TEXT DEFAULT NULL" },
       { name: 'sender_address_2', type: "VARCHAR(500) DEFAULT ''" },
+      { name: 'sender_city', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'sender_state', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'sender_pincode', type: "VARCHAR(20) DEFAULT ''" },
+      { name: 'sender_country', type: "VARCHAR(100) DEFAULT 'INDIA'" },
       { name: 'sender_gstin_type', type: "VARCHAR(50) DEFAULT ''" },
       { name: 'sender_gstin_no', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'receiver_name', type: "VARCHAR(255) DEFAULT ''" },
+      { name: 'receiver_company', type: "VARCHAR(255) DEFAULT ''" },
+      { name: 'receiver_phone', type: "VARCHAR(50) DEFAULT ''" },
+      { name: 'receiver_email', type: "VARCHAR(255) DEFAULT ''" },
+      { name: 'receiver_address', type: "TEXT DEFAULT NULL" },
       { name: 'receiver_address_2', type: "VARCHAR(500) DEFAULT ''" },
+      { name: 'receiver_city', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'receiver_state', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'receiver_pincode', type: "VARCHAR(20) DEFAULT ''" },
+      { name: 'receiver_country', type: "VARCHAR(100) DEFAULT ''" },
       { name: 'receiver_gstin_type', type: "VARCHAR(50) DEFAULT ''" },
       { name: 'receiver_gstin_no', type: "VARCHAR(100) DEFAULT ''" },
       { name: 'invoice_no', type: "VARCHAR(100) DEFAULT ''" },
@@ -132,6 +149,44 @@ export async function initializeDb() {
           console.error(`Failed to add shipments.${col.name}:`, colErr.message)
         }
       }
+    }
+
+    // ── Auto-backfill sender/receiver snapshots for existing shipments ──
+    try {
+      await execute(`
+        UPDATE shipments s
+        JOIN senders snd ON s.sender_id = snd.id
+        SET s.sender_name = IF(s.sender_name = '' OR s.sender_name IS NULL, snd.name, s.sender_name),
+            s.sender_company = IF(s.sender_company = '' OR s.sender_company IS NULL, snd.company, s.sender_company),
+            s.sender_phone = IF(s.sender_phone = '' OR s.sender_phone IS NULL, snd.phone, s.sender_phone),
+            s.sender_email = IF(s.sender_email = '' OR s.sender_email IS NULL, snd.email, s.sender_email),
+            s.sender_address = IF(s.sender_address = '' OR s.sender_address IS NULL, snd.address, s.sender_address),
+            s.sender_address_2 = IF(s.sender_address_2 = '' OR s.sender_address_2 IS NULL, snd.address_2, s.sender_address_2),
+            s.sender_city = IF(s.sender_city = '' OR s.sender_city IS NULL, snd.city, s.sender_city),
+            s.sender_state = IF(s.sender_state = '' OR s.sender_state IS NULL, snd.state, s.sender_state),
+            s.sender_pincode = IF(s.sender_pincode = '' OR s.sender_pincode IS NULL, snd.pincode, s.sender_pincode),
+            s.sender_country = IF(s.sender_country = '' OR s.sender_country IS NULL, snd.country, s.sender_country),
+            s.sender_gstin_type = IF(s.sender_gstin_type = '' OR s.sender_gstin_type IS NULL, snd.gstin_type, s.sender_gstin_type),
+            s.sender_gstin_no = IF(s.sender_gstin_no = '' OR s.sender_gstin_no IS NULL, snd.gstin_no, s.sender_gstin_no)
+      `)
+      await execute(`
+        UPDATE shipments s
+        JOIN receivers rcv ON s.receiver_id = rcv.id
+        SET s.receiver_name = IF(s.receiver_name = '' OR s.receiver_name IS NULL, rcv.name, s.receiver_name),
+            s.receiver_company = IF(s.receiver_company = '' OR s.receiver_company IS NULL, rcv.company, s.receiver_company),
+            s.receiver_phone = IF(s.receiver_phone = '' OR s.receiver_phone IS NULL, rcv.phone, s.receiver_phone),
+            s.receiver_email = IF(s.receiver_email = '' OR s.receiver_email IS NULL, rcv.email, s.receiver_email),
+            s.receiver_address = IF(s.receiver_address = '' OR s.receiver_address IS NULL, rcv.address, s.receiver_address),
+            s.receiver_address_2 = IF(s.receiver_address_2 = '' OR s.receiver_address_2 IS NULL, rcv.address_2, s.receiver_address_2),
+            s.receiver_city = IF(s.receiver_city = '' OR s.receiver_city IS NULL, rcv.city, s.receiver_city),
+            s.receiver_state = IF(s.receiver_state = '' OR s.receiver_state IS NULL, rcv.state, s.receiver_state),
+            s.receiver_pincode = IF(s.receiver_pincode = '' OR s.receiver_pincode IS NULL, rcv.pincode, s.receiver_pincode),
+            s.receiver_country = IF(s.receiver_country = '' OR s.receiver_country IS NULL, rcv.country, s.receiver_country),
+            s.receiver_gstin_type = IF(s.receiver_gstin_type = '' OR s.receiver_gstin_type IS NULL, rcv.gstin_type, s.receiver_gstin_type),
+            s.receiver_gstin_no = IF(s.receiver_gstin_no = '' OR s.receiver_gstin_no IS NULL, rcv.gstin_no, s.receiver_gstin_no)
+      `)
+    } catch (backfillErr) {
+      console.error('Shipment sender/receiver snapshot backfill warning:', backfillErr.message)
     }
 
     // ── Vendor API Configs table ──

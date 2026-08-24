@@ -179,12 +179,39 @@ export const deleteReceiver =
     try {
       const { id } = req.params
 
-      // Also remove any other duplicates with same name when deleted
-      const receiver = await query('SELECT name FROM receivers WHERE id = ?', [id])
-      if (receiver.length > 0) {
+      // 1. Snapshot all shipments referencing this receiver before deletion so shipment details never disappear
+      const receiverRows = await query('SELECT * FROM receivers WHERE id = ?', [id])
+      if (receiverRows.length > 0) {
+        const r = receiverRows[0]
+        try {
+          await execute(`
+            UPDATE shipments 
+            SET receiver_name = IF(receiver_name = '' OR receiver_name IS NULL, ?, receiver_name),
+                receiver_company = IF(receiver_company = '' OR receiver_company IS NULL, ?, receiver_company),
+                receiver_phone = IF(receiver_phone = '' OR receiver_phone IS NULL, ?, receiver_phone),
+                receiver_email = IF(receiver_email = '' OR receiver_email IS NULL, ?, receiver_email),
+                receiver_address = IF(receiver_address = '' OR receiver_address IS NULL, ?, receiver_address),
+                receiver_address_2 = IF(receiver_address_2 = '' OR receiver_address_2 IS NULL, ?, receiver_address_2),
+                receiver_city = IF(receiver_city = '' OR receiver_city IS NULL, ?, receiver_city),
+                receiver_state = IF(receiver_state = '' OR receiver_state IS NULL, ?, receiver_state),
+                receiver_pincode = IF(receiver_pincode = '' OR receiver_pincode IS NULL, ?, receiver_pincode),
+                receiver_country = IF(receiver_country = '' OR receiver_country IS NULL, ?, receiver_country),
+                receiver_gstin_type = IF(receiver_gstin_type = '' OR receiver_gstin_type IS NULL, ?, receiver_gstin_type),
+                receiver_gstin_no = IF(receiver_gstin_no = '' OR receiver_gstin_no IS NULL, ?, receiver_gstin_no)
+            WHERE receiver_id = ? OR (receiver_name IS NOT NULL AND LOWER(TRIM(receiver_name)) = LOWER(TRIM(?)))
+          `, [
+            r.name || '', r.company || '', r.phone || '', r.email || '',
+            r.address || '', r.address_2 || '', r.city || '', r.state || '',
+            r.pincode || '', r.country || '', r.gstin_type || '', r.gstin_no || '',
+            id, r.name
+          ])
+        } catch (snapErr) {
+          console.error('Failed to snapshot receiver before deletion:', snapErr.message)
+        }
+
         await execute(
           'DELETE FROM receivers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))',
-          [receiver[0].name]
+          [r.name]
         )
       } else {
         await execute('DELETE FROM receivers WHERE id = ?', [id])

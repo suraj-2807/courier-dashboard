@@ -68,6 +68,7 @@ function extractBookingFields(body) {
     sender_address_2: body.sender_address_2,
     sender_gstin_type: body.sender_gstin_type,
     sender_gstin_no: body.sender_gstin_no,
+    receiver_company: body.receiver_company,
     receiver_address_2: body.receiver_address_2,
     receiver_gstin_type: body.receiver_gstin_type,
     receiver_gstin_no: body.receiver_gstin_no,
@@ -133,6 +134,87 @@ function extractBookingFields(body) {
     invoice_items: body.invoice_items,
     invoice_type: body.invoice_type,
     invoice_note: body.invoice_note
+  }
+}
+
+/**
+ * Resolve full snapshot fields for sender and receiver so that deleting a contact from
+ * the address book never causes shipment booking details to disappear.
+ */
+async function prepareSnapshotFields(fields, finalSenderId, finalReceiverId) {
+  let sender_name = fields.sender_name || ''
+  let sender_company = fields.sender_company || ''
+  let sender_phone = fields.sender_phone || ''
+  let sender_email = fields.sender_email || ''
+  let sender_address = fields.sender_address || ''
+  let sender_address_2 = fields.sender_address_2 || ''
+  let sender_city = fields.sender_city || ''
+  let sender_state = fields.sender_state || ''
+  let sender_pincode = fields.sender_pincode || ''
+  let sender_country = fields.sender_country || 'INDIA'
+  let sender_gstin_type = fields.sender_gstin_type || ''
+  let sender_gstin_no = fields.sender_gstin_no || ''
+
+  if (finalSenderId && (!sender_name || !sender_city)) {
+    try {
+      const sRows = await query('SELECT * FROM senders WHERE id = ?', [finalSenderId])
+      if (sRows.length > 0) {
+        const s = sRows[0]
+        sender_name = sender_name || s.name || ''
+        sender_company = sender_company || s.company || ''
+        sender_phone = sender_phone || s.phone || ''
+        sender_email = sender_email || s.email || ''
+        sender_address = sender_address || s.address || ''
+        sender_address_2 = sender_address_2 || s.address_2 || ''
+        sender_city = sender_city || s.city || ''
+        sender_state = sender_state || s.state || ''
+        sender_pincode = sender_pincode || s.pincode || ''
+        sender_country = sender_country || s.country || 'INDIA'
+        sender_gstin_type = sender_gstin_type || s.gstin_type || ''
+        sender_gstin_no = sender_gstin_no || s.gstin_no || ''
+      }
+    } catch {}
+  }
+
+  let receiver_name = fields.receiver_name || ''
+  let receiver_company = fields.receiver_company || ''
+  let receiver_phone = fields.receiver_phone || ''
+  let receiver_email = fields.receiver_email || ''
+  let receiver_address = fields.receiver_address || ''
+  let receiver_address_2 = fields.receiver_address_2 || ''
+  let receiver_city = fields.receiver_city || ''
+  let receiver_state = fields.receiver_state || ''
+  let receiver_pincode = fields.receiver_pincode || ''
+  let receiver_country = fields.receiver_country || ''
+  let receiver_gstin_type = fields.receiver_gstin_type || ''
+  let receiver_gstin_no = fields.receiver_gstin_no || ''
+
+  if (finalReceiverId && (!receiver_name || !receiver_city)) {
+    try {
+      const rRows = await query('SELECT * FROM receivers WHERE id = ?', [finalReceiverId])
+      if (rRows.length > 0) {
+        const r = rRows[0]
+        receiver_name = receiver_name || r.name || ''
+        receiver_company = receiver_company || r.company || ''
+        receiver_phone = receiver_phone || r.phone || ''
+        receiver_email = receiver_email || r.email || ''
+        receiver_address = receiver_address || r.address || ''
+        receiver_address_2 = receiver_address_2 || r.address_2 || ''
+        receiver_city = receiver_city || r.city || ''
+        receiver_state = receiver_state || r.state || ''
+        receiver_pincode = receiver_pincode || r.pincode || ''
+        receiver_country = receiver_country || r.country || ''
+        receiver_gstin_type = receiver_gstin_type || r.gstin_type || ''
+        receiver_gstin_no = receiver_gstin_no || r.gstin_no || ''
+      }
+    } catch {}
+  }
+
+  return {
+    sender_name, sender_company, sender_phone, sender_email, sender_address, sender_address_2,
+    sender_city, sender_state, sender_pincode, sender_country, sender_gstin_type, sender_gstin_no,
+    receiver_name, receiver_company, receiver_phone, receiver_email, receiver_address, receiver_address_2,
+    receiver_city, receiver_state, receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no
   }
 }
 
@@ -748,8 +830,12 @@ export const saveBooking = async (req, res) => {
           payment_mode = ?, package_type = ?, total_amount = ?, shipping_charge = ?,
           rate_per_kg = ?, extra_charge = ?, final_chargeable_weight = ?,
           order_reference = ?, remarks = ?,
-          sender_company = ?, sender_address_2 = ?, sender_gstin_type = ?, sender_gstin_no = ?,
-          receiver_address_2 = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
+          sender_name = ?, sender_company = ?, sender_phone = ?, sender_email = ?,
+          sender_address = ?, sender_address_2 = ?, sender_city = ?, sender_state = ?,
+          sender_pincode = ?, sender_country = ?, sender_gstin_type = ?, sender_gstin_no = ?,
+          receiver_name = ?, receiver_company = ?, receiver_phone = ?, receiver_email = ?,
+          receiver_address = ?, receiver_address_2 = ?, receiver_city = ?, receiver_state = ?,
+          receiver_pincode = ?, receiver_country = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
           invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
           invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?
         WHERE id = ?`,
@@ -779,13 +865,30 @@ export const saveBooking = async (req, res) => {
           parseFloat(fields.final_chargeable_weight) || finalChgWeight || 0,
           fields.order_reference || '',
           fields.remarks || '',
-          fields.sender_company || '',
-          fields.sender_address_2 || '',
-          fields.sender_gstin_type || '',
-          fields.sender_gstin_no || '',
-          fields.receiver_address_2 || '',
-          fields.receiver_gstin_type || '',
-          fields.receiver_gstin_no || '',
+          snap.sender_name,
+          snap.sender_company,
+          snap.sender_phone,
+          snap.sender_email,
+          snap.sender_address,
+          snap.sender_address_2,
+          snap.sender_city,
+          snap.sender_state,
+          snap.sender_pincode,
+          snap.sender_country,
+          snap.sender_gstin_type,
+          snap.sender_gstin_no,
+          snap.receiver_name,
+          snap.receiver_company,
+          snap.receiver_phone,
+          snap.receiver_email,
+          snap.receiver_address,
+          snap.receiver_address_2,
+          snap.receiver_city,
+          snap.receiver_state,
+          snap.receiver_pincode,
+          snap.receiver_country,
+          snap.receiver_gstin_type,
+          snap.receiver_gstin_no,
           fields.invoice_currency || 'INR',
           fields.hs_code || '',
           fields.export_reason || '',
@@ -810,11 +913,15 @@ export const saveBooking = async (req, res) => {
           payment_mode, package_type, total_amount, shipping_charge,
           rate_per_kg, extra_charge, final_chargeable_weight,
           order_reference, remarks, status, vendor_push_status, is_locked,
-          sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
-          receiver_address_2, receiver_gstin_type, receiver_gstin_no,
+          sender_name, sender_company, sender_phone, sender_email,
+          sender_address, sender_address_2, sender_city, sender_state,
+          sender_pincode, sender_country, sender_gstin_type, sender_gstin_no,
+          receiver_name, receiver_company, receiver_phone, receiver_email,
+          receiver_address, receiver_address_2, receiver_city, receiver_state,
+          receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
           invoice_type, invoice_note, invoice_items, parcels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
           finalSenderId || null,
@@ -846,13 +953,30 @@ export const saveBooking = async (req, res) => {
           'draft',
           'skipped',
           false,
-          fields.sender_company || '',
-          fields.sender_address_2 || '',
-          fields.sender_gstin_type || '',
-          fields.sender_gstin_no || '',
-          fields.receiver_address_2 || '',
-          fields.receiver_gstin_type || '',
-          fields.receiver_gstin_no || '',
+          snap.sender_name,
+          snap.sender_company,
+          snap.sender_phone,
+          snap.sender_email,
+          snap.sender_address,
+          snap.sender_address_2,
+          snap.sender_city,
+          snap.sender_state,
+          snap.sender_pincode,
+          snap.sender_country,
+          snap.sender_gstin_type,
+          snap.sender_gstin_no,
+          snap.receiver_name,
+          snap.receiver_company,
+          snap.receiver_phone,
+          snap.receiver_email,
+          snap.receiver_address,
+          snap.receiver_address_2,
+          snap.receiver_city,
+          snap.receiver_state,
+          snap.receiver_pincode,
+          snap.receiver_country,
+          snap.receiver_gstin_type,
+          snap.receiver_gstin_no,
           tracking_number,
           fields.invoice_date || new Date().toISOString().split('T')[0],
           fields.invoice_currency || 'INR',
@@ -1184,6 +1308,8 @@ export const createBooking = async (req, res) => {
         }, 0)
       : (parseFloat(fields.chargeable_weight) ? Math.ceil(parseFloat(fields.chargeable_weight)) : Math.ceil(finalWeight) || 0)
 
+    const snap = await prepareSnapshotFields(fields, finalSenderId, finalReceiverId)
+
     let shipmentId
     let tracking_number
     let order_id
@@ -1211,8 +1337,12 @@ export const createBooking = async (req, res) => {
           payment_mode = ?, package_type = ?, total_amount = ?, shipping_charge = ?,
           rate_per_kg = ?, extra_charge = ?, final_chargeable_weight = ?,
           order_reference = ?, remarks = ?, status = ?, vendor_push_status = ?,
-          sender_company = ?, sender_address_2 = ?, sender_gstin_type = ?, sender_gstin_no = ?,
-          receiver_address_2 = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
+          sender_name = ?, sender_company = ?, sender_phone = ?, sender_email = ?,
+          sender_address = ?, sender_address_2 = ?, sender_city = ?, sender_state = ?,
+          sender_pincode = ?, sender_country = ?, sender_gstin_type = ?, sender_gstin_no = ?,
+          receiver_name = ?, receiver_company = ?, receiver_phone = ?, receiver_email = ?,
+          receiver_address = ?, receiver_address_2 = ?, receiver_city = ?, receiver_state = ?,
+          receiver_pincode = ?, receiver_country = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
           invoice_no = ?, invoice_date = ?, invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
           invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?
         WHERE id = ?`,
@@ -1244,13 +1374,30 @@ export const createBooking = async (req, res) => {
           fields.remarks || '',
           fields.vendor_config_id ? 'processing' : 'booked',
           fields.vendor_config_id ? 'pending' : 'skipped',
-          fields.sender_company || '',
-          fields.sender_address_2 || '',
-          fields.sender_gstin_type || '',
-          fields.sender_gstin_no || '',
-          fields.receiver_address_2 || '',
-          fields.receiver_gstin_type || '',
-          fields.receiver_gstin_no || '',
+          snap.sender_name,
+          snap.sender_company,
+          snap.sender_phone,
+          snap.sender_email,
+          snap.sender_address,
+          snap.sender_address_2,
+          snap.sender_city,
+          snap.sender_state,
+          snap.sender_pincode,
+          snap.sender_country,
+          snap.sender_gstin_type,
+          snap.sender_gstin_no,
+          snap.receiver_name,
+          snap.receiver_company,
+          snap.receiver_phone,
+          snap.receiver_email,
+          snap.receiver_address,
+          snap.receiver_address_2,
+          snap.receiver_city,
+          snap.receiver_state,
+          snap.receiver_pincode,
+          snap.receiver_country,
+          snap.receiver_gstin_type,
+          snap.receiver_gstin_no,
           tracking_number,
           fields.invoice_date || new Date().toISOString().split('T')[0],
           fields.invoice_currency || 'INR',
@@ -1277,11 +1424,15 @@ export const createBooking = async (req, res) => {
           payment_mode, package_type, total_amount, shipping_charge,
           rate_per_kg, extra_charge, final_chargeable_weight,
           order_reference, remarks, status, vendor_push_status, is_locked,
-          sender_company, sender_address_2, sender_gstin_type, sender_gstin_no,
-          receiver_address_2, receiver_gstin_type, receiver_gstin_no,
+          sender_name, sender_company, sender_phone, sender_email,
+          sender_address, sender_address_2, sender_city, sender_state,
+          sender_pincode, sender_country, sender_gstin_type, sender_gstin_no,
+          receiver_name, receiver_company, receiver_phone, receiver_email,
+          receiver_address, receiver_address_2, receiver_city, receiver_state,
+          receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
           invoice_type, invoice_note, invoice_items, parcels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
           finalSenderId || null,
@@ -1313,13 +1464,30 @@ export const createBooking = async (req, res) => {
           fields.vendor_config_id ? 'processing' : 'booked',
           fields.vendor_config_id ? 'pending' : 'skipped',
           false,
-          fields.sender_company || '',
-          fields.sender_address_2 || '',
-          fields.sender_gstin_type || '',
-          fields.sender_gstin_no || '',
-          fields.receiver_address_2 || '',
-          fields.receiver_gstin_type || '',
-          fields.receiver_gstin_no || '',
+          snap.sender_name,
+          snap.sender_company,
+          snap.sender_phone,
+          snap.sender_email,
+          snap.sender_address,
+          snap.sender_address_2,
+          snap.sender_city,
+          snap.sender_state,
+          snap.sender_pincode,
+          snap.sender_country,
+          snap.sender_gstin_type,
+          snap.sender_gstin_no,
+          snap.receiver_name,
+          snap.receiver_company,
+          snap.receiver_phone,
+          snap.receiver_email,
+          snap.receiver_address,
+          snap.receiver_address_2,
+          snap.receiver_city,
+          snap.receiver_state,
+          snap.receiver_pincode,
+          snap.receiver_country,
+          snap.receiver_gstin_type,
+          snap.receiver_gstin_no,
           tracking_number,
           fields.invoice_date || new Date().toISOString().split('T')[0],
           fields.invoice_currency || 'INR',
@@ -1549,28 +1717,36 @@ export const getBookings = async (req, res) => {
     )
 
     const bookings = dataRows.map(row => {
-      const senders = (row.s_id || row.s_name) ? {
-        id: row.s_id,
-        name: row.s_name || '',
-        phone: row.s_phone || '',
-        email: row.s_email || '',
-        address: row.s_address || '',
-        city: row.s_city || '',
-        state: row.s_state || '',
-        pincode: row.s_pincode || '',
-        country: row.s_country || 'INDIA'
+      const senders = (row.s_id || row.s_name || row.sender_name) ? {
+        id: row.s_id || null,
+        name: row.s_name || row.sender_name || '',
+        company: row.s_company || row.sender_company || '',
+        phone: row.s_phone || row.sender_phone || '',
+        email: row.s_email || row.sender_email || '',
+        address: row.s_address || row.sender_address || '',
+        address_2: row.s_address_2 || row.sender_address_2 || '',
+        city: row.s_city || row.sender_city || '',
+        state: row.s_state || row.sender_state || '',
+        pincode: row.s_pincode || row.sender_pincode || '',
+        country: row.s_country || row.sender_country || 'INDIA',
+        gstin_type: row.s_gstin_type || row.sender_gstin_type || '',
+        gstin_no: row.s_gstin_no || row.sender_gstin_no || ''
       } : null
 
-      const receivers = (row.r_id || row.r_name) ? {
-        id: row.r_id,
-        name: row.r_name || '',
-        phone: row.r_phone || '',
-        email: row.r_email || '',
-        address: row.r_address || '',
-        city: row.r_city || '',
-        state: row.r_state || '',
-        pincode: row.r_pincode || '',
-        country: row.r_country || ''
+      const receivers = (row.r_id || row.r_name || row.receiver_name) ? {
+        id: row.r_id || null,
+        name: row.r_name || row.receiver_name || '',
+        company: row.r_company || row.receiver_company || '',
+        phone: row.r_phone || row.receiver_phone || '',
+        email: row.r_email || row.receiver_email || '',
+        address: row.r_address || row.receiver_address || '',
+        address_2: row.r_address_2 || row.receiver_address_2 || '',
+        city: row.r_city || row.receiver_city || '',
+        state: row.r_state || row.receiver_state || '',
+        pincode: row.r_pincode || row.receiver_pincode || '',
+        country: row.r_country || row.receiver_country || '',
+        gstin_type: row.r_gstin_type || row.receiver_gstin_type || '',
+        gstin_no: row.r_gstin_no || row.receiver_gstin_no || ''
       } : null
 
       const courier_providers = row.cp_id ? {
@@ -1660,28 +1836,36 @@ export const getBookingById = async (req, res) => {
 
     const b = rows[0]
 
-    const senders = (b.s_id || b.s_name) ? {
-      id: b.s_id,
-      name: b.s_name || '',
-      phone: b.s_phone || '',
-      email: b.s_email || '',
-      address: b.s_address || '',
-      city: b.s_city || '',
-      state: b.s_state || '',
-      pincode: b.s_pincode || '',
-      country: b.s_country || 'INDIA'
+    const senders = (b.s_id || b.s_name || b.sender_name) ? {
+      id: b.s_id || null,
+      name: b.s_name || b.sender_name || '',
+      company: b.s_company || b.sender_company || '',
+      phone: b.s_phone || b.sender_phone || '',
+      email: b.s_email || b.sender_email || '',
+      address: b.s_address || b.sender_address || '',
+      address_2: b.s_address_2 || b.sender_address_2 || '',
+      city: b.s_city || b.sender_city || '',
+      state: b.s_state || b.sender_state || '',
+      pincode: b.s_pincode || b.sender_pincode || '',
+      country: b.s_country || b.sender_country || 'INDIA',
+      gstin_type: b.s_gstin_type || b.sender_gstin_type || '',
+      gstin_no: b.s_gstin_no || b.sender_gstin_no || ''
     } : null
 
-    const receivers = (b.r_id || b.r_name) ? {
-      id: b.r_id,
-      name: b.r_name || '',
-      phone: b.r_phone || '',
-      email: b.r_email || '',
-      address: b.r_address || '',
-      city: b.r_city || '',
-      state: b.r_state || '',
-      pincode: b.r_pincode || '',
-      country: b.r_country || ''
+    const receivers = (b.r_id || b.r_name || b.receiver_name) ? {
+      id: b.r_id || null,
+      name: b.r_name || b.receiver_name || '',
+      company: b.r_company || b.receiver_company || '',
+      phone: b.r_phone || b.receiver_phone || '',
+      email: b.r_email || b.receiver_email || '',
+      address: b.r_address || b.receiver_address || '',
+      address_2: b.r_address_2 || b.receiver_address_2 || '',
+      city: b.r_city || b.receiver_city || '',
+      state: b.r_state || b.receiver_state || '',
+      pincode: b.r_pincode || b.receiver_pincode || '',
+      country: b.r_country || b.receiver_country || '',
+      gstin_type: b.r_gstin_type || b.receiver_gstin_type || '',
+      gstin_no: b.r_gstin_no || b.receiver_gstin_no || ''
     } : null
 
     const courier_providers = b.cp_id ? {

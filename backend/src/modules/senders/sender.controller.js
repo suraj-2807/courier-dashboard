@@ -179,12 +179,39 @@ export const deleteSender =
     try {
       const { id } = req.params
 
-      // Also remove any other duplicates with same name when deleted
-      const sender = await query('SELECT name FROM senders WHERE id = ?', [id])
-      if (sender.length > 0) {
+      // 1. Snapshot all shipments referencing this sender before deletion so shipment details never disappear
+      const senderRows = await query('SELECT * FROM senders WHERE id = ?', [id])
+      if (senderRows.length > 0) {
+        const s = senderRows[0]
+        try {
+          await execute(`
+            UPDATE shipments 
+            SET sender_name = IF(sender_name = '' OR sender_name IS NULL, ?, sender_name),
+                sender_company = IF(sender_company = '' OR sender_company IS NULL, ?, sender_company),
+                sender_phone = IF(sender_phone = '' OR sender_phone IS NULL, ?, sender_phone),
+                sender_email = IF(sender_email = '' OR sender_email IS NULL, ?, sender_email),
+                sender_address = IF(sender_address = '' OR sender_address IS NULL, ?, sender_address),
+                sender_address_2 = IF(sender_address_2 = '' OR sender_address_2 IS NULL, ?, sender_address_2),
+                sender_city = IF(sender_city = '' OR sender_city IS NULL, ?, sender_city),
+                sender_state = IF(sender_state = '' OR sender_state IS NULL, ?, sender_state),
+                sender_pincode = IF(sender_pincode = '' OR sender_pincode IS NULL, ?, sender_pincode),
+                sender_country = IF(sender_country = '' OR sender_country IS NULL, ?, sender_country),
+                sender_gstin_type = IF(sender_gstin_type = '' OR sender_gstin_type IS NULL, ?, sender_gstin_type),
+                sender_gstin_no = IF(sender_gstin_no = '' OR sender_gstin_no IS NULL, ?, sender_gstin_no)
+            WHERE sender_id = ? OR (sender_name IS NOT NULL AND LOWER(TRIM(sender_name)) = LOWER(TRIM(?)))
+          `, [
+            s.name || '', s.company || '', s.phone || '', s.email || '',
+            s.address || '', s.address_2 || '', s.city || '', s.state || '',
+            s.pincode || '', s.country || 'INDIA', s.gstin_type || '', s.gstin_no || '',
+            id, s.name
+          ])
+        } catch (snapErr) {
+          console.error('Failed to snapshot sender before deletion:', snapErr.message)
+        }
+
         await execute(
           'DELETE FROM senders WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))',
-          [sender[0].name]
+          [s.name]
         )
       } else {
         await execute('DELETE FROM senders WHERE id = ?', [id])
