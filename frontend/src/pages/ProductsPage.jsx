@@ -462,8 +462,8 @@ export default function ProductsPage() {
                   required
                   placeholder="e.g. Cotton T-Shirt, Leather Shoes, Ayurvedic Soap"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-semibold focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value.toUpperCase() })}
+                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-semibold focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 uppercase"
                 />
               </div>
 
@@ -476,8 +476,8 @@ export default function ProductsPage() {
                   required
                   placeholder="e.g. 61091000"
                   value={formData.hs_code}
-                  onChange={(e) => setFormData({ ...formData, hs_code: e.target.value.replace(/\s+/g, '') })}
-                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono font-bold focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                  onChange={(e) => setFormData({ ...formData, hs_code: e.target.value.replace(/\s+/g, '').toUpperCase() })}
+                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono font-bold focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 uppercase"
                 />
               </div>
 
@@ -487,7 +487,7 @@ export default function ProductsPage() {
                 </label>
                 <CountryAutocompleteInput
                   value={formData.country}
-                  onChange={(val) => setFormData({ ...formData, country: val })}
+                  onChange={(val) => setFormData({ ...formData, country: (val || '').toUpperCase() })}
                   placeholder="Global / All Countries (or search e.g. USA, UK, UAE)"
                   className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-primary font-bold uppercase focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
                   countryList={countryList}

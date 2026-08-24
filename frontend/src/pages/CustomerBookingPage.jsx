@@ -264,12 +264,7 @@ export default function CustomerBookingPage() {
 
   const NO_AUTO_UPPERCASE_FIELDS = [
     'sender_email',
-    'receiver_email',
-    'package_type',
-    'sender_gstin_type',
-    'receiver_gstin_type',
-    'invoice_currency',
-    'invoice_type'
+    'receiver_email'
   ]
 
   const updateForm = (field, value) => {

@@ -382,19 +382,19 @@ export default function NewBookingPage() {
   const handleSelectSender = (sender) => {
     setForm(prev => ({
       ...prev,
-      sender_name: sender.name || '',
-      sender_company: sender.company || '',
+      sender_name: (sender.name || '').toUpperCase(),
+      sender_company: (sender.company || '').toUpperCase(),
       sender_phone: sender.phone || '',
       sender_phone_2: sender.phone_2 || '',
       sender_email: sender.email || '',
-      sender_address: sender.address || '',
-      sender_address_2: sender.address_2 || '',
-      sender_city: sender.city || '',
-      sender_pincode: sender.pincode || '',
-      sender_state: sender.state || '',
-      sender_country: sender.country || 'INDIA',
-      sender_gstin_type: sender.gstin_type || '',
-      sender_gstin_no: sender.gstin_no || ''
+      sender_address: (sender.address || '').toUpperCase(),
+      sender_address_2: (sender.address_2 || '').toUpperCase(),
+      sender_city: (sender.city || '').toUpperCase(),
+      sender_pincode: (sender.pincode || '').toUpperCase(),
+      sender_state: (sender.state || '').toUpperCase(),
+      sender_country: (sender.country || 'INDIA').toUpperCase(),
+      sender_gstin_type: (sender.gstin_type || '').toUpperCase(),
+      sender_gstin_no: (sender.gstin_no || '').toUpperCase()
     }))
     setSenderSuggestionsOpen(false)
     toast.success(`Autofilled details for sender "${sender.name}"!`)
@@ -404,19 +404,19 @@ export default function NewBookingPage() {
   const handleSelectReceiver = (receiver) => {
     setForm(prev => ({
       ...prev,
-      receiver_name: receiver.name || '',
-      receiver_company: receiver.company || '',
+      receiver_name: (receiver.name || '').toUpperCase(),
+      receiver_company: (receiver.company || '').toUpperCase(),
       receiver_phone: receiver.phone || '',
       receiver_phone_2: receiver.phone_2 || '',
       receiver_email: receiver.email || '',
-      receiver_address: receiver.address || '',
-      receiver_address_2: receiver.address_2 || '',
-      receiver_city: receiver.city || '',
-      receiver_pincode: receiver.pincode || '',
-      receiver_state: receiver.state || '',
-      receiver_country: receiver.country || '',
-      receiver_gstin_type: receiver.gstin_type || '',
-      receiver_gstin_no: receiver.gstin_no || ''
+      receiver_address: (receiver.address || '').toUpperCase(),
+      receiver_address_2: (receiver.address_2 || '').toUpperCase(),
+      receiver_city: (receiver.city || '').toUpperCase(),
+      receiver_pincode: (receiver.pincode || '').toUpperCase(),
+      receiver_state: (receiver.state || '').toUpperCase(),
+      receiver_country: (receiver.country || '').toUpperCase(),
+      receiver_gstin_type: (receiver.gstin_type || '').toUpperCase(),
+      receiver_gstin_no: (receiver.gstin_no || '').toUpperCase()
     }))
     setReceiverSuggestionsOpen(false)
     toast.success(`Autofilled details for receiver "${receiver.name}"!`)
@@ -830,19 +830,7 @@ export default function NewBookingPage() {
     'sender_email',
     'receiver_email',
     'buyer_email',
-    'package_type',
-    'sender_gstin_type',
-    'receiver_gstin_type',
-    'payment_mode',
-    'vendor_config_id',
-    'service_code',
-    'product_code',
-    'terms_of_trade',
-    'invoice_currency',
-    'invoice_type',
-    'csb_type',
-    'export_reason',
-    'company_code'
+    'vendor_config_id'
   ]
 
   const updateForm = (field, value) => {
