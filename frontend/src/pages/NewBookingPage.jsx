@@ -295,7 +295,9 @@ export default function NewBookingPage() {
   })
   const allProducts = productsData?.products || []
   const [activeItemSuggestionIndex, setActiveItemSuggestionIndex] = useState(null)
+  const [itemSuggestionHighlight, setItemSuggestionHighlight] = useState(-1)
   const itemSuggestionsRef = useRef(null)
+  const itemSuggestionRefs = useRef([])
 
   // Click outside listener to close autocomplete dropdowns
   useEffect(() => {
@@ -737,8 +739,8 @@ export default function NewBookingPage() {
       const maxWeight = Math.max(act, vol)
       const chg = maxWeight > 0 ? Math.ceil(maxWeight) : 0
 
-      item.volumetric_weight = vol > 0 ? String(vol) : ''
-      item.chargeable_weight = chg > 0 ? String(chg) : ''
+      item.volumetric_weight = vol > 0 ? vol.toFixed(2) : ''
+      item.chargeable_weight = chg > 0 ? chg.toFixed(2) : ''
       updated[index] = item
       return updated
     })
@@ -848,7 +850,8 @@ export default function NewBookingPage() {
   const buildPayload = () => {
     const decVal = parseFloat(form.declared_value) || invoiceTotalAmount || 0
     const shipCharge = parseFloat(form.shipping_charge) || 0
-    const totAmount = decVal || shipCharge || 0
+    const extraChargeVal = parseFloat(extraCharge) || 0
+    const totAmount = parseFloat((shipCharge + extraChargeVal).toFixed(2))
 
     return {
     id: editId ? parseInt(editId) : undefined,
@@ -2032,7 +2035,7 @@ export default function NewBookingPage() {
                 <input
                   type="text"
                   readOnly
-                  value={form.weight || '0.00'}
+                  value={form.weight ? parseFloat(form.weight).toFixed(2) : '0.00'}
                   className="w-full bg-transparent focus:outline-none text-[14px] text-navy font-bold cursor-default"
                 />
               </div>
@@ -2041,7 +2044,7 @@ export default function NewBookingPage() {
                 <input
                   type="text"
                   readOnly
-                  value={form.volumetric_weight || '0.00'}
+                  value={form.volumetric_weight ? parseFloat(form.volumetric_weight).toFixed(2) : '0.00'}
                   className="w-full bg-transparent focus:outline-none text-[14px] text-navy font-extrabold"
                 />
               </div>
@@ -2050,7 +2053,7 @@ export default function NewBookingPage() {
                 <input
                   type="text"
                   readOnly
-                  value={form.chargeable_weight || '0.00'}
+                  value={form.chargeable_weight ? parseFloat(form.chargeable_weight).toFixed(2) : '0.00'}
                   className="w-full bg-transparent focus:outline-none text-[14px] text-primary font-extrabold"
                 />
               </div>
@@ -2126,7 +2129,7 @@ export default function NewBookingPage() {
                   <input
                     type="text"
                     readOnly
-                    value={p.volumetric_weight || '0.00'}
+                    value={p.volumetric_weight ? parseFloat(p.volumetric_weight).toFixed(2) : '0.00'}
                     className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy"
                   />
                 </div>
@@ -2134,7 +2137,7 @@ export default function NewBookingPage() {
                   <input
                     type="text"
                     readOnly
-                    value={p.chargeable_weight || '0.00'}
+                    value={p.chargeable_weight ? parseFloat(p.chargeable_weight).toFixed(2) : '0.00'}
                     className="w-full bg-transparent focus:outline-none text-xs text-center font-extrabold text-primary"
                   />
                 </div>
@@ -2254,6 +2257,51 @@ export default function NewBookingPage() {
                         onChange={e => {
                           updateInvoiceItem(idx, 'description', e.target.value)
                           setActiveItemSuggestionIndex(idx)
+                          setItemSuggestionHighlight(-1)
+                        }}
+                        onKeyDown={e => {
+                          const matches = getMatchingProducts(item.description)
+                          if (activeItemSuggestionIndex !== idx || matches.length === 0) {
+                            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                              const m2 = getMatchingProducts(item.description)
+                              if (m2.length > 0) {
+                                e.preventDefault()
+                                setActiveItemSuggestionIndex(idx)
+                                setItemSuggestionHighlight(0)
+                              }
+                            }
+                            return
+                          }
+                          switch (e.key) {
+                            case 'ArrowDown':
+                              e.preventDefault()
+                              setItemSuggestionHighlight(prev => {
+                                const next = prev < matches.length - 1 ? prev + 1 : 0
+                                setTimeout(() => { if (itemSuggestionRefs.current[next]) itemSuggestionRefs.current[next].scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, 0)
+                                return next
+                              })
+                              break
+                            case 'ArrowUp':
+                              e.preventDefault()
+                              setItemSuggestionHighlight(prev => {
+                                const next = prev > 0 ? prev - 1 : matches.length - 1
+                                setTimeout(() => { if (itemSuggestionRefs.current[next]) itemSuggestionRefs.current[next].scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, 0)
+                                return next
+                              })
+                              break
+                            case 'Enter':
+                              e.preventDefault()
+                              if (itemSuggestionHighlight >= 0 && itemSuggestionHighlight < matches.length) {
+                                selectProductForItem(idx, matches[itemSuggestionHighlight])
+                                setItemSuggestionHighlight(-1)
+                              }
+                              break
+                            case 'Escape':
+                              e.preventDefault()
+                              setActiveItemSuggestionIndex(null)
+                              setItemSuggestionHighlight(-1)
+                              break
+                          }
                         }}
                         className="w-full bg-transparent focus:outline-none text-[13px] text-navy font-medium"
                       />
@@ -2267,20 +2315,25 @@ export default function NewBookingPage() {
                           <div className="px-3 py-1.5 bg-primary/10 text-[10px] font-extrabold text-primary uppercase tracking-wider flex items-center justify-between sticky top-0 backdrop-blur-xs">
                             <span>Suggested Products ({getMatchingProducts(item.description).length})</span>
                           </div>
-                          {getMatchingProducts(item.description).map((p) => (
+                          {getMatchingProducts(item.description).map((p, sIdx) => (
                             <div
                               key={p.id}
+                              ref={el => itemSuggestionRefs.current[sIdx] = el}
                               onMouseDown={(e) => {
                                 e.preventDefault()
                                 selectProductForItem(idx, p)
+                                setItemSuggestionHighlight(-1)
                               }}
-                              className="px-3 py-2 hover:bg-surface-alt cursor-pointer transition-colors"
+                              onMouseEnter={() => setItemSuggestionHighlight(sIdx)}
+                              className={`px-3 py-2 cursor-pointer transition-colors ${
+                                sIdx === itemSuggestionHighlight ? 'bg-primary/10' : 'hover:bg-surface-alt'
+                              }`}
                             >
                               <div className="font-extrabold text-[12px] text-navy leading-snug">
                                 {p.name}
                               </div>
                               <div className="flex items-center gap-2 mt-0.5 text-[11px]">
-                                <span className="font-mono font-bold text-primary text-[11px] bg-primary/5 px-1.5 py-0.2 rounded border border-primary/20">
+                                <span className="font-bold text-primary text-[11px] bg-primary/5 px-1.5 py-0.2 rounded border border-primary/20">
                                   HSN: {p.hs_code}
                                 </span>
                                 {p.country && p.country !== 'ALL' && (

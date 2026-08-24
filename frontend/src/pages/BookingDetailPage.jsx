@@ -450,7 +450,7 @@ export default function BookingDetailPage() {
               <div className="bg-surface-alt p-3 rounded-xl border border-border-light">
                 <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Final Chargeable Wt</p>
                 <p className="text-[15px] font-extrabold text-navy mt-1">
-                  {booking.final_chargeable_weight ? `${booking.final_chargeable_weight} kg` : (booking.chargeable_weight ? `${booking.chargeable_weight} kg` : `${booking.weight || 0} kg`)}
+                  {parseFloat(booking.final_chargeable_weight || booking.chargeable_weight || booking.weight || 0).toFixed(2)} kg
                 </p>
               </div>
 
@@ -478,7 +478,13 @@ export default function BookingDetailPage() {
               <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-200 col-span-2 sm:col-span-1">
                 <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Final Shipping</p>
                 <p className="text-[16px] font-black text-emerald-700 mt-1">
-                  ₹{parseFloat(booking.total_amount || 0).toFixed(2)}
+                  ₹{(() => {
+                    const ship = parseFloat(booking.shipping_charge) || 0
+                    const extra = parseFloat(booking.extra_charge) || 0
+                    const sum = ship + extra
+                    if (sum > 0) return sum.toFixed(2)
+                    return (parseFloat(booking.total_amount) || 0).toFixed(2)
+                  })()}
                 </p>
               </div>
             </div>
@@ -495,7 +501,7 @@ export default function BookingDetailPage() {
                   Box Breakdown ({booking.parcels.length} Boxes)
                 </h2>
                 <span className="text-[11px] font-bold text-text-tertiary">
-                  Total Weight: {booking.weight || 0} kg
+                  Total Weight: {parseFloat(booking.weight || 0).toFixed(2)} kg
                 </span>
               </div>
               <div className="overflow-x-auto">
@@ -513,12 +519,12 @@ export default function BookingDetailPage() {
                     {booking.parcels.map((p, idx) => (
                       <tr key={idx} className="hover:bg-surface-alt/50 transition-colors">
                         <td className="py-2.5 px-3 font-bold text-primary">Box {p.box_no || idx + 1}</td>
-                        <td className="py-2.5 px-3 font-medium text-text-primary">{p.weight || '—'} kg</td>
+                        <td className="py-2.5 px-3 font-medium text-text-primary">{p.weight ? parseFloat(p.weight).toFixed(2) : '—'} kg</td>
                         <td className="py-2.5 px-3 text-text-secondary">
                           {p.length || 0} × {p.breadth || p.width || 0} × {p.height || 0} cm
                         </td>
-                        <td className="py-2.5 px-3 text-text-secondary">{p.volumetric_weight || '—'} kg</td>
-                        <td className="py-2.5 px-3 font-bold text-text-primary">{p.chargeable_weight || p.weight || '—'} kg</td>
+                        <td className="py-2.5 px-3 text-text-secondary">{p.volumetric_weight ? parseFloat(p.volumetric_weight).toFixed(2) : '—'} kg</td>
+                        <td className="py-2.5 px-3 font-bold text-text-primary">{p.chargeable_weight ? parseFloat(p.chargeable_weight).toFixed(2) : (p.weight ? parseFloat(p.weight).toFixed(2) : '—')} kg</td>
                       </tr>
                     ))}
                   </tbody>

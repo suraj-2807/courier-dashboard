@@ -11,7 +11,10 @@ export default function CountryAutocompleteInput({
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const containerRef = useRef(null)
+  const listRef = useRef(null)
+  const itemRefs = useRef([])
 
   // Sync internal search with value prop
   useEffect(() => {
@@ -23,6 +26,7 @@ export default function CountryAutocompleteInput({
     function handleClickOutside(e) {
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setIsOpen(false)
+        setHighlightedIndex(-1)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -38,12 +42,18 @@ export default function CountryAutocompleteInput({
     return nameMatch || codeMatch
   }).slice(0, 60)
 
+  // Reset highlight when filtered list changes
+  useEffect(() => {
+    setHighlightedIndex(-1)
+  }, [filtered.length, search])
+
   const handleSelect = (item) => {
     if (disabled) return
     // Automatically set the 2-letter ISO country code
     onChange(item.country_code)
     setSearch(item.country_code)
     setIsOpen(false)
+    setHighlightedIndex(-1)
   }
 
   const handleInputChange = (e) => {
@@ -52,6 +62,57 @@ export default function CountryAutocompleteInput({
     setSearch(val)
     onChange(val)
     if (!isOpen) setIsOpen(true)
+  }
+
+  const handleKeyDown = (e) => {
+    if (disabled) return
+
+    if (!isOpen) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        setIsOpen(true)
+        setHighlightedIndex(0)
+      }
+      return
+    }
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault()
+        setHighlightedIndex(prev => {
+          const next = prev < filtered.length - 1 ? prev + 1 : 0
+          scrollItemIntoView(next)
+          return next
+        })
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        setHighlightedIndex(prev => {
+          const next = prev > 0 ? prev - 1 : filtered.length - 1
+          scrollItemIntoView(next)
+          return next
+        })
+        break
+      case 'Enter':
+        e.preventDefault()
+        if (highlightedIndex >= 0 && highlightedIndex < filtered.length) {
+          handleSelect(filtered[highlightedIndex])
+        }
+        break
+      case 'Escape':
+        e.preventDefault()
+        setIsOpen(false)
+        setHighlightedIndex(-1)
+        break
+    }
+  }
+
+  const scrollItemIntoView = (index) => {
+    setTimeout(() => {
+      if (itemRefs.current[index]) {
+        itemRefs.current[index].scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      }
+    }, 0)
   }
 
   return (
@@ -64,6 +125,7 @@ export default function CountryAutocompleteInput({
           disabled={disabled}
           onFocus={() => { if (!disabled) setIsOpen(true) }}
           onChange={handleInputChange}
+          onKeyDown={handleKeyDown}
           className={`${className} ${disabled ? 'cursor-not-allowed text-gray-500 opacity-75' : ''}`}
         />
         <ChevronDown
@@ -73,7 +135,10 @@ export default function CountryAutocompleteInput({
       </div>
 
       {isOpen && (
-        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto divide-y divide-gray-100 animate-fade-in">
+        <div
+          ref={listRef}
+          className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto divide-y divide-gray-100 animate-fade-in"
+        >
           {filtered.length === 0 ? (
             <div className="p-3 text-xs text-gray-400 text-center flex items-center justify-center gap-1.5">
               <Globe className="w-3.5 h-3.5 text-gray-300" /> No matching country found
@@ -83,15 +148,20 @@ export default function CountryAutocompleteInput({
               const isSelected =
                 value?.toUpperCase() === item.country_code?.toUpperCase() ||
                 value?.toUpperCase() === item.country_name?.toUpperCase()
+              const isHighlighted = idx === highlightedIndex
               return (
                 <div
                   key={idx}
+                  ref={el => itemRefs.current[idx] = el}
                   onMouseDown={(e) => {
                     e.preventDefault()
                     handleSelect(item)
                   }}
+                  onMouseEnter={() => setHighlightedIndex(idx)}
                   className={`px-3 py-2 text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                    isSelected ? 'bg-red-50 text-red-700 font-bold' : 'hover:bg-gray-50 text-gray-800'
+                    isSelected ? 'bg-red-50 text-red-700 font-bold' :
+                    isHighlighted ? 'bg-gray-100 text-gray-900' :
+                    'hover:bg-gray-50 text-gray-800'
                   }`}
                 >
                   <span className="truncate pr-2 font-medium">{item.country_name}</span>
