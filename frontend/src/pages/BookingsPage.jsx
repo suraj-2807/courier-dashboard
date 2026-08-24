@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useBookings, usePushBookingToApi } from '../hooks/useBookings'
+import { countryCodesApi } from '../api/countryCodes.api'
 import {
   Search,
   Download,
@@ -29,6 +31,83 @@ import { formatCurrency, formatDate } from '../utils/formatters'
 import { exportShipmentsToExcel } from '../utils/exportShipmentsExcel'
 import { openVendorDocument } from '../utils/openVendorDocument'
 import toast from 'react-hot-toast'
+
+const ISO_COUNTRY_MAP = {
+  IN: 'INDIA',
+  IND: 'INDIA',
+  US: 'UNITED STATES',
+  USA: 'UNITED STATES',
+  GB: 'UNITED KINGDOM',
+  UK: 'UNITED KINGDOM',
+  CA: 'CANADA',
+  CAN: 'CANADA',
+  AU: 'AUSTRALIA',
+  AUS: 'AUSTRALIA',
+  AE: 'UNITED ARAB EMIRATES',
+  UAE: 'UNITED ARAB EMIRATES',
+  MW: 'MALAWI',
+  ZM: 'ZAMBIA',
+  ZW: 'ZIMBABWE',
+  MZ: 'MOZAMBIQUE',
+  TZ: 'TANZANIA',
+  KE: 'KENYA',
+  UG: 'UGANDA',
+  RW: 'RWANDA',
+  CD: 'DR CONGO',
+  ZA: 'SOUTH AFRICA',
+  NG: 'NIGERIA',
+  GH: 'GHANA',
+  NZ: 'NEW ZEALAND',
+  SG: 'SINGAPORE',
+  MY: 'MALAYSIA',
+  TH: 'THAILAND',
+  ID: 'INDONESIA',
+  PH: 'PHILIPPINES',
+  VN: 'VIETNAM',
+  CN: 'CHINA',
+  HK: 'HONG KONG',
+  JP: 'JAPAN',
+  KR: 'SOUTH KOREA',
+  DE: 'GERMANY',
+  FR: 'FRANCE',
+  IT: 'ITALY',
+  ES: 'SPAIN',
+  NL: 'NETHERLANDS',
+  BE: 'BELGIUM',
+  CH: 'SWITZERLAND',
+  AT: 'AUSTRIA',
+  SE: 'SWEDEN',
+  NO: 'NORWAY',
+  DK: 'DENMARK',
+  FI: 'FINLAND',
+  IE: 'IRELAND',
+  PT: 'PORTUGAL',
+  PL: 'POLAND',
+  TR: 'TURKEY',
+  SA: 'SAUDI ARABIA',
+  QA: 'QATAR',
+  KW: 'KUWAIT',
+  OM: 'OMAN',
+  BH: 'BAHRAIN',
+  LK: 'SRI LANKA',
+  BD: 'BANGLADESH',
+  NP: 'NEPAL',
+  MU: 'MAURITIUS',
+  SC: 'SEYCHELLES',
+  BR: 'BRAZIL',
+  MX: 'MEXICO',
+  AR: 'ARGENTINA',
+  CL: 'CHILE',
+  CO: 'COLOMBIA',
+  PE: 'PERU',
+  EG: 'EGYPT',
+  ET: 'ETHIOPIA',
+  BW: 'BOTSWANA',
+  NA: 'NAMIBIA',
+  SZ: 'ESWATINI',
+  LS: 'LESOTHO',
+  MG: 'MADAGASCAR'
+}
 
 function CopyButton({ text, label = 'Copied to clipboard!' }) {
   const [copied, setCopied] = useState(false)
@@ -76,6 +155,30 @@ export default function BookingsPage() {
   const navigate = useNavigate()
   const pushToApiMutation = usePushBookingToApi()
   const [pushingId, setPushingId] = useState(null)
+
+  // Fetch full country codes list
+  const { data: countryCodesData } = useQuery({
+    queryKey: ['country-codes'],
+    queryFn: () => countryCodesApi.getAll().then(res => res.data),
+    staleTime: 1000 * 60 * 30
+  })
+
+  const countryCodeToNameMap = useMemo(() => {
+    const map = { ...ISO_COUNTRY_MAP }
+    const list = countryCodesData?.countryCodes || []
+    list.forEach(item => {
+      if (item.country_code && item.country_name) {
+        map[item.country_code.trim().toUpperCase()] = item.country_name.trim().toUpperCase()
+      }
+    })
+    return map
+  }, [countryCodesData])
+
+  const getFullCountryName = (codeOrName) => {
+    if (!codeOrName || codeOrName === '—') return '—'
+    const clean = String(codeOrName).trim().toUpperCase()
+    return countryCodeToNameMap[clean] || codeOrName
+  }
 
   useEffect(() => {
     setSearchInput(search)
@@ -543,7 +646,7 @@ export default function BookingsPage() {
                             {b.senders?.name || b.sender_name || '—'}
                           </p>
                           <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5">
-                            {b.senders?.country || b.sender_country || 'INDIA'}
+                            {getFullCountryName(b.senders?.country || b.sender_country || 'INDIA')}
                           </p>
                         </div>
                       </td>
@@ -554,7 +657,7 @@ export default function BookingsPage() {
                             {b.receivers?.name || b.receiver_name || '—'}
                           </p>
                           <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5">
-                            {b.receivers?.country || b.receiver_country || b.receivers?.city || '—'}
+                            {getFullCountryName(b.receivers?.country || b.receiver_country || b.receivers?.city || '—')}
                           </p>
                         </div>
                       </td>
