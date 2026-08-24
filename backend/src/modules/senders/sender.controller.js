@@ -30,6 +30,7 @@ export const createSender =
         name,
         company,
         phone,
+        phone_2,
         email,
         address,
         address_2,
@@ -53,18 +54,18 @@ export const createSender =
 
       if (existing.length > 0) {
         await execute(
-          `UPDATE senders SET company = ?, phone = ?, email = ?, address = ?, address_2 = ?, city = ?, state = ?, pincode = ?, country = ?, gstin_type = ?, gstin_no = ?
+          `UPDATE senders SET company = ?, phone = ?, phone_2 = ?, email = ?, address = ?, address_2 = ?, city = ?, state = ?, pincode = ?, country = ?, gstin_type = ?, gstin_no = ?
            WHERE id = ?`,
-          [company || '', phone || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || 'INDIA', gstin_type || '', gstin_no || '', existing[0].id]
+          [company || '', phone || '', phone_2 || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || 'INDIA', gstin_type || '', gstin_no || '', existing[0].id]
         )
         const rows = await query('SELECT * FROM senders WHERE id = ?', [existing[0].id])
         return res.status(200).json({ success: true, sender: rows[0] })
       }
 
       const result = await execute(
-        `INSERT INTO senders (name, company, phone, email, address, address_2, city, state, pincode, country, gstin_type, gstin_no)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name.trim(), company || '', phone || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || 'INDIA', gstin_type || '', gstin_no || '']
+        `INSERT INTO senders (name, company, phone, phone_2, email, address, address_2, city, state, pincode, country, gstin_type, gstin_no)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name.trim(), company || '', phone || '', phone_2 || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || 'INDIA', gstin_type || '', gstin_no || '']
       )
 
       const rows = await query(

@@ -95,6 +95,7 @@ export async function initializeDb() {
       { name: 'sender_name', type: "VARCHAR(255) DEFAULT ''" },
       { name: 'sender_company', type: "VARCHAR(255) DEFAULT ''" },
       { name: 'sender_phone', type: "VARCHAR(50) DEFAULT ''" },
+      { name: 'sender_phone_2', type: "VARCHAR(50) DEFAULT ''" },
       { name: 'sender_email', type: "VARCHAR(255) DEFAULT ''" },
       { name: 'sender_address', type: "TEXT DEFAULT NULL" },
       { name: 'sender_address_2', type: "VARCHAR(500) DEFAULT ''" },
@@ -107,6 +108,7 @@ export async function initializeDb() {
       { name: 'receiver_name', type: "VARCHAR(255) DEFAULT ''" },
       { name: 'receiver_company', type: "VARCHAR(255) DEFAULT ''" },
       { name: 'receiver_phone', type: "VARCHAR(50) DEFAULT ''" },
+      { name: 'receiver_phone_2', type: "VARCHAR(50) DEFAULT ''" },
       { name: 'receiver_email', type: "VARCHAR(255) DEFAULT ''" },
       { name: 'receiver_address', type: "TEXT DEFAULT NULL" },
       { name: 'receiver_address_2', type: "VARCHAR(500) DEFAULT ''" },
@@ -403,6 +405,7 @@ export async function initializeDb() {
       const senderColNames = senderCols.map(col => (col.Field || col.field).toLowerCase())
       const requiredSenderCols = [
         { name: 'company', type: "VARCHAR(255) DEFAULT ''" },
+        { name: 'phone_2', type: "VARCHAR(50) DEFAULT ''" },
         { name: 'address_2', type: "TEXT DEFAULT NULL" },
         { name: 'country', type: "VARCHAR(50) DEFAULT 'INDIA'" },
         { name: 'gstin_type', type: "VARCHAR(50) DEFAULT ''" },
@@ -424,6 +427,7 @@ export async function initializeDb() {
       const receiverColNames = receiverCols.map(col => (col.Field || col.field).toLowerCase())
       const requiredReceiverCols = [
         { name: 'company', type: "VARCHAR(255) DEFAULT ''" },
+        { name: 'phone_2', type: "VARCHAR(50) DEFAULT ''" },
         { name: 'address_2', type: "TEXT DEFAULT NULL" },
         { name: 'country', type: "VARCHAR(50) DEFAULT ''" },
         { name: 'gstin_type', type: "VARCHAR(50) DEFAULT ''" },

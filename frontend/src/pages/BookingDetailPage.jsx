@@ -975,10 +975,10 @@ function PersonCard({ title, icon: Icon, person, fallbackName, fallbackCity, fal
         {title}
       </h3>
       <div className="space-y-2">
-        <p className="text-[14px] font-bold text-text-primary">{name || '—'}</p>
-        {person?.phone && (
+        {(person?.phone || person?.phone_2) && (
           <p className="text-[12px] text-text-secondary flex items-center gap-1.5">
-            <Phone className="w-3 h-3 text-text-tertiary" /> {person.phone}
+            <Phone className="w-3 h-3 text-text-tertiary" />
+            <span>{[person.phone, person.phone_2].filter(Boolean).join(' / ')}</span>
           </p>
         )}
         {person?.email && (

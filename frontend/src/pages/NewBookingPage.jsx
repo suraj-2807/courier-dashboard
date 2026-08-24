@@ -41,6 +41,7 @@ const INITIAL_FORM = {
   sender_company: '',
   sender_email: '',
   sender_phone: '',
+  sender_phone_2: '',
   sender_address: '',
   sender_address_2: '',
   sender_city: '',
@@ -51,8 +52,10 @@ const INITIAL_FORM = {
   sender_gstin_no: '',
   // Step 1 — Receiver
   receiver_name: '',
+  receiver_company: '',
   receiver_email: '',
   receiver_phone: '',
+  receiver_phone_2: '',
   receiver_address: '',
   receiver_address_2: '',
   receiver_city: '',
@@ -382,6 +385,7 @@ export default function NewBookingPage() {
       sender_name: sender.name || '',
       sender_company: sender.company || '',
       sender_phone: sender.phone || '',
+      sender_phone_2: sender.phone_2 || '',
       sender_email: sender.email || '',
       sender_address: sender.address || '',
       sender_address_2: sender.address_2 || '',
@@ -403,6 +407,7 @@ export default function NewBookingPage() {
       receiver_name: receiver.name || '',
       receiver_company: receiver.company || '',
       receiver_phone: receiver.phone || '',
+      receiver_phone_2: receiver.phone_2 || '',
       receiver_email: receiver.email || '',
       receiver_address: receiver.address || '',
       receiver_address_2: receiver.address_2 || '',
@@ -475,6 +480,7 @@ export default function NewBookingPage() {
       sender_company: b.sender_company || sender.company || '',
       sender_email: sender.email || b.sender_email || '',
       sender_phone: sender.phone || b.sender_phone || '',
+      sender_phone_2: sender.phone_2 || b.sender_phone_2 || '',
       sender_address: sender.address || b.sender_address || '',
       sender_address_2: b.sender_address_2 || '',
       sender_city: sender.city || b.sender_city || '',
@@ -488,6 +494,7 @@ export default function NewBookingPage() {
       receiver_company: b.receiver_company || receiver.company || '',
       receiver_email: receiver.email || b.receiver_email || '',
       receiver_phone: receiver.phone || b.receiver_phone || '',
+      receiver_phone_2: receiver.phone_2 || b.receiver_phone_2 || '',
       receiver_address: receiver.address || b.receiver_address || '',
       receiver_address_2: b.receiver_address_2 || '',
       receiver_city: receiver.city || b.receiver_city || '',
@@ -859,6 +866,7 @@ export default function NewBookingPage() {
     sender_company: form.sender_company,
     sender_email: form.sender_email,
     sender_phone: form.sender_phone,
+    sender_phone_2: form.sender_phone_2 || '',
     sender_address: form.sender_address,
     sender_address_2: form.sender_address_2,
     sender_city: form.sender_city,
@@ -872,6 +880,7 @@ export default function NewBookingPage() {
     receiver_company: form.receiver_company,
     receiver_email: form.receiver_email,
     receiver_phone: form.receiver_phone,
+    receiver_phone_2: form.receiver_phone_2 || '',
     receiver_address: form.receiver_address,
     receiver_address_2: form.receiver_address_2,
     receiver_city: form.receiver_city,
@@ -1356,7 +1365,7 @@ export default function NewBookingPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <CompactField label="Phone / Mobile Number" required>
+                  <CompactField label="Phone 1 (API & Bill)" required>
                     <input
                       type="tel"
                       placeholder="+91 99999 99999"
@@ -1365,16 +1374,26 @@ export default function NewBookingPage() {
                       className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
-                  <CompactField label="Email Address">
+                  <CompactField label="Phone 2 (Shipping Bill)">
                     <input
-                      type="email"
-                      placeholder="sender@example.com"
-                      value={form.sender_email}
-                      onChange={e => updateForm('sender_email', e.target.value)}
+                      type="tel"
+                      placeholder="Alt Phone / Mobile"
+                      value={form.sender_phone_2}
+                      onChange={e => updateForm('sender_phone_2', e.target.value)}
                       className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                 </div>
+
+                <CompactField label="Email Address">
+                  <input
+                    type="email"
+                    placeholder="sender@example.com"
+                    value={form.sender_email}
+                    onChange={e => updateForm('sender_email', e.target.value)}
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
+                  />
+                </CompactField>
 
                 <div className="grid grid-cols-2 gap-2">
                   <CompactField label="Doc Type">
@@ -1561,7 +1580,7 @@ export default function NewBookingPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <CompactField label="Phone / Mobile Number" required highlight={!form.receiver_phone}>
+                  <CompactField label="Phone 1 (API & Bill)" required highlight={!form.receiver_phone}>
                     <input
                       type="tel"
                       placeholder="+1 999 999 9999"
@@ -1570,16 +1589,26 @@ export default function NewBookingPage() {
                       className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
-                  <CompactField label="Email Address">
+                  <CompactField label="Phone 2 (Shipping Bill)">
                     <input
-                      type="email"
-                      placeholder="receiver@example.com"
-                      value={form.receiver_email}
-                      onChange={e => updateForm('receiver_email', e.target.value)}
+                      type="tel"
+                      placeholder="Alt Phone / Mobile"
+                      value={form.receiver_phone_2}
+                      onChange={e => updateForm('receiver_phone_2', e.target.value)}
                       className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
                     />
                   </CompactField>
                 </div>
+
+                <CompactField label="Email Address">
+                  <input
+                    type="email"
+                    placeholder="receiver@example.com"
+                    value={form.receiver_email}
+                    onChange={e => updateForm('receiver_email', e.target.value)}
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
+                  />
+                </CompactField>
 
                 <div className="grid grid-cols-2 gap-2">
                   <CompactField label="Doc Type">

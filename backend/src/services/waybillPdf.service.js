@@ -160,9 +160,11 @@ export async function generateWaybillPdf(params) {
         doc.fillColor(TEXT_DARK).fontSize(7.5).font('Helvetica').text(sAddress, sX, sY, { width: sColWidth - 12 })
         sY += (sender.address ? 32 : 16)
       }
-      const sPhone = sender.phone || ''
-      if (sPhone) {
-        doc.fillColor(TEXT_DARK).fontSize(8).font('Helvetica-Bold').text(`Ph : ${sPhone}`, sX, curY + row2Height - 16)
+      const sPhone1 = sender.phone || ''
+      const sPhone2 = sender.phone_2 || sender.phone2 || ''
+      const sPhones = [sPhone1, sPhone2].filter(Boolean).join(' / ')
+      if (sPhones) {
+        doc.fillColor(TEXT_DARK).fontSize(8).font('Helvetica-Bold').text(`Ph : ${sPhones}`, sX, curY + row2Height - 16)
       }
 
       // Consignee Block
@@ -179,9 +181,11 @@ export async function generateWaybillPdf(params) {
       if (rAddressParts) {
         doc.fillColor(TEXT_DARK).fontSize(7.5).font('Helvetica').text(rAddressParts, cX, rY, { width: cColWidth - 12 })
       }
-      const rPhone = receiver.phone || ''
-      if (rPhone) {
-        doc.fillColor(TEXT_DARK).fontSize(8).font('Helvetica-Bold').text(`Ph : ${rPhone}`, cX, curY + row2Height - 16)
+      const rPhone1 = receiver.phone || ''
+      const rPhone2 = receiver.phone_2 || receiver.phone2 || ''
+      const rPhones = [rPhone1, rPhone2].filter(Boolean).join(' / ')
+      if (rPhones) {
+        doc.fillColor(TEXT_DARK).fontSize(8).font('Helvetica-Bold').text(`Ph : ${rPhones}`, cX, curY + row2Height - 16)
       }
 
       // Charges Breakdown Sub-Table (Right Col, 5 Sub-Rows)

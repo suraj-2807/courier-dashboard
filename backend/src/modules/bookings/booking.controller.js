@@ -45,6 +45,7 @@ function extractBookingFields(body) {
     sender_name: body.sender_name,
     sender_email: body.sender_email,
     sender_phone: body.sender_phone,
+    sender_phone_2: body.sender_phone_2 || body.sender_phone2 || '',
     sender_address: body.sender_address,
     sender_city: body.sender_city,
     sender_pincode: body.sender_pincode,
@@ -53,6 +54,7 @@ function extractBookingFields(body) {
     receiver_name: body.receiver_name,
     receiver_email: body.receiver_email,
     receiver_phone: body.receiver_phone,
+    receiver_phone_2: body.receiver_phone_2 || body.receiver_phone2 || '',
     receiver_address: body.receiver_address,
     receiver_city: body.receiver_city,
     receiver_pincode: body.receiver_pincode,
@@ -145,6 +147,7 @@ async function prepareSnapshotFields(fields, finalSenderId, finalReceiverId) {
   let sender_name = fields.sender_name || ''
   let sender_company = fields.sender_company || ''
   let sender_phone = fields.sender_phone || ''
+  let sender_phone_2 = fields.sender_phone_2 || ''
   let sender_email = fields.sender_email || ''
   let sender_address = fields.sender_address || ''
   let sender_address_2 = fields.sender_address_2 || ''
@@ -163,6 +166,7 @@ async function prepareSnapshotFields(fields, finalSenderId, finalReceiverId) {
         sender_name = sender_name || s.name || ''
         sender_company = sender_company || s.company || ''
         sender_phone = sender_phone || s.phone || ''
+        sender_phone_2 = sender_phone_2 || s.phone_2 || ''
         sender_email = sender_email || s.email || ''
         sender_address = sender_address || s.address || ''
         sender_address_2 = sender_address_2 || s.address_2 || ''
@@ -179,6 +183,7 @@ async function prepareSnapshotFields(fields, finalSenderId, finalReceiverId) {
   let receiver_name = fields.receiver_name || ''
   let receiver_company = fields.receiver_company || ''
   let receiver_phone = fields.receiver_phone || ''
+  let receiver_phone_2 = fields.receiver_phone_2 || ''
   let receiver_email = fields.receiver_email || ''
   let receiver_address = fields.receiver_address || ''
   let receiver_address_2 = fields.receiver_address_2 || ''
@@ -197,6 +202,7 @@ async function prepareSnapshotFields(fields, finalSenderId, finalReceiverId) {
         receiver_name = receiver_name || r.name || ''
         receiver_company = receiver_company || r.company || ''
         receiver_phone = receiver_phone || r.phone || ''
+        receiver_phone_2 = receiver_phone_2 || r.phone_2 || ''
         receiver_email = receiver_email || r.email || ''
         receiver_address = receiver_address || r.address || ''
         receiver_address_2 = receiver_address_2 || r.address_2 || ''
@@ -211,9 +217,9 @@ async function prepareSnapshotFields(fields, finalSenderId, finalReceiverId) {
   }
 
   return {
-    sender_name, sender_company, sender_phone, sender_email, sender_address, sender_address_2,
+    sender_name, sender_company, sender_phone, sender_phone_2, sender_email, sender_address, sender_address_2,
     sender_city, sender_state, sender_pincode, sender_country, sender_gstin_type, sender_gstin_no,
-    receiver_name, receiver_company, receiver_phone, receiver_email, receiver_address, receiver_address_2,
+    receiver_name, receiver_company, receiver_phone, receiver_phone_2, receiver_email, receiver_address, receiver_address_2,
     receiver_city, receiver_state, receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no
   }
 }
@@ -225,12 +231,13 @@ async function upsertSender(fields) {
   if (fields.sender_id) {
     if (fields.sender_name) {
       await execute(
-        `UPDATE senders SET name = ?, company = ?, email = ?, phone = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
+        `UPDATE senders SET name = ?, company = ?, email = ?, phone = ?, phone_2 = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
         [
           fields.sender_name,
           fields.sender_company || '',
           fields.sender_email || '',
           fields.sender_phone || '',
+          fields.sender_phone_2 || '',
           fields.sender_address || '',
           fields.sender_address_2 || '',
           fields.sender_city || '',
@@ -254,11 +261,12 @@ async function upsertSender(fields) {
   )
   if (existing && existing.length > 0) {
     await execute(
-      `UPDATE senders SET company = ?, email = ?, phone = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
+      `UPDATE senders SET company = ?, email = ?, phone = ?, phone_2 = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
       [
         fields.sender_company || '',
         fields.sender_email || '',
         fields.sender_phone || '',
+        fields.sender_phone_2 || '',
         fields.sender_address || '',
         fields.sender_address_2 || '',
         fields.sender_city || '',
@@ -274,13 +282,14 @@ async function upsertSender(fields) {
   }
   
   const result = await execute(
-    `INSERT INTO senders (name, company, email, phone, address, address_2, city, pincode, state, country, gstin_type, gstin_no)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO senders (name, company, email, phone, phone_2, address, address_2, city, pincode, state, country, gstin_type, gstin_no)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       fields.sender_name,
       fields.sender_company || '',
       fields.sender_email || '',
       fields.sender_phone || '',
+      fields.sender_phone_2 || '',
       fields.sender_address || '',
       fields.sender_address_2 || '',
       fields.sender_city || '',
@@ -301,12 +310,13 @@ async function upsertReceiver(fields) {
   if (fields.receiver_id) {
     if (fields.receiver_name) {
       await execute(
-        `UPDATE receivers SET name = ?, company = ?, email = ?, phone = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
+        `UPDATE receivers SET name = ?, company = ?, email = ?, phone = ?, phone_2 = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
         [
           fields.receiver_name,
           fields.receiver_company || '',
           fields.receiver_email || '',
           fields.receiver_phone || '',
+          fields.receiver_phone_2 || '',
           fields.receiver_address || '',
           fields.receiver_address_2 || '',
           fields.receiver_city || '',
@@ -330,11 +340,12 @@ async function upsertReceiver(fields) {
   )
   if (existing && existing.length > 0) {
     await execute(
-      `UPDATE receivers SET company = ?, email = ?, phone = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
+      `UPDATE receivers SET company = ?, email = ?, phone = ?, phone_2 = ?, address = ?, address_2 = ?, city = ?, pincode = ?, state = ?, country = ?, gstin_type = ?, gstin_no = ? WHERE id = ?`,
       [
         fields.receiver_company || '',
         fields.receiver_email || '',
         fields.receiver_phone || '',
+        fields.receiver_phone_2 || '',
         fields.receiver_address || '',
         fields.receiver_address_2 || '',
         fields.receiver_city || '',
@@ -350,13 +361,14 @@ async function upsertReceiver(fields) {
   }
   
   const result = await execute(
-    `INSERT INTO receivers (name, company, email, phone, address, address_2, city, pincode, state, country, gstin_type, gstin_no)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO receivers (name, company, email, phone, phone_2, address, address_2, city, pincode, state, country, gstin_type, gstin_no)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       fields.receiver_name,
       fields.receiver_company || '',
       fields.receiver_email || '',
       fields.receiver_phone || '',
+      fields.receiver_phone_2 || '',
       fields.receiver_address || '',
       fields.receiver_address_2 || '',
       fields.receiver_city || '',
@@ -830,10 +842,10 @@ export const saveBooking = async (req, res) => {
           payment_mode = ?, package_type = ?, total_amount = ?, shipping_charge = ?,
           rate_per_kg = ?, extra_charge = ?, final_chargeable_weight = ?,
           order_reference = ?, remarks = ?,
-          sender_name = ?, sender_company = ?, sender_phone = ?, sender_email = ?,
+          sender_name = ?, sender_company = ?, sender_phone = ?, sender_phone_2 = ?, sender_email = ?,
           sender_address = ?, sender_address_2 = ?, sender_city = ?, sender_state = ?,
           sender_pincode = ?, sender_country = ?, sender_gstin_type = ?, sender_gstin_no = ?,
-          receiver_name = ?, receiver_company = ?, receiver_phone = ?, receiver_email = ?,
+          receiver_name = ?, receiver_company = ?, receiver_phone = ?, receiver_phone_2 = ?, receiver_email = ?,
           receiver_address = ?, receiver_address_2 = ?, receiver_city = ?, receiver_state = ?,
           receiver_pincode = ?, receiver_country = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
           invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
@@ -868,6 +880,7 @@ export const saveBooking = async (req, res) => {
           snap.sender_name,
           snap.sender_company,
           snap.sender_phone,
+          snap.sender_phone_2,
           snap.sender_email,
           snap.sender_address,
           snap.sender_address_2,
@@ -880,6 +893,7 @@ export const saveBooking = async (req, res) => {
           snap.receiver_name,
           snap.receiver_company,
           snap.receiver_phone,
+          snap.receiver_phone_2,
           snap.receiver_email,
           snap.receiver_address,
           snap.receiver_address_2,
@@ -913,15 +927,15 @@ export const saveBooking = async (req, res) => {
           payment_mode, package_type, total_amount, shipping_charge,
           rate_per_kg, extra_charge, final_chargeable_weight,
           order_reference, remarks, status, vendor_push_status, is_locked,
-          sender_name, sender_company, sender_phone, sender_email,
+          sender_name, sender_company, sender_phone, sender_phone_2, sender_email,
           sender_address, sender_address_2, sender_city, sender_state,
           sender_pincode, sender_country, sender_gstin_type, sender_gstin_no,
-          receiver_name, receiver_company, receiver_phone, receiver_email,
+          receiver_name, receiver_company, receiver_phone, receiver_phone_2, receiver_email,
           receiver_address, receiver_address_2, receiver_city, receiver_state,
           receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
           invoice_type, invoice_note, invoice_items, parcels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
           finalSenderId || null,
@@ -956,6 +970,7 @@ export const saveBooking = async (req, res) => {
           snap.sender_name,
           snap.sender_company,
           snap.sender_phone,
+          snap.sender_phone_2,
           snap.sender_email,
           snap.sender_address,
           snap.sender_address_2,
@@ -968,6 +983,7 @@ export const saveBooking = async (req, res) => {
           snap.receiver_name,
           snap.receiver_company,
           snap.receiver_phone,
+          snap.receiver_phone_2,
           snap.receiver_email,
           snap.receiver_address,
           snap.receiver_address_2,
@@ -1337,10 +1353,10 @@ export const createBooking = async (req, res) => {
           payment_mode = ?, package_type = ?, total_amount = ?, shipping_charge = ?,
           rate_per_kg = ?, extra_charge = ?, final_chargeable_weight = ?,
           order_reference = ?, remarks = ?, status = ?, vendor_push_status = ?,
-          sender_name = ?, sender_company = ?, sender_phone = ?, sender_email = ?,
+          sender_name = ?, sender_company = ?, sender_phone = ?, sender_phone_2 = ?, sender_email = ?,
           sender_address = ?, sender_address_2 = ?, sender_city = ?, sender_state = ?,
           sender_pincode = ?, sender_country = ?, sender_gstin_type = ?, sender_gstin_no = ?,
-          receiver_name = ?, receiver_company = ?, receiver_phone = ?, receiver_email = ?,
+          receiver_name = ?, receiver_company = ?, receiver_phone = ?, receiver_phone_2 = ?, receiver_email = ?,
           receiver_address = ?, receiver_address_2 = ?, receiver_city = ?, receiver_state = ?,
           receiver_pincode = ?, receiver_country = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
           invoice_no = ?, invoice_date = ?, invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
@@ -1377,6 +1393,7 @@ export const createBooking = async (req, res) => {
           snap.sender_name,
           snap.sender_company,
           snap.sender_phone,
+          snap.sender_phone_2,
           snap.sender_email,
           snap.sender_address,
           snap.sender_address_2,
@@ -1389,6 +1406,7 @@ export const createBooking = async (req, res) => {
           snap.receiver_name,
           snap.receiver_company,
           snap.receiver_phone,
+          snap.receiver_phone_2,
           snap.receiver_email,
           snap.receiver_address,
           snap.receiver_address_2,
@@ -1424,15 +1442,15 @@ export const createBooking = async (req, res) => {
           payment_mode, package_type, total_amount, shipping_charge,
           rate_per_kg, extra_charge, final_chargeable_weight,
           order_reference, remarks, status, vendor_push_status, is_locked,
-          sender_name, sender_company, sender_phone, sender_email,
+          sender_name, sender_company, sender_phone, sender_phone_2, sender_email,
           sender_address, sender_address_2, sender_city, sender_state,
           sender_pincode, sender_country, sender_gstin_type, sender_gstin_no,
-          receiver_name, receiver_company, receiver_phone, receiver_email,
+          receiver_name, receiver_company, receiver_phone, receiver_phone_2, receiver_email,
           receiver_address, receiver_address_2, receiver_city, receiver_state,
           receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
           invoice_type, invoice_note, invoice_items, parcels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
           finalSenderId || null,
@@ -1467,6 +1485,7 @@ export const createBooking = async (req, res) => {
           snap.sender_name,
           snap.sender_company,
           snap.sender_phone,
+          snap.sender_phone_2,
           snap.sender_email,
           snap.sender_address,
           snap.sender_address_2,
@@ -1479,6 +1498,7 @@ export const createBooking = async (req, res) => {
           snap.receiver_name,
           snap.receiver_company,
           snap.receiver_phone,
+          snap.receiver_phone_2,
           snap.receiver_email,
           snap.receiver_address,
           snap.receiver_address_2,
@@ -1699,9 +1719,9 @@ export const getBookings = async (req, res) => {
 
     const dataRows = await query(
       `SELECT s.*,
-        snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.email as s_email,
+        snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.phone_2 as s_phone_2, snd.email as s_email,
         snd.address as s_address, snd.city as s_city, snd.state as s_state, snd.pincode as s_pincode, snd.country as s_country,
-        rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.email as r_email,
+        rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.phone_2 as r_phone_2, rcv.email as r_email,
         rcv.address as r_address, rcv.city as r_city, rcv.state as r_state, rcv.pincode as r_pincode, rcv.country as r_country,
         cp.id as cp_id, cp.name as cp_name, cp.code as cp_code, cp.tracking_url as cp_tracking_url,
         vac.id as vac_id, vac.name as vac_name, vac.vendor_code as vac_vendor_code, vac.environment as vac_environment
@@ -1722,6 +1742,7 @@ export const getBookings = async (req, res) => {
         name: row.s_name || row.sender_name || '',
         company: row.s_company || row.sender_company || '',
         phone: row.s_phone || row.sender_phone || '',
+        phone_2: row.s_phone_2 || row.sender_phone_2 || '',
         email: row.s_email || row.sender_email || '',
         address: row.s_address || row.sender_address || '',
         address_2: row.s_address_2 || row.sender_address_2 || '',
@@ -1738,6 +1759,7 @@ export const getBookings = async (req, res) => {
         name: row.r_name || row.receiver_name || '',
         company: row.r_company || row.receiver_company || '',
         phone: row.r_phone || row.receiver_phone || '',
+        phone_2: row.r_phone_2 || row.receiver_phone_2 || '',
         email: row.r_email || row.receiver_email || '',
         address: row.r_address || row.receiver_address || '',
         address_2: row.r_address_2 || row.receiver_address_2 || '',
@@ -1812,9 +1834,9 @@ export const getBookingById = async (req, res) => {
 
     const rows = await query(
       `SELECT s.*,
-        snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.email as s_email,
+        snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.phone_2 as s_phone_2, snd.email as s_email,
         snd.address as s_address, snd.city as s_city, snd.state as s_state, snd.pincode as s_pincode, snd.country as s_country,
-        rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.email as r_email,
+        rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.phone_2 as r_phone_2, rcv.email as r_email,
         rcv.address as r_address, rcv.city as r_city, rcv.state as r_state, rcv.pincode as r_pincode, rcv.country as r_country,
         cp.id as cp_id, cp.name as cp_name, cp.code as cp_code, cp.tracking_url as cp_tracking_url,
         vac.id as vac_id, vac.name as vac_name, vac.vendor_code as vac_vendor_code, vac.environment as vac_environment
@@ -1841,6 +1863,7 @@ export const getBookingById = async (req, res) => {
       name: b.s_name || b.sender_name || '',
       company: b.s_company || b.sender_company || '',
       phone: b.s_phone || b.sender_phone || '',
+      phone_2: b.s_phone_2 || b.sender_phone_2 || '',
       email: b.s_email || b.sender_email || '',
       address: b.s_address || b.sender_address || '',
       address_2: b.s_address_2 || b.sender_address_2 || '',
@@ -1857,6 +1880,7 @@ export const getBookingById = async (req, res) => {
       name: b.r_name || b.receiver_name || '',
       company: b.r_company || b.receiver_company || '',
       phone: b.r_phone || b.receiver_phone || '',
+      phone_2: b.r_phone_2 || b.receiver_phone_2 || '',
       email: b.r_email || b.receiver_email || '',
       address: b.r_address || b.receiver_address || '',
       address_2: b.r_address_2 || b.receiver_address_2 || '',

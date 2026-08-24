@@ -30,6 +30,7 @@ export const createReceiver =
         name,
         company,
         phone,
+        phone_2,
         email,
         address,
         address_2,
@@ -53,18 +54,18 @@ export const createReceiver =
 
       if (existing.length > 0) {
         await execute(
-          `UPDATE receivers SET company = ?, phone = ?, email = ?, address = ?, address_2 = ?, city = ?, state = ?, pincode = ?, country = ?, gstin_type = ?, gstin_no = ?
+          `UPDATE receivers SET company = ?, phone = ?, phone_2 = ?, email = ?, address = ?, address_2 = ?, city = ?, state = ?, pincode = ?, country = ?, gstin_type = ?, gstin_no = ?
            WHERE id = ?`,
-          [company || '', phone || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || '', gstin_type || '', gstin_no || '', existing[0].id]
+          [company || '', phone || '', phone_2 || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || '', gstin_type || '', gstin_no || '', existing[0].id]
         )
         const rows = await query('SELECT * FROM receivers WHERE id = ?', [existing[0].id])
         return res.status(200).json({ success: true, receiver: rows[0] })
       }
 
       const result = await execute(
-        `INSERT INTO receivers (name, company, phone, email, address, address_2, city, state, pincode, country, gstin_type, gstin_no)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name.trim(), company || '', phone || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || '', gstin_type || '', gstin_no || '']
+        `INSERT INTO receivers (name, company, phone, phone_2, email, address, address_2, city, state, pincode, country, gstin_type, gstin_no)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name.trim(), company || '', phone || '', phone_2 || '', email || '', address || '', address_2 || '', city || '', state || '', pincode || '', country || '', gstin_type || '', gstin_no || '']
       )
 
       const rows = await query(
