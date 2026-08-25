@@ -262,9 +262,40 @@ export default function CustomerBookingPage() {
     }
   }, [parcels, form.length, form.breadth, form.height, form.weight, form.no_of_pieces])
 
+  // Normalize document type from DB to match dropdown <option> values exactly
+  const normalizeDocType = (raw, isSender = true) => {
+    if (!raw) return ''
+    const upper = String(raw).trim().toUpperCase()
+    const senderMap = {
+      'GSTIN': 'GSTIN', 'GST': 'GSTIN',
+      'PAN': 'PAN', 'PAN CARD': 'PAN',
+      'AADHAAR NUMBER': 'Aadhaar Number', 'AADHAAR': 'Aadhaar Number', 'AADHAR': 'Aadhaar Number', 'AADHAR NUMBER': 'Aadhaar Number',
+      'PASSPORT': 'Passport',
+      'VOTER ID': 'Voter ID', 'VOTER': 'Voter ID',
+      'DRIVING LICENSE': 'Driving License', 'DRIVING LICENCE': 'Driving License', 'DL': 'Driving License'
+    }
+    const receiverMap = {
+      'TAX ID': 'Tax ID', 'TAXID': 'Tax ID', 'TAX': 'Tax ID',
+      'VAT': 'VAT',
+      'PASSPORT': 'Passport',
+      'AADHAAR NUMBER': 'Aadhaar Number', 'AADHAAR': 'Aadhaar Number', 'AADHAR': 'Aadhaar Number', 'AADHAR NUMBER': 'Aadhaar Number',
+      'PAN': 'PAN', 'PAN CARD': 'PAN',
+      'GSTIN': 'GSTIN', 'GST': 'GSTIN'
+    }
+    const map = isSender ? senderMap : receiverMap
+    return map[upper] || raw.trim()
+  }
+
   const NO_AUTO_UPPERCASE_FIELDS = [
     'sender_email',
-    'receiver_email'
+    'receiver_email',
+    'sender_gstin_type',
+    'receiver_gstin_type',
+    'package_type',
+    'payment_mode',
+    'invoice_type',
+    'invoice_currency',
+    'terms_of_trade'
   ]
 
   const updateForm = (field, value) => {
@@ -640,7 +671,7 @@ export default function CustomerBookingPage() {
               <div className="grid grid-cols-2 gap-3.5">
                 <CompactField label="Doc Type">
                   <select
-                    value={form.sender_gstin_type}
+                    value={normalizeDocType(form.sender_gstin_type, true)}
                     onChange={e => updateForm('sender_gstin_type', e.target.value)}
                     className="w-full bg-transparent focus:outline-none text-[13px] cursor-pointer text-text-primary"
                   >
@@ -784,7 +815,7 @@ export default function CustomerBookingPage() {
               <div className="grid grid-cols-2 gap-3.5">
                 <CompactField label="Doc Type">
                   <select
-                    value={form.receiver_gstin_type}
+                    value={normalizeDocType(form.receiver_gstin_type, false)}
                     onChange={e => updateForm('receiver_gstin_type', e.target.value)}
                     className="w-full bg-transparent focus:outline-none text-[13px] cursor-pointer text-text-primary"
                   >
@@ -795,6 +826,8 @@ export default function CustomerBookingPage() {
                     <option value="Aadhaar Number">Aadhaar</option>
                     <option value="PAN">PAN</option>
                     <option value="GSTIN">GSTIN</option>
+                    <option value="Voter ID">Voter ID</option>
+                    <option value="Driving License">Driving License</option>
                   </select>
                 </CompactField>
                 <CompactField label={/aadhaar|aadhar/i.test(form.receiver_gstin_type) ? 'Aadhaar No. (12 Digits)' : 'Document Number'}>

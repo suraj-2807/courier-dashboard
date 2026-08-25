@@ -869,7 +869,14 @@ export default function NewBookingPage() {
     'sender_email',
     'receiver_email',
     'buyer_email',
-    'vendor_config_id'
+    'vendor_config_id',
+    'sender_gstin_type',
+    'receiver_gstin_type',
+    'package_type',
+    'payment_mode',
+    'invoice_type',
+    'invoice_currency',
+    'terms_of_trade'
   ]
 
   const updateForm = (field, value) => {
@@ -1425,7 +1432,7 @@ export default function NewBookingPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <CompactField label="Doc Type">
                     <select
-                      value={form.sender_gstin_type}
+                      value={normalizeDocType(form.sender_gstin_type, true)}
                       onChange={e => updateForm('sender_gstin_type', e.target.value)}
                       className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 cursor-pointer"
                     >
@@ -1640,7 +1647,7 @@ export default function NewBookingPage() {
                 <div className="grid grid-cols-2 gap-2">
                   <CompactField label="Doc Type">
                     <select
-                      value={form.receiver_gstin_type}
+                      value={normalizeDocType(form.receiver_gstin_type, false)}
                       onChange={e => updateForm('receiver_gstin_type', e.target.value)}
                       className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 cursor-pointer"
                     >
@@ -1651,6 +1658,8 @@ export default function NewBookingPage() {
                       <option value="Aadhaar Number">Aadhaar</option>
                       <option value="PAN">PAN</option>
                       <option value="GSTIN">GSTIN</option>
+                      <option value="Voter ID">Voter ID</option>
+                      <option value="Driving License">Driving License</option>
                     </select>
                   </CompactField>
                   <CompactField label={/aadhaar|aadhar/i.test(form.receiver_gstin_type) ? 'Aadhaar No. (12 Digits)' : 'Document Number'}>
