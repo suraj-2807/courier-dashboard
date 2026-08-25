@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
  * Universal helper to open the vendor's label / invoice PDF in a new tab.
  * 
  * Supports:
- * 1. Base64 encoded PDF inside vendor_raw_response (labels array or label property)
+ * 1. Base64 encoded PDF inside vendor_raw_response (labels array with filename discernment, or Pdfdownload, BoxLabel, etc.)
  * 2. Data URI inside vendor_label_url
  * 3. External HTTP / HTTPS links
  * 4. Fallback to /api/bookings/:id/vendor-document backend stream endpoint
@@ -16,10 +16,14 @@ export async function openVendorDocument(booking, docType = 'document') {
     return false
   }
 
+  const type = String(docType || 'document').toLowerCase().trim()
+
   // Helper to open base64 string directly in a new tab
   const openBase64 = (base64Str) => {
     try {
+      if (!base64Str || typeof base64Str !== 'string') return false
       const clean = String(base64Str).replace(/^data:application\/pdf;base64,/, '').trim()
+      if (clean.length < 50) return false
       const byteChars = atob(clean)
       const byteNums = new Array(byteChars.length)
       for (let i = 0; i < byteChars.length; i++) {
@@ -36,8 +40,98 @@ export async function openVendorDocument(booking, docType = 'document') {
     }
   }
 
-  // 1. Check vendor_label_url in memory
-  if (booking.vendor_label_url) {
+  // 1. Check vendor_raw_response in memory first with smart docType matching
+  if (booking.vendor_raw_response) {
+    let raw = booking.vendor_raw_response
+    if (typeof raw === 'string') {
+      try {
+        raw = JSON.parse(raw)
+      } catch {}
+    }
+
+    if (raw && typeof raw === 'object') {
+      const resp = raw.Response || raw.response || raw.data || raw
+
+      // Check labels array (e.g. ITD / FlySwift / Trackmate)
+      const labelsArr = Array.isArray(raw.labels) ? raw.labels : (Array.isArray(raw.data?.labels) ? raw.data.labels : (Array.isArray(resp?.labels) ? resp.labels : null))
+      
+      if (labelsArr && labelsArr.length > 0) {
+        let matchedItem = null
+
+        if (type.includes('invoice')) {
+          // Find invoice PDF
+          matchedItem = labelsArr.find(l => {
+            const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
+            return fn.includes('invoice') || l?.type === 'invoice' || l?.invoice
+          })
+        } else if (type.includes('box')) {
+          // Find box label PDF
+          matchedItem = labelsArr.find(l => {
+            const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
+            return fn.includes('box') || fn.includes('label')
+          })
+        } else if (type.includes('label') || type.includes('shipper')) {
+          // Find shipper copy or general label PDF (exclude freeform invoice)
+          matchedItem = labelsArr.find(l => {
+            const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
+            return (fn.includes('shipper') || fn.includes('copy') || fn.includes('label') || fn.includes('waybill') || fn.includes('awb')) && !fn.includes('invoice')
+          }) || labelsArr.find(l => {
+            const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
+            return !fn.includes('invoice')
+          })
+        }
+
+        // Fallback to first available in array if specific match not found
+        if (!matchedItem) {
+          matchedItem = labelsArr[0]
+        }
+
+        const b64 = matchedItem?.label || matchedItem?.pdf || matchedItem?.invoice || (typeof matchedItem === 'string' ? matchedItem : '')
+        if (b64 && openBase64(b64)) return true
+      }
+
+      // Check Pacific Express / direct response properties
+      if (type.includes('invoice')) {
+        const invVal = resp.Pdfdownload || resp.pdfdownload || resp.PdfDownload || resp.Invoice || resp.invoice || resp.pdf || resp.Pdf ||
+                       raw.Pdfdownload || raw.pdfdownload || raw.Invoice || raw.invoice
+        if (invVal) {
+          const valStr = String(invVal).trim()
+          if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
+            window.open(valStr, '_blank')
+            return true
+          }
+          if (openBase64(valStr)) return true
+        }
+      } else if (type.includes('box')) {
+        const boxVal = resp.BoxLabel || resp.boxlabel || resp.Boxlabel || resp.box_label || resp.Label || resp.label ||
+                       raw.BoxLabel || raw.boxlabel || raw.Label || raw.label
+        if (boxVal) {
+          const valStr = String(boxVal).trim()
+          if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
+            window.open(valStr, '_blank')
+            return true
+          }
+          if (openBase64(valStr)) return true
+        }
+      } else {
+        // Label / document / shipper copy
+        const lblVal = resp.BoxLabel || resp.boxlabel || resp.Label || resp.label || resp.AuxLbl || resp.auxlbl ||
+                       resp.Pdfdownload || resp.pdfdownload || resp.Pdf || resp.pdf ||
+                       raw.BoxLabel || raw.boxlabel || raw.Label || raw.label || raw.Pdfdownload || raw.pdfdownload
+        if (lblVal) {
+          const valStr = String(lblVal).trim()
+          if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
+            window.open(valStr, '_blank')
+            return true
+          }
+          if (openBase64(valStr)) return true
+        }
+      }
+    }
+  }
+
+  // 2. Check vendor_label_url in memory
+  if (booking.vendor_label_url && !type.includes('invoice')) {
     const vUrl = String(booking.vendor_label_url).trim()
     if (vUrl.startsWith('data:application/pdf;base64,') || (vUrl.length > 200 && !vUrl.startsWith('http') && !vUrl.startsWith('/'))) {
       if (openBase64(vUrl)) return true
@@ -48,47 +142,10 @@ export async function openVendorDocument(booking, docType = 'document') {
     }
   }
 
-  // 2. Check vendor_raw_response in memory
-  if (booking.vendor_raw_response) {
-    let raw = booking.vendor_raw_response
-    if (typeof raw === 'string') {
-      try {
-        raw = JSON.parse(raw)
-      } catch {}
-    }
-
-    if (raw && typeof raw === 'object') {
-      // Check labels array
-      if (Array.isArray(raw.labels) && raw.labels.length > 0) {
-        const item = raw.labels.find(l => l && (l.label || l.pdf || l.invoice)) || raw.labels[0]
-        const b64 = item?.label || item?.pdf || item?.invoice || (typeof item === 'string' ? item : '')
-        if (b64 && openBase64(b64)) return true
-      }
-      if (raw.data && Array.isArray(raw.data.labels) && raw.data.labels.length > 0) {
-        const item = raw.data.labels[0]
-        const b64 = item?.label || item?.pdf || item?.invoice || (typeof item === 'string' ? item : '')
-        if (b64 && openBase64(b64)) return true
-      }
-
-      // Check direct properties
-      const directVal = raw.label || raw.Label || raw.AuxLbl || raw.invoice || raw.Invoice || raw.pdf ||
-                        raw.data?.label || raw.data?.invoice || raw.data?.label_url || raw.data?.invoice_url ||
-                        raw.Response?.Label || raw.Response?.Invoice
-      if (directVal) {
-        const val = String(directVal).trim()
-        if (val.startsWith('http://') || val.startsWith('https://')) {
-          window.open(val, '_blank')
-          return true
-        }
-        if (openBase64(val)) return true
-      }
-    }
-  }
-
-  // 3. Fallback: Request via authenticated backend endpoint
+  // 3. Fallback: Request via authenticated backend endpoint with docType query
   const toastId = toast.loading(`Loading vendor ${docType}...`)
   try {
-    const res = await bookingsApi.getVendorDocument(booking.id)
+    const res = await bookingsApi.getVendorDocument(booking.id, { type: docType })
     const blob = new Blob([res.data], { type: 'application/pdf' })
     const url = URL.createObjectURL(blob)
     window.open(url, '_blank')

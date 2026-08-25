@@ -397,21 +397,24 @@ export default class PacificAdapter extends BaseAdapter {
     const response = responseBody?.Response || responseBody || {}
     
     const status = String(response.Status || response.status || '').toLowerCase()
-    const code = String(response.ResponseCode || response.responseCode || '')
+    const code = String(response.ResponseCode || response.responseCode || '').toLowerCase()
     
-    // Success if Status is 'success', ResponseCode is '00', or a ForwardingNo is returned
+    // Success if Status is 'success', ResponseCode is '00' or 'rt01', or an AWBNo / ForwardingNo is returned
     const success = status === 'success'
       || status === 'true'
       || code === '00'
+      || code === 'rt01'
       || (response.ForwardingNo && String(response.ForwardingNo).trim() !== '')
+      || (response.AWBNo && String(response.AWBNo).trim() !== '')
+      || (response.AwbNo && String(response.AwbNo).trim() !== '')
 
     // Extract AWB / tracking number
     const awbNumber = String(
       response.ForwardingNo || response.ForwardingNo1 || response.AwbNo || response.awbNo || response.AWBNo || ''
     ).trim()
 
-    // Extract Label URL / Base64 pdf data
-    let labelUrl = response.Label || response.AuxLbl || response.label || ''
+    // Extract Label URL / Base64 pdf data (Pacific sends Pdfdownload or BoxLabel)
+    let labelUrl = response.Label || response.AuxLbl || response.label || response.BoxLabel || response.boxlabel || response.Pdfdownload || response.pdfdownload || ''
     if (!labelUrl && Array.isArray(response.labels) && response.labels.length > 0) {
       labelUrl = response.labels[0]?.label || ''
     }

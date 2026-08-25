@@ -177,7 +177,7 @@ async function prepareSnapshotFields(fields, finalSenderId, finalReceiverId) {
         sender_gstin_type = sender_gstin_type || s.gstin_type || ''
         sender_gstin_no = sender_gstin_no || s.gstin_no || ''
       }
-    } catch {}
+    } catch { }
   }
 
   let receiver_name = fields.receiver_name || ''
@@ -213,7 +213,7 @@ async function prepareSnapshotFields(fields, finalSenderId, finalReceiverId) {
         receiver_gstin_type = receiver_gstin_type || r.gstin_type || ''
         receiver_gstin_no = receiver_gstin_no || r.gstin_no || ''
       }
-    } catch {}
+    } catch { }
   }
 
   return {
@@ -280,7 +280,7 @@ async function upsertSender(fields) {
     )
     return existing[0].id
   }
-  
+
   const result = await execute(
     `INSERT INTO senders (name, company, email, phone, phone_2, address, address_2, city, pincode, state, country, gstin_type, gstin_no)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -359,7 +359,7 @@ async function upsertReceiver(fields) {
     )
     return existing[0].id
   }
-  
+
   const result = await execute(
     `INSERT INTO receivers (name, company, email, phone, phone_2, address, address_2, city, pincode, state, country, gstin_type, gstin_no)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -491,13 +491,13 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
   if (fields.invoice_items) {
     try {
       invoiceItemsList = typeof fields.invoice_items === 'string' ? JSON.parse(fields.invoice_items) : fields.invoice_items
-    } catch {}
+    } catch { }
   }
   if (!Array.isArray(invoiceItemsList)) invoiceItemsList = []
 
   const itemDescriptions = invoiceItemsList.map(i => i.description).filter(Boolean)
   const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
-  
+
   let contentDescription = ''
   if (fields.content_description && !['general goods', 'items / goods inside', 'goods'].includes(fields.content_description.trim().toLowerCase())) {
     contentDescription = fields.content_description.trim()
@@ -513,7 +513,7 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
   if (fields.parcels) {
     try {
       parcelsList = typeof fields.parcels === 'string' ? JSON.parse(fields.parcels) : fields.parcels
-    } catch {}
+    } catch { }
   }
   if (!Array.isArray(parcelsList)) parcelsList = []
 
@@ -749,13 +749,13 @@ export const saveBooking = async (req, res) => {
 
     const finalChgWeight = parsedParcelsList.length > 1
       ? parsedParcelsList.reduce((sum, p) => {
-          const act = parseFloat(p.weight) || 0
-          const l = parseFloat(p.length) || 0
-          const b = parseFloat(p.breadth || p.width) || 0
-          const h = parseFloat(p.height) || 0
-          const vol = (l > 0 && b > 0 && h > 0) ? (l * b * h) / 5000 : 0
-          return sum + Math.ceil(parseFloat(p.chargeable_weight) || Math.max(act, vol))
-        }, 0)
+        const act = parseFloat(p.weight) || 0
+        const l = parseFloat(p.length) || 0
+        const b = parseFloat(p.breadth || p.width) || 0
+        const h = parseFloat(p.height) || 0
+        const vol = (l > 0 && b > 0 && h > 0) ? (l * b * h) / 5000 : 0
+        return sum + Math.ceil(parseFloat(p.chargeable_weight) || Math.max(act, vol))
+      }, 0)
       : (parseFloat(fields.chargeable_weight) ? Math.ceil(parseFloat(fields.chargeable_weight)) : Math.ceil(finalWeight) || 0)
 
     const snap = await prepareSnapshotFields(fields, finalSenderId, finalReceiverId)
@@ -1124,7 +1124,7 @@ export const pushBookingToApi = async (req, res) => {
         if (!targetServiceCode && vac.available_services) {
           let svcs = vac.available_services
           if (typeof svcs === 'string') {
-            try { svcs = JSON.parse(svcs) } catch {}
+            try { svcs = JSON.parse(svcs) } catch { }
           }
           if (Array.isArray(svcs) && svcs.length > 0) {
             targetServiceCode = svcs[0].code || svcs[0].id || svcs[0].service || ''
@@ -1317,13 +1317,13 @@ export const createBooking = async (req, res) => {
 
     const finalChgWeight = parsedParcelsList.length > 1
       ? parsedParcelsList.reduce((sum, p) => {
-          const act = parseFloat(p.weight) || 0
-          const l = parseFloat(p.length) || 0
-          const b = parseFloat(p.breadth || p.width) || 0
-          const h = parseFloat(p.height) || 0
-          const vol = (l > 0 && b > 0 && h > 0) ? (l * b * h) / 5000 : 0
-          return sum + Math.ceil(parseFloat(p.chargeable_weight) || Math.max(act, vol))
-        }, 0)
+        const act = parseFloat(p.weight) || 0
+        const l = parseFloat(p.length) || 0
+        const b = parseFloat(p.breadth || p.width) || 0
+        const h = parseFloat(p.height) || 0
+        const vol = (l > 0 && b > 0 && h > 0) ? (l * b * h) / 5000 : 0
+        return sum + Math.ceil(parseFloat(p.chargeable_weight) || Math.max(act, vol))
+      }, 0)
       : (parseFloat(fields.chargeable_weight) ? Math.ceil(parseFloat(fields.chargeable_weight)) : Math.ceil(finalWeight) || 0)
 
     const snap = await prepareSnapshotFields(fields, finalSenderId, finalReceiverId)
@@ -1791,14 +1791,14 @@ export const getBookings = async (req, res) => {
       if (row.parcels) {
         try {
           parsedParcels = typeof row.parcels === 'string' ? JSON.parse(row.parcels) : row.parcels
-        } catch {}
+        } catch { }
       }
 
       let parsedInvoiceItems = []
       if (row.invoice_items) {
         try {
           parsedInvoiceItems = typeof row.invoice_items === 'string' ? JSON.parse(row.invoice_items) : row.invoice_items
-        } catch {}
+        } catch { }
       }
 
       return {
@@ -1912,14 +1912,14 @@ export const getBookingById = async (req, res) => {
     if (b.parcels) {
       try {
         parsedParcels = typeof b.parcels === 'string' ? JSON.parse(b.parcels) : b.parcels
-      } catch {}
+      } catch { }
     }
 
     let parsedInvoiceItems = []
     if (b.invoice_items) {
       try {
         parsedInvoiceItems = typeof b.invoice_items === 'string' ? JSON.parse(b.invoice_items) : b.invoice_items
-      } catch {}
+      } catch { }
     }
 
     let trackingEvents = []
@@ -1928,7 +1928,7 @@ export const getBookingById = async (req, res) => {
         'SELECT * FROM tracking_events WHERE shipment_id = ? ORDER BY event_time DESC, id DESC',
         [b.id]
       )
-    } catch {}
+    } catch { }
 
     // Fetch adjacent active bookings (prev and next by id)
     let adjacent = { prev_id: null, next_id: null, prev_tracking: null, next_tracking: null, prev_order: null, next_order: null }
@@ -2074,7 +2074,7 @@ export const deletePermanentBookings = async (req, res) => {
     const placeholders = ids.map(() => '?').join(',')
     try {
       await execute(`DELETE FROM tracking_events WHERE shipment_id IN (${placeholders})`, ids)
-    } catch {}
+    } catch { }
 
     await execute(
       `DELETE FROM shipments WHERE id IN (${placeholders})`,
@@ -2177,14 +2177,14 @@ async function getFullShipmentContext(shipmentId) {
   if (b.parcels) {
     try {
       parcels = typeof b.parcels === 'string' ? JSON.parse(b.parcels) : b.parcels
-    } catch {}
+    } catch { }
   }
 
   let invoiceItems = []
   if (b.invoice_items) {
     try {
       invoiceItems = typeof b.invoice_items === 'string' ? JSON.parse(b.invoice_items) : b.invoice_items
-    } catch {}
+    } catch { }
   }
 
   return { b, sender, receiver, parcels, invoiceItems }
@@ -2266,6 +2266,7 @@ export const getBoxLabelsPdf = async (req, res) => {
 export const getVendorDocument = async (req, res) => {
   try {
     const { id } = req.params
+    const reqType = String(req.query.type || req.query.docType || 'document').toLowerCase().trim()
 
     const rows = await query(
       'SELECT * FROM shipments WHERE id = ? OR tracking_number = ? OR order_id = ? OR vendor_awb_number = ?',
@@ -2285,8 +2286,89 @@ export const getVendorDocument = async (req, res) => {
       return res.send(buffer)
     }
 
-    // 1. Check vendor_label_url
-    if (b.vendor_label_url) {
+    // 1. Check vendor_raw_response first for exact document matching
+    if (b.vendor_raw_response) {
+      let raw = b.vendor_raw_response
+      if (typeof raw === 'string') {
+        try { raw = JSON.parse(raw) } catch { }
+      }
+
+      if (raw && typeof raw === 'object') {
+        const resp = raw.Response || raw.response || raw.data || raw
+
+        // Check labels array (e.g. ITD / FlySwift / Trackmate)
+        const labelsArr = Array.isArray(raw.labels) ? raw.labels : (Array.isArray(raw.data?.labels) ? raw.data.labels : (Array.isArray(resp?.labels) ? resp.labels : null))
+
+        if (labelsArr && labelsArr.length > 0) {
+          let matchedItem = null
+
+          if (reqType.includes('invoice')) {
+            matchedItem = labelsArr.find(l => {
+              const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
+              return fn.includes('invoice') || l?.type === 'invoice' || l?.invoice
+            })
+          } else if (reqType.includes('box')) {
+            matchedItem = labelsArr.find(l => {
+              const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
+              return fn.includes('box') || fn.includes('label')
+            })
+          } else if (reqType.includes('label') || reqType.includes('shipper')) {
+            matchedItem = labelsArr.find(l => {
+              const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
+              return (fn.includes('shipper') || fn.includes('copy') || fn.includes('label') || fn.includes('waybill') || fn.includes('awb')) && !fn.includes('invoice')
+            }) || labelsArr.find(l => {
+              const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
+              return !fn.includes('invoice')
+            })
+          }
+
+          if (!matchedItem) {
+            matchedItem = labelsArr[0]
+          }
+
+          const b64 = matchedItem?.label || matchedItem?.pdf || matchedItem?.invoice || (typeof matchedItem === 'string' ? matchedItem : '')
+          if (b64) return serveBase64Pdf(b64, `${reqType}_${b.tracking_number || b.id}.pdf`)
+        }
+
+        // Check Pacific Express / direct response properties
+        if (reqType.includes('invoice')) {
+          const invVal = resp.Pdfdownload || resp.pdfdownload || resp.PdfDownload || resp.Invoice || resp.invoice || resp.pdf || resp.Pdf ||
+                         raw.Pdfdownload || raw.pdfdownload || raw.Invoice || raw.invoice
+          if (invVal) {
+            const valStr = String(invVal).trim()
+            if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
+              return res.redirect(valStr)
+            }
+            return serveBase64Pdf(valStr, `Invoice_${b.tracking_number || b.id}.pdf`)
+          }
+        } else if (reqType.includes('box')) {
+          const boxVal = resp.BoxLabel || resp.boxlabel || resp.Boxlabel || resp.box_label || resp.Label || resp.label ||
+                         raw.BoxLabel || raw.boxlabel || raw.Label || raw.label
+          if (boxVal) {
+            const valStr = String(boxVal).trim()
+            if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
+              return res.redirect(valStr)
+            }
+            return serveBase64Pdf(valStr, `BoxLabel_${b.tracking_number || b.id}.pdf`)
+          }
+        } else {
+          // Label / document / shipper copy
+          const lblVal = resp.BoxLabel || resp.boxlabel || resp.Label || resp.label || resp.AuxLbl || resp.auxlbl ||
+                         resp.Pdfdownload || resp.pdfdownload || resp.Pdf || resp.pdf ||
+                         raw.BoxLabel || raw.boxlabel || raw.Label || raw.label || raw.Pdfdownload || raw.pdfdownload
+          if (lblVal) {
+            const valStr = String(lblVal).trim()
+            if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
+              return res.redirect(valStr)
+            }
+            return serveBase64Pdf(valStr, `Label_${b.tracking_number || b.id}.pdf`)
+          }
+        }
+      }
+    }
+
+    // 2. Check vendor_label_url
+    if (b.vendor_label_url && !reqType.includes('invoice')) {
       const vUrl = String(b.vendor_label_url).trim()
       if (vUrl.startsWith('data:application/pdf;base64,') || (vUrl.length > 200 && !vUrl.startsWith('http') && !vUrl.startsWith('/'))) {
         return serveBase64Pdf(vUrl, `VendorDoc_${b.tracking_number || b.id}.pdf`)
@@ -2309,42 +2391,9 @@ export const getVendorDocument = async (req, res) => {
       }
     }
 
-    // 2. Check vendor_raw_response
-    if (b.vendor_raw_response) {
-      let raw = b.vendor_raw_response
-      if (typeof raw === 'string') {
-        try { raw = JSON.parse(raw) } catch {}
-      }
-
-      if (raw && typeof raw === 'object') {
-        // Check labels array
-        if (Array.isArray(raw.labels) && raw.labels.length > 0) {
-          const item = raw.labels.find(l => l && (l.label || l.pdf || l.invoice)) || raw.labels[0]
-          const b64 = item?.label || item?.pdf || item?.invoice || (typeof item === 'string' ? item : '')
-          if (b64) return serveBase64Pdf(b64, `VendorDoc_${b.tracking_number || b.id}.pdf`)
-        }
-        if (raw.data && Array.isArray(raw.data.labels) && raw.data.labels.length > 0) {
-          const item = raw.data.labels[0]
-          const b64 = item?.label || item?.pdf || item?.invoice || (typeof item === 'string' ? item : '')
-          if (b64) return serveBase64Pdf(b64, `VendorDoc_${b.tracking_number || b.id}.pdf`)
-        }
-        // Direct properties
-        const directVal = raw.label || raw.Label || raw.AuxLbl || raw.invoice || raw.Invoice || raw.pdf ||
-                          raw.data?.label || raw.data?.invoice || raw.data?.label_url || raw.data?.invoice_url ||
-                          raw.Response?.Label || raw.Response?.Invoice
-        if (directVal) {
-          const val = String(directVal).trim()
-          if (val.startsWith('http://') || val.startsWith('https://')) {
-            return res.redirect(val)
-          }
-          return serveBase64Pdf(val, `VendorDoc_${b.tracking_number || b.id}.pdf`)
-        }
-      }
-    }
-
     return res.status(404).json({
       success: false,
-      message: 'No vendor invoice or label document returned by carrier API for this shipment.'
+      message: `No vendor ${reqType} document returned by carrier API for this shipment.`
     })
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message })
