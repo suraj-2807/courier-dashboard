@@ -352,6 +352,11 @@ export default function NewBookingPage() {
     })
     setActiveItemSuggestionIndex(null)
     toast.success(`Selected "${product.name}" (HSN: ${product.hs_code})`)
+    // After product autofill, focus the Unit select (skip HSN since it's auto-filled)
+    setTimeout(() => {
+      const unitSelect = document.querySelector(`[data-invoice-unit="${idx}"]`)
+      if (unitSelect) unitSelect.focus()
+    }, 50)
   }
 
   // Filtered Senders Autocomplete
@@ -378,6 +383,32 @@ export default function NewBookingPage() {
     ).slice(0, 8)
   }, [allReceivers, form.receiver_name])
 
+  // Normalize document type from DB to match dropdown <option> values exactly
+  const normalizeDocType = (raw, isSender = true) => {
+    if (!raw) return ''
+    const upper = String(raw).trim().toUpperCase()
+    // Sender doc type options
+    const senderMap = {
+      'GSTIN': 'GSTIN', 'GST': 'GSTIN',
+      'PAN': 'PAN', 'PAN CARD': 'PAN',
+      'AADHAAR NUMBER': 'Aadhaar Number', 'AADHAAR': 'Aadhaar Number', 'AADHAR': 'Aadhaar Number', 'AADHAR NUMBER': 'Aadhaar Number',
+      'PASSPORT': 'Passport',
+      'VOTER ID': 'Voter ID', 'VOTER': 'Voter ID',
+      'DRIVING LICENSE': 'Driving License', 'DRIVING LICENCE': 'Driving License', 'DL': 'Driving License'
+    }
+    // Receiver doc type options
+    const receiverMap = {
+      'TAX ID': 'Tax ID', 'TAXID': 'Tax ID', 'TAX': 'Tax ID',
+      'VAT': 'VAT',
+      'PASSPORT': 'Passport',
+      'AADHAAR NUMBER': 'Aadhaar Number', 'AADHAAR': 'Aadhaar Number', 'AADHAR': 'Aadhaar Number', 'AADHAR NUMBER': 'Aadhaar Number',
+      'PAN': 'PAN', 'PAN CARD': 'PAN',
+      'GSTIN': 'GSTIN', 'GST': 'GSTIN'
+    }
+    const map = isSender ? senderMap : receiverMap
+    return map[upper] || raw.trim()
+  }
+
   // Select Sender Handler
   const handleSelectSender = (sender) => {
     setForm(prev => ({
@@ -393,12 +424,13 @@ export default function NewBookingPage() {
       sender_pincode: (sender.pincode || '').toUpperCase(),
       sender_state: (sender.state || '').toUpperCase(),
       sender_country: (sender.country || 'INDIA').toUpperCase(),
-      sender_gstin_type: (sender.gstin_type || '').toUpperCase(),
+      sender_gstin_type: normalizeDocType(sender.gstin_type, true),
       sender_gstin_no: (sender.gstin_no || '').toUpperCase()
     }))
     setSenderSuggestionsOpen(false)
     toast.success(`Autofilled details for sender "${sender.name}"!`)
   }
+
 
   // Select Receiver Handler
   const handleSelectReceiver = (receiver) => {
@@ -415,13 +447,12 @@ export default function NewBookingPage() {
       receiver_pincode: (receiver.pincode || '').toUpperCase(),
       receiver_state: (receiver.state || '').toUpperCase(),
       receiver_country: (receiver.country || '').toUpperCase(),
-      receiver_gstin_type: (receiver.gstin_type || '').toUpperCase(),
+      receiver_gstin_type: normalizeDocType(receiver.gstin_type, false),
       receiver_gstin_no: (receiver.gstin_no || '').toUpperCase()
     }))
     setReceiverSuggestionsOpen(false)
     toast.success(`Autofilled details for receiver "${receiver.name}"!`)
   }
-
   const resolveCountryCode = (val) => {
     if (!val) return ''
     const clean = val.trim().toUpperCase()
@@ -487,8 +518,8 @@ export default function NewBookingPage() {
       sender_pincode: sender.pincode || b.sender_pincode || '',
       sender_state: sender.state || b.sender_state || '',
       sender_country: sender.country || b.sender_country || 'INDIA',
-      sender_gstin_type: b.sender_gstin_type || '',
-      sender_gstin_no: b.sender_gstin_no || '',
+      sender_gstin_type: normalizeDocType(b.sender_gstin_type || sender.gstin_type, true),
+      sender_gstin_no: b.sender_gstin_no || sender.gstin_no || '',
 
       receiver_name: receiver.name || b.receiver_name || '',
       receiver_company: b.receiver_company || receiver.company || '',
@@ -501,8 +532,8 @@ export default function NewBookingPage() {
       receiver_pincode: receiver.pincode || b.receiver_pincode || '',
       receiver_state: receiver.state || b.receiver_state || '',
       receiver_country: receiver.country || b.receiver_country || '',
-      receiver_gstin_type: b.receiver_gstin_type || '',
-      receiver_gstin_no: b.receiver_gstin_no || '',
+      receiver_gstin_type: normalizeDocType(b.receiver_gstin_type || receiver.gstin_type, false),
+      receiver_gstin_no: b.receiver_gstin_no || receiver.gstin_no || '',
 
       courier_provider_id: b.courier_provider_id || '',
       vendor_config_id: b.vendor_config_id || '',
@@ -601,7 +632,15 @@ export default function NewBookingPage() {
     const updates = {}
     prefillFields.forEach(field => {
       const val = searchParams.get(field)
-      if (val) updates[field] = val
+      if (val) {
+        if (field === 'sender_gstin_type') {
+          updates[field] = normalizeDocType(val, true)
+        } else if (field === 'receiver_gstin_type') {
+          updates[field] = normalizeDocType(val, false)
+        } else {
+          updates[field] = val
+        }
+      }
     })
     if (Object.keys(updates).length > 0) {
       setForm(prev => ({ ...prev, ...updates }))
@@ -2366,13 +2405,15 @@ export default function NewBookingPage() {
                     </div>
                     <div className="px-1">
                       <input type="text" placeholder="" value={item.hs_code} onChange={e => updateInvoiceItem(idx, 'hs_code', e.target.value)}
+                        tabIndex={item.hs_code ? -1 : 0}
                         className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary" />
                     </div>
                     <div className="px-1">
                       <select
+                        data-invoice-unit={idx}
                         value={item.unit_type || 'PCS'}
                         onChange={e => updateInvoiceItem(idx, 'unit_type', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs font-semibold cursor-pointer text-text-primary"
+                        className="w-full bg-transparent focus:outline-none focus:ring-2 focus:ring-primary focus:bg-white focus:border-primary text-xs font-semibold cursor-pointer text-text-primary border border-transparent rounded px-1 transition-all"
                       >
                         <option value="">Select...</option>
                         <option value="Pkt">Pkt</option>
@@ -2406,11 +2447,7 @@ export default function NewBookingPage() {
                     </div>
                     <div className="px-1">
                       <input type="number" step="0.01" placeholder="" value={item.unit_rates} onChange={e => updateInvoiceItem(idx, 'unit_rates', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs text-right text-text-primary" />
-                    </div>
-                    <div className="px-1">
-                      <input type="number" step="0.01" placeholder="" readOnly value={item.amount}
-                        className="w-full bg-transparent focus:outline-none text-xs text-right font-extrabold text-primary"
+                        className="w-full bg-transparent focus:outline-none text-xs text-right text-text-primary"
                         onKeyDown={e => {
                           if (e.key === 'Tab' && !e.shiftKey && idx === invoiceItems.length - 1) {
                             e.preventDefault()
@@ -2421,6 +2458,11 @@ export default function NewBookingPage() {
                             }, 50)
                           }
                         }}
+                      />
+                    </div>
+                    <div className="px-1">
+                      <input type="number" step="0.01" placeholder="" readOnly tabIndex={-1} value={item.amount}
+                        className="w-full bg-transparent focus:outline-none text-xs text-right font-extrabold text-primary cursor-default"
                       />
                     </div>
                     <div className="px-1 text-center">
