@@ -758,6 +758,8 @@ export const saveBooking = async (req, res) => {
         }, 0)
       : (parseFloat(fields.chargeable_weight) ? Math.ceil(parseFloat(fields.chargeable_weight)) : Math.ceil(finalWeight) || 0)
 
+    const snap = await prepareSnapshotFields(fields, finalSenderId, finalReceiverId)
+
     let shipmentId
     let tracking_number
 
