@@ -1695,7 +1695,7 @@ export default function NewBookingPage() {
                 <CompactField label="Courier Vendor API">
                   <select
                     value={form.vendor_config_id}
-                    disabled={isLocked || (!!editId && !!form.vendor_config_id)}
+                    disabled={isLocked}
                     onChange={e => {
                       const newId = e.target.value
                       updateForm('vendor_config_id', newId)
@@ -1721,7 +1721,7 @@ export default function NewBookingPage() {
                       setCustomServiceMode(false)
                       setCustomProductMode(false)
                     }}
-                    className={`w-full bg-transparent focus:outline-none text-[13px] text-primary font-bold cursor-pointer ${(isLocked || (!!editId && !!form.vendor_config_id)) ? 'cursor-not-allowed text-gray-500 opacity-75' : ''}`}
+                    className={`w-full bg-transparent focus:outline-none text-[13px] text-primary font-bold cursor-pointer ${isLocked ? 'cursor-not-allowed text-gray-500 opacity-75' : ''}`}
                   >
                     <option value="">— None (Local Only) —</option>
                     {activeVendors.map(v => (
