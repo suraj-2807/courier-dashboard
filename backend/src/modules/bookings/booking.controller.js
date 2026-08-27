@@ -1706,15 +1706,55 @@ export const getBookings = async (req, res) => {
       }
     }
 
-    if (search) {
-      whereConditions.push('(s.order_id LIKE ? OR s.tracking_number LIKE ? OR s.vendor_awb_number LIKE ?)')
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`)
+    if (search && search.trim()) {
+      const term = `%${search.trim()}%`
+      whereConditions.push(`(
+        s.order_id LIKE ? OR
+        s.tracking_number LIKE ? OR
+        s.vendor_awb_number LIKE ? OR
+        s.vendor_awb_number_2 LIKE ? OR
+        s.forwarding_no LIKE ? OR
+        s.order_reference LIKE ? OR
+        s.sender_name LIKE ? OR
+        snd.name LIKE ? OR
+        snd.phone LIKE ? OR
+        snd.phone_2 LIKE ? OR
+        s.sender_phone LIKE ? OR
+        s.sender_phone_2 LIKE ? OR
+        s.receiver_name LIKE ? OR
+        rcv.name LIKE ? OR
+        rcv.phone LIKE ? OR
+        rcv.phone_2 LIKE ? OR
+        s.receiver_phone LIKE ? OR
+        s.receiver_phone_2 LIKE ? OR
+        s.receiver_country LIKE ? OR
+        rcv.country LIKE ? OR
+        s.receiver_city LIKE ? OR
+        rcv.city LIKE ? OR
+        s.destination_country LIKE ? OR
+        DATE_FORMAT(s.created_at, '%d/%m/%Y') LIKE ? OR
+        DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ? OR
+        s.booking_date LIKE ?
+      )`)
+      params.push(
+        term, term, term, term, term, term,
+        term, term, term, term, term, term,
+        term, term, term, term, term, term,
+        term, term, term, term, term,
+        term, term, term
+      )
     }
 
     const whereClause = whereConditions.length > 0 ? ` WHERE ${whereConditions.join(' AND ')}` : ''
 
     const countRows = await query(
-      `SELECT COUNT(*) as total FROM shipments s${whereClause}`,
+      `SELECT COUNT(*) as total
+       FROM shipments s
+       LEFT JOIN senders snd ON s.sender_id = snd.id
+       LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       LEFT JOIN courier_providers cp ON s.courier_provider_id = cp.id
+       LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
+       ${whereClause}`,
       params
     )
     const total = countRows[0].total
@@ -2130,9 +2170,9 @@ export const updateBookingStatus = async (req, res) => {
 async function getFullShipmentContext(shipmentId) {
   const rows = await query(
     `SELECT s.*,
-      snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.email as s_email,
+      snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.phone_2 as s_phone_2, snd.email as s_email,
       snd.address as s_address, snd.city as s_city, snd.state as s_state, snd.pincode as s_pincode, snd.country as s_country,
-      rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.email as r_email,
+      rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.phone_2 as r_phone_2, rcv.email as r_email,
       rcv.address as r_address, rcv.city as r_city, rcv.state as r_state, rcv.pincode as r_pincode, rcv.country as r_country
      FROM shipments s
      LEFT JOIN senders snd ON s.sender_id = snd.id
@@ -2147,6 +2187,7 @@ async function getFullShipmentContext(shipmentId) {
     name: b.s_name || b.sender_name || '',
     company: b.sender_company || '',
     phone: b.s_phone || b.sender_phone || '',
+    phone_2: b.s_phone_2 || b.sender_phone_2 || '',
     email: b.s_email || b.sender_email || '',
     address: b.s_address || b.sender_address || '',
     address_2: b.sender_address_2 || '',
@@ -2162,6 +2203,7 @@ async function getFullShipmentContext(shipmentId) {
     name: b.r_name || b.receiver_name || '',
     company: b.receiver_company || '',
     phone: b.r_phone || b.receiver_phone || '',
+    phone_2: b.r_phone_2 || b.receiver_phone_2 || '',
     email: b.r_email || b.receiver_email || '',
     address: b.r_address || b.receiver_address || '',
     address_2: b.receiver_address_2 || '',

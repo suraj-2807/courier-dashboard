@@ -143,9 +143,15 @@ export default class PacificAdapter extends BaseAdapter {
     if (totalWeight <= 0) totalWeight = 1.0
 
     const perPieceWeight = (totalWeight / numPieces).toFixed(3)
-    const length = parseFloat(shipmentData.length || 10).toFixed(3)
-    const width = parseFloat(shipmentData.breadth || 10).toFixed(3)
-    const height = parseFloat(shipmentData.height || 10).toFixed(3)
+    const length = (shipmentData.length !== undefined && shipmentData.length !== null && shipmentData.length !== '')
+      ? parseFloat(shipmentData.length)
+      : 0
+    const width = (shipmentData.breadth !== undefined && shipmentData.breadth !== null && shipmentData.breadth !== '')
+      ? parseFloat(shipmentData.breadth)
+      : 0
+    const height = (shipmentData.height !== undefined && shipmentData.height !== null && shipmentData.height !== '')
+      ? parseFloat(shipmentData.height)
+      : 0
 
     const bookingDateStr = shipmentData.booking_date || new Date().toISOString().split('T')[0]
     const invoiceDateStr = shipmentData.invoice_date || bookingDateStr
@@ -156,29 +162,29 @@ export default class PacificAdapter extends BaseAdapter {
       new Date(new Date(bookingDateStr).getTime() + 10 * 24 * 60 * 60 * 1000)
     )
 
-    // Build Dimensions array (using exact individual box dimensions if provided)
+    // Build Dimensions array (using exact individual box dimensions if provided, preserving 0)
     const dimensions = []
     if (parcelsList.length > 0) {
       parcelsList.forEach((p, idx) => {
         const rawW = parseFloat(p.weight)
         const pWeight = rawW > 0 ? rawW : (parseFloat(perPieceWeight) || 1.0)
-        const pLength = parseFloat(p.length) || parseFloat(length) || 10.0
-        const pWidth = parseFloat(p.breadth || p.width) || parseFloat(width) || 10.0
-        const pHeight = parseFloat(p.height) || parseFloat(height) || 10.0
+        const pLength = (p.length !== undefined && p.length !== null && p.length !== '') ? parseFloat(p.length) : length
+        const pWidth = (p.breadth !== undefined && p.breadth !== null && p.breadth !== '') ? parseFloat(p.breadth) : ((p.width !== undefined && p.width !== null && p.width !== '') ? parseFloat(p.width) : width)
+        const pHeight = (p.height !== undefined && p.height !== null && p.height !== '') ? parseFloat(p.height) : height
         dimensions.push({
           ActualWeight: String(pWeight.toFixed(3)),
-          Vol_WeightL: String(pLength.toFixed(2)),
-          Vol_WeightW: String(pWidth.toFixed(2)),
-          Vol_WeightH: String(pHeight.toFixed(2))
+          Vol_WeightL: String((isNaN(pLength) ? 0 : pLength).toFixed(2)),
+          Vol_WeightW: String((isNaN(pWidth) ? 0 : pWidth).toFixed(2)),
+          Vol_WeightH: String((isNaN(pHeight) ? 0 : pHeight).toFixed(2))
         })
       })
     } else {
       for (let i = 0; i < numPieces; i++) {
         dimensions.push({
           ActualWeight: String(perPieceWeight),
-          Vol_WeightL: String(parseFloat(length).toFixed(2)),
-          Vol_WeightW: String(parseFloat(width).toFixed(2)),
-          Vol_WeightH: String(parseFloat(height).toFixed(2))
+          Vol_WeightL: String((isNaN(length) ? 0 : length).toFixed(2)),
+          Vol_WeightW: String((isNaN(width) ? 0 : width).toFixed(2)),
+          Vol_WeightH: String((isNaN(height) ? 0 : height).toFixed(2))
         })
       }
     }

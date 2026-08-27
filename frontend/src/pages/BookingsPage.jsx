@@ -20,14 +20,17 @@ import {
   Check,
   Trash2,
   RotateCcw,
-  AlertTriangle
+  AlertTriangle,
+  DollarSign,
+  Tag,
+  Printer
 } from 'lucide-react'
 import { bookingsApi } from '../api/bookings.api'
 import StatusBadge from '../components/ui/StatusBadge'
 import Pagination from '../components/ui/Pagination'
 import EmptyState from '../components/ui/EmptyState'
 import ErrorState from '../components/ui/ErrorState'
-import { formatCurrency, formatDate } from '../utils/formatters'
+import { formatCurrency, formatDate, formatDateDDMMYYYY } from '../utils/formatters'
 import { exportShipmentsToExcel } from '../utils/exportShipmentsExcel'
 import { openVendorDocument } from '../utils/openVendorDocument'
 import toast from 'react-hot-toast'
@@ -260,6 +263,20 @@ export default function BookingsPage() {
     openVendorDocument(b, 'label')
   }
 
+  // Open Prince Official Box / Thermal Label PDF
+  const handleOpenPrinceLabelRow = async (b) => {
+    const toastId = toast.loading('Opening Prince Box Label...')
+    try {
+      const res = await bookingsApi.downloadBoxLabels(b.id)
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      toast.success('Prince Label opened in new tab', { id: toastId })
+    } catch (err) {
+      toast.error('Failed to open Prince Label', { id: toastId })
+    }
+  }
+
   const setPage = (newPageOrFn) => {
     const targetPage = typeof newPageOrFn === 'function' ? newPageOrFn(page) : newPageOrFn
     const validPage = Math.max(1, parseInt(targetPage) || 1)
@@ -471,7 +488,7 @@ export default function BookingsPage() {
               <Search className="w-4 h-4 text-text-tertiary flex-shrink-0" />
               <input
                 type="text"
-                placeholder="Filter by ID, Dest..."
+                placeholder="Search AWB, Vendor AWB, Shipper, Consignee, Destination, Date..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={handleSearch}
@@ -565,7 +582,7 @@ export default function BookingsPage() {
                         className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
                       />
                     </th>
-                    {['Our AWB', 'Vendor / AWB', 'Shipper', 'Consignee', 'Status', 'Date', 'Actions'].map((h) => (
+                    {['Our AWB', 'Vendor / Forwarding AWB', 'Shipper', 'Consignee', 'Status', 'Actions'].map((h) => (
                       <th
                         key={h}
                         className={`px-4 py-3 text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] whitespace-nowrap ${
@@ -593,7 +610,8 @@ export default function BookingsPage() {
                           className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
                         />
                       </td>
-                      {/* Our AWB (7-digit) */}
+
+                      {/* Our AWB (7-digit) & Date */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <div className="flex items-center gap-1.5">
                           <Link
@@ -608,10 +626,15 @@ export default function BookingsPage() {
                             <CopyButton text={b.tracking_number} label="Our AWB copied!" />
                           )}
                         </div>
+                        <div className="text-[11px] font-medium text-text-tertiary mt-0.5">
+                          {formatDateDDMMYYYY(b.created_at || b.booking_date)}
+                        </div>
                       </td>
+
                       {/* Vendor / AWB & Forwarding Number */}
                       <td className="px-4 py-3.5">
                         <div className="space-y-1">
+                          {/* 1. Vendor AWB */}
                           {b.vendor_awb_number ? (
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[12px] font-bold text-[#1a237e]">
@@ -623,44 +646,50 @@ export default function BookingsPage() {
                             <span className="text-[11px] text-text-tertiary italic">—</span>
                           )}
 
-                          {/* Forwarding Number (Vendor AWB 2 / UPS / FedEx / Carrier AWB) */}
-                          {(b.vendor_awb_number_2 || b.forwarding_no) && (
-                            <div className="inline-flex items-center gap-1 bg-amber-50/90 border border-amber-200 px-2 py-0.5 rounded-md text-[11px] font-bold text-amber-900 shadow-2xs">
-                              <span className="text-[9px] uppercase font-sans tracking-wider text-amber-700 font-extrabold">
-                                {b.secondary_carrier || (/^1Z/i.test(b.vendor_awb_number_2 || b.forwarding_no) ? 'UPS AWB' : 'FWD')}:
-                              </span>
-                              <span className="select-all">{b.vendor_awb_number_2 || b.forwarding_no}</span>
-                              <CopyButton text={b.vendor_awb_number_2 || b.forwarding_no} label="Forwarding AWB copied!" />
-                            </div>
-                          )}
+                          {/* 2. Forwarding Number (Vendor AWB 2 / Carrier AWB) */}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {(b.vendor_awb_number_2 || b.forwarding_no) ? (
+                              <div className="inline-flex items-center gap-1 bg-amber-50/90 border border-amber-200 px-1.5 py-0.5 rounded text-[11px] font-bold text-amber-900 shadow-2xs">
+                                <span className="text-[9px] uppercase tracking-wider text-amber-700 font-extrabold">FWD:</span>
+                                <span className="select-all">{b.vendor_awb_number_2 || b.forwarding_no}</span>
+                                <CopyButton text={b.vendor_awb_number_2 || b.forwarding_no} label="Forwarding number copied!" />
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-text-tertiary italic">—</span>
+                            )}
+                          </div>
 
-                          <span className="block text-[10px] text-text-tertiary font-medium">
-                            {b.vendor_api_configs?.name || b.courier_providers?.name || 'Local'}
-                          </span>
+                          {/* 3. Forwarded Vendor Name / Carrier Name */}
+                          <div className="text-[10px] text-text-tertiary font-medium">
+                            {b.secondary_carrier || b.forwarding_vendor || b.vendor_api_configs?.name || b.courier_providers?.name || '—'}
+                          </div>
                         </div>
                       </td>
-                      {/* Shipper */}
-                      <td className="px-4 py-3.5">
+
+                      {/* Shipper (Reduced width) */}
+                      <td className="px-4 py-3.5 max-w-[130px]">
                         <div>
-                          <p className="text-[12px] text-text-primary font-bold">
+                          <p className="text-[12px] text-text-primary font-bold truncate" title={b.senders?.name || b.sender_name || '—'}>
                             {b.senders?.name || b.sender_name || '—'}
                           </p>
-                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5">
+                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5 truncate">
                             {getFullCountryName(b.senders?.country || b.sender_country || 'INDIA')}
                           </p>
                         </div>
                       </td>
+
                       {/* Consignee */}
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-3.5 max-w-[150px]">
                         <div>
-                          <p className="text-[12px] text-text-primary font-bold">
+                          <p className="text-[12px] text-text-primary font-bold truncate" title={b.receivers?.name || b.receiver_name || '—'}>
                             {b.receivers?.name || b.receiver_name || '—'}
                           </p>
-                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5">
+                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5 truncate">
                             {getFullCountryName(b.receivers?.country || b.receiver_country || b.receivers?.city || '—')}
                           </p>
                         </div>
                       </td>
+
                       {/* Status */}
                       <td className="px-4 py-3.5">
                         <StatusBadge status={b.status} size="xs" />
@@ -668,13 +697,10 @@ export default function BookingsPage() {
                           <span className="ml-1.5 text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">LOCKED</span>
                         )}
                       </td>
-                      {/* Date */}
-                      <td className="px-4 py-3.5 text-[12px] text-text-secondary whitespace-nowrap">
-                        {formatDate(b.created_at)}
-                      </td>
+
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1">
                           {isTrashTab ? (
                             <>
                               {/* Restore button */}
@@ -701,7 +727,7 @@ export default function BookingsPage() {
                             </>
                           ) : (
                             <>
-                              {/* View details */}
+                              {/* 1. View details */}
                               <Link
                                 to={`/bookings/${b.id}`}
                                 className="p-1.5 text-text-secondary hover:text-navy hover:bg-surface-hover rounded-lg transition-colors"
@@ -710,27 +736,27 @@ export default function BookingsPage() {
                                 <Eye className="w-4 h-4" />
                               </Link>
 
-                              {/* Our Official Shipping Bill */}
+                              {/* 2. Our Official Shipping Bill (Dollar icon) */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenOurBillRow(b)}
                                 className="p-1.5 text-navy hover:text-primary hover:bg-navy/5 rounded-lg transition-colors cursor-pointer"
-                                title="Open Shipping Bill (Ours)"
+                                title="Open Shipping Bill / Waybill (Ours)"
                               >
-                                <FileText className="w-4 h-4" />
+                                <DollarSign className="w-4 h-4" />
                               </button>
 
-                              {/* Vendor Invoice — open in new tab */}
+                              {/* 3. Vendor Invoice — open in new tab (Download icon) */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenInvoiceRow(b)}
                                 className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                                title="Open Vendor Invoice"
+                                title="Open Commercial / Vendor Invoice"
                               >
                                 <Download className="w-4 h-4" />
                               </button>
 
-                              {/* Vendor Label — open in new tab */}
+                              {/* 4. Vendor Label — open in new tab (Box icon) */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenLabelRow(b)}
@@ -740,14 +766,24 @@ export default function BookingsPage() {
                                 <Package className="w-4 h-4" />
                               </button>
 
-                              {/* Edit / View Booking Form */}
+                              {/* 5. Prince Official Box / Thermal Label (Prince Label icon) */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenPrinceLabelRow(b)}
+                                className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                                title="Open Prince Box / Thermal Label (Cleaned Layout)"
+                              >
+                                <Tag className="w-4 h-4" />
+                              </button>
+
+                              {/* 6. Edit / View Booking Form */}
                               <Link
                                 to={`/bookings/edit/${b.id}`}
                                 className="p-1.5 text-navy hover:text-primary hover:bg-primary/5 rounded-lg transition-colors font-bold flex items-center gap-1 text-[11px]"
                                 title={Boolean(b.is_locked) ? "View Booking Form (Locked)" : "Edit Booking"}
                               >
                                 <Edit className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">{Boolean(b.is_locked) ? 'Form' : 'Edit'}</span>
+                                <span className="hidden xl:inline">{Boolean(b.is_locked) ? 'Form' : 'Edit'}</span>
                               </Link>
 
                               {/* If unlocked / draft: Show Push button */}
@@ -756,7 +792,7 @@ export default function BookingsPage() {
                                   type="button"
                                   disabled={pushingId === b.id}
                                   onClick={() => handlePushRow(b)}
-                                  className="px-2.5 py-1 bg-primary hover:bg-primary-dark text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                  className="px-2 py-1 bg-primary hover:bg-primary-dark text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
                                   title="Push to Vendor API"
                                 >
                                   {pushingId === b.id ? (
@@ -775,7 +811,7 @@ export default function BookingsPage() {
                                 className="p-1.5 text-text-tertiary hover:text-danger hover:bg-danger-bg rounded-lg transition-colors cursor-pointer"
                                 title="Move to Trash"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </>
                           )}

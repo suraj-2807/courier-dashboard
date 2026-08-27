@@ -220,11 +220,14 @@ export default class FlySwiftAdapter extends BaseAdapter {
 
     if (parcelsList.length > 0) {
       parcelsList.forEach((p, idx) => {
+        const pLength = (p.length !== undefined && p.length !== null && p.length !== '') ? (parseFloat(p.length) || 0) : (parseFloat(shipmentData.length) || 0)
+        const pWidth = (p.breadth !== undefined && p.breadth !== null && p.breadth !== '') ? (parseFloat(p.breadth) || 0) : ((p.width !== undefined && p.width !== null && p.width !== '') ? (parseFloat(p.width) || 0) : (parseFloat(shipmentData.breadth) || 0))
+        const pHeight = (p.height !== undefined && p.height !== null && p.height !== '') ? (parseFloat(p.height) || 0) : (parseFloat(shipmentData.height) || 0)
         docketItems.push({
           actual_weight: String(parseFloat(p.weight) || perPieceWeight || 0.5),
-          length: String(parseFloat(p.length || shipmentData.length) || 1),
-          width: String(parseFloat(p.breadth || p.width || shipmentData.breadth) || 1),
-          height: String(parseFloat(p.height || shipmentData.height) || 1),
+          length: String(pLength),
+          width: String(pWidth),
+          height: String(pHeight),
           number_of_boxes: String(p.number_of_boxes || '1')
         })
       })
@@ -232,9 +235,9 @@ export default class FlySwiftAdapter extends BaseAdapter {
       for (let i = 0; i < numPieces; i++) {
         docketItems.push({
           actual_weight: perPieceWeight,
-          length: String(parseFloat(shipmentData.length) || 1),
-          width: String(parseFloat(shipmentData.breadth) || 1),
-          height: String(parseFloat(shipmentData.height) || 1),
+          length: String(parseFloat(shipmentData.length) || 0),
+          width: String(parseFloat(shipmentData.breadth) || 0),
+          height: String(parseFloat(shipmentData.height) || 0),
           number_of_boxes: '1'
         })
       }

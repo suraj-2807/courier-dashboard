@@ -17,6 +17,16 @@ export const formatDate = (dateString) => {
   }).format(new Date(dateString))
 }
 
+export const formatDateDDMMYYYY = (dateString) => {
+  if (!dateString) return '—'
+  const d = new Date(dateString)
+  if (isNaN(d.getTime())) return '—'
+  const day = String(d.getDate()).padStart(2, '0')
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const year = d.getFullYear()
+  return `${day}/${month}/${year}`
+}
+
 export const formatDateTime = (dateString) => {
   if (!dateString) return '—'
   return new Intl.DateTimeFormat('en-IN', {

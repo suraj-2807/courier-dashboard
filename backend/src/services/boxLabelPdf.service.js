@@ -16,6 +16,24 @@ if (!fs.existsSync(LABELS_DIR)) {
 // Logo path
 const LOGO_PATH = path.join(__dirname, '..', 'assets', 'PRINCE LOGO.png')
 
+const COUNTRY_MAP = {
+  'US': 'UNITED STATES', 'USA': 'UNITED STATES', 'UNITED STATES': 'UNITED STATES',
+  'AU': 'AUSTRALIA', 'AUS': 'AUSTRALIA', 'AUSTRALIA': 'AUSTRALIA',
+  'GB': 'UNITED KINGDOM', 'UK': 'UNITED KINGDOM', 'UNITED KINGDOM': 'UNITED KINGDOM',
+  'CA': 'CANADA', 'CAN': 'CANADA', 'CANADA': 'CANADA',
+  'AE': 'UNITED ARAB EMIRATES', 'UAE': 'UNITED ARAB EMIRATES', 'UNITED ARAB EMIRATES': 'UNITED ARAB EMIRATES',
+  'NZ': 'NEW ZEALAND', 'NZL': 'NEW ZEALAND', 'NEW ZEALAND': 'NEW ZEALAND',
+  'SG': 'SINGAPORE', 'MY': 'MALAYSIA', 'DE': 'GERMANY', 'FR': 'FRANCE',
+  'IT': 'ITALY', 'ES': 'SPAIN', 'NL': 'NETHERLANDS', 'CH': 'SWITZERLAND',
+  'IN': 'INDIA', 'ZA': 'SOUTH AFRICA', 'SA': 'SAUDI ARABIA', 'QA': 'QATAR'
+}
+
+function getFullCountryName(c) {
+  if (!c) return ''
+  const clean = String(c).trim().toUpperCase()
+  return COUNTRY_MAP[clean] || clean
+}
+
 /**
  * Generate Code128 Barcode PNG buffer
  */
@@ -172,7 +190,7 @@ export async function generateBoxLabelsPdf(params) {
           rY += 11
         }
         if (receiver.country) {
-          doc.fillColor(NAVY).fontSize(8).font('Helvetica-Bold').text(receiver.country.toUpperCase(), startX + 6, rY, { width: leftW - 12 })
+          doc.fillColor(NAVY).fontSize(8).font('Helvetica-Bold').text(getFullCountryName(receiver.country).toUpperCase(), startX + 6, rY, { width: leftW - 12 })
         }
 
         // Divider line between Consignee & Shipper

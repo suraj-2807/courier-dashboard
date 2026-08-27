@@ -385,13 +385,17 @@ export default class GenericAdapter extends BaseAdapter {
         return String(parseFloat(currentParcel.weight) || Math.round((weight / numPieces) * 100) / 100)
       }
       case 'parcel_length': {
-        return String(parseFloat(currentParcel.length || shipmentData.length) || 1)
+        const val = (currentParcel && currentParcel.length !== undefined && currentParcel.length !== null && currentParcel.length !== '') ? currentParcel.length : shipmentData.length
+        return String(val !== undefined && val !== null && val !== '' ? (parseFloat(val) || 0) : 0)
       }
-      case 'parcel_width': {
-        return String(parseFloat(currentParcel.breadth || currentParcel.width || shipmentData.breadth) || 1)
+      case 'parcel_width':
+      case 'parcel_breadth': {
+        const val = (currentParcel && (currentParcel.breadth !== undefined || currentParcel.width !== undefined)) ? (currentParcel.breadth ?? currentParcel.width) : shipmentData.breadth
+        return String(val !== undefined && val !== null && val !== '' ? (parseFloat(val) || 0) : 0)
       }
       case 'parcel_height': {
-        return String(parseFloat(currentParcel.height || shipmentData.height) || 1)
+        const val = (currentParcel && currentParcel.height !== undefined && currentParcel.height !== null && currentParcel.height !== '') ? currentParcel.height : shipmentData.height
+        return String(val !== undefined && val !== null && val !== '' ? (parseFloat(val) || 0) : 0)
       }
       case 'parcel_volumetric_weight': {
         return String(currentParcel.volumetric_weight || '')
