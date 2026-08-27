@@ -22,6 +22,43 @@ function parseCredentials(raw) {
   return {}
 }
 
+function determineCurrentStageAndStatus(events = [], initialStatus = '') {
+  let highestStage = 'booked'
+  let highestWeight = 0
+  let latestStatus = initialStatus || 'In Progress'
+
+  const evaluateText = (txt) => {
+    if (!txt) return
+    const s = String(txt).toLowerCase().trim()
+    if (/delivered|dlvd|signed by/i.test(s) && !/out for delivery/i.test(s)) {
+      if (highestWeight < 4) { highestWeight = 4; highestStage = 'delivered'; latestStatus = txt }
+    } else if (/out for delivery|ofd|with courier|out for del|today.*delivery|for delivery/i.test(s)) {
+      if (highestWeight < 3) { highestWeight = 3; highestStage = 'out_for_delivery'; latestStatus = txt }
+    } else if (/transit|depart|arriv|custom|hub|facility|tranship|clearance|flight|in-transit|scan|hold|processing/i.test(s)) {
+      if (highestWeight < 2) { highestWeight = 2; highestStage = 'in_transit'; latestStatus = txt }
+    } else if (/picked|pickup|received|origin scan|collected|manifest|booked|label/i.test(s)) {
+      if (highestWeight < 1) { highestWeight = 1; highestStage = 'picked_up'; latestStatus = txt }
+    }
+  }
+
+  // 1. Evaluate initial status
+  evaluateText(initialStatus)
+
+  // 2. Evaluate all events
+  if (Array.isArray(events) && events.length > 0) {
+    for (const ev of events) {
+      evaluateText(ev.status || ev.event_description || ev.event || '')
+    }
+  }
+
+  const newestEventText = events.length > 0 ? (events[events.length - 1]?.status || events[0]?.status) : ''
+  if (!latestStatus || latestStatus === 'In Progress') {
+    latestStatus = newestEventText || initialStatus || 'In Progress'
+  }
+
+  return { currentStage: highestStage, currentStatus: latestStatus }
+}
+
 // ─── Pacific Express Tracking ──────────────────────────────────────
 async function trackPacific(awb, config) {
   const creds = parseCredentials(config.auth_credentials)
@@ -76,16 +113,8 @@ async function trackPacific(awb, config) {
     rawTime: ev.EventTime || ''
   }))
 
-  // Determine current status from latest event or tracking object
-  const latestEvent = events[0] || {}
-  const statusString = latestEvent.status || tracking.Status || 'In Progress'
-  const statusLower = statusString.toLowerCase()
-
-  let currentStage = 'booked'
-  if (statusLower.includes('delivered')) currentStage = 'delivered'
-  else if (statusLower.includes('out for delivery') || statusLower.includes('today')) currentStage = 'out_for_delivery'
-  else if (statusLower.includes('departed') || statusLower.includes('arrived') || statusLower.includes('in transit') || statusLower.includes('import scan') || statusLower.includes('processing') || statusLower.includes('facility') || statusLower.includes('scan')) currentStage = 'in_transit'
-  else if (statusLower.includes('origin scan') || statusLower.includes('received') || statusLower.includes('picked') || statusLower.includes('label')) currentStage = 'picked_up'
+  // Determine current status & stage accurately across all timeline events
+  const { currentStage, currentStatus: statusString } = determineCurrentStageAndStatus(events, tracking.Status || '')
 
   // Extract secondary AWB (FedEx / UPS / DHL AWB 2)
   const secondaryAwb = tracking.VendorAWBNo2 || tracking.VendorAWBNo1 || tracking.VendorAWBNo || tracking.VendorAwbNo2 || tracking.VendorAwbNo1 || tracking.VendorAwbNo || ''
@@ -283,15 +312,8 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
     secondaryCarrier = shipment.carrier || (serviceName ? serviceName.split(' ')[0] : 'Carrier')
   }
 
-  const latestEvent = events[0] || {}
-  const statusString = infoMap['Status'] || latestEvent.status || shipment.status || 'In Progress'
-  const statusLower = statusString.toLowerCase()
-
-  let currentStage = 'booked'
-  if (statusLower.includes('delivered') || statusLower.includes('dlvd')) currentStage = 'delivered'
-  else if (statusLower.includes('out for delivery') || statusLower.includes('ofd')) currentStage = 'out_for_delivery'
-  else if (statusLower.includes('transit') || statusLower.includes('departed') || statusLower.includes('arrived') || statusLower.includes('hub') || statusLower.includes('facility') || statusLower.includes('customs')) currentStage = 'in_transit'
-  else if (statusLower.includes('picked') || statusLower.includes('label') || statusLower.includes('entry') || statusLower.includes('booked') || statusLower.includes('manifest')) currentStage = 'picked_up'
+  // Determine current status & stage accurately across all timeline events and infoMap
+  const { currentStage, currentStatus: statusString } = determineCurrentStageAndStatus(events, infoMap['Status'] || shipment.status || '')
 
   const originCity = infoMap['Shipper City'] || (infoMap['Origin Hub'] ? `${infoMap['Origin Hub']} Hub` : '') || infoMap['Origin'] || shipment.origin || ''
   const destCity = infoMap['Consignee City'] ? `${infoMap['Consignee City']}${infoMap['Consignee State'] ? ', ' + infoMap['Consignee State'] : ''}` : (infoMap['Destination'] || shipment.destination || '')

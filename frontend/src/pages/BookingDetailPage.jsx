@@ -421,7 +421,11 @@ export default function BookingDetailPage() {
               <InfoField
                 icon={Ruler}
                 label="Dimensions"
-                value={booking.length ? `${booking.length}×${booking.breadth}×${booking.height} cm` : '—'}
+                value={
+                  (booking.length !== undefined && booking.length !== null && booking.length !== '')
+                    ? `${parseFloat(booking.length) || 0} × ${parseFloat(booking.breadth) || 0} × ${parseFloat(booking.height) || 0} cm`
+                    : '—'
+                }
               />
               <InfoField icon={Package} label="Package & Boxes" value={`${booking.package_type || 'Parcel'} (${booking.no_of_pieces || 1} Box${(parseInt(booking.no_of_pieces) || 1) > 1 ? 'es' : ''})`} />
               <InfoField icon={CreditCard} label="Amount" value={formatCurrency(booking.total_amount)} highlight />
@@ -521,7 +525,7 @@ export default function BookingDetailPage() {
                         <td className="py-2.5 px-3 font-bold text-primary">Box {p.box_no || idx + 1}</td>
                         <td className="py-2.5 px-3 font-medium text-text-primary">{p.weight ? parseFloat(p.weight).toFixed(2) : '—'} kg</td>
                         <td className="py-2.5 px-3 text-text-secondary">
-                          {p.length || 0} × {p.breadth || p.width || 0} × {p.height || 0} cm
+                          {parseFloat(p.length) || 0} × {parseFloat(p.breadth || p.width) || 0} × {parseFloat(p.height) || 0} cm
                         </td>
                         <td className="py-2.5 px-3 text-text-secondary">{p.volumetric_weight ? parseFloat(p.volumetric_weight).toFixed(2) : '—'} kg</td>
                         <td className="py-2.5 px-3 font-bold text-text-primary">{p.chargeable_weight ? parseFloat(p.chargeable_weight).toFixed(2) : (p.weight ? parseFloat(p.weight).toFixed(2) : '—')} kg</td>

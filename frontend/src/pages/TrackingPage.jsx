@@ -119,7 +119,26 @@ export default function TrackingPage() {
   // Compute progress
   const activeStageIdx = useMemo(() => {
     if (!tracking) return -1
-    return STAGE_INDEX[tracking.currentStage] ?? 0
+    let stage = tracking.currentStage
+
+    // Comprehensive fallback across events & status text
+    const allText = [
+      tracking.currentStatus,
+      tracking.shipmentInfo?.status,
+      ...(Array.isArray(tracking.events) ? tracking.events.map(e => e.status) : [])
+    ].join(' ').toLowerCase()
+
+    if (/delivered|dlvd|signed by/i.test(allText) && !/out for delivery/i.test(tracking.currentStatus?.toLowerCase() || '')) {
+      stage = 'delivered'
+    } else if (/out for delivery|ofd|with courier|out for del|today.*delivery|for delivery/i.test(allText)) {
+      stage = 'out_for_delivery'
+    } else if (/transit|depart|arriv|custom|hub|facility|tranship|clearance|flight|in-transit|scan|hold|processing/i.test(allText)) {
+      if (stage !== 'out_for_delivery' && stage !== 'delivered') stage = 'in_transit'
+    } else if (/picked|pickup|received|origin scan|collected|manifest/i.test(allText)) {
+      if (stage === 'booked') stage = 'picked_up'
+    }
+
+    return STAGE_INDEX[stage] ?? (STAGE_INDEX[tracking.currentStage] ?? 0)
   }, [tracking])
 
   const formattedSyncTime = useMemo(() => {
