@@ -136,14 +136,21 @@ function CopyButton({ text, label = 'Copied to clipboard!' }) {
 }
 
 function getForwardingInfo(b) {
-  let fwdNo = b?.vendor_awb_number_2 || b?.forwarding_no || b?.vendor_awb_2 || b?.awb_2 || b?.secondary_awb || ''
+  const cleanFwd = (val) => {
+    if (val === undefined || val === null) return ''
+    const s = String(val).trim()
+    if (!s || s === '0' || s === '0.00' || s === 'null' || s === 'undefined' || s === 'None' || s === '-' || s === '—') return ''
+    return s
+  }
+
+  let fwdNo = cleanFwd(b?.vendor_awb_number_2) || cleanFwd(b?.forwarding_no) || cleanFwd(b?.vendor_awb_2) || cleanFwd(b?.awb_2) || cleanFwd(b?.secondary_awb)
   let carrier = b?.secondary_carrier || b?.forwarding_vendor || b?.forwarded_vendor || ''
 
   if (!fwdNo && b?.vendor_raw_response) {
     try {
       const raw = typeof b.vendor_raw_response === 'string' ? JSON.parse(b.vendor_raw_response) : b.vendor_raw_response
       const resp = raw?.response || raw?.data || raw
-      fwdNo = resp?.ForwardingNo || resp?.ForwardingNo1 || resp?.forwarding_no || resp?.Forwarding_No || resp?.vendor_awb_2 || resp?.vendorAwb2 || resp?.docket_no || resp?.entry_number || ''
+      fwdNo = cleanFwd(resp?.ForwardingNo) || cleanFwd(resp?.ForwardingNo1) || cleanFwd(resp?.forwarding_no) || cleanFwd(resp?.Forwarding_No) || cleanFwd(resp?.vendor_awb_2) || cleanFwd(resp?.vendorAwb2) || cleanFwd(resp?.docket_no) || cleanFwd(resp?.entry_number) || ''
       if (!carrier && (resp?.ForwardingCarrier || resp?.Carrier || resp?.carrier || resp?.secondary_carrier)) {
         carrier = resp?.ForwardingCarrier || resp?.Carrier || resp?.carrier || resp?.secondary_carrier
       }
@@ -156,7 +163,7 @@ function getForwardingInfo(b) {
   }
 
   return {
-    forwardingNo: fwdNo ? String(fwdNo).trim() : '',
+    forwardingNo: fwdNo || '',
     forwardingCarrier: carrier ? String(carrier).trim() : ''
   }
 }
@@ -698,25 +705,25 @@ export default function BookingsPage() {
                         )}
                       </td>
 
-                      {/* Shipper (Reduced width) */}
-                      <td className="px-4 py-3.5 max-w-[130px]">
+                      {/* Shipper (Full name wrap) */}
+                      <td className="px-4 py-3.5 min-w-[130px] max-w-[180px] align-middle">
                         <div>
-                          <p className="text-[12px] text-text-primary font-bold truncate" title={b.senders?.name || b.sender_name || '—'}>
+                          <p className="text-[12px] text-text-primary font-bold break-words whitespace-normal leading-snug">
                             {b.senders?.name || b.sender_name || '—'}
                           </p>
-                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5 truncate">
+                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5">
                             {getFullCountryName(b.senders?.country || b.sender_country || 'INDIA')}
                           </p>
                         </div>
                       </td>
 
-                      {/* Consignee */}
-                      <td className="px-4 py-3.5 max-w-[150px]">
+                      {/* Consignee (Full name wrap) */}
+                      <td className="px-4 py-3.5 min-w-[130px] max-w-[180px] align-middle">
                         <div>
-                          <p className="text-[12px] text-text-primary font-bold truncate" title={b.receivers?.name || b.receiver_name || '—'}>
+                          <p className="text-[12px] text-text-primary font-bold break-words whitespace-normal leading-snug">
                             {b.receivers?.name || b.receiver_name || '—'}
                           </p>
-                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5 truncate">
+                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5">
                             {getFullCountryName(b.receivers?.country || b.receiver_country || b.receivers?.city || '—')}
                           </p>
                         </div>

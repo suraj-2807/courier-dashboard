@@ -534,9 +534,19 @@ export const liveTrack = async (req, res) => {
       try {
         const updates = []
         const vals = []
-        if (trackResult.shipmentInfo?.vendorAwbNo && (!matchedShipment.vendor_awb_number || matchedShipment.vendor_awb_number === matchedShipment.tracking_number)) {
-          updates.push('vendor_awb_number = ?')
-          vals.push(trackResult.shipmentInfo.vendorAwbNo)
+        const vAwb = String(trackResult.shipmentInfo?.vendorAwbNo || '').trim()
+        if (vAwb && vAwb !== '0' && vAwb !== 'null' && vAwb !== 'undefined' && vAwb !== '0.00' && vAwb !== 'None') {
+          if (!matchedShipment.vendor_awb_number || matchedShipment.vendor_awb_number === matchedShipment.tracking_number) {
+            updates.push('vendor_awb_number = ?')
+            vals.push(vAwb)
+          } else if (vAwb !== matchedShipment.vendor_awb_number) {
+            updates.push('vendor_awb_number_2 = ?, forwarding_no = ?')
+            vals.push(vAwb, vAwb)
+          }
+        }
+        if (trackResult.shipmentInfo?.secondaryCarrier) {
+          updates.push('secondary_carrier = ?')
+          vals.push(trackResult.shipmentInfo.secondaryCarrier)
         }
         if (trackResult.currentStage === 'delivered' && matchedShipment.status !== 'delivered') {
           updates.push('status = ?')
