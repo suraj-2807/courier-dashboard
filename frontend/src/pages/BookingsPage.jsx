@@ -135,6 +135,32 @@ function CopyButton({ text, label = 'Copied to clipboard!' }) {
   )
 }
 
+function getForwardingInfo(b) {
+  let fwdNo = b?.vendor_awb_number_2 || b?.forwarding_no || b?.vendor_awb_2 || b?.awb_2 || b?.secondary_awb || ''
+  let carrier = b?.secondary_carrier || b?.forwarding_vendor || b?.forwarded_vendor || ''
+
+  if (!fwdNo && b?.vendor_raw_response) {
+    try {
+      const raw = typeof b.vendor_raw_response === 'string' ? JSON.parse(b.vendor_raw_response) : b.vendor_raw_response
+      const resp = raw?.response || raw?.data || raw
+      fwdNo = resp?.ForwardingNo || resp?.ForwardingNo1 || resp?.forwarding_no || resp?.Forwarding_No || resp?.vendor_awb_2 || resp?.vendorAwb2 || resp?.docket_no || resp?.entry_number || ''
+      if (!carrier && (resp?.ForwardingCarrier || resp?.Carrier || resp?.carrier || resp?.secondary_carrier)) {
+        carrier = resp?.ForwardingCarrier || resp?.Carrier || resp?.carrier || resp?.secondary_carrier
+      }
+    } catch {}
+  }
+
+  if (fwdNo && !carrier) {
+    if (/^1Z/i.test(fwdNo)) carrier = 'UPS'
+    else if (/^[0-9]{12}$/.test(fwdNo)) carrier = 'FedEx'
+  }
+
+  return {
+    forwardingNo: fwdNo ? String(fwdNo).trim() : '',
+    forwardingCarrier: carrier ? String(carrier).trim() : ''
+  }
+}
+
 const STATUS_TABS = [
   { value: '', label: 'All Shipments' },
   { value: 'draft', label: 'Draft' },
@@ -582,7 +608,7 @@ export default function BookingsPage() {
                         className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
                       />
                     </th>
-                    {['Our AWB', 'Vendor / Forwarding AWB', 'Shipper', 'Consignee', 'Status', 'Actions'].map((h) => (
+                    {['Our AWB', 'Vendor AWB', 'Forwarding No.', 'Shipper', 'Consignee', 'Status', 'Actions'].map((h) => (
                       <th
                         key={h}
                         className={`px-4 py-3 text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] whitespace-nowrap ${
@@ -595,7 +621,9 @@ export default function BookingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.bookings.map((b) => (
+                  {data.bookings.map((b) => {
+                    const fwd = getForwardingInfo(b)
+                    return (
                     <tr
                       key={b.id}
                       className={`border-b border-border-light hover:bg-surface-alt/40 transition-colors group ${
@@ -631,10 +659,9 @@ export default function BookingsPage() {
                         </div>
                       </td>
 
-                      {/* Vendor / AWB & Forwarding Number */}
+                      {/* Vendor AWB (Dedicated Column) */}
                       <td className="px-4 py-3.5">
-                        <div className="space-y-1">
-                          {/* 1. Vendor AWB */}
+                        <div className="space-y-0.5">
                           {b.vendor_awb_number ? (
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[12px] font-bold text-[#1a237e]">
@@ -643,27 +670,32 @@ export default function BookingsPage() {
                               <CopyButton text={b.vendor_awb_number} label="Vendor AWB copied!" />
                             </div>
                           ) : (
-                            <span className="text-[11px] text-text-tertiary italic">—</span>
+                            <span className="text-[12px] text-text-tertiary italic">—</span>
                           )}
-
-                          {/* 2. Forwarding Number (Vendor AWB 2 / Carrier AWB) */}
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {(b.vendor_awb_number_2 || b.forwarding_no) ? (
-                              <div className="inline-flex items-center gap-1 bg-amber-50/90 border border-amber-200 px-1.5 py-0.5 rounded text-[11px] font-bold text-amber-900 shadow-2xs">
-                                <span className="text-[9px] uppercase tracking-wider text-amber-700 font-extrabold">FWD:</span>
-                                <span className="select-all">{b.vendor_awb_number_2 || b.forwarding_no}</span>
-                                <CopyButton text={b.vendor_awb_number_2 || b.forwarding_no} label="Forwarding number copied!" />
-                              </div>
-                            ) : (
-                              <span className="text-[11px] text-text-tertiary italic">—</span>
-                            )}
-                          </div>
-
-                          {/* 3. Forwarded Vendor Name / Carrier Name */}
-                          <div className="text-[10px] text-text-tertiary font-medium">
-                            {b.secondary_carrier || b.forwarding_vendor || b.vendor_api_configs?.name || b.courier_providers?.name || '—'}
-                          </div>
+                          <span className="block text-[10px] text-text-tertiary font-medium">
+                            {b.vendor_api_configs?.name || b.courier_providers?.name || 'Local'}
+                          </span>
                         </div>
+                      </td>
+
+                      {/* Forwarding Number / Vendor AWB 2 (Dedicated Column) */}
+                      <td className="px-4 py-3.5">
+                        {fwd.forwardingNo ? (
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[11.5px] font-bold text-amber-900 shadow-2xs select-all">
+                                <span className="text-[9px] uppercase tracking-wider text-amber-700 font-extrabold">FWD:</span>
+                                {fwd.forwardingNo}
+                              </span>
+                              <CopyButton text={fwd.forwardingNo} label="Forwarding number copied!" />
+                            </div>
+                            <span className="block text-[10px] text-text-tertiary font-medium">
+                              {fwd.forwardingCarrier || 'Forwarded Vendor'}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[12px] text-text-tertiary italic">—</span>
+                        )}
                       </td>
 
                       {/* Shipper (Reduced width) */}
@@ -818,7 +850,8 @@ export default function BookingsPage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

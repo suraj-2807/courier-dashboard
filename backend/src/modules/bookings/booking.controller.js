@@ -1731,17 +1731,15 @@ export const getBookings = async (req, res) => {
         rcv.country LIKE ? OR
         s.receiver_city LIKE ? OR
         rcv.city LIKE ? OR
-        s.destination_country LIKE ? OR
         DATE_FORMAT(s.created_at, '%d/%m/%Y') LIKE ? OR
-        DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ? OR
-        s.booking_date LIKE ?
+        DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ?
       )`)
       params.push(
         term, term, term, term, term, term,
         term, term, term, term, term, term,
         term, term, term, term, term, term,
-        term, term, term, term, term,
-        term, term, term
+        term, term, term, term,
+        term, term
       )
     }
 

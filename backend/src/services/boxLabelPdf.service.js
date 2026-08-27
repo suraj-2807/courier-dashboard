@@ -138,25 +138,26 @@ export async function generateBoxLabelsPdf(params) {
         const midY = startY + 38
         const midHeight = 278
 
-        // Right Vertical Barcode Strip (Width: 55 pt)
+        // ── Right Vertical Barcode Strip (Width: 55 pt, Height: 278 pt) ──
         const rightStripX = startX + w - 55
         doc.moveTo(rightStripX, midY).lineTo(rightStripX, midY + midHeight).strokeColor(NAVY).stroke()
 
-        // Draw rotated vertical barcode in right strip
+        // 1. Draw rotated vertical barcode in top portion (from midY + 10 to midY + 185)
         if (vertBarcodeBuffer) {
           doc.save()
-          doc.translate(rightStripX + 35, midY + 15)
+          doc.translate(rightStripX + 38, midY + 12)
           doc.rotate(90)
-          doc.image(vertBarcodeBuffer, 0, 0, { width: 230, height: 26 })
+          doc.image(vertBarcodeBuffer, 0, 0, { width: 172, height: 24 })
           doc.restore()
         }
 
-        // Vertical AWB Text
-        doc.save()
-        doc.translate(rightStripX + 12, midY + 240)
-        doc.rotate(-90)
-        doc.fillColor(NAVY).fontSize(9.5).font('Helvetica-Bold').text(`AWB: ${awbNumber}`, 0, 0)
-        doc.restore()
+        // Horizontal divider inside strip above AWB text
+        doc.moveTo(rightStripX, midY + 194).lineTo(rightStripX + 55, midY + 194).strokeColor(NAVY).lineWidth(0.75).stroke()
+
+        // 2. Dedicated AWB Number Box (Below barcode, from midY + 198 to midY + 275 - ZERO OVERLAP)
+        doc.fillColor(NAVY).fontSize(7.5).font('Helvetica-Bold').text('AWB NO:', rightStripX + 2, midY + 202, { width: 51, align: 'center' })
+        doc.fillColor(RED).fontSize(9.5).font('Helvetica-Bold').text(String(awbNumber), rightStripX + 2, midY + 215, { width: 51, align: 'center' })
+        doc.fillColor('#6B7280').fontSize(7).font('Helvetica-Bold').text('EXPRESS', rightStripX + 2, midY + 235, { width: 51, align: 'center' })
 
         // Left Content Section (Width: w - 55 pt = 217 pt)
         const leftW = w - 55
@@ -241,10 +242,10 @@ export async function generateBoxLabelsPdf(params) {
         const botY = midY + midHeight
         doc.moveTo(startX, botY).lineTo(startX + w, botY).strokeColor(NAVY).lineWidth(1).stroke()
 
-        // Routing banner (e.g. SURAT  ->  ZAMBIA)
+        // Routing banner (e.g. SURAT  ->  UNITED STATES)
         const originCode = sender.city ? sender.city.toUpperCase() : 'SURAT'
-        const destCode = (receiver.country || shipment.destination_country || 'DEST').toUpperCase()
-        doc.fillColor(NAVY).fontSize(11).font('Helvetica-Bold').text(`${originCode}  ->  ${destCode}  (EXPRESS)`, startX, botY + 8, { width: w, align: 'center' })
+        const destName = getFullCountryName(receiver.country || shipment.destination_country || 'DEST').toUpperCase()
+        doc.fillColor(NAVY).fontSize(10.5).font('Helvetica-Bold').text(`${originCode}  ->  ${destName}  (EXPRESS)`, startX, botY + 8, { width: w, align: 'center' })
 
         doc.fillColor('#6B7280').fontSize(7.5).font('Helvetica-Bold').text('TRACKING AWB BARCODE', startX, botY + 24, { width: w, align: 'center' })
 
