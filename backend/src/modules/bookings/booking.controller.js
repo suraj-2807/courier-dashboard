@@ -1712,8 +1712,6 @@ export const getBookings = async (req, res) => {
         s.order_id LIKE ? OR
         s.tracking_number LIKE ? OR
         s.vendor_awb_number LIKE ? OR
-        s.vendor_awb_number_2 LIKE ? OR
-        s.forwarding_no LIKE ? OR
         s.order_reference LIKE ? OR
         s.sender_name LIKE ? OR
         snd.name LIKE ? OR
@@ -1738,7 +1736,7 @@ export const getBookings = async (req, res) => {
         term, term, term, term, term, term,
         term, term, term, term, term, term,
         term, term, term, term, term, term,
-        term, term, term, term,
+        term, term,
         term, term
       )
     }
