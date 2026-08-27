@@ -2263,18 +2263,21 @@ export const getWaybillPdf = async (req, res) => {
     const ctx = await getFullShipmentContext(id)
     if (!ctx) return res.status(404).json({ success: false, message: 'Shipment not found' })
 
+    const awbNo = ctx.b.tracking_number || ctx.b.order_id || id
     const pdfPath = await generateWaybillPdf({
-      awbNumber: ctx.b.tracking_number,
+      awbNumber: awbNo,
       sender: ctx.sender,
       receiver: ctx.receiver,
       shipment: ctx.b,
       parcels: ctx.parcels,
       invoiceItems: ctx.invoiceItems,
       invoiceMeta: {
-        invoice_no: ctx.b.invoice_no || ctx.b.tracking_number
+        invoice_no: ctx.b.invoice_no || awbNo
       }
     })
-    return res.download(pdfPath, `Waybill_${ctx.b.tracking_number}.pdf`)
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="${awbNo}.pdf"`)
+    return res.download(pdfPath, `${awbNo}.pdf`)
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message })
   }

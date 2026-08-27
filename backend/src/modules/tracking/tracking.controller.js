@@ -608,6 +608,64 @@ export const liveTrack = async (req, res) => {
       }
     }
 
+// Helper to attach Prince Express origin & manifest events
+function attachCompanyOriginEvents(result, matchedShipment) {
+  if (!result) return
+
+  const originCity = (matchedShipment?.s_city || matchedShipment?.sender_city || matchedShipment?.origin || result.shipmentInfo?.origin || 'SURAT').toUpperCase()
+  const originCountry = (matchedShipment?.s_country || matchedShipment?.sender_country || result.shipmentInfo?.originCountry || 'INDIA').toUpperCase()
+  const vendorName = result.vendor || result.shipmentInfo?.vendorName || matchedShipment?.vendor_name || 'Connecting Carrier'
+
+  let dateStr = ''
+  let timeStr = ''
+  const bDate = matchedShipment?.created_at || matchedShipment?.booking_date || result.shipmentInfo?.bookingDate
+  if (bDate) {
+    const d = new Date(bDate)
+    if (!isNaN(d.getTime())) {
+      dateStr = d.toLocaleDateString('en-GB') // dd/mm/yyyy
+      timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    } else {
+      dateStr = String(bDate).split('T')[0]
+      timeStr = '10:00 AM'
+    }
+  } else {
+    dateStr = new Date().toLocaleDateString('en-GB')
+    timeStr = '10:00 AM'
+  }
+
+  // Company events in chronological order (Booking -> Manifest)
+  // Attached at bottom of timeline (since timeline displays newest -> oldest)
+  const companyEvents = [
+    {
+      date: dateStr,
+      time: timeStr,
+      location: `${originCity}, ${originCountry} (PRINCE EXPRESS HUB)`,
+      status: `Shipment Manifested & Dispatched to ${vendorName}`,
+      rawDate: dateStr,
+      rawTime: timeStr
+    },
+    {
+      date: dateStr,
+      time: timeStr,
+      location: `${originCity}, ${originCountry} (PRINCE EXPRESS)`,
+      status: 'Shipment Booked & Order Created',
+      rawDate: dateStr,
+      rawTime: timeStr
+    }
+  ]
+
+  const currentEvents = Array.isArray(result.events) ? result.events.slice() : []
+  const existingSet = new Set(currentEvents.map(e => (e.status || '').toLowerCase().trim()))
+
+  for (const cEv of companyEvents) {
+    if (!existingSet.has(cEv.status.toLowerCase().trim())) {
+      currentEvents.push(cEv)
+    }
+  }
+
+  result.events = currentEvents
+}
+
     // ── 4. Try tracking with matched config ──
     if (config) {
       const tracker = resolveTracker(config, vendorCode)
@@ -625,6 +683,7 @@ export const liveTrack = async (req, res) => {
               vendorAwbNumber: result.shipmentInfo?.vendorAwbNo || matchedShipment.vendor_awb_number
             }
           }
+          attachCompanyOriginEvents(result, matchedShipment)
           return res.json({ success: true, tracking: result })
         }
       } catch (trackErr) {
@@ -659,12 +718,58 @@ export const liveTrack = async (req, res) => {
                 vendorAwbNumber: result.shipmentInfo?.vendorAwbNo || matchedShipment.vendor_awb_number
               }
             }
+            attachCompanyOriginEvents(result, matchedShipment)
             return res.json({ success: true, tracking: result })
           }
         } catch (err) {
           // Continue to next config
         }
       }
+    }
+
+    // ── 6. Fallback: If shipment exists in DB, return company origin events ──
+    if (matchedShipment) {
+      const vendorName = matchedShipment.vendor_name || 'Prince Express'
+      const initialResult = {
+        vendor: 'Prince Express',
+        vendorCode: 'prince',
+        shipmentInfo: {
+          awbNo: matchedShipment.tracking_number || matchedShipment.order_id,
+          vendorAwbNo: matchedShipment.vendor_awb_number || '',
+          secondaryCarrier: matchedShipment.secondary_carrier || '',
+          bookingDate: matchedShipment.created_at || matchedShipment.booking_date || '',
+          origin: matchedShipment.s_city || matchedShipment.sender_city || 'SURAT',
+          originCountry: matchedShipment.s_country || matchedShipment.sender_country || 'INDIA',
+          destination: matchedShipment.r_city || matchedShipment.receiver_city || '',
+          destinationCountry: matchedShipment.r_country || matchedShipment.receiver_country || '',
+          consignee: matchedShipment.r_name || matchedShipment.receiver_name || '',
+          shipperName: matchedShipment.s_name || matchedShipment.sender_name || '',
+          vendorName: vendorName,
+          serviceName: matchedShipment.service_type || 'Express',
+          weight: matchedShipment.weight || '',
+          refNo: matchedShipment.order_reference || '',
+          deliveryDate: '',
+          deliveryTime: '',
+          receiverName: '',
+          expectedDeliveryDate: '',
+          podAvailable: false,
+          remark: ''
+        },
+        events: [],
+        dimensions: [],
+        performa: [],
+        currentStatus: matchedShipment.vendor_awb_number ? 'Manifested & Dispatched' : 'Shipment Booked',
+        currentStage: matchedShipment.vendor_awb_number ? 'in_transit' : 'booked',
+        internalShipment: {
+          id: matchedShipment.id,
+          ourAwb: matchedShipment.tracking_number,
+          orderId: matchedShipment.order_id,
+          invoiceNo: matchedShipment.invoice_no,
+          vendorAwbNumber: matchedShipment.vendor_awb_number
+        }
+      }
+      attachCompanyOriginEvents(initialResult, matchedShipment)
+      return res.json({ success: true, tracking: initialResult })
     }
 
     return res.status(404).json({
