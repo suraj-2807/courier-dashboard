@@ -600,6 +600,15 @@ function pe_cp_ajax_request_detail()
         return $b['timestamp'] - $a['timestamp'];
     });
 
+    // Parse JSON fields so frontend can render parcels, items & documents
+    $json_fields = ['parcels', 'invoice_items', 'documents'];
+    foreach ($json_fields as $jf) {
+        if (!empty($request->$jf) && is_string($request->$jf)) {
+            $decoded = json_decode($request->$jf, true);
+            $request->$jf = is_array($decoded) ? $decoded : null;
+        }
+    }
+
     wp_send_json_success([
         'request' => $request,
         'timeline' => $timeline

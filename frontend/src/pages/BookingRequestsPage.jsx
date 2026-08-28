@@ -15,7 +15,10 @@ import {
   Eye,
   ArrowRight,
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Boxes,
+  FileText,
+  Paperclip
 } from 'lucide-react'
 import api from '../api/axios'
 import toast, { Toaster } from 'react-hot-toast'
@@ -119,48 +122,25 @@ export default function BookingRequestsPage() {
     }
   }
 
-  const handleConfirmAndBook = (request) => {
-    // Navigate to new booking page with pre-filled data from request
-    const params = new URLSearchParams({
-      from_request: request.id,
-      request_awb: request.request_awb,
-      sender_name: request.sender_name || '',
-      sender_company: request.sender_company || '',
-      sender_email: request.sender_email || '',
-      sender_phone: request.sender_phone || '',
-      sender_address: request.sender_address || '',
-      sender_address_2: request.sender_address_2 || '',
-      sender_city: request.sender_city || '',
-      sender_pincode: request.sender_pincode || '',
-      sender_state: request.sender_state || '',
-      sender_country: request.sender_country || 'INDIA',
-      sender_gstin_type: request.sender_gstin_type || '',
-      sender_gstin_no: request.sender_gstin_no || '',
-      receiver_name: request.receiver_name || '',
-      receiver_email: request.receiver_email || '',
-      receiver_phone: request.receiver_phone || '',
-      receiver_address: request.receiver_address || '',
-      receiver_address_2: request.receiver_address_2 || '',
-      receiver_city: request.receiver_city || '',
-      receiver_pincode: request.receiver_pincode || '',
-      receiver_state: request.receiver_state || '',
-      receiver_country: request.receiver_country || '',
-      receiver_gstin_type: request.receiver_gstin_type || '',
-      receiver_gstin_no: request.receiver_gstin_no || '',
-      package_type: request.package_type || 'parcel',
-      weight: request.weight || '',
-      length: request.length || '',
-      breadth: request.breadth || '',
-      height: request.height || '',
-      no_of_pieces: request.no_of_pieces || '1',
-      content_description: request.content_description || '',
-      declared_value: request.declared_value || '',
-      remarks: request.remarks || '',
-      customer_name: request.customer_name || request.sender_name || ''
-    })
-    // Mark as processing
-    handleUpdateStatus(request.id, 'processing')
-    navigate(`/bookings/new?${params.toString()}`)
+  const handleConfirmAndBook = async (request) => {
+    // Fetch full request data (with parsed parcels/invoice_items) from API
+    try {
+      const { data } = await api.get(`/booking-requests/${request.id}`)
+      const fullRequest = data.request || request
+
+      // Navigate to new booking page with full request data via state
+      // NOTE: We do NOT mark as 'processing' here. Status will be updated
+      // only when the booking is actually created in NewBookingPage.
+      const params = new URLSearchParams({
+        from_request: fullRequest.id,
+        request_awb: fullRequest.request_awb
+      })
+      navigate(`/bookings/new?${params.toString()}`, {
+        state: { requestData: fullRequest }
+      })
+    } catch (err) {
+      toast.error('Failed to load request data')
+    }
   }
 
   const formatDate = (dateStr) => {
@@ -495,6 +475,108 @@ export default function BookingRequestsPage() {
                   ) : null}
                 </DetailGrid>
               </DetailSection>
+
+              {/* Parcels & Dimensions Table */}
+              {(() => {
+                const parcels = typeof selectedRequest.parcels === 'string'
+                  ? (() => { try { return JSON.parse(selectedRequest.parcels) } catch { return null } })()
+                  : selectedRequest.parcels
+                if (!Array.isArray(parcels) || parcels.length === 0) return null
+                return (
+                  <DetailSection title={`Parcels & Dimensions (${parcels.length} boxes)`} icon={Boxes}>
+                    <div className="overflow-x-auto border border-border rounded-xl">
+                      <table className="w-full text-[12px]">
+                        <thead>
+                          <tr className="bg-surface-alt border-b border-border">
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">Box</th>
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">Weight (kg)</th>
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">L × B × H (cm)</th>
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">Vol. Wt</th>
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">Chg. Wt</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {parcels.map((p, i) => (
+                            <tr key={i} className="border-b border-border/50 last:border-0">
+                              <td className="px-3 py-2 font-semibold text-text-primary">{p.box_no || i + 1}</td>
+                              <td className="px-3 py-2 text-text-secondary">{p.weight || '—'}</td>
+                              <td className="px-3 py-2 text-text-secondary">{p.length || 0} × {p.breadth || 0} × {p.height || 0}</td>
+                              <td className="px-3 py-2 text-text-secondary">{p.volumetric_weight || '—'}</td>
+                              <td className="px-3 py-2 font-semibold text-text-primary">{p.chargeable_weight || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </DetailSection>
+                )
+              })()}
+
+              {/* Invoice Items Table */}
+              {(() => {
+                const items = typeof selectedRequest.invoice_items === 'string'
+                  ? (() => { try { return JSON.parse(selectedRequest.invoice_items) } catch { return null } })()
+                  : selectedRequest.invoice_items
+                if (!Array.isArray(items) || items.length === 0) return null
+                return (
+                  <DetailSection title={`Invoice Items (${items.length})`} icon={FileText}>
+                    <div className="overflow-x-auto border border-border rounded-xl">
+                      <table className="w-full text-[12px]">
+                        <thead>
+                          <tr className="bg-surface-alt border-b border-border">
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">#</th>
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">Box</th>
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">Description</th>
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">HS Code</th>
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">Qty</th>
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">Rate</th>
+                            <th className="px-3 py-2 text-left font-bold text-text-tertiary uppercase text-[9px] tracking-[1px]">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {items.map((item, i) => (
+                            <tr key={i} className="border-b border-border/50 last:border-0">
+                              <td className="px-3 py-2 text-text-tertiary">{item.sr_no || i + 1}</td>
+                              <td className="px-3 py-2 text-text-secondary">{item.box_no || '—'}</td>
+                              <td className="px-3 py-2 font-semibold text-text-primary max-w-[160px] truncate">{item.description || '—'}</td>
+                              <td className="px-3 py-2 text-text-secondary">{item.hs_code || '—'}</td>
+                              <td className="px-3 py-2 text-text-secondary">{item.quantity || '—'} {item.unit_type || ''}</td>
+                              <td className="px-3 py-2 text-text-secondary">{item.unit_rates || item.rate || '—'}</td>
+                              <td className="px-3 py-2 font-semibold text-text-primary">₹{item.amount || item.cost || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </DetailSection>
+                )
+              })()}
+
+              {/* Attached Documents */}
+              {(() => {
+                const docs = typeof selectedRequest.documents === 'string'
+                  ? (() => { try { return JSON.parse(selectedRequest.documents) } catch { return null } })()
+                  : selectedRequest.documents
+                if (!Array.isArray(docs) || docs.length === 0) return null
+                return (
+                  <DetailSection title={`Attached Documents (${docs.length})`} icon={Paperclip}>
+                    <div className="space-y-2">
+                      {docs.map((doc, i) => (
+                        <div key={i} className="flex items-center gap-3 bg-surface-alt border border-border rounded-xl px-3.5 py-2.5">
+                          <Paperclip className="w-4 h-4 text-primary flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[12px] font-semibold text-text-primary truncate">{doc.doc_type || doc.name || `Document ${i + 1}`}</p>
+                            {doc.doc_number && <p className="text-[10px] text-text-tertiary">No: {doc.doc_number}</p>}
+                          </div>
+                          {doc.file_url && (
+                            <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-primary hover:underline">View</a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </DetailSection>
+                )
+              })()}
 
               {/* Remarks */}
               {selectedRequest.remarks && (

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate, Link, useSearchParams, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useCreateBooking, useSaveBooking, usePushBookingToApi } from '../hooks/useBookings'
 import { getActiveVendors } from '../api/apiSettings.api'
@@ -472,6 +472,7 @@ export default function NewBookingPage() {
   // Edit Mode or Pre-fill from URL params
   const { id: paramId } = useParams()
   const [searchParams] = useSearchParams()
+  const location = useLocation()
   const editId = paramId || searchParams.get('edit') || searchParams.get('id')
   const fromRequestId = searchParams.get('from_request')
   const requestAwb = searchParams.get('request_awb')
@@ -646,6 +647,94 @@ export default function NewBookingPage() {
       setForm(prev => ({ ...prev, ...updates }))
     }
   }, [fromRequestId])
+
+  // Pre-fill from request data passed via route state (from BookingRequestsPage)
+  useEffect(() => {
+    if (!fromRequestId) return
+    const rd = location.state?.requestData
+    if (!rd) return
+
+    setForm(prev => ({
+      ...prev,
+      sender_name: rd.sender_name || '',
+      sender_company: rd.sender_company || '',
+      sender_email: rd.sender_email || '',
+      sender_phone: rd.sender_phone || '',
+      sender_phone_2: rd.sender_phone_2 || '',
+      sender_address: rd.sender_address || '',
+      sender_address_2: rd.sender_address_2 || '',
+      sender_city: rd.sender_city || '',
+      sender_pincode: rd.sender_pincode || '',
+      sender_state: rd.sender_state || '',
+      sender_country: rd.sender_country || 'INDIA',
+      sender_gstin_type: normalizeDocType(rd.sender_gstin_type, true),
+      sender_gstin_no: rd.sender_gstin_no || '',
+      receiver_name: rd.receiver_name || '',
+      receiver_company: rd.receiver_company || '',
+      receiver_email: rd.receiver_email || '',
+      receiver_phone: rd.receiver_phone || '',
+      receiver_phone_2: rd.receiver_phone_2 || '',
+      receiver_address: rd.receiver_address || '',
+      receiver_address_2: rd.receiver_address_2 || '',
+      receiver_city: rd.receiver_city || '',
+      receiver_pincode: rd.receiver_pincode || '',
+      receiver_state: rd.receiver_state || '',
+      receiver_country: rd.receiver_country || '',
+      receiver_gstin_type: normalizeDocType(rd.receiver_gstin_type, false),
+      receiver_gstin_no: rd.receiver_gstin_no || '',
+      package_type: rd.package_type || 'parcel',
+      weight: String(rd.weight || ''),
+      length: String(rd.length || ''),
+      breadth: String(rd.breadth || ''),
+      height: String(rd.height || ''),
+      no_of_pieces: String(rd.no_of_pieces || '1'),
+      content_description: rd.content_description || '',
+      declared_value: String(rd.declared_value || ''),
+      remarks: rd.remarks || '',
+      customer_name: rd.customer_name || rd.sender_name || '',
+      payment_mode: rd.payment_mode || 'prepaid',
+      order_reference: rd.order_reference || '',
+      invoice_type: rd.invoice_type || 'INVOICE',
+      invoice_currency: rd.invoice_currency || 'INR',
+      terms_of_trade: rd.terms_of_trade || 'CIF',
+      invoice_note: rd.invoice_note || '',
+      hs_code: rd.hs_code || '',
+      export_reason: rd.export_reason || ''
+    }))
+
+    // Parse and populate parcels from request data
+    if (rd.parcels) {
+      try {
+        const pList = typeof rd.parcels === 'string' ? JSON.parse(rd.parcels) : rd.parcels
+        if (Array.isArray(pList) && pList.length > 0) {
+          setParcels(pList.map((p, i) => ({
+            parcel_no: p.parcel_no || i + 1,
+            box_no: String(p.box_no || i + 1),
+            weight: String(p.weight || ''),
+            length: String(p.length || ''),
+            breadth: String(p.breadth || ''),
+            height: String(p.height || ''),
+            volumetric_weight: String(p.volumetric_weight || ''),
+            chargeable_weight: String(p.chargeable_weight || '')
+          })))
+        }
+      } catch (err) {
+        console.warn('Failed to parse parcels from request:', err)
+      }
+    }
+
+    // Parse and populate invoice items from request data
+    if (rd.invoice_items) {
+      try {
+        const items = typeof rd.invoice_items === 'string' ? JSON.parse(rd.invoice_items) : rd.invoice_items
+        if (Array.isArray(items) && items.length > 0) {
+          setInvoiceItems(items)
+        }
+      } catch (err) {
+        console.warn('Failed to parse invoice_items from request:', err)
+      }
+    }
+  }, [fromRequestId, location.state])
 
   // Safe parsing helper functions
   const safeArr = (val) => {

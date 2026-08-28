@@ -770,6 +770,73 @@ function cpRenderRequestDetail(awb, silent) {
         if (r.admin_notes) h += '<div class="cp-df fl" style="border-color:rgba(187,0,19,.15); background:rgba(187,0,19,.02);"><div class="l" style="color:var(--cpred)">Admin Notes</div><div class="v">' + r.admin_notes + '</div></div>';
         h += '</div></div>';
         
+        // Parcels & Dimensions Table (multi-box)
+        if (r.parcels && Array.isArray(r.parcels) && r.parcels.length > 0) {
+            h += '<div class="cp-ds"><h4><i class="fa-solid fa-boxes-stacked"></i> Parcels & Dimensions (' + r.parcels.length + ' boxes)</h4>';
+            h += '<div style="overflow-x:auto; border:1px solid var(--cpbdr); border-radius:10px;">';
+            h += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
+            h += '<thead><tr style="background:var(--cpbg2); border-bottom:1px solid var(--cpbdr);">';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Box</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Weight (kg)</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">L × B × H (cm)</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Vol. Wt</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Chg. Wt</th>';
+            h += '</tr></thead><tbody>';
+            r.parcels.forEach(function(p, i) {
+                h += '<tr style="border-bottom:1px solid rgba(0,0,0,.05);">';
+                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">' + (p.box_no || (i+1)) + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (p.weight || '—') + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (p.length||0) + ' × ' + (p.breadth||0) + ' × ' + (p.height||0) + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (p.volumetric_weight || '—') + '</td>';
+                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">' + (p.chargeable_weight || '—') + '</td>';
+                h += '</tr>';
+            });
+            h += '</tbody></table></div></div>';
+        }
+        
+        // Invoice Items Table
+        if (r.invoice_items && Array.isArray(r.invoice_items) && r.invoice_items.length > 0) {
+            h += '<div class="cp-ds"><h4><i class="fa-solid fa-file-invoice"></i> Invoice Items (' + r.invoice_items.length + ')</h4>';
+            h += '<div style="overflow-x:auto; border:1px solid var(--cpbdr); border-radius:10px;">';
+            h += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
+            h += '<thead><tr style="background:var(--cpbg2); border-bottom:1px solid var(--cpbdr);">';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">#</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Box</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Description</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">HS Code</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Qty</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Rate</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Amount</th>';
+            h += '</tr></thead><tbody>';
+            r.invoice_items.forEach(function(item, i) {
+                h += '<tr style="border-bottom:1px solid rgba(0,0,0,.05);">';
+                h += '<td style="padding:8px 10px; color:var(--cptext3);">' + (item.sr_no || (i+1)) + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.box_no || '—') + '</td>';
+                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (item.description || '—') + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.hs_code || '—') + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.quantity || '—') + ' ' + (item.unit_type || '') + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.unit_rates || item.rate || '—') + '</td>';
+                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">₹' + (item.amount || item.cost || '—') + '</td>';
+                h += '</tr>';
+            });
+            h += '</tbody></table></div></div>';
+        }
+        
+        // Attached Documents
+        if (r.documents && Array.isArray(r.documents) && r.documents.length > 0) {
+            h += '<div class="cp-ds"><h4><i class="fa-solid fa-paperclip"></i> Attached Documents (' + r.documents.length + ')</h4><div class="cp-dg">';
+            r.documents.forEach(function(doc, i) {
+                h += '<div class="cp-df fl" style="display:flex; align-items:center; gap:10px;">';
+                h += '<i class="fa-solid fa-file-lines" style="color:var(--cpred); font-size:16px;"></i>';
+                h += '<div style="flex:1; min-width:0;"><div class="l" style="font-size:12px; font-weight:600; color:var(--cptext1);">' + (doc.doc_type || doc.name || 'Document ' + (i+1)) + '</div>';
+                if (doc.doc_number) h += '<div style="font-size:10px; color:var(--cptext3);">No: ' + doc.doc_number + '</div>';
+                h += '</div>';
+                if (doc.file_url) h += '<a href="' + doc.file_url + '" target="_blank" style="font-size:11px; font-weight:700; color:var(--cpred); text-decoration:none;">View</a>';
+                h += '</div>';
+            });
+            h += '</div></div>';
+        }
+        
         // Timeline Section (Merges Status Changes + Shipping Events)
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-clock-rotate-left"></i> Progress Timeline</h4>';
         if (tl.length) {

@@ -357,7 +357,21 @@ export const getBookingRequestById = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Booking request not found' })
     }
 
-    return res.json({ success: true, request: rows[0] })
+    const request = rows[0]
+
+    // Parse JSON fields so frontend receives arrays, not raw strings
+    const jsonFields = ['parcels', 'invoice_items', 'documents']
+    jsonFields.forEach(field => {
+      if (request[field] && typeof request[field] === 'string') {
+        try {
+          request[field] = JSON.parse(request[field])
+        } catch (e) {
+          request[field] = null
+        }
+      }
+    })
+
+    return res.json({ success: true, request })
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message })
   }
