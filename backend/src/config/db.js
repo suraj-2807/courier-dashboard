@@ -136,6 +136,7 @@ export async function initializeDb() {
       { name: 'vendor_awb_number_2', type: "VARCHAR(100) DEFAULT ''" },
       { name: 'forwarding_no', type: "VARCHAR(100) DEFAULT ''" },
       { name: 'secondary_carrier', type: "VARCHAR(100) DEFAULT ''" },
+      { name: 'order_reference', type: "VARCHAR(255) DEFAULT ''" },
       { name: 'is_locked', type: "BOOLEAN DEFAULT FALSE" },
       { name: 'is_trashed', type: "TINYINT(1) DEFAULT 0" },
       { name: 'trashed_at', type: "DATETIME DEFAULT NULL" }
@@ -151,6 +152,62 @@ export async function initializeDb() {
           console.error(`Failed to add shipments.${col.name}:`, colErr.message)
         }
       }
+    }
+
+    // ── Senders table column auto-migration ──
+    try {
+      const senderCols = await query("SHOW COLUMNS FROM senders")
+      const senderColNames = senderCols.map(col => (col.Field || col.field).toLowerCase())
+      const requiredSenderCols = [
+        { name: 'company', type: "VARCHAR(255) DEFAULT ''" },
+        { name: 'phone_2', type: "VARCHAR(50) DEFAULT ''" },
+        { name: 'email', type: "VARCHAR(255) DEFAULT ''" },
+        { name: 'address', type: "TEXT DEFAULT NULL" },
+        { name: 'address_2', type: "VARCHAR(500) DEFAULT ''" },
+        { name: 'city', type: "VARCHAR(100) DEFAULT ''" },
+        { name: 'state', type: "VARCHAR(100) DEFAULT ''" },
+        { name: 'pincode', type: "VARCHAR(20) DEFAULT ''" },
+        { name: 'country', type: "VARCHAR(100) DEFAULT 'INDIA'" },
+        { name: 'gstin_type', type: "VARCHAR(50) DEFAULT ''" },
+        { name: 'gstin_no', type: "VARCHAR(100) DEFAULT ''" }
+      ]
+      for (const col of requiredSenderCols) {
+        if (!senderColNames.includes(col.name.toLowerCase())) {
+          try {
+            await execute(`ALTER TABLE senders ADD COLUMN ${col.name} ${col.type}`)
+          } catch (e) {}
+        }
+      }
+    } catch (sndMigErr) {
+      console.warn('Senders table column migration warning:', sndMigErr.message)
+    }
+
+    // ── Receivers table column auto-migration ──
+    try {
+      const receiverCols = await query("SHOW COLUMNS FROM receivers")
+      const receiverColNames = receiverCols.map(col => (col.Field || col.field).toLowerCase())
+      const requiredReceiverCols = [
+        { name: 'company', type: "VARCHAR(255) DEFAULT ''" },
+        { name: 'phone_2', type: "VARCHAR(50) DEFAULT ''" },
+        { name: 'email', type: "VARCHAR(255) DEFAULT ''" },
+        { name: 'address', type: "TEXT DEFAULT NULL" },
+        { name: 'address_2', type: "VARCHAR(500) DEFAULT ''" },
+        { name: 'city', type: "VARCHAR(100) DEFAULT ''" },
+        { name: 'state', type: "VARCHAR(100) DEFAULT ''" },
+        { name: 'pincode', type: "VARCHAR(20) DEFAULT ''" },
+        { name: 'country', type: "VARCHAR(100) DEFAULT ''" },
+        { name: 'gstin_type', type: "VARCHAR(50) DEFAULT ''" },
+        { name: 'gstin_no', type: "VARCHAR(100) DEFAULT ''" }
+      ]
+      for (const col of requiredReceiverCols) {
+        if (!receiverColNames.includes(col.name.toLowerCase())) {
+          try {
+            await execute(`ALTER TABLE receivers ADD COLUMN ${col.name} ${col.type}`)
+          } catch (e) {}
+        }
+      }
+    } catch (rcvMigErr) {
+      console.warn('Receivers table column migration warning:', rcvMigErr.message)
     }
 
     // ── Auto-backfill sender/receiver snapshots for existing shipments ──

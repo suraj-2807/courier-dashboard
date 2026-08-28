@@ -1712,31 +1712,25 @@ export const getBookings = async (req, res) => {
         s.order_id LIKE ? OR
         s.tracking_number LIKE ? OR
         s.vendor_awb_number LIKE ? OR
-        s.order_reference LIKE ? OR
         s.sender_name LIKE ? OR
+        s.sender_phone LIKE ? OR
+        s.receiver_name LIKE ? OR
+        s.receiver_phone LIKE ? OR
+        s.receiver_country LIKE ? OR
+        s.receiver_city LIKE ? OR
         snd.name LIKE ? OR
         snd.phone LIKE ? OR
-        snd.phone_2 LIKE ? OR
-        s.sender_phone LIKE ? OR
-        s.sender_phone_2 LIKE ? OR
-        s.receiver_name LIKE ? OR
         rcv.name LIKE ? OR
         rcv.phone LIKE ? OR
-        rcv.phone_2 LIKE ? OR
-        s.receiver_phone LIKE ? OR
-        s.receiver_phone_2 LIKE ? OR
-        s.receiver_country LIKE ? OR
         rcv.country LIKE ? OR
-        s.receiver_city LIKE ? OR
         rcv.city LIKE ? OR
         DATE_FORMAT(s.created_at, '%d/%m/%Y') LIKE ? OR
         DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ?
       )`)
       params.push(
+        term, term, term,
         term, term, term, term, term, term,
         term, term, term, term, term, term,
-        term, term, term, term, term, term,
-        term, term,
         term, term
       )
     }
@@ -1753,13 +1747,13 @@ export const getBookings = async (req, res) => {
        ${whereClause}`,
       params
     )
-    const total = countRows[0].total
+    const total = countRows[0]?.total || 0
 
     const dataRows = await query(
       `SELECT s.*,
-        snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.phone_2 as s_phone_2, snd.email as s_email,
+        snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.email as s_email,
         snd.address as s_address, snd.city as s_city, snd.state as s_state, snd.pincode as s_pincode, snd.country as s_country,
-        rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.phone_2 as r_phone_2, rcv.email as r_email,
+        rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.email as r_email,
         rcv.address as r_address, rcv.city as r_city, rcv.state as r_state, rcv.pincode as r_pincode, rcv.country as r_country,
         cp.id as cp_id, cp.name as cp_name, cp.code as cp_code, cp.tracking_url as cp_tracking_url,
         vac.id as vac_id, vac.name as vac_name, vac.vendor_code as vac_vendor_code, vac.environment as vac_environment
@@ -1778,35 +1772,35 @@ export const getBookings = async (req, res) => {
       const senders = (row.s_id || row.s_name || row.sender_name) ? {
         id: row.s_id || null,
         name: row.s_name || row.sender_name || '',
-        company: row.s_company || row.sender_company || '',
+        company: row.sender_company || row.s_company || '',
         phone: row.s_phone || row.sender_phone || '',
-        phone_2: row.s_phone_2 || row.sender_phone_2 || '',
+        phone_2: row.sender_phone_2 || row.s_phone_2 || '',
         email: row.s_email || row.sender_email || '',
         address: row.s_address || row.sender_address || '',
-        address_2: row.s_address_2 || row.sender_address_2 || '',
+        address_2: row.sender_address_2 || row.s_address_2 || '',
         city: row.s_city || row.sender_city || '',
         state: row.s_state || row.sender_state || '',
         pincode: row.s_pincode || row.sender_pincode || '',
         country: row.s_country || row.sender_country || 'INDIA',
-        gstin_type: row.s_gstin_type || row.sender_gstin_type || '',
-        gstin_no: row.s_gstin_no || row.sender_gstin_no || ''
+        gstin_type: row.sender_gstin_type || row.s_gstin_type || '',
+        gstin_no: row.sender_gstin_no || row.s_gstin_no || ''
       } : null
 
       const receivers = (row.r_id || row.r_name || row.receiver_name) ? {
         id: row.r_id || null,
         name: row.r_name || row.receiver_name || '',
-        company: row.r_company || row.receiver_company || '',
+        company: row.receiver_company || row.r_company || '',
         phone: row.r_phone || row.receiver_phone || '',
-        phone_2: row.r_phone_2 || row.receiver_phone_2 || '',
+        phone_2: row.receiver_phone_2 || row.r_phone_2 || '',
         email: row.r_email || row.receiver_email || '',
         address: row.r_address || row.receiver_address || '',
-        address_2: row.r_address_2 || row.receiver_address_2 || '',
+        address_2: row.receiver_address_2 || row.r_address_2 || '',
         city: row.r_city || row.receiver_city || '',
         state: row.r_state || row.receiver_state || '',
         pincode: row.r_pincode || row.receiver_pincode || '',
         country: row.r_country || row.receiver_country || '',
-        gstin_type: row.r_gstin_type || row.receiver_gstin_type || '',
-        gstin_no: row.r_gstin_no || row.receiver_gstin_no || ''
+        gstin_type: row.receiver_gstin_type || row.r_gstin_type || '',
+        gstin_no: row.receiver_gstin_no || row.r_gstin_no || ''
       } : null
 
       const courier_providers = row.cp_id ? {
@@ -1859,6 +1853,7 @@ export const getBookings = async (req, res) => {
       }
     })
   } catch (error) {
+    console.error('getBookings Error:', error)
     return res.status(500).json({
       success: false,
       message: error.message
@@ -1872,9 +1867,9 @@ export const getBookingById = async (req, res) => {
 
     const rows = await query(
       `SELECT s.*,
-        snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.phone_2 as s_phone_2, snd.email as s_email,
+        snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.email as s_email,
         snd.address as s_address, snd.city as s_city, snd.state as s_state, snd.pincode as s_pincode, snd.country as s_country,
-        rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.phone_2 as r_phone_2, rcv.email as r_email,
+        rcv.id as r_id, rcv.name as r_name, rcv.phone as r_phone, rcv.email as r_email,
         rcv.address as r_address, rcv.city as r_city, rcv.state as r_state, rcv.pincode as r_pincode, rcv.country as r_country,
         cp.id as cp_id, cp.name as cp_name, cp.code as cp_code, cp.tracking_url as cp_tracking_url,
         vac.id as vac_id, vac.name as vac_name, vac.vendor_code as vac_vendor_code, vac.environment as vac_environment
@@ -1899,35 +1894,35 @@ export const getBookingById = async (req, res) => {
     const senders = (b.s_id || b.s_name || b.sender_name) ? {
       id: b.s_id || null,
       name: b.s_name || b.sender_name || '',
-      company: b.s_company || b.sender_company || '',
+      company: b.sender_company || b.s_company || '',
       phone: b.s_phone || b.sender_phone || '',
-      phone_2: b.s_phone_2 || b.sender_phone_2 || '',
+      phone_2: b.sender_phone_2 || b.s_phone_2 || '',
       email: b.s_email || b.sender_email || '',
       address: b.s_address || b.sender_address || '',
-      address_2: b.s_address_2 || b.sender_address_2 || '',
+      address_2: b.sender_address_2 || b.s_address_2 || '',
       city: b.s_city || b.sender_city || '',
       state: b.s_state || b.sender_state || '',
       pincode: b.s_pincode || b.sender_pincode || '',
       country: b.s_country || b.sender_country || 'INDIA',
-      gstin_type: b.s_gstin_type || b.sender_gstin_type || '',
-      gstin_no: b.s_gstin_no || b.sender_gstin_no || ''
+      gstin_type: b.sender_gstin_type || b.s_gstin_type || '',
+      gstin_no: b.sender_gstin_no || b.s_gstin_no || ''
     } : null
 
     const receivers = (b.r_id || b.r_name || b.receiver_name) ? {
       id: b.r_id || null,
       name: b.r_name || b.receiver_name || '',
-      company: b.r_company || b.receiver_company || '',
+      company: b.receiver_company || b.r_company || '',
       phone: b.r_phone || b.receiver_phone || '',
-      phone_2: b.r_phone_2 || b.receiver_phone_2 || '',
+      phone_2: b.receiver_phone_2 || b.r_phone_2 || '',
       email: b.r_email || b.receiver_email || '',
       address: b.r_address || b.receiver_address || '',
-      address_2: b.r_address_2 || b.receiver_address_2 || '',
+      address_2: b.receiver_address_2 || b.r_address_2 || '',
       city: b.r_city || b.receiver_city || '',
       state: b.r_state || b.receiver_state || '',
       pincode: b.r_pincode || b.receiver_pincode || '',
       country: b.r_country || b.receiver_country || '',
-      gstin_type: b.r_gstin_type || b.receiver_gstin_type || '',
-      gstin_no: b.r_gstin_no || b.receiver_gstin_no || ''
+      gstin_type: b.receiver_gstin_type || b.r_gstin_type || '',
+      gstin_no: b.receiver_gstin_no || b.r_gstin_no || ''
     } : null
 
     const courier_providers = b.cp_id ? {
