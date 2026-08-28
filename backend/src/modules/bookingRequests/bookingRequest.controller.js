@@ -25,17 +25,20 @@ export const createBookingRequest = async (req, res) => {
     const {
       customer_id,
       customer_name, customer_email, customer_phone, customer_company,
-      sender_name, sender_company, sender_email, sender_phone,
+      sender_name, sender_company, sender_email, sender_phone, sender_phone_2,
       sender_address, sender_address_2, sender_city, sender_pincode,
       sender_state, sender_country,
       sender_gstin_type, sender_gstin_no,
-      receiver_name, receiver_email, receiver_phone,
+      receiver_name, receiver_company, receiver_email, receiver_phone, receiver_phone_2,
       receiver_address, receiver_address_2, receiver_city, receiver_pincode,
       receiver_state, receiver_country,
       receiver_gstin_type, receiver_gstin_no,
       package_type, weight, length, breadth, height, no_of_pieces,
       content_description, declared_value, is_fragile,
-      remarks
+      remarks, order_reference, payment_mode, shipping_charge,
+      invoice_type, invoice_currency, hs_code, export_reason, terms_of_trade, invoice_note,
+      invoice_items, parcels, documents,
+      save_sender_address, save_receiver_address, save_documents
     } = req.body
 
     // Basic validation
@@ -63,18 +66,25 @@ export const createBookingRequest = async (req, res) => {
 
     const resolvedCustomerId = customer_id ? parseInt(customer_id) : null
 
+    const docsJson = Array.isArray(documents) && documents.length > 0 ? JSON.stringify(documents) : null
+    const parcelsJson = Array.isArray(parcels) && parcels.length > 0 ? JSON.stringify(parcels) : null
+    const invItemsJson = Array.isArray(invoice_items) && invoice_items.length > 0 ? JSON.stringify(invoice_items) : null
+
     const insertResult = await execute(
       `INSERT INTO booking_requests (
         request_awb, customer_id, customer_name, customer_email, customer_phone, customer_company,
-        sender_name, sender_company, sender_email, sender_phone,
+        sender_name, sender_company, sender_email, sender_phone, sender_phone_2,
         sender_address, sender_address_2, sender_city, sender_pincode,
         sender_state, sender_country, sender_gstin_type, sender_gstin_no,
-        receiver_name, receiver_email, receiver_phone,
+        receiver_name, receiver_email, receiver_phone, receiver_phone_2,
         receiver_address, receiver_address_2, receiver_city, receiver_pincode,
         receiver_state, receiver_country, receiver_gstin_type, receiver_gstin_no,
         package_type, weight, \`length\`, breadth, height, no_of_pieces,
-        content_description, declared_value, is_fragile, remarks, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        content_description, declared_value, is_fragile, remarks,
+        order_reference, payment_mode, shipping_charge,
+        invoice_type, invoice_currency, hs_code, export_reason, terms_of_trade, invoice_note,
+        invoice_items, parcels, documents, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         request_awb,
         resolvedCustomerId,
@@ -83,13 +93,13 @@ export const createBookingRequest = async (req, res) => {
         customer_phone || sender_phone || '',
         customer_company || sender_company || '',
         sender_name || '', sender_company || '',
-        sender_email || '', sender_phone || '',
+        sender_email || '', sender_phone || '', sender_phone_2 || '',
         sender_address || '', sender_address_2 || '',
         sender_city || '', sender_pincode || '',
         sender_state || '', sender_country || 'INDIA',
         sender_gstin_type || '', sender_gstin_no || '',
         receiver_name || '', receiver_email || '',
-        receiver_phone || '',
+        receiver_phone || '', receiver_phone_2 || '',
         receiver_address || '', receiver_address_2 || '',
         receiver_city || '', receiver_pincode || '',
         receiver_state || '', receiver_country || '',
@@ -104,9 +114,101 @@ export const createBookingRequest = async (req, res) => {
         parseFloat(declared_value) || 0,
         is_fragile ? 1 : 0,
         remarks || '',
+        order_reference || '',
+        payment_mode || 'prepaid',
+        parseFloat(shipping_charge) || 0,
+        invoice_type || 'INVOICE',
+        invoice_currency || 'INR',
+        hs_code || '',
+        export_reason || '',
+        terms_of_trade || 'CIF',
+        invoice_note || '',
+        invItemsJson,
+        parcelsJson,
+        docsJson,
         'pending'
       ]
     )
+
+    // Optionally auto-save sender address to Address Book
+    if (save_sender_address && (sender_name && sender_address && sender_city)) {
+      try {
+        await execute(
+          `INSERT INTO customer_addresses (
+            customer_id, customer_email, customer_phone, address_type,
+            name, company, phone, phone_2, email,
+            address, address_2, city, state, pincode, country,
+            gstin_type, gstin_no, is_default
+          ) VALUES (?, ?, ?, 'sender', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+          ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP`,
+          [
+            resolvedCustomerId,
+            customer_email || sender_email || '',
+            customer_phone || sender_phone || '',
+            sender_name, sender_company || '', sender_phone, sender_phone_2 || '', sender_email || '',
+            sender_address, sender_address_2 || '', sender_city, sender_state || '', sender_pincode || '', sender_country || 'INDIA',
+            sender_gstin_type || '', sender_gstin_no || ''
+          ]
+        )
+      } catch (saveSenderErr) {
+        console.warn('Auto-save sender address warning:', saveSenderErr.message)
+      }
+    }
+
+    // Optionally auto-save receiver address to Address Book
+    if (save_receiver_address && (receiver_name && receiver_address && receiver_city)) {
+      try {
+        await execute(
+          `INSERT INTO customer_addresses (
+            customer_id, customer_email, customer_phone, address_type,
+            name, company, phone, phone_2, email,
+            address, address_2, city, state, pincode, country,
+            gstin_type, gstin_no, is_default
+          ) VALUES (?, ?, ?, 'receiver', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+          ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP`,
+          [
+            resolvedCustomerId,
+            customer_email || sender_email || '',
+            customer_phone || sender_phone || '',
+            receiver_name, receiver_company || '', receiver_phone, receiver_phone_2 || '', receiver_email || '',
+            receiver_address, receiver_address_2 || '', receiver_city, receiver_state || '', receiver_pincode || '', receiver_country || '',
+            receiver_gstin_type || '', receiver_gstin_no || ''
+          ]
+        )
+      } catch (saveRcvErr) {
+        console.warn('Auto-save receiver address warning:', saveRcvErr.message)
+      }
+    }
+
+    // Optionally save attached documents to customer_documents
+    if (save_documents && Array.isArray(documents) && documents.length > 0) {
+      for (const d of documents) {
+        if (d.file_url) {
+          try {
+            await execute(
+              `INSERT INTO customer_documents (
+                customer_id, customer_email, customer_phone,
+                doc_type, doc_name, doc_number, file_url, file_name, file_size, file_type
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                resolvedCustomerId,
+                customer_email || sender_email || '',
+                customer_phone || sender_phone || '',
+                d.doc_type || 'Other',
+                d.doc_name || d.file_name || 'Document',
+                d.doc_number || '',
+                d.file_url,
+                d.file_name || '',
+                d.file_size || 0,
+                d.file_type || ''
+              ]
+            )
+          } catch (docSaveErr) {
+            console.warn('Auto-save document warning:', docSaveErr.message)
+          }
+        }
+      }
+    }
 
     // Insert initial request_updates timeline record
     if (insertResult && insertResult.insertId) {

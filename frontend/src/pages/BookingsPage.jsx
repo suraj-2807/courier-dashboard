@@ -200,30 +200,41 @@ function CopyButton({ text, label = 'Copied to clipboard!' }) {
 }
 
 function getForwardingInfo(b) {
-  const cleanFwd = (val) => {
+  const clean = (val) => {
     if (val === undefined || val === null) return ''
     const s = String(val).trim()
     if (!s || s === '0' || s === '0.00' || s === 'null' || s === 'undefined' || s === 'None' || s === '-' || s === '—') return ''
     return s
   }
 
-  let fwdNo = cleanFwd(b?.vendor_awb_number_2) || cleanFwd(b?.forwarding_no) || cleanFwd(b?.vendor_awb_2) || cleanFwd(b?.awb_2) || cleanFwd(b?.secondary_awb)
+  const primaryVendorAwb = clean(b?.vendor_awb_number)
+  const ourAwb = clean(b?.tracking_number)
+
+  const isValidFwd = (val) => {
+    const c = clean(val)
+    if (!c) return ''
+    if (c === primaryVendorAwb || c === ourAwb) return ''
+    return c
+  }
+
+  let fwdNo = isValidFwd(b?.vendor_awb_number_2) || isValidFwd(b?.forwarding_no) || isValidFwd(b?.vendor_awb_2) || isValidFwd(b?.awb_2) || isValidFwd(b?.secondary_awb)
   let carrier = b?.secondary_carrier || b?.forwarding_vendor || b?.forwarded_vendor || ''
 
   if (!fwdNo && b?.vendor_raw_response) {
     try {
       const raw = typeof b.vendor_raw_response === 'string' ? JSON.parse(b.vendor_raw_response) : b.vendor_raw_response
       const resp = raw?.response || raw?.data || raw
-      fwdNo = cleanFwd(resp?.ForwardingNo) || cleanFwd(resp?.ForwardingNo1) || cleanFwd(resp?.forwarding_no) || cleanFwd(resp?.Forwarding_No) || cleanFwd(resp?.vendor_awb_2) || cleanFwd(resp?.vendorAwb2) || cleanFwd(resp?.docket_no) || cleanFwd(resp?.entry_number) || ''
+      fwdNo = isValidFwd(resp?.ForwardingNo) || isValidFwd(resp?.ForwardingNo1) || isValidFwd(resp?.forwarding_no) || isValidFwd(resp?.Forwarding_No) || isValidFwd(resp?.vendor_awb_2) || isValidFwd(resp?.vendorAwb2) || ''
       if (!carrier && (resp?.ForwardingCarrier || resp?.Carrier || resp?.carrier || resp?.secondary_carrier)) {
         carrier = resp?.ForwardingCarrier || resp?.Carrier || resp?.carrier || resp?.secondary_carrier
       }
     } catch {}
   }
 
-  if (fwdNo && !carrier) {
+  if (fwdNo && (!carrier || carrier === 'Forwarded Vendor' || carrier === 'Carrier')) {
     if (/^1Z/i.test(fwdNo)) carrier = 'UPS'
     else if (/^[0-9]{12}$/.test(fwdNo)) carrier = 'FedEx'
+    else if (/^[0-9]{10}$/.test(fwdNo)) carrier = 'DHL'
   }
 
   return {

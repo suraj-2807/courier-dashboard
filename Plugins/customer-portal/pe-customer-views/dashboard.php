@@ -289,6 +289,12 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
       <button class="cp-nav-item" onclick="cpSwitchTab('new-booking', this)">
         <i class="fa-solid fa-plus"></i> Request Booking
       </button>
+      <button class="cp-nav-item" onclick="cpSwitchTab('addresses', this)">
+        <i class="fa-solid fa-address-book"></i> Address Book
+      </button>
+      <button class="cp-nav-item" onclick="cpSwitchTab('documents', this)">
+        <i class="fa-solid fa-file-shield"></i> My Documents
+      </button>
       <button class="cp-nav-item" onclick="cpSwitchTab('profile', this)">
         <i class="fa-solid fa-user-gear"></i> My Profile
       </button>
@@ -432,7 +438,159 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
       </div>
     </div>
 
+    <!-- TAB 5: ADDRESS BOOK -->
+    <div class="cp-main-content" id="tab-addresses">
+      <div class="cp-hdr-wrap" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h1 class="cp-page-title">Address Book</h1>
+          <p class="cp-page-sub">Save and manage your frequently used pickup and delivery addresses.</p>
+        </div>
+        <button class="cp-cta-btn-link" onclick="cpOpenAddressModal()" style="border:none; cursor:pointer; padding:10px 18px; border-radius:10px; background:var(--cpred); color:#fff; font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:8px;">
+          <i class="fa-solid fa-plus"></i> Add New Address
+        </button>
+      </div>
+
+      <div id="cp-addresses-container">
+        <div style="padding:40px; text-align:center;"><div style="width:30px;height:30px;border:3px solid #e5e7eb;border-top-color:#bb0013;border-radius:50%;animation:cp-spin .6s linear infinite;margin:0 auto 16px"></div><p style="color:#94a3b8;">Loading address book...</p></div>
+      </div>
+    </div>
+
+    <!-- TAB 6: MY DOCUMENTS / KYC -->
+    <div class="cp-main-content" id="tab-documents">
+      <div class="cp-hdr-wrap">
+        <h1 class="cp-page-title">My Documents & KYC</h1>
+        <p class="cp-page-sub">Upload, view, and store your identity documents, invoices, and shipping certificates.</p>
+      </div>
+
+      <!-- Quick Upload Card -->
+      <div class="cp-profile-card" style="margin-bottom:24px; background:var(--cpcard); border-radius:16px; border:1px solid var(--cpbdr); padding:24px; box-shadow:var(--cpsh);">
+        <h3 style="font-size:15px; font-weight:800; color:var(--cptext); margin:0 0 16px; display:flex; align-items:center; gap:8px;">
+          <i class="fa-solid fa-cloud-arrow-up" style="color:var(--cpred);"></i> Upload New Document
+        </h3>
+        <form id="cp-doc-upload-form" enctype="multipart/form-data" onsubmit="cpHandleDocUpload(event)">
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-bottom:16px;">
+            <div class="cp-form-group">
+              <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; display:block; margin-bottom:6px;">Document Type *</label>
+              <select id="doc-upload-type" class="cp-form-input" required style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--cpbdr); font-size:13px;">
+                <option value="Aadhaar Card">Aadhaar Card</option>
+                <option value="PAN Card">PAN Card</option>
+                <option value="Passport">Passport</option>
+                <option value="GST Certificate">GST Certificate</option>
+                <option value="IEC Certificate">IEC Certificate</option>
+                <option value="Commercial Invoice">Commercial Invoice</option>
+                <option value="Packing List">Packing List</option>
+                <option value="Other">Other Document</option>
+              </select>
+            </div>
+            <div class="cp-form-group">
+              <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; display:block; margin-bottom:6px;">Document Name (Optional)</label>
+              <input type="text" id="doc-upload-name" class="cp-form-input" placeholder="e.g. Director Aadhaar Card" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--cpbdr); font-size:13px;">
+            </div>
+            <div class="cp-form-group">
+              <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; display:block; margin-bottom:6px;">Document Number (Optional)</label>
+              <input type="text" id="doc-upload-number" class="cp-form-input" placeholder="e.g. 12-digit Aadhaar / PAN" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--cpbdr); font-size:13px;">
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+            <input type="file" id="doc-upload-file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" required style="font-size:13px;">
+            <button type="submit" id="doc-upload-btn" class="cp-form-submit" style="padding:10px 20px; border-radius:10px; background:var(--cpred); color:#fff; font-weight:700; font-size:13px; border:none; cursor:pointer;">
+              <i class="fa-solid fa-arrow-up-from-bracket"></i> Upload & Save Document
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div id="cp-documents-container">
+        <div style="padding:40px; text-align:center;"><div style="width:30px;height:30px;border:3px solid #e5e7eb;border-top-color:#bb0013;border-radius:50%;animation:cp-spin .6s linear infinite;margin:0 auto 16px"></div><p style="color:#94a3b8;">Loading documents...</p></div>
+      </div>
+    </div>
+
   </main>
+</div>
+
+<!-- ADDRESS MODAL -->
+<div class="cp-do" id="cp-addr-modal-overlay" onclick="if(event.target===this)cpCloseAddressModal()">
+  <div class="cp-dp" style="max-width:560px; padding:28px; border-radius:20px; background:#fff; margin:auto; box-shadow:var(--cpsh2);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--cpbdr); padding-bottom:14px;">
+      <h3 style="font-size:18px; font-weight:900; color:var(--cptext); margin:0;" id="cp-addr-modal-title">
+        <i class="fa-solid fa-address-book" style="color:var(--cpred); margin-right:8px;"></i> Add New Address
+      </h3>
+      <button onclick="cpCloseAddressModal()" style="border:none; background:transparent; font-size:18px; color:var(--cptext3); cursor:pointer;"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form id="cp-address-form" onsubmit="cpHandleAddressSubmit(event)">
+      <input type="hidden" id="addr-id" value="">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div class="cp-form-group">
+          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Address Type *</label>
+          <select id="addr-type" class="cp-form-input" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+            <option value="both">Both (Sender & Receiver)</option>
+            <option value="sender">Sender (Pickup Address)</option>
+            <option value="receiver">Receiver (Delivery Address)</option>
+          </select>
+        </div>
+        <div class="cp-form-group">
+          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Contact Person / Name *</label>
+          <input type="text" id="addr-name" class="cp-form-input" required placeholder="Full Name" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div class="cp-form-group">
+          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Company Name</label>
+          <input type="text" id="addr-company" class="cp-form-input" placeholder="Company Name" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+        </div>
+        <div class="cp-form-group">
+          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Phone Number *</label>
+          <input type="tel" id="addr-phone" class="cp-form-input" required placeholder="+91 99999 99999" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div class="cp-form-group">
+          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Email Address</label>
+          <input type="email" id="addr-email" class="cp-form-input" placeholder="email@example.com" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+        </div>
+        <div class="cp-form-group">
+          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Alternate Phone</label>
+          <input type="tel" id="addr-phone2" class="cp-form-input" placeholder="Alt phone" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+        </div>
+      </div>
+      <div class="cp-form-group" style="margin-bottom:12px;">
+        <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Address Line 1 *</label>
+        <input type="text" id="addr-line1" class="cp-form-input" required placeholder="Flat / Building / Street" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+      </div>
+      <div class="cp-form-group" style="margin-bottom:12px;">
+        <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Address Line 2</label>
+        <input type="text" id="addr-line2" class="cp-form-input" placeholder="Area / Landmark" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div class="cp-form-group">
+          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">City *</label>
+          <input type="text" id="addr-city" class="cp-form-input" required placeholder="City" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+        </div>
+        <div class="cp-form-group">
+          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">State</label>
+          <input type="text" id="addr-state" class="cp-form-input" placeholder="State" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+        </div>
+        <div class="cp-form-group">
+          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Pincode</label>
+          <input type="text" id="addr-pincode" class="cp-form-input" placeholder="Pincode" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+        </div>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
+        <div class="cp-form-group">
+          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Country</label>
+          <input type="text" id="addr-country" class="cp-form-input" value="INDIA" placeholder="Country" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+        </div>
+        <div class="cp-form-group">
+          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">GST / Tax ID</label>
+          <input type="text" id="addr-gstin" class="cp-form-input" placeholder="GSTIN / ID No" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:10px;">
+        <button type="button" onclick="cpCloseAddressModal()" style="padding:8px 16px; border-radius:8px; border:1px solid var(--cpbdr); background:transparent; font-size:13px; font-weight:600; cursor:pointer;">Cancel</button>
+        <button type="submit" id="addr-submit-btn" style="padding:8px 20px; border-radius:8px; border:none; background:var(--cpred); color:#fff; font-size:13px; font-weight:700; cursor:pointer;">Save Address</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <!-- DETAIL PANEL -->
@@ -913,18 +1071,268 @@ function cpUpdateLiveBadge(active) {
     }
 }
 
-// Hook into tab switching to start/stop polling
+// Hook into tab switching to start/stop polling & load data
 var _origCpSwitchTab = cpSwitchTab;
 cpSwitchTab = function(tabId, btn) {
     _origCpSwitchTab(tabId, btn);
     cpActiveTab = tabId;
     if (tabId === 'requests') {
         cpStartReqPolling();
+    } else if (tabId === 'addresses') {
+        cpStopReqPolling();
+        cpLoadAddresses();
+    } else if (tabId === 'documents') {
+        cpStopReqPolling();
+        cpLoadDocuments();
     } else {
         cpStopReqPolling();
         cpReqLastHash = null;
     }
 };
+
+// ══════════════════════════════════════
+//  ADDRESS BOOK CONTROLLER
+// ══════════════════════════════════════
+var cpSavedAddresses = [];
+
+function cpLoadAddresses() {
+    var c = document.getElementById('cp-addresses-container');
+    if (!c) return;
+    cpAjax('pe_cp_get_addresses', {}, function(res) {
+        if (!res.success) {
+            c.innerHTML = '<div style="padding:40px;text-align:center;color:#dc2626;">Failed to load addresses.</div>';
+            return;
+        }
+        cpSavedAddresses = res.data.addresses || [];
+        cpRenderAddresses();
+    });
+}
+
+function cpRenderAddresses() {
+    var c = document.getElementById('cp-addresses-container');
+    if (!c) return;
+    if (!cpSavedAddresses.length) {
+        c.innerHTML = '<div style="background:var(--cpcard); border-radius:16px; border:1px dashed var(--cpbdr); padding:48px 24px; text-align:center;">' +
+            '<div style="width:48px; height:48px; border-radius:12px; background:rgba(187,0,19,0.08); color:var(--cpred); display:flex; align-items:center; justify-content:center; margin:0 auto 12px; font-size:20px;"><i class="fa-solid fa-address-book"></i></div>' +
+            '<h3 style="font-size:16px; font-weight:800; color:var(--cptext); margin:0 0 6px;">No Saved Addresses</h3>' +
+            '<p style="font-size:13px; color:var(--cptext2); margin:0 0 16px;">Save your pickup and delivery contacts here to quickly autofill them when creating shipments.</p>' +
+            '<button onclick="cpOpenAddressModal()" style="border:none; cursor:pointer; padding:9px 18px; border-radius:10px; background:var(--cpred); color:#fff; font-weight:700; font-size:13px;"><i class="fa-solid fa-plus"></i> Add Address</button>' +
+            '</div>';
+        return;
+    }
+
+    var h = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px;">';
+    cpSavedAddresses.forEach(function(a) {
+        var typeBadge = '<span style="background:rgba(0,0,0,0.06); color:var(--cptext2); padding:3px 8px; border-radius:6px; font-size:10px; font-weight:800; text-transform:uppercase;">' + (a.address_type || 'BOTH') + '</span>';
+        if (a.is_default) {
+            typeBadge += ' <span style="background:#ecfdf5; color:#059669; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:800; text-transform:uppercase;">DEFAULT</span>';
+        }
+        h += '<div style="background:var(--cpcard); border-radius:16px; border:1px solid var(--cpbdr); padding:20px; box-shadow:var(--cpsh); display:flex; flex-direction:column; justify-content:space-between;">';
+        h += '<div>';
+        h += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' + typeBadge + '<div style="display:flex; gap:6px;">' +
+            '<button onclick="cpEditAddress(' + a.id + ')" title="Edit" style="border:none; background:rgba(0,0,0,0.04); width:28px; height:28px; border-radius:6px; color:var(--cptext2); cursor:pointer;"><i class="fa-solid fa-pen" style="font-size:11px;"></i></button>' +
+            '<button onclick="cpDeleteAddress(' + a.id + ')" title="Delete" style="border:none; background:rgba(220,38,38,0.08); width:28px; height:28px; border-radius:6px; color:#dc2626; cursor:pointer;"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button>' +
+            '</div></div>';
+        h += '<h4 style="font-size:15px; font-weight:800; color:var(--cptext); margin:0 0 2px;">' + (a.name || '—') + '</h4>';
+        if (a.company) h += '<div style="font-size:12px; font-weight:600; color:var(--cpred); margin-bottom:8px; text-transform:uppercase;">' + a.company + '</div>';
+        h += '<div style="font-size:13px; color:var(--cptext2); line-height:1.4; margin-bottom:12px;">' + (a.address || '') + (a.address_2 ? ', ' + a.address_2 : '') + '<br><strong>' + (a.city || '') + '</strong>' + (a.state ? ', ' + a.state : '') + (a.pincode ? ' - ' + a.pincode : '') + '<br><span style="font-weight:700; color:var(--cptext);">' + (a.country || 'INDIA') + '</span></div>';
+        h += '</div>';
+        h += '<div style="border-top:1px solid var(--cpbdr); padding-top:10px; font-size:12px; color:var(--cptext2); display:flex; flex-direction:column; gap:4px;">';
+        if (a.phone) h += '<div><i class="fa-solid fa-phone" style="width:14px; margin-right:6px; color:var(--cptext3);"></i>' + a.phone + (a.phone_2 ? ' / ' + a.phone_2 : '') + '</div>';
+        if (a.email) h += '<div><i class="fa-solid fa-envelope" style="width:14px; margin-right:6px; color:var(--cptext3);"></i>' + a.email + '</div>';
+        if (a.gstin_no) h += '<div><i class="fa-solid fa-id-card" style="width:14px; margin-right:6px; color:var(--cptext3);"></i>' + (a.gstin_type ? a.gstin_type + ': ' : '') + a.gstin_no + '</div>';
+        h += '</div>';
+        h += '</div>';
+    });
+    h += '</div>';
+    c.innerHTML = h;
+}
+
+function cpOpenAddressModal(addr) {
+    document.getElementById('cp-address-form').reset();
+    document.getElementById('addr-id').value = addr ? addr.id : '';
+    document.getElementById('cp-addr-modal-title').innerHTML = addr
+        ? '<i class="fa-solid fa-pen" style="color:var(--cpred); margin-right:8px;"></i> Edit Address'
+        : '<i class="fa-solid fa-address-book" style="color:var(--cpred); margin-right:8px;"></i> Add New Address';
+    if (addr) {
+        document.getElementById('addr-type').value = addr.address_type || 'both';
+        document.getElementById('addr-name').value = addr.name || '';
+        document.getElementById('addr-company').value = addr.company || '';
+        document.getElementById('addr-phone').value = addr.phone || '';
+        document.getElementById('addr-phone2').value = addr.phone_2 || '';
+        document.getElementById('addr-email').value = addr.email || '';
+        document.getElementById('addr-line1').value = addr.address || '';
+        document.getElementById('addr-line2').value = addr.address_2 || '';
+        document.getElementById('addr-city').value = addr.city || '';
+        document.getElementById('addr-state').value = addr.state || '';
+        document.getElementById('addr-pincode').value = addr.pincode || '';
+        document.getElementById('addr-country').value = addr.country || 'INDIA';
+        document.getElementById('addr-gstin').value = addr.gstin_no || '';
+    }
+    document.getElementById('cp-addr-modal-overlay').classList.add('show');
+}
+
+function cpCloseAddressModal() {
+    document.getElementById('cp-addr-modal-overlay').classList.remove('show');
+}
+
+function cpEditAddress(id) {
+    var addr = cpSavedAddresses.find(a => a.id == id);
+    if (addr) cpOpenAddressModal(addr);
+}
+
+function cpHandleAddressSubmit(e) {
+    e.preventDefault();
+    var btn = document.getElementById('addr-submit-btn');
+    btn.disabled = true; btn.textContent = 'Saving...';
+    var payload = {
+        id: document.getElementById('addr-id').value,
+        address_type: document.getElementById('addr-type').value,
+        name: document.getElementById('addr-name').value,
+        company: document.getElementById('addr-company').value,
+        phone: document.getElementById('addr-phone').value,
+        phone_2: document.getElementById('addr-phone2').value,
+        email: document.getElementById('addr-email').value,
+        address: document.getElementById('addr-line1').value,
+        address_2: document.getElementById('addr-line2').value,
+        city: document.getElementById('addr-city').value,
+        state: document.getElementById('addr-state').value,
+        pincode: document.getElementById('addr-pincode').value,
+        country: document.getElementById('addr-country').value,
+        gstin_no: document.getElementById('addr-gstin').value
+    };
+    cpAjax('pe_cp_save_address', payload, function(res) {
+        btn.disabled = false; btn.textContent = 'Save Address';
+        if (res.success) {
+            cpCloseAddressModal();
+            cpLoadAddresses();
+        } else {
+            alert(res.data?.message || 'Failed to save address');
+        }
+    });
+}
+
+function cpDeleteAddress(id) {
+    if (!confirm('Are you sure you want to delete this address?')) return;
+    cpAjax('pe_cp_delete_address', { id: id }, function(res) {
+        if (res.success) {
+            cpLoadAddresses();
+        } else {
+            alert(res.data?.message || 'Failed to delete address');
+        }
+    });
+}
+
+// ══════════════════════════════════════
+//  DOCUMENTS & KYC CONTROLLER
+// ══════════════════════════════════════
+var cpSavedDocs = [];
+
+function cpLoadDocuments() {
+    var c = document.getElementById('cp-documents-container');
+    if (!c) return;
+    cpAjax('pe_cp_get_documents', {}, function(res) {
+        if (!res.success) {
+            c.innerHTML = '<div style="padding:40px;text-align:center;color:#dc2626;">Failed to load documents.</div>';
+            return;
+        }
+        cpSavedDocs = res.data.documents || [];
+        cpRenderDocuments();
+    });
+}
+
+function cpRenderDocuments() {
+    var c = document.getElementById('cp-documents-container');
+    if (!c) return;
+    if (!cpSavedDocs.length) {
+        c.innerHTML = '<div style="background:var(--cpcard); border-radius:16px; border:1px dashed var(--cpbdr); padding:48px 24px; text-align:center;">' +
+            '<div style="width:48px; height:48px; border-radius:12px; background:rgba(187,0,19,0.08); color:var(--cpred); display:flex; align-items:center; justify-content:center; margin:0 auto 12px; font-size:20px;"><i class="fa-solid fa-file-shield"></i></div>' +
+            '<h3 style="font-size:16px; font-weight:800; color:var(--cptext); margin:0 0 6px;">No Documents Uploaded Yet</h3>' +
+            '<p style="font-size:13px; color:var(--cptext2); margin:0;">Upload your KYC documents or invoices above to save them securely for all future courier bookings.</p>' +
+            '</div>';
+        return;
+    }
+
+    var h = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:16px;">';
+    cpSavedDocs.forEach(function(d) {
+        var sizeKb = d.file_size ? Math.round(d.file_size / 1024) + ' KB' : '';
+        h += '<div style="background:var(--cpcard); border-radius:16px; border:1px solid var(--cpbdr); padding:20px; box-shadow:var(--cpsh); display:flex; flex-direction:column; justify-content:space-between;">';
+        h += '<div>';
+        h += '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">';
+        h += '<div style="display:flex; align-items:center; gap:10px;">';
+        h += '<div style="width:36px; height:36px; border-radius:10px; background:rgba(187,0,19,0.08); color:var(--cpred); display:flex; align-items:center; justify-content:center; font-size:16px;"><i class="fa-solid fa-file-lines"></i></div>';
+        h += '<div>';
+        h += '<div style="font-size:14px; font-weight:800; color:var(--cptext);">' + (d.doc_name || d.file_name || d.doc_type) + '</div>';
+        h += '<span style="background:rgba(0,0,0,0.05); color:var(--cptext2); padding:2px 6px; border-radius:4px; font-size:10px; font-weight:700; text-transform:uppercase;">' + d.doc_type + '</span>';
+        h += '</div></div>';
+        h += '<button onclick="cpDeleteDocument(' + d.id + ')" title="Delete" style="border:none; background:rgba(220,38,38,0.08); width:28px; height:28px; border-radius:6px; color:#dc2626; cursor:pointer;"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button>';
+        h += '</div>';
+
+        if (d.doc_number) {
+            h += '<div style="font-size:12px; color:var(--cptext2); margin-bottom:8px;"><strong>Doc No:</strong> ' + d.doc_number + '</div>';
+        }
+        h += '</div>';
+
+        h += '<div style="border-top:1px solid var(--cpbdr); padding-top:10px; display:flex; justify-content:space-between; align-items:center;">';
+        h += '<span style="font-size:11px; color:var(--cptext3); font-weight:600;">' + (sizeKb ? sizeKb + ' · ' : '') + (d.created_at ? d.created_at.substring(0, 10) : '') + '</span>';
+        if (d.file_url) {
+            h += '<a href="' + d.file_url + '" target="_blank" style="font-size:12px; font-weight:700; color:var(--cpred); text-decoration:none; display:inline-flex; align-items:center; gap:4px;"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size:10px;"></i> View File</a>';
+        }
+        h += '</div>';
+        h += '</div>';
+    });
+    h += '</div>';
+    c.innerHTML = h;
+}
+
+function cpHandleDocUpload(e) {
+    e.preventDefault();
+    var fileInput = document.getElementById('doc-upload-file');
+    if (!fileInput.files || !fileInput.files[0]) {
+        alert('Please choose a file to upload');
+        return;
+    }
+    var btn = document.getElementById('doc-upload-btn');
+    btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Uploading...';
+
+    var formData = new FormData();
+    formData.append('action', 'pe_cp_upload_document');
+    formData.append('nonce', PE_CP.nonce);
+    formData.append('file', fileInput.files[0]);
+    formData.append('doc_type', document.getElementById('doc-upload-type').value);
+    formData.append('doc_name', document.getElementById('doc-upload-name').value);
+    formData.append('doc_number', document.getElementById('doc-upload-number').value);
+
+    fetch(PE_CP.ajax_url, {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(res => {
+        btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-arrow-up-from-bracket"></i> Upload & Save Document';
+        if (res.success) {
+            document.getElementById('cp-doc-upload-form').reset();
+            cpLoadDocuments();
+        } else {
+            alert(res.data?.message || 'Upload failed');
+        }
+    })
+    .catch(err => {
+        btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-arrow-up-from-bracket"></i> Upload & Save Document';
+        alert('Upload error: ' + err.message);
+    });
+}
+
+function cpDeleteDocument(id) {
+    if (!confirm('Are you sure you want to delete this document?')) return;
+    cpAjax('pe_cp_delete_document', { id: id }, function(res) {
+        if (res.success) {
+            cpLoadDocuments();
+        } else {
+            alert(res.data?.message || 'Failed to delete document');
+        }
+    });
+}
 
 // Pause/resume polling on tab visibility change
 document.addEventListener('visibilitychange', function() {

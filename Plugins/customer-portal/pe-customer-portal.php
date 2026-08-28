@@ -699,6 +699,217 @@ function pe_cp_ajax_update_password()
 add_action('wp_ajax_pe_cp_update_password', 'pe_cp_ajax_update_password');
 
 // ══════════════════════════════════════
+//  AJAX: GET ADDRESSES
+// ══════════════════════════════════════
+
+function pe_cp_ajax_get_addresses()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+    $cust = pe_cp_get_user();
+    $custId = intval($cust['customer_id'] ?? 0);
+    $email = sanitize_email($cust['email'] ?? '');
+    $phone = sanitize_text_field($cust['phone'] ?? '');
+
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE 'customer_addresses'");
+    if (!$table_exists) {
+        wp_send_json_success(['addresses' => []]);
+    }
+
+    $where = "1=1";
+    if ($custId > 0) {
+        $where .= $wpdb->prepare(" AND (customer_id = %d OR LOWER(customer_email) = LOWER(%s) OR customer_phone = %s)", $custId, $email, $phone);
+    } elseif ($email) {
+        $where .= $wpdb->prepare(" AND (LOWER(customer_email) = LOWER(%s) OR customer_phone = %s)", $email, $phone);
+    }
+
+    $rows = $wpdb->get_results("SELECT * FROM customer_addresses WHERE $where ORDER BY is_default DESC, updated_at DESC", ARRAY_A);
+    wp_send_json_success(['addresses' => $rows ?: []]);
+}
+add_action('wp_ajax_pe_cp_get_addresses', 'pe_cp_ajax_get_addresses');
+
+// ══════════════════════════════════════
+//  AJAX: SAVE ADDRESS
+// ══════════════════════════════════════
+
+function pe_cp_ajax_save_address()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+    $cust = pe_cp_get_user();
+    $custId = intval($cust['customer_id'] ?? 0);
+
+    $id = intval($_POST['id'] ?? 0);
+    $name = sanitize_text_field($_POST['name'] ?? '');
+    $company = sanitize_text_field($_POST['company'] ?? '');
+    $phone = sanitize_text_field($_POST['phone'] ?? '');
+    $phone_2 = sanitize_text_field($_POST['phone_2'] ?? '');
+    $email = sanitize_email($_POST['email'] ?? '');
+    $address = sanitize_textarea_field($_POST['address'] ?? '');
+    $address_2 = sanitize_text_field($_POST['address_2'] ?? '');
+    $city = sanitize_text_field($_POST['city'] ?? '');
+    $state = sanitize_text_field($_POST['state'] ?? '');
+    $pincode = sanitize_text_field($_POST['pincode'] ?? '');
+    $country = sanitize_text_field($_POST['country'] ?? 'INDIA');
+    $gstin_type = sanitize_text_field($_POST['gstin_type'] ?? '');
+    $gstin_no = sanitize_text_field($_POST['gstin_no'] ?? '');
+    $address_type = sanitize_text_field($_POST['address_type'] ?? 'both');
+    $is_default = !empty($_POST['is_default']) ? 1 : 0;
+
+    if (!$name || !$phone || !$address || !$city) {
+        wp_send_json_error(['message' => 'Name, Phone, Address Line 1, and City are required']);
+    }
+
+    if ($is_default && $custId > 0) {
+        $wpdb->query($wpdb->prepare("UPDATE customer_addresses SET is_default = 0 WHERE customer_id = %d", $custId));
+    }
+
+    $data = [
+        'customer_id'    => $custId ?: null,
+        'customer_email' => sanitize_email($cust['email'] ?? ''),
+        'customer_phone' => sanitize_text_field($cust['phone'] ?? ''),
+        'address_type'   => $address_type,
+        'name'           => $name,
+        'company'        => $company,
+        'phone'          => $phone,
+        'phone_2'        => $phone_2,
+        'email'          => $email,
+        'address'        => $address,
+        'address_2'      => $address_2,
+        'city'           => $city,
+        'state'          => $state,
+        'pincode'        => $pincode,
+        'country'        => $country ?: 'INDIA',
+        'gstin_type'     => $gstin_type,
+        'gstin_no'       => $gstin_no,
+        'is_default'     => $is_default
+    ];
+
+    if ($id > 0) {
+        $wpdb->update('customer_addresses', $data, ['id' => $id]);
+        $savedId = $id;
+    } else {
+        $wpdb->insert('customer_addresses', $data);
+        $savedId = $wpdb->insert_id;
+    }
+
+    $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM customer_addresses WHERE id = %d", $savedId), ARRAY_A);
+    wp_send_json_success(['message' => 'Address saved successfully!', 'address' => $row]);
+}
+add_action('wp_ajax_pe_cp_save_address', 'pe_cp_ajax_save_address');
+
+// ══════════════════════════════════════
+//  AJAX: DELETE ADDRESS
+// ══════════════════════════════════════
+
+function pe_cp_ajax_delete_address()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+    $id = intval($_POST['id'] ?? 0);
+    if ($id > 0) {
+        $wpdb->delete('customer_addresses', ['id' => $id]);
+    }
+    wp_send_json_success(['message' => 'Address deleted']);
+}
+add_action('wp_ajax_pe_cp_delete_address', 'pe_cp_ajax_delete_address');
+
+// ══════════════════════════════════════
+//  AJAX: GET DOCUMENTS
+// ══════════════════════════════════════
+
+function pe_cp_ajax_get_documents()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+    $cust = pe_cp_get_user();
+    $custId = intval($cust['customer_id'] ?? 0);
+    $email = sanitize_email($cust['email'] ?? '');
+    $phone = sanitize_text_field($cust['phone'] ?? '');
+
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE 'customer_documents'");
+    if (!$table_exists) {
+        wp_send_json_success(['documents' => []]);
+    }
+
+    $where = "1=1";
+    if ($custId > 0) {
+        $where .= $wpdb->prepare(" AND (customer_id = %d OR LOWER(customer_email) = LOWER(%s) OR customer_phone = %s)", $custId, $email, $phone);
+    } elseif ($email) {
+        $where .= $wpdb->prepare(" AND (LOWER(customer_email) = LOWER(%s) OR customer_phone = %s)", $email, $phone);
+    }
+
+    $rows = $wpdb->get_results("SELECT * FROM customer_documents WHERE $where ORDER BY created_at DESC", ARRAY_A);
+    wp_send_json_success(['documents' => $rows ?: []]);
+}
+add_action('wp_ajax_pe_cp_get_documents', 'pe_cp_ajax_get_documents');
+
+// ══════════════════════════════════════
+//  AJAX: UPLOAD DOCUMENT
+// ══════════════════════════════════════
+
+function pe_cp_ajax_upload_document()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+    $cust = pe_cp_get_user();
+    $custId = intval($cust['customer_id'] ?? 0);
+
+    if (empty($_FILES['file'])) {
+        wp_send_json_error(['message' => 'No file was uploaded']);
+    }
+
+    require_once ABSPATH . 'wp-admin/includes/file.php';
+    $file = $_FILES['file'];
+    $upload_overrides = ['test_form' => false];
+    $movefile = wp_handle_upload($file, $upload_overrides);
+
+    if ($movefile && !isset($movefile['error'])) {
+        $doc_type = sanitize_text_field($_POST['doc_type'] ?? 'Other');
+        $doc_name = sanitize_text_field($_POST['doc_name'] ?? $file['name']);
+        $doc_number = sanitize_text_field($_POST['doc_number'] ?? '');
+        $notes = sanitize_textarea_field($_POST['notes'] ?? '');
+
+        $wpdb->insert('customer_documents', [
+            'customer_id'    => $custId ?: null,
+            'customer_email' => sanitize_email($cust['email'] ?? ''),
+            'customer_phone' => sanitize_text_field($cust['phone'] ?? ''),
+            'doc_type'       => $doc_type,
+            'doc_name'       => $doc_name,
+            'doc_number'     => $doc_number,
+            'file_url'       => $movefile['url'],
+            'file_name'      => $file['name'],
+            'file_size'      => intval($file['size']),
+            'file_type'      => $file['type'],
+            'notes'          => $notes
+        ]);
+
+        $docId = $wpdb->insert_id;
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM customer_documents WHERE id = %d", $docId), ARRAY_A);
+        wp_send_json_success(['message' => 'Document uploaded successfully!', 'document' => $row]);
+    } else {
+        wp_send_json_error(['message' => $movefile['error'] ?? 'Upload failed']);
+    }
+}
+add_action('wp_ajax_pe_cp_upload_document', 'pe_cp_ajax_upload_document');
+
+// ══════════════════════════════════════
+//  AJAX: DELETE DOCUMENT
+// ══════════════════════════════════════
+
+function pe_cp_ajax_delete_document()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+    $id = intval($_POST['id'] ?? 0);
+    if ($id > 0) {
+        $wpdb->delete('customer_documents', ['id' => $id]);
+    }
+    wp_send_json_success(['message' => 'Document deleted']);
+}
+add_action('wp_ajax_pe_cp_delete_document', 'pe_cp_ajax_delete_document');
+
+// ══════════════════════════════════════
 //  SHORTCODE: [pe_customer_portal]
 // ══════════════════════════════════════
 
@@ -809,10 +1020,59 @@ register_activation_hook(__FILE__, function () {
         KEY idx_request_id (request_id)
     ) $charset;";
 
+    // Customer addresses table
+    $sql_customer_addresses = "CREATE TABLE IF NOT EXISTS customer_addresses (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id INT DEFAULT NULL,
+        customer_email VARCHAR(150) DEFAULT '',
+        customer_phone VARCHAR(50) DEFAULT '',
+        address_type VARCHAR(20) DEFAULT 'both',
+        name VARCHAR(100) NOT NULL,
+        company VARCHAR(150) DEFAULT '',
+        phone VARCHAR(50) NOT NULL,
+        phone_2 VARCHAR(50) DEFAULT '',
+        email VARCHAR(150) DEFAULT '',
+        address TEXT NOT NULL,
+        address_2 VARCHAR(255) DEFAULT '',
+        city VARCHAR(100) NOT NULL,
+        state VARCHAR(100) DEFAULT '',
+        pincode VARCHAR(20) DEFAULT '',
+        country VARCHAR(100) DEFAULT 'INDIA',
+        gstin_type VARCHAR(50) DEFAULT '',
+        gstin_no VARCHAR(50) DEFAULT '',
+        is_default TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_cust_id (customer_id),
+        KEY idx_cust_email (customer_email)
+    ) $charset;";
+
+    // Customer documents table
+    $sql_customer_documents = "CREATE TABLE IF NOT EXISTS customer_documents (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id INT DEFAULT NULL,
+        customer_email VARCHAR(150) DEFAULT '',
+        customer_phone VARCHAR(50) DEFAULT '',
+        doc_type VARCHAR(100) NOT NULL,
+        doc_name VARCHAR(255) DEFAULT '',
+        doc_number VARCHAR(100) DEFAULT '',
+        file_url VARCHAR(500) NOT NULL,
+        file_name VARCHAR(255) DEFAULT '',
+        file_size INT DEFAULT 0,
+        file_type VARCHAR(50) DEFAULT '',
+        notes TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        KEY idx_cust_id (customer_id),
+        KEY idx_cust_email (customer_email)
+    ) $charset;";
+
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     dbDelta($sql_customers);
     dbDelta($sql_booking_requests);
     dbDelta($sql_request_updates);
+    dbDelta($sql_customer_addresses);
+    dbDelta($sql_customer_documents);
 });
 
 // ══════════════════════════════════════
@@ -825,6 +1085,57 @@ add_action('init', function () {
     if (get_transient('pe_cp_tables_checked')) return;
 
     $charset = $wpdb->get_charset_collate();
+
+    // Check if customer_addresses table exists
+    if (!$wpdb->get_var("SHOW TABLES LIKE 'customer_addresses'")) {
+        $wpdb->query("CREATE TABLE IF NOT EXISTS customer_addresses (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            customer_id INT DEFAULT NULL,
+            customer_email VARCHAR(150) DEFAULT '',
+            customer_phone VARCHAR(50) DEFAULT '',
+            address_type VARCHAR(20) DEFAULT 'both',
+            name VARCHAR(100) NOT NULL,
+            company VARCHAR(150) DEFAULT '',
+            phone VARCHAR(50) NOT NULL,
+            phone_2 VARCHAR(50) DEFAULT '',
+            email VARCHAR(150) DEFAULT '',
+            address TEXT NOT NULL,
+            address_2 VARCHAR(255) DEFAULT '',
+            city VARCHAR(100) NOT NULL,
+            state VARCHAR(100) DEFAULT '',
+            pincode VARCHAR(20) DEFAULT '',
+            country VARCHAR(100) DEFAULT 'INDIA',
+            gstin_type VARCHAR(50) DEFAULT '',
+            gstin_no VARCHAR(50) DEFAULT '',
+            is_default TINYINT(1) DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY idx_cust_id (customer_id),
+            KEY idx_cust_email (customer_email)
+        ) $charset");
+    }
+
+    // Check if customer_documents table exists
+    if (!$wpdb->get_var("SHOW TABLES LIKE 'customer_documents'")) {
+        $wpdb->query("CREATE TABLE IF NOT EXISTS customer_documents (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            customer_id INT DEFAULT NULL,
+            customer_email VARCHAR(150) DEFAULT '',
+            customer_phone VARCHAR(50) DEFAULT '',
+            doc_type VARCHAR(100) NOT NULL,
+            doc_name VARCHAR(255) DEFAULT '',
+            doc_number VARCHAR(100) DEFAULT '',
+            file_url VARCHAR(500) NOT NULL,
+            file_name VARCHAR(255) DEFAULT '',
+            file_size INT DEFAULT 0,
+            file_type VARCHAR(50) DEFAULT '',
+            notes TEXT DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY idx_cust_id (customer_id),
+            KEY idx_cust_email (customer_email)
+        ) $charset");
+    }
 
     // Check if booking_requests table exists
     if (!$wpdb->get_var("SHOW TABLES LIKE 'booking_requests'")) {

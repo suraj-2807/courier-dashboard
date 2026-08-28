@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import {
   User,
   MapPin,
@@ -10,11 +10,21 @@ import {
   ChevronDown,
   Plus,
   Trash2,
-  Receipt
+  Receipt,
+  FileText,
+  Upload,
+  BookUser,
+  Shield,
+  ExternalLink,
+  X,
+  Bookmark,
+  CheckSquare,
+  Square
 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast, { Toaster } from 'react-hot-toast'
 import { countryCodesApi } from '../api/countryCodes.api'
+import { customerApi } from '../api/customer.api'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
 
 const INITIAL_FORM = {
@@ -23,6 +33,7 @@ const INITIAL_FORM = {
   sender_company: '',
   sender_email: '',
   sender_phone: '',
+  sender_phone_2: '',
   sender_address: '',
   sender_address_2: '',
   sender_city: '',
@@ -37,6 +48,7 @@ const INITIAL_FORM = {
   receiver_company: '',
   receiver_email: '',
   receiver_phone: '',
+  receiver_phone_2: '',
   receiver_address: '',
   receiver_address_2: '',
   receiver_city: '',
@@ -76,11 +88,35 @@ const INITIAL_FORM = {
 }
 
 export default function CustomerBookingPage() {
+  const queryClient = useQueryClient()
   const [form, setForm] = useState(INITIAL_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [submittedAwb, setSubmittedAwb] = useState(null)
   const [copied, setCopied] = useState(false)
   const [showShipmentInvoice, setShowShipmentInvoice] = useState(true)
+
+  // Address book save toggles
+  const [saveSenderAddress, setSaveSenderAddress] = useState(true)
+  const [saveReceiverAddress, setSaveReceiverAddress] = useState(true)
+  const [savingSenderAddr, setSavingSenderAddr] = useState(false)
+  const [savingReceiverAddr, setSavingReceiverAddr] = useState(false)
+
+  // Document upload & attached state
+  const [attachedDocs, setAttachedDocs] = useState([])
+  const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [newDocType, setNewDocType] = useState('Aadhaar Card')
+  const [newDocNumber, setNewDocNumber] = useState('')
+  const [saveDocForFuture, setSaveDocForFuture] = useState(true)
+  const fileInputRef = useRef(null)
+
+  // Customer context from URL params
+  const [customerContext, setCustomerContext] = useState({
+    customerId: null,
+    customerName: '',
+    customerEmail: '',
+    customerPhone: '',
+    customerCompany: ''
+  })
 
   // Fetch country codes list
   const { data: countryCodesData } = useQuery({
@@ -88,6 +124,56 @@ export default function CustomerBookingPage() {
     queryFn: () => countryCodesApi.getAll().then(res => res.data)
   })
   const countryList = countryCodesData?.countryCodes || []
+
+  // Pre-fill from URL params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const custId = params.get('cust_id') ? parseInt(params.get('cust_id')) : null
+    const custName = params.get('cust_name') || ''
+    const custPhone = params.get('cust_phone') || ''
+    const custEmail = params.get('cust_email') || ''
+    const custCompany = params.get('cust_company') || ''
+
+    setCustomerContext({
+      customerId: custId,
+      customerName: custName,
+      customerEmail: custEmail,
+      customerPhone: custPhone,
+      customerCompany: custCompany
+    })
+
+    setForm(prev => ({
+      ...prev,
+      sender_name: custName || prev.sender_name,
+      sender_phone: custPhone || prev.sender_phone,
+      sender_email: custEmail || prev.sender_email,
+      sender_company: custCompany || prev.sender_company
+    }))
+  }, [])
+
+  // Fetch customer saved addresses
+  const { data: addressesData, refetch: refetchAddresses } = useQuery({
+    queryKey: ['customer-addresses', customerContext.customerId, customerContext.customerEmail, customerContext.customerPhone],
+    queryFn: () => customerApi.getAddresses({
+      customer_id: customerContext.customerId || undefined,
+      email: customerContext.customerEmail || undefined,
+      phone: customerContext.customerPhone || undefined
+    }).then(res => res.data),
+    enabled: true
+  })
+  const savedAddresses = addressesData?.addresses || []
+
+  // Fetch customer saved documents
+  const { data: documentsData, refetch: refetchDocuments } = useQuery({
+    queryKey: ['customer-documents', customerContext.customerId, customerContext.customerEmail, customerContext.customerPhone],
+    queryFn: () => customerApi.getDocuments({
+      customer_id: customerContext.customerId || undefined,
+      email: customerContext.customerEmail || undefined,
+      phone: customerContext.customerPhone || undefined
+    }).then(res => res.data),
+    enabled: true
+  })
+  const savedDocuments = documentsData?.documents || []
 
   // Parcels detail state synced with no_of_pieces
   const [parcels, setParcels] = useState([
@@ -146,23 +232,6 @@ export default function CustomerBookingPage() {
 
   const invoiceTotalWeight = invoiceItems.reduce((sum, item) => sum + (parseFloat(item.unit_weight) || 0) * (parseFloat(item.quantity) || 0), 0)
   const invoiceTotalAmount = invoiceItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
-
-  // Pre-fill from URL params
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const custName = params.get('cust_name') || ''
-    const custPhone = params.get('cust_phone') || ''
-    const custEmail = params.get('cust_email') || ''
-    const custCompany = params.get('cust_company') || ''
-
-    setForm(prev => ({
-      ...prev,
-      sender_name: custName || prev.sender_name,
-      sender_phone: custPhone || prev.sender_phone,
-      sender_email: custEmail || prev.sender_email,
-      sender_company: custCompany || prev.sender_company
-    }))
-  }, [])
 
   // Auto-sync parcels count with no_of_pieces
   useEffect(() => {
@@ -306,6 +375,189 @@ export default function CustomerBookingPage() {
     setForm(prev => ({ ...prev, [field]: val }))
   }
 
+  // ── Address Selection & Quick Save ──
+  const handleSelectSavedSender = (addr) => {
+    if (!addr) return
+    setForm(prev => ({
+      ...prev,
+      sender_name: (addr.name || '').toUpperCase(),
+      sender_company: (addr.company || '').toUpperCase(),
+      sender_phone: addr.phone || '',
+      sender_phone_2: addr.phone_2 || '',
+      sender_email: addr.email || '',
+      sender_address: (addr.address || '').toUpperCase(),
+      sender_address_2: (addr.address_2 || '').toUpperCase(),
+      sender_city: (addr.city || '').toUpperCase(),
+      sender_pincode: (addr.pincode || '').toUpperCase(),
+      sender_state: (addr.state || '').toUpperCase(),
+      sender_country: (addr.country || 'INDIA').toUpperCase(),
+      sender_gstin_type: normalizeDocType(addr.gstin_type, true),
+      sender_gstin_no: (addr.gstin_no || '').toUpperCase()
+    }))
+    toast.success(`Autofilled Sender: "${addr.name}"`)
+  }
+
+  const handleSelectSavedReceiver = (addr) => {
+    if (!addr) return
+    setForm(prev => ({
+      ...prev,
+      receiver_name: (addr.name || '').toUpperCase(),
+      receiver_company: (addr.company || '').toUpperCase(),
+      receiver_phone: addr.phone || '',
+      receiver_phone_2: addr.phone_2 || '',
+      receiver_email: addr.email || '',
+      receiver_address: (addr.address || '').toUpperCase(),
+      receiver_address_2: (addr.address_2 || '').toUpperCase(),
+      receiver_city: (addr.city || '').toUpperCase(),
+      receiver_pincode: (addr.pincode || '').toUpperCase(),
+      receiver_state: (addr.state || '').toUpperCase(),
+      receiver_country: (addr.country || '').toUpperCase(),
+      receiver_gstin_type: normalizeDocType(addr.gstin_type, false),
+      receiver_gstin_no: (addr.gstin_no || '').toUpperCase()
+    }))
+    toast.success(`Autofilled Receiver: "${addr.name}"`)
+  }
+
+  const handleQuickSaveSender = async () => {
+    if (!form.sender_name || !form.sender_phone || !form.sender_address || !form.sender_city) {
+      toast.error('Please enter Sender Name, Phone, Address Line 1, and City before saving')
+      return
+    }
+    try {
+      setSavingSenderAddr(true)
+      await customerApi.saveAddress({
+        customer_id: customerContext.customerId,
+        customer_email: customerContext.customerEmail || form.sender_email,
+        customer_phone: customerContext.customerPhone || form.sender_phone,
+        address_type: 'sender',
+        name: form.sender_name,
+        company: form.sender_company,
+        phone: form.sender_phone,
+        phone_2: form.sender_phone_2,
+        email: form.sender_email,
+        address: form.sender_address,
+        address_2: form.sender_address_2,
+        city: form.sender_city,
+        state: form.sender_state,
+        pincode: form.sender_pincode,
+        country: form.sender_country || 'INDIA',
+        gstin_type: form.sender_gstin_type,
+        gstin_no: form.sender_gstin_no
+      })
+      toast.success('Sender address saved to Address Book!')
+      refetchAddresses()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to save address')
+    } finally {
+      setSavingSenderAddr(false)
+    }
+  }
+
+  const handleQuickSaveReceiver = async () => {
+    if (!form.receiver_name || !form.receiver_phone || !form.receiver_address || !form.receiver_city) {
+      toast.error('Please enter Receiver Name, Phone, Address Line 1, and City before saving')
+      return
+    }
+    try {
+      setSavingReceiverAddr(true)
+      await customerApi.saveAddress({
+        customer_id: customerContext.customerId,
+        customer_email: customerContext.customerEmail || form.sender_email,
+        customer_phone: customerContext.customerPhone || form.sender_phone,
+        address_type: 'receiver',
+        name: form.receiver_name,
+        company: form.receiver_company,
+        phone: form.receiver_phone,
+        phone_2: form.receiver_phone_2,
+        email: form.receiver_email,
+        address: form.receiver_address,
+        address_2: form.receiver_address_2,
+        city: form.receiver_city,
+        state: form.receiver_state,
+        pincode: form.receiver_pincode,
+        country: form.receiver_country,
+        gstin_type: form.receiver_gstin_type,
+        gstin_no: form.receiver_gstin_no
+      })
+      toast.success('Receiver address saved to Address Book!')
+      refetchAddresses()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to save address')
+    } finally {
+      setSavingReceiverAddr(false)
+    }
+  }
+
+  // ── Document Upload & Attachment ──
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error('File size must be under 25MB')
+      return
+    }
+
+    try {
+      setUploadingDoc(true)
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('customer_id', customerContext.customerId || '')
+      formData.append('customer_email', customerContext.customerEmail || form.sender_email || '')
+      formData.append('customer_phone', customerContext.customerPhone || form.sender_phone || '')
+      formData.append('doc_type', newDocType || 'Other')
+      formData.append('doc_name', file.name)
+      formData.append('doc_number', newDocNumber || '')
+
+      const res = await customerApi.uploadDocument(formData)
+      if (res.data?.success) {
+        const uploadedDoc = {
+          id: res.data.document?.id || Date.now(),
+          doc_type: newDocType || 'Other',
+          doc_name: file.name,
+          doc_number: newDocNumber || '',
+          file_url: res.data.fileUrl || res.data.document?.file_url,
+          file_name: file.name,
+          file_size: file.size,
+          file_type: file.type
+        }
+        setAttachedDocs(prev => [...prev, uploadedDoc])
+        toast.success(`Uploaded "${file.name}"!`)
+        setNewDocNumber('')
+        refetchDocuments()
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to upload document')
+    } finally {
+      setUploadingDoc(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const handleAttachExistingDoc = (doc) => {
+    if (!doc) return
+    if (attachedDocs.some(d => d.file_url === doc.file_url)) {
+      toast.error('Document is already attached')
+      return
+    }
+    setAttachedDocs(prev => [...prev, {
+      id: doc.id,
+      doc_type: doc.doc_type,
+      doc_name: doc.doc_name || doc.file_name,
+      doc_number: doc.doc_number || '',
+      file_url: doc.file_url,
+      file_name: doc.file_name,
+      file_size: doc.file_size,
+      file_type: doc.file_type
+    }])
+    toast.success(`Attached "${doc.doc_name || doc.file_name}"`)
+  }
+
+  const handleRemoveAttachedDoc = (index) => {
+    setAttachedDocs(prev => prev.filter((_, idx) => idx !== index))
+  }
+
+  // ── Form Submit ──
   const handleSubmit = async (e) => {
     if (e) e.preventDefault()
 
@@ -360,15 +612,16 @@ export default function CustomerBookingPage() {
       setSubmitting(true)
       const params = new URLSearchParams(window.location.search)
       const apiPayload = {
-        customer_id: params.get('cust_id') ? parseInt(params.get('cust_id')) : null,
-        customer_name: params.get('cust_name') || form.sender_name,
-        customer_email: params.get('cust_email') || form.sender_email,
-        customer_phone: params.get('cust_phone') || form.sender_phone,
-        customer_company: params.get('cust_company') || form.sender_company,
+        customer_id: params.get('cust_id') ? parseInt(params.get('cust_id')) : customerContext.customerId,
+        customer_name: params.get('cust_name') || customerContext.customerName || form.sender_name,
+        customer_email: params.get('cust_email') || customerContext.customerEmail || form.sender_email,
+        customer_phone: params.get('cust_phone') || customerContext.customerPhone || form.sender_phone,
+        customer_company: params.get('cust_company') || customerContext.customerCompany || form.sender_company,
         sender_name: form.sender_name || form.sender_company,
         sender_company: form.sender_company,
         sender_email: form.sender_email,
         sender_phone: form.sender_phone,
+        sender_phone_2: form.sender_phone_2,
         sender_address: form.sender_address,
         sender_address_2: form.sender_address_2,
         sender_city: form.sender_city,
@@ -382,6 +635,7 @@ export default function CustomerBookingPage() {
         receiver_company: form.receiver_company,
         receiver_email: form.receiver_email,
         receiver_phone: form.receiver_phone,
+        receiver_phone_2: form.receiver_phone_2,
         receiver_address: form.receiver_address,
         receiver_address_2: form.receiver_address_2,
         receiver_city: form.receiver_city,
@@ -441,17 +695,18 @@ export default function CustomerBookingPage() {
         export_reason: form.export_reason || form.invoice_note || '',
         terms_of_trade: form.terms_of_trade,
         invoice_note: form.invoice_note || '',
-        invoice_items: invoiceItems.filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0)
+        invoice_items: invoiceItems.filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0),
+
+        // Documents & Address Book Auto-Save flags
+        documents: attachedDocs,
+        save_sender_address: saveSenderAddress,
+        save_receiver_address: saveReceiverAddress,
+        save_documents: saveDocForFuture
       }
 
-      const res = await fetch('/api/customer/booking-requests', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(apiPayload)
-      })
-
-      const data = await res.json()
-      if (!res.ok || !data.success) {
+      const res = await customerApi.submitBookingRequest(apiPayload)
+      const data = res.data
+      if (!data.success) {
         throw new Error(data.message || 'Failed to submit booking request')
       }
 
@@ -461,7 +716,7 @@ export default function CustomerBookingPage() {
         window.parent.postMessage({ type: 'PE_BOOKING_SUCCESS', awb: data.request_awb }, '*')
       } catch (e) {}
     } catch (err) {
-      toast.error(err?.message || 'Failed to submit request')
+      toast.error(err?.response?.data?.message || err?.message || 'Failed to submit request')
     } finally {
       setSubmitting(false)
     }
@@ -509,7 +764,7 @@ export default function CustomerBookingPage() {
               <button
                 type="button"
                 onClick={handleCopyAwb}
-                className="p-1.5 hover:bg-surface-hover rounded-lg text-text-secondary transition-colors"
+                className="p-1.5 hover:bg-surface-hover rounded-lg text-text-secondary transition-colors cursor-pointer"
               >
                 {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
               </button>
@@ -522,6 +777,7 @@ export default function CustomerBookingPage() {
               onClick={() => {
                 setSubmittedAwb(null)
                 setForm(INITIAL_FORM)
+                setAttachedDocs([])
                 setInvoiceItems([{ sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }])
               }}
               className="w-full py-2.5 bg-primary hover:bg-primary-dark text-white font-bold text-xs rounded-xl shadow-xs transition-colors cursor-pointer"
@@ -549,11 +805,19 @@ export default function CustomerBookingPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-surface p-5 rounded-2xl border border-border shadow-xs">
         <div>
           <h1 className="text-xl sm:text-[22px] font-extrabold text-navy tracking-tight">New Booking Request</h1>
-          <p className="text-[12px] text-text-secondary mt-0.5">Fill in details on a single page to submit your courier request</p>
+          <p className="text-[12px] text-text-secondary mt-0.5">Fill in shipment details, select saved addresses, and upload KYC documents</p>
         </div>
-        <span className="bg-primary/10 text-primary border border-primary/20 text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-          Single Page Form
-        </span>
+        <div className="flex items-center gap-2">
+          {savedAddresses.length > 0 && (
+            <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1.5">
+              <BookUser className="w-3.5 h-3.5" />
+              {savedAddresses.length} Saved Addresses
+            </span>
+          )}
+          <span className="bg-primary/10 text-primary border border-primary/20 text-[11px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+            Express Booking
+          </span>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -562,7 +826,31 @@ export default function CustomerBookingPage() {
 
           {/* ── Column 1: Shipper Details ── */}
           <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs">
-            <RedBadge title="Shipper Details" icon={User} />
+            <div className="flex items-center justify-between gap-2 mb-3.5 flex-wrap">
+              <RedBadge title="Shipper (Pickup Details)" icon={User} />
+
+              {/* Saved Senders Dropdown */}
+              {savedAddresses.filter(a => a.address_type === 'sender' || a.address_type === 'both').length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <BookUser className="w-3.5 h-3.5 text-primary" />
+                  <select
+                    onChange={e => {
+                      const sel = savedAddresses.find(a => String(a.id) === e.target.value)
+                      if (sel) handleSelectSavedSender(sel)
+                    }}
+                    defaultValue=""
+                    className="text-[11px] font-bold text-navy bg-surface-alt border border-border rounded-lg px-2 py-1 cursor-pointer focus:outline-none"
+                  >
+                    <option value="" disabled>Saved Senders ({savedAddresses.filter(a => a.address_type === 'sender' || a.address_type === 'both').length})</option>
+                    {savedAddresses.filter(a => a.address_type === 'sender' || a.address_type === 'both').map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} ({a.city || 'Pickup'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
 
             <div className="space-y-4">
               <CompactField label="Sender Full Name" required>
@@ -701,12 +989,59 @@ export default function CustomerBookingPage() {
                   />
                 </CompactField>
               </div>
+
+              {/* Save to Address Book Options */}
+              <div className="pt-2 border-t border-border-light flex items-center justify-between gap-2 flex-wrap text-xs">
+                <label className="inline-flex items-center gap-2 cursor-pointer select-none text-text-secondary hover:text-navy">
+                  <input
+                    type="checkbox"
+                    checked={saveSenderAddress}
+                    onChange={e => setSaveSenderAddress(e.target.checked)}
+                    className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
+                  />
+                  <span className="font-semibold">Save sender to Address Book</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleQuickSaveSender}
+                  disabled={savingSenderAddr}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:text-primary-dark bg-primary/5 hover:bg-primary/10 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                >
+                  {savingSenderAddr ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bookmark className="w-3 h-3" />}
+                  Save Now
+                </button>
+              </div>
             </div>
           </div>
 
           {/* ── Column 2: Consignee Details ── */}
           <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs">
-            <RedBadge title="Consignee Details" icon={MapPin} />
+            <div className="flex items-center justify-between gap-2 mb-3.5 flex-wrap">
+              <RedBadge title="Consignee (Delivery Details)" icon={MapPin} />
+
+              {/* Saved Receivers Dropdown */}
+              {savedAddresses.filter(a => a.address_type === 'receiver' || a.address_type === 'both').length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <BookUser className="w-3.5 h-3.5 text-primary" />
+                  <select
+                    onChange={e => {
+                      const sel = savedAddresses.find(a => String(a.id) === e.target.value)
+                      if (sel) handleSelectSavedReceiver(sel)
+                    }}
+                    defaultValue=""
+                    className="text-[11px] font-bold text-navy bg-surface-alt border border-border rounded-lg px-2 py-1 cursor-pointer focus:outline-none"
+                  >
+                    <option value="" disabled>Saved Receivers ({savedAddresses.filter(a => a.address_type === 'receiver' || a.address_type === 'both').length})</option>
+                    {savedAddresses.filter(a => a.address_type === 'receiver' || a.address_type === 'both').map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} ({a.city || a.country || 'Delivery'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
 
             <div className="space-y-4">
               <CompactField label="Receiver Full Name" required highlight={!form.receiver_name && !form.receiver_company}>
@@ -753,16 +1088,16 @@ export default function CustomerBookingPage() {
                 <CompactField label="City" required highlight={!form.receiver_city}>
                   <input
                     type="text"
-                    placeholder="City"
+                    placeholder="City / Hub"
                     value={form.receiver_city}
                     onChange={e => updateForm('receiver_city', e.target.value)}
                     className="w-full bg-transparent focus:outline-none text-[13px] text-text-primary"
                   />
                 </CompactField>
-                <CompactField label="Pincode" required>
+                <CompactField label="Zip / Postal Code">
                   <input
                     type="text"
-                    placeholder="Zip / Pincode"
+                    placeholder="Zip code"
                     value={form.receiver_pincode}
                     onChange={e => updateForm('receiver_pincode', e.target.value)}
                     className="w-full bg-transparent focus:outline-none text-[13px] text-text-primary"
@@ -771,7 +1106,7 @@ export default function CustomerBookingPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-3.5">
-                <CompactField label="State">
+                <CompactField label="State / Province">
                   <input
                     type="text"
                     placeholder="State / Province"
@@ -780,12 +1115,12 @@ export default function CustomerBookingPage() {
                     className="w-full bg-transparent focus:outline-none text-[13px] uppercase text-text-primary"
                   />
                 </CompactField>
-                <CompactField label="Country" required highlight={!form.receiver_country}>
+                <CompactField label="Destination Country" required highlight={!form.receiver_country}>
                   <CountryAutocompleteInput
                     value={form.receiver_country}
                     onChange={val => updateForm('receiver_country', val)}
-                    placeholder="Search Country (e.g. USA, UK)"
-                    className="w-full bg-transparent focus:outline-none text-[13px] font-bold uppercase text-primary pr-6 placeholder-red-300"
+                    placeholder="Destination Country"
+                    className="w-full bg-transparent focus:outline-none text-[13px] font-bold uppercase text-primary pr-6"
                     countryList={countryList}
                   />
                 </CompactField>
@@ -795,7 +1130,7 @@ export default function CustomerBookingPage() {
                 <CompactField label="Phone / Mobile Number" required highlight={!form.receiver_phone}>
                   <input
                     type="tel"
-                    placeholder="+1 999 999 9999"
+                    placeholder="Receiver Phone Number"
                     value={form.receiver_phone}
                     onChange={e => updateForm('receiver_phone', e.target.value)}
                     className="w-full bg-transparent focus:outline-none text-[13px] text-text-primary"
@@ -846,6 +1181,29 @@ export default function CustomerBookingPage() {
                     className="w-full bg-transparent focus:outline-none text-[13px] text-text-primary"
                   />
                 </CompactField>
+              </div>
+
+              {/* Save to Address Book Options */}
+              <div className="pt-2 border-t border-border-light flex items-center justify-between gap-2 flex-wrap text-xs">
+                <label className="inline-flex items-center gap-2 cursor-pointer select-none text-text-secondary hover:text-navy">
+                  <input
+                    type="checkbox"
+                    checked={saveReceiverAddress}
+                    onChange={e => setSaveReceiverAddress(e.target.checked)}
+                    className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
+                  />
+                  <span className="font-semibold">Save receiver to Address Book</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleQuickSaveReceiver}
+                  disabled={savingReceiverAddr}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:text-primary-dark bg-primary/5 hover:bg-primary/10 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                >
+                  {savingReceiverAddr ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bookmark className="w-3 h-3" />}
+                  Save Now
+                </button>
               </div>
             </div>
           </div>
@@ -1047,6 +1405,177 @@ export default function CustomerBookingPage() {
           </p>
         </div>
 
+        {/* ── KYC & Documents Section ── */}
+        <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <RedBadge title="KYC & Shipment Documents" icon={Shield} />
+            <span className="text-[11px] text-text-secondary font-medium">
+              Attach ID proofs, invoices, packing lists or KYC documents
+            </span>
+          </div>
+
+          {/* Upload Control Row */}
+          <div className="bg-surface-alt/60 border border-border rounded-xl p-4 space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block mb-1">
+                  Document Type
+                </label>
+                <select
+                  value={newDocType}
+                  onChange={e => setNewDocType(e.target.value)}
+                  className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-semibold text-navy focus:outline-none cursor-pointer"
+                >
+                  <option value="Aadhaar Card">Aadhaar Card</option>
+                  <option value="PAN Card">PAN Card</option>
+                  <option value="Passport">Passport</option>
+                  <option value="GST Certificate">GST Certificate</option>
+                  <option value="IEC Certificate">IEC Certificate</option>
+                  <option value="Commercial Invoice">Commercial Invoice</option>
+                  <option value="Packing List">Packing List</option>
+                  <option value="Other">Other Document</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block mb-1">
+                  Document Number (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Aadhaar / PAN / Invoice No"
+                  value={newDocNumber}
+                  onChange={e => setNewDocNumber(e.target.value)}
+                  className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs text-navy focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block mb-1">
+                  Choose File & Upload
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={handleFileUpload}
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                  className="hidden"
+                  id="customer-doc-file-input"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadingDoc}
+                  className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark text-white font-bold text-xs py-2 px-3 rounded-lg shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {uploadingDoc ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Uploading File...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-3.5 h-3.5" />
+                      Upload Document
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Saved Documents Quick-Attach */}
+            {savedDocuments.length > 0 && (
+              <div className="pt-2 border-t border-border-light flex items-center gap-2 flex-wrap text-xs">
+                <span className="text-[11px] font-bold text-text-secondary flex items-center gap-1">
+                  <Bookmark className="w-3 h-3 text-primary" /> Attach from Saved Documents:
+                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {savedDocuments.map(doc => {
+                    const isAttached = attachedDocs.some(d => d.file_url === doc.file_url)
+                    return (
+                      <button
+                        key={doc.id}
+                        type="button"
+                        onClick={() => handleAttachExistingDoc(doc)}
+                        disabled={isAttached}
+                        className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-lg border transition-colors flex items-center gap-1 ${
+                          isAttached
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 opacity-60 cursor-default'
+                            : 'bg-surface text-navy border-border hover:border-primary hover:text-primary cursor-pointer'
+                        }`}
+                      >
+                        {isAttached && <Check className="w-3 h-3 text-emerald-600" />}
+                        {doc.doc_name || doc.doc_type}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Attached Documents List */}
+          {attachedDocs.length > 0 ? (
+            <div className="space-y-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary block">
+                Attached to this Booking ({attachedDocs.length})
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {attachedDocs.map((doc, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-3 bg-surface-alt border border-border rounded-xl text-xs gap-2"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-navy truncate" title={doc.doc_name || doc.file_name}>
+                          {doc.doc_name || doc.file_name}
+                        </div>
+                        <div className="text-[10px] text-text-secondary flex items-center gap-2">
+                          <span className="bg-surface px-1.5 py-0.2 rounded font-semibold text-text-primary">
+                            {doc.doc_type}
+                          </span>
+                          {doc.doc_number && <span>No: {doc.doc_number}</span>}
+                          {doc.file_size ? <span>{(doc.file_size / 1024).toFixed(0)} KB</span> : null}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {doc.file_url && (
+                        <a
+                          href={doc.file_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-1 text-text-secondary hover:text-primary transition-colors"
+                          title="View Document"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveAttachedDoc(idx)}
+                        className="p-1 text-danger/70 hover:text-danger transition-colors cursor-pointer"
+                        title="Remove Document"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-4 border border-dashed border-border rounded-xl text-xs text-text-tertiary">
+              No documents attached yet. Upload KYC documents or select from saved documents above.
+            </div>
+          )}
+        </div>
+
         {/* ── Create Shipment Invoice Section ── */}
         <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs">
           <button
@@ -1227,7 +1756,11 @@ export default function CustomerBookingPage() {
           <div className="flex items-center gap-2.5">
             <button
               type="button"
-              onClick={() => { setForm(INITIAL_FORM); setInvoiceItems([{ sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }]) }}
+              onClick={() => {
+                setForm(INITIAL_FORM)
+                setAttachedDocs([])
+                setInvoiceItems([{ sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }])
+              }}
               className="px-4 py-2.5 rounded-xl border border-border bg-surface text-xs font-semibold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
             >
               Reset Form

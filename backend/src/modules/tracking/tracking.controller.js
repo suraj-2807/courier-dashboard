@@ -294,22 +294,44 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
   })
 
   // Extract forwarding_no (Carrier AWB 2 e.g. UPS / FedEx / DHL)
-  const secondaryAwb = trackingData.forwarding_no || infoMap['Forwarding No.'] || shipment.vendor_awb_2 || shipment.awb_2 || shipment.vendor_awb || shipment.vendor_awb_no || shipment.ref_no || ''
+  let fwdFromInfoMap = ''
+  let carrierFromInfoMap = ''
+  for (const [k, v] of Object.entries(infoMap)) {
+    const kLow = k.toLowerCase().trim()
+    if (/forwarding.*no|forwarding.*awb|carrier.*no|fwd.*no|vendor.*awb.*2|secondary.*awb/i.test(kLow) && v) {
+      fwdFromInfoMap = String(v).trim()
+    }
+    if (/forwarding.*carrier|forwarding.*vendor|carrier.*name|vendor.*name.*2|secondary.*carrier/i.test(kLow) && v) {
+      carrierFromInfoMap = String(v).trim()
+    }
+  }
+
+  let secondaryAwb = trackingData.forwarding_no || trackingData.forwording_no || trackingData.forwarding_awb || trackingData.secondary_awb || fwdFromInfoMap || shipment.vendor_awb_2 || shipment.awb_2 || shipment.secondary_awb || shipment.forwarding_no || ''
+  secondaryAwb = String(secondaryAwb).trim()
+
+  const primaryAwb = String(trackingData.tracking_no || shipment.tracking_no || shipment.docket_no || cleanAwb).trim()
+  const primaryVendorAwb = String(shipment.vendor_awb_number || shipment.vendor_awb || shipment.vendor_awb_no || cleanAwb).trim()
+
+  // Ensure secondaryAwb is NOT equal to primary AWB or primary vendor AWB
+  if (secondaryAwb === primaryAwb || secondaryAwb === primaryVendorAwb || secondaryAwb === cleanAwb || secondaryAwb === '0' || secondaryAwb === 'null' || secondaryAwb === 'undefined' || secondaryAwb === 'None' || secondaryAwb === '-' || secondaryAwb === '—') {
+    secondaryAwb = ''
+  }
+
   const serviceName = infoMap['Service Name'] || shipment.service_name || shipment.service_type || ''
 
   // Determine secondary carrier
-  let secondaryCarrier = ''
-  const serviceUpper = serviceName.toUpperCase()
-  if (serviceUpper.includes('UPS') || secondaryAwb.startsWith('1Z')) {
+  let secondaryCarrier = carrierFromInfoMap || trackingData.forwarding_carrier || trackingData.secondary_carrier || ''
+  const serviceUpper = (serviceName + ' ' + (shipment.carrier || '')).toUpperCase()
+  if (secondaryAwb.startsWith('1Z') || serviceUpper.includes('UPS')) {
     secondaryCarrier = 'UPS'
-  } else if (serviceUpper.includes('FEDEX') || serviceUpper.includes('FDX')) {
+  } else if (/^[0-9]{12}$/.test(secondaryAwb) || serviceUpper.includes('FEDEX') || serviceUpper.includes('FDX')) {
     secondaryCarrier = 'FEDEX'
-  } else if (serviceUpper.includes('DHL')) {
+  } else if (/^[0-9]{10}$/.test(secondaryAwb) || serviceUpper.includes('DHL')) {
     secondaryCarrier = 'DHL'
   } else if (serviceUpper.includes('ARAMEX')) {
     secondaryCarrier = 'Aramex'
-  } else {
-    secondaryCarrier = shipment.carrier || (serviceName ? serviceName.split(' ')[0] : 'Carrier')
+  } else if (!secondaryCarrier) {
+    secondaryCarrier = shipment.secondary_carrier || shipment.carrier || (serviceName ? serviceName.split(' ')[0] : (secondaryAwb ? 'Forwarded Vendor' : ''))
   }
 
   // Determine current status & stage accurately across all timeline events and infoMap
@@ -557,16 +579,16 @@ export const liveTrack = async (req, res) => {
         const updates = []
         const vals = []
         const vAwb = String(trackResult.shipmentInfo?.vendorAwbNo || '').trim()
-        if (vAwb && vAwb !== '0' && vAwb !== 'null' && vAwb !== 'undefined' && vAwb !== '0.00' && vAwb !== 'None') {
+        if (vAwb && vAwb !== '0' && vAwb !== 'null' && vAwb !== 'undefined' && vAwb !== '0.00' && vAwb !== 'None' && vAwb !== '-' && vAwb !== '—') {
           if (!matchedShipment.vendor_awb_number || matchedShipment.vendor_awb_number === matchedShipment.tracking_number) {
             updates.push('vendor_awb_number = ?')
             vals.push(vAwb)
-          } else if (vAwb !== matchedShipment.vendor_awb_number) {
+          } else if (vAwb !== matchedShipment.vendor_awb_number && vAwb !== matchedShipment.tracking_number) {
             updates.push('vendor_awb_number_2 = ?, forwarding_no = ?')
             vals.push(vAwb, vAwb)
           }
         }
-        if (trackResult.shipmentInfo?.secondaryCarrier) {
+        if (trackResult.shipmentInfo?.secondaryCarrier && trackResult.shipmentInfo.secondaryCarrier !== 'Carrier') {
           updates.push('secondary_carrier = ?')
           vals.push(trackResult.shipmentInfo.secondaryCarrier)
         }

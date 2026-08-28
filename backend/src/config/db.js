@@ -295,7 +295,10 @@ export async function initializeDb() {
         { name: 'terms_of_trade', type: "VARCHAR(10) DEFAULT 'CIF'" },
         { name: 'invoice_note', type: "TEXT DEFAULT NULL" },
         { name: 'invoice_items', type: "JSON DEFAULT NULL" },
-        { name: 'parcels', type: "JSON DEFAULT NULL" }
+        { name: 'parcels', type: "JSON DEFAULT NULL" },
+        { name: 'documents', type: "JSON DEFAULT NULL" },
+        { name: 'sender_phone_2', type: "VARCHAR(50) DEFAULT ''" },
+        { name: 'receiver_phone_2', type: "VARCHAR(50) DEFAULT ''" }
       ]
 
       for (const col of requiredBrCols) {
@@ -311,6 +314,84 @@ export async function initializeDb() {
       }
     } catch (brColErr) {
       console.error('booking_requests column migration failed:', brColErr.message)
+    }
+
+    // ── Auto-cleanup fake forwarding numbers that duplicate vendor AWB ──
+    try {
+      await execute(`
+        UPDATE shipments 
+        SET vendor_awb_number_2 = '', forwarding_no = '' 
+        WHERE (vendor_awb_number_2 != '' AND (vendor_awb_number_2 = vendor_awb_number OR vendor_awb_number_2 = tracking_number))
+           OR (forwarding_no != '' AND (forwarding_no = vendor_awb_number OR forwarding_no = tracking_number))
+      `)
+      console.log('Shipments forwarding number cleanup completed.')
+    } catch (cleanFwdErr) {
+      console.error('Forwarding number cleanup warning:', cleanFwdErr.message)
+    }
+
+    // ── Customer Addresses Table ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS customer_addresses (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id INT DEFAULT NULL,
+        customer_email VARCHAR(150) DEFAULT '',
+        customer_phone VARCHAR(50) DEFAULT '',
+        address_type ENUM('sender', 'receiver', 'both') DEFAULT 'both',
+        name VARCHAR(100) NOT NULL,
+        company VARCHAR(150) DEFAULT '',
+        phone VARCHAR(50) NOT NULL,
+        phone_2 VARCHAR(50) DEFAULT '',
+        email VARCHAR(150) DEFAULT '',
+        address TEXT NOT NULL,
+        address_2 VARCHAR(255) DEFAULT '',
+        city VARCHAR(100) NOT NULL,
+        state VARCHAR(100) DEFAULT '',
+        pincode VARCHAR(20) DEFAULT '',
+        country VARCHAR(100) DEFAULT 'INDIA',
+        gstin_type VARCHAR(50) DEFAULT '',
+        gstin_no VARCHAR(50) DEFAULT '',
+        is_default TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_cust_id (customer_id),
+        INDEX idx_cust_email (customer_email),
+        INDEX idx_cust_phone (customer_phone),
+        INDEX idx_addr_type (address_type)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+      console.log('customer_addresses table ready.')
+    } catch (caErr) {
+      if (caErr.code !== 'ER_TABLE_EXISTS_ERROR') {
+        console.error('customer_addresses table migration failed:', caErr.message)
+      }
+    }
+
+    // ── Customer Documents Table ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS customer_documents (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id INT DEFAULT NULL,
+        customer_email VARCHAR(150) DEFAULT '',
+        customer_phone VARCHAR(50) DEFAULT '',
+        doc_type VARCHAR(100) NOT NULL,
+        doc_name VARCHAR(255) DEFAULT '',
+        doc_number VARCHAR(100) DEFAULT '',
+        file_url VARCHAR(500) NOT NULL,
+        file_name VARCHAR(255) DEFAULT '',
+        file_size INT DEFAULT 0,
+        file_type VARCHAR(50) DEFAULT '',
+        notes TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_doc_cust_id (customer_id),
+        INDEX idx_doc_cust_email (customer_email),
+        INDEX idx_doc_cust_phone (customer_phone),
+        INDEX idx_doc_type (doc_type)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+      console.log('customer_documents table ready.')
+    } catch (cdErr) {
+      if (cdErr.code !== 'ER_TABLE_EXISTS_ERROR') {
+        console.error('customer_documents table migration failed:', cdErr.message)
+      }
     }
 
     // ── Request Updates table ──
