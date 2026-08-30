@@ -35,6 +35,8 @@ $where_requests = $wpdb->prepare(
     ...array_merge(
         [$cust_email_for_req, $cust_email_for_req, $cust_phone_for_req, $cust_phone_for_req],
         $cust_id_for_req ? [$cust_id_for_req] : []
+    )
+);
 $pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE status = 'pending' AND ($where_requests)"));
 
 // Fetch customer balance & credit limit
