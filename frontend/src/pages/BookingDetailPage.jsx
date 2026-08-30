@@ -35,6 +35,8 @@ import {
   Loader2,
   Edit,
   Plane,
+  Box,
+  Globe,
   AlertCircle,
   DollarSign,
   Tag
