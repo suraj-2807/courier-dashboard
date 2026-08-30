@@ -1799,15 +1799,15 @@ export const getBookings = async (req, res) => {
 
         for (const item of candidateFields) {
           if (cols[item.table] && cols[item.table].has(item.col.toLowerCase())) {
-            sqlParts.push(`${item.table}.${item.col} LIKE ?`)
+            sqlParts.push(`CONVERT(${item.table}.${item.col} USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
             params.push(term)
           }
         }
 
         if (cols.s.has('created_at')) {
-          sqlParts.push("DATE_FORMAT(s.created_at, '%d/%m/%Y') LIKE ?")
+          sqlParts.push("CONVERT(DATE_FORMAT(s.created_at, '%d/%m/%Y') USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci")
           params.push(term)
-          sqlParts.push("DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ?")
+          sqlParts.push("CONVERT(DATE_FORMAT(s.created_at, '%Y-%m-%d') USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci")
           params.push(term)
         }
       } else {
@@ -1829,12 +1829,12 @@ export const getBookings = async (req, res) => {
           'vac.name'
         ]
         for (const f of guaranteedFields) {
-          sqlParts.push(`${f} LIKE ?`)
+          sqlParts.push(`CONVERT(${f} USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
           params.push(term)
         }
-        sqlParts.push("DATE_FORMAT(s.created_at, '%d/%m/%Y') LIKE ?")
+        sqlParts.push("CONVERT(DATE_FORMAT(s.created_at, '%d/%m/%Y') USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci")
         params.push(term)
-        sqlParts.push("DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ?")
+        sqlParts.push("CONVERT(DATE_FORMAT(s.created_at, '%Y-%m-%d') USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci")
         params.push(term)
       }
 
