@@ -28,7 +28,8 @@ import {
   Building2,
   SlidersHorizontal,
   ChevronRight,
-  ClipboardList
+  ClipboardList,
+  Wallet
 } from 'lucide-react'
 import {
   useCustomers,
@@ -182,21 +183,21 @@ export default function CustomersPage() {
   return (
     <div className="space-y-5 animate-fade-in">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-[26px] font-extrabold text-text-primary leading-tight flex items-center gap-2.5">
-            <Users className="w-7 h-7 text-primary" />
+          <h1 className="text-[24px] font-extrabold text-navy leading-tight flex items-center gap-2.5">
+            <Users className="w-6 h-6 text-primary" />
             <span>Customer Accounts</span>
           </h1>
-          <p className="text-[13px] text-text-secondary mt-1">
-            Manage customer portal logins, passwords, account balances, and shipping permissions.
+          <p className="text-[13px] text-text-secondary mt-0.5">
+            Manage customer portal logins, passwords, account balances, and shipping history.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={handleOpenCreate}
-            className="flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-[12px] font-bold transition-all shadow-sm cursor-pointer"
+            className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-[13px] font-bold transition-all shadow-xs cursor-pointer active:scale-95"
           >
             <UserPlus className="w-4 h-4" />
             <span>Create Customer</span>
@@ -211,7 +212,7 @@ export default function CustomersPage() {
             <span className="text-[11px] font-bold uppercase tracking-wider">Total Customers</span>
             <Users className="w-4 h-4 text-primary" />
           </div>
-          <p className="text-[22px] font-extrabold text-text-primary mt-1.5 leading-none">
+          <p className="text-[22px] font-extrabold text-navy mt-1.5 leading-none">
             {stats.total_customers || 0}
           </p>
           <p className="text-[11px] text-text-secondary mt-1">Registered portal users</p>
@@ -225,13 +226,13 @@ export default function CustomersPage() {
           <p className="text-[22px] font-extrabold text-emerald-700 mt-1.5 leading-none">
             {stats.active_customers || 0}
           </p>
-          <p className="text-[11px] text-text-secondary mt-1">Can login to PHP portal</p>
+          <p className="text-[11px] text-text-secondary mt-1">Authorized for PHP portal</p>
         </div>
 
         <div className="bg-surface border border-border p-4 rounded-2xl shadow-2xs">
           <div className="flex items-center justify-between text-text-tertiary">
             <span className="text-[11px] font-bold uppercase tracking-wider">Total Balances</span>
-            <CreditCard className="w-4 h-4 text-amber-600" />
+            <Wallet className="w-4 h-4 text-amber-600" />
           </div>
           <p className="text-[22px] font-extrabold text-amber-700 mt-1.5 leading-none">
             {formatCurrency(stats.total_balance || 0)}
@@ -252,17 +253,17 @@ export default function CustomersPage() {
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="bg-surface border border-border rounded-2xl">
-        <div className="p-3.5 flex flex-col lg:flex-row lg:items-center gap-3">
+      <div className="bg-surface border border-border rounded-2xl p-3 shadow-2xs">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3">
           {/* Status Tabs */}
-          <div className="flex items-center bg-surface-alt border border-border rounded-xl p-0.5">
+          <div className="flex items-center bg-surface-alt border border-border rounded-xl p-1">
             {STATUS_TABS.map((tab) => (
               <button
                 key={tab.value}
                 onClick={() => handleTabChange(tab.value)}
-                className={`px-3 py-1.5 text-[12px] font-bold rounded-lg transition-all cursor-pointer ${
+                className={`px-3 py-1 text-[12px] font-bold rounded-lg transition-all cursor-pointer ${
                   statusFilter === tab.value
-                    ? 'bg-primary text-white shadow-2xs'
+                    ? 'bg-primary text-white shadow-xs'
                     : 'text-text-secondary hover:text-navy hover:bg-surface'
                 }`}
               >
@@ -273,7 +274,7 @@ export default function CustomersPage() {
 
           {/* Search Box */}
           <form onSubmit={handleSearch} className="flex-1">
-            <div className="flex items-center gap-2 bg-surface-alt border border-border rounded-xl px-3.5 py-1.5 focus-within:border-primary/30 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
+            <div className="flex items-center gap-2 bg-surface-alt border border-border rounded-xl px-3.5 py-1.5 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
               <Search className="w-4 h-4 text-text-tertiary flex-shrink-0" />
               <input
                 type="text"
@@ -300,7 +301,7 @@ export default function CustomersPage() {
       {/* Customers Table */}
       <div className="bg-surface border border-border rounded-2xl overflow-hidden shadow-2xs">
         {isLoading ? (
-          <div className="p-10 text-center space-y-3">
+          <div className="p-12 text-center space-y-3">
             <div className="w-8 h-8 border-3 border-border border-t-primary rounded-full animate-spin mx-auto" />
             <p className="text-[13px] text-text-tertiary font-medium">Loading customer accounts...</p>
           </div>
@@ -322,7 +323,7 @@ export default function CustomersPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-[13px]">
                 <thead>
-                  <tr className="border-b border-border bg-surface-alt/60 text-[11px] font-extrabold text-text-tertiary uppercase tracking-wider">
+                  <tr className="border-b border-border bg-surface-alt/70 text-[11px] font-extrabold text-text-tertiary uppercase tracking-wider">
                     <th className="px-4 py-3">Customer / Portal User</th>
                     <th className="px-4 py-3">Login Credentials</th>
                     <th className="px-4 py-3">Location / GSTIN</th>
@@ -351,8 +352,8 @@ export default function CustomersPage() {
                             </button>
                             {c.company && (
                               <p className="text-[11.5px] text-text-tertiary flex items-center gap-1 mt-0.5">
-                                <Building2 className="w-3 h-3 text-text-tertiary" />
-                                <span>{c.company}</span>
+                                <Building2 className="w-3 h-3 text-text-tertiary flex-shrink-0" />
+                                <span className="truncate max-w-[150px]">{c.company}</span>
                               </p>
                             )}
                           </div>
@@ -364,12 +365,12 @@ export default function CustomersPage() {
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5 text-text-primary font-medium text-[12.5px]">
                             <Mail className="w-3 h-3 text-text-tertiary flex-shrink-0" />
-                            <span className="font-mono">{c.email}</span>
+                            <span className="font-mono text-[12px]">{c.email}</span>
                           </div>
                           {c.phone && (
                             <div className="flex items-center gap-1.5 text-text-secondary text-[12px]">
                               <Phone className="w-3 h-3 text-text-tertiary flex-shrink-0" />
-                              <span className="font-mono">{c.phone}</span>
+                              <span className="font-mono text-[11.5px]">{c.phone}</span>
                             </div>
                           )}
                         </div>
@@ -380,7 +381,7 @@ export default function CustomersPage() {
                         <div className="space-y-0.5">
                           <p className="text-[12px] text-text-secondary flex items-center gap-1">
                             <MapPin className="w-3 h-3 text-text-tertiary flex-shrink-0" />
-                            <span>{[c.city, c.state, c.country || 'INDIA'].filter(Boolean).join(', ') || '—'}</span>
+                            <span>{[c.city, c.state].filter(Boolean).join(', ') || c.country || 'INDIA'}</span>
                           </p>
                           {c.gstin_no && (
                             <p className="text-[11px] font-mono text-text-tertiary">
@@ -422,7 +423,7 @@ export default function CustomersPage() {
                         <button
                           type="button"
                           onClick={() => handleToggleStatus(c)}
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-colors cursor-pointer ${
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-colors cursor-pointer ${
                             c.status === 'active'
                               ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
                               : 'bg-surface-alt text-text-tertiary border-border hover:bg-surface-hover'
@@ -620,16 +621,16 @@ function CustomerFormModal({ isOpen, customer, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy/60 backdrop-blur-xs animate-fade-in">
-      <div className="bg-surface border border-border w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface-alt/40">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-navy/60 backdrop-blur-xs animate-fade-in">
+      <div className="bg-surface border border-border w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+        {/* Fixed Header */}
+        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between bg-surface-alt/70 flex-shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold">
+            <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold">
               {isEdit ? <Edit2 className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
             </div>
             <div>
-              <h2 className="text-[16px] font-extrabold text-text-primary">
+              <h2 className="text-[15px] font-extrabold text-navy leading-tight">
                 {isEdit ? `Edit Customer: ${customer.name}` : 'Create Customer Account'}
               </h2>
               <p className="text-[11.5px] text-text-secondary">
@@ -640,248 +641,247 @@ function CustomerFormModal({ isOpen, customer, onClose, onSaved }) {
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-text-tertiary hover:text-text-primary rounded-lg transition-colors cursor-pointer"
+            className="p-1.5 text-text-tertiary hover:text-navy rounded-lg hover:bg-surface-hover transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-4 flex-1">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Full Name */}
-            <div>
-              <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                Full Name *
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. John Doe"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-              />
-            </div>
-
-            {/* Company */}
-            <div>
-              <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                Company / Business Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Acme Corp"
-                value={formData.company}
-                onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-              />
-            </div>
-
-            {/* Email (Login ID) */}
-            <div>
-              <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                Email Address (Login Username) *
-              </label>
-              <input
-                type="email"
-                required
-                placeholder="customer@example.com"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-              />
-            </div>
-
-            {/* Phone */}
-            <div>
-              <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                Phone Number (Portal Login Alt)
-              </label>
-              <input
-                type="tel"
-                placeholder="9876543210"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary focus:ring-2 focus:ring-primary/10"
-              />
-            </div>
-          </div>
-
-          {/* Password (for new customer or optional on edit) */}
-          <div className="bg-surface-alt/60 p-3.5 rounded-xl border border-border/80 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-bold text-text-tertiary uppercase tracking-wider flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-primary" />
-                <span>{isEdit ? 'Reset Password (Leave blank to keep unchanged)' : 'Portal Login Password *'}</span>
-              </label>
-              <button
-                type="button"
-                onClick={generateRandomPassword}
-                className="text-[11px] font-bold text-primary hover:underline cursor-pointer flex items-center gap-1"
-              >
-                <KeyRound className="w-3 h-3" />
-                <span>Generate Strong Password</span>
-              </button>
-            </div>
-            <div className="relative">
-              <input
-                type={showPassword ? 'text' : 'password'}
-                required={!isEdit}
-                placeholder={isEdit ? '••••••••' : 'Min. 6 characters'}
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="w-full px-3.5 py-2 pr-10 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-primary cursor-pointer p-1"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Address Information */}
-          <div className="space-y-3 pt-2">
-            <h3 className="text-[12px] font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
-              <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Address & Tax Information</span>
-            </h3>
-            <div>
-              <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                Full Address
-              </label>
-              <textarea
-                rows={2}
-                placeholder="Street address, building, landmark"
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary resize-none"
-              />
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {/* Scrollable Form Body */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div className="p-5 overflow-y-auto space-y-4 flex-1">
+            {/* Section 1: Basic Info */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">City</label>
-                <input
-                  type="text"
-                  placeholder="Surat"
-                  value={formData.city}
-                  onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                  className="w-full px-3 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">State</label>
-                <input
-                  type="text"
-                  placeholder="Gujarat"
-                  value={formData.state}
-                  onChange={(e) => setFormData({ ...formData, state: e.target.value })}
-                  className="w-full px-3 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">Pincode</label>
-                <input
-                  type="text"
-                  placeholder="395003"
-                  value={formData.pincode}
-                  onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                  className="w-full px-3 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">Country</label>
-                <input
-                  type="text"
-                  placeholder="INDIA"
-                  value={formData.country}
-                  onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                  className="w-full px-3 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary"
-                />
-              </div>
-            </div>
-            <div>
-              <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                GSTIN / Tax ID
-              </label>
-              <input
-                type="text"
-                placeholder="24AAAAA0000A1Z5"
-                value={formData.gstin_no}
-                onChange={(e) => setFormData({ ...formData, gstin_no: e.target.value })}
-                className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
-              />
-            </div>
-          </div>
-
-          {/* Billing & Account Limits */}
-          <div className="space-y-3 pt-2">
-            <h3 className="text-[12px] font-bold text-text-secondary uppercase tracking-wider flex items-center gap-1.5">
-              <CreditCard className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Financials & Account Status</span>
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                  Credit Limit (₹)
+                <label className="block text-[11.5px] font-bold text-text-secondary mb-1">
+                  Full Name *
                 </label>
                 <input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={formData.credit_limit}
-                  onChange={(e) => setFormData({ ...formData, credit_limit: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
+                  type="text"
+                  required
+                  placeholder="e.g. John Doe"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary focus:bg-surface transition-all"
                 />
               </div>
+
               <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                  Current Balance (₹)
+                <label className="block text-[11.5px] font-bold text-text-secondary mb-1">
+                  Company / Business Name
                 </label>
                 <input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={formData.current_balance}
-                  onChange={(e) => setFormData({ ...formData, current_balance: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
+                  type="text"
+                  placeholder="e.g. Acme Corp"
+                  value={formData.company}
+                  onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary focus:bg-surface transition-all"
                 />
               </div>
+
               <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                  Portal Status
+                <label className="block text-[11.5px] font-bold text-text-secondary mb-1">
+                  Email Address (Login Username) *
                 </label>
-                <select
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-bold outline-none focus:border-primary cursor-pointer"
+                <input
+                  type="email"
+                  required
+                  placeholder="customer@example.com"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary focus:bg-surface transition-all font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11.5px] font-bold text-text-secondary mb-1">
+                  Phone Number (Login Alternative)
+                </label>
+                <input
+                  type="tel"
+                  placeholder="9876543210"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary focus:bg-surface transition-all font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Section 2: Password */}
+            <div className="bg-surface-alt/70 p-3.5 rounded-xl border border-border space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[11.5px] font-bold text-navy flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-primary" />
+                  <span>{isEdit ? 'Reset Password (Leave blank to keep current)' : 'Portal Login Password *'}</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={generateRandomPassword}
+                  className="text-[11px] font-bold text-primary hover:underline cursor-pointer flex items-center gap-1"
                 >
-                  <option value="active">Active (Can Login)</option>
-                  <option value="inactive">Inactive (Disabled)</option>
-                </select>
+                  <KeyRound className="w-3 h-3" />
+                  <span>Generate Password</span>
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required={!isEdit}
+                  placeholder={isEdit ? '••••••••' : 'Min. 6 characters'}
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full px-3 py-1.5 pr-9 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-navy cursor-pointer p-1"
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Section 3: Address Information */}
+            <div className="space-y-2.5 pt-1">
+              <div className="flex items-center gap-1.5 text-[12px] font-bold text-navy">
+                <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Address & Tax Information</span>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-text-tertiary uppercase mb-1">
+                  Full Address
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Street address, building, landmark"
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary resize-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-bold text-text-tertiary uppercase mb-1">City</label>
+                  <input
+                    type="text"
+                    placeholder="Surat"
+                    value={formData.city}
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    className="w-full px-2.5 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-text-tertiary uppercase mb-1">State</label>
+                  <input
+                    type="text"
+                    placeholder="Gujarat"
+                    value={formData.state}
+                    onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                    className="w-full px-2.5 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-text-tertiary uppercase mb-1">Pincode</label>
+                  <input
+                    type="text"
+                    placeholder="395003"
+                    value={formData.pincode}
+                    onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                    className="w-full px-2.5 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-text-tertiary uppercase mb-1">Country</label>
+                  <input
+                    type="text"
+                    placeholder="INDIA"
+                    value={formData.country}
+                    onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                    className="w-full px-2.5 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-text-tertiary uppercase mb-1">
+                  GSTIN / Tax ID
+                </label>
+                <input
+                  type="text"
+                  placeholder="24AAAAA0000A1Z5"
+                  value={formData.gstin_no}
+                  onChange={(e) => setFormData({ ...formData, gstin_no: e.target.value })}
+                  className="w-full px-3 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+
+            {/* Section 4: Financials & Status */}
+            <div className="space-y-2.5 pt-1">
+              <div className="flex items-center gap-1.5 text-[12px] font-bold text-navy">
+                <CreditCard className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Financials & Account Status</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-text-tertiary uppercase mb-1">
+                    Credit Limit (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={formData.credit_limit}
+                    onChange={(e) => setFormData({ ...formData, credit_limit: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-text-tertiary uppercase mb-1">
+                    Current Balance (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={formData.current_balance}
+                    onChange={(e) => setFormData({ ...formData, current_balance: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-text-tertiary uppercase mb-1">
+                    Portal Status
+                  </label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="w-full px-3 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-bold outline-none focus:border-primary cursor-pointer"
+                  >
+                    <option value="active">Active (Can Login)</option>
+                    <option value="inactive">Inactive (Disabled)</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Footer Buttons */}
-          <div className="pt-4 border-t border-border flex items-center justify-end gap-2.5">
+          {/* Fixed Footer Buttons */}
+          <div className="px-5 py-3.5 border-t border-border flex items-center justify-end gap-2.5 bg-surface-alt/70 flex-shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 border border-border rounded-xl text-[12px] font-bold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
+              className="px-4 py-2 border border-border rounded-xl text-[12.5px] font-bold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-5 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-[12px] font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+              className="px-5 py-2 bg-primary hover:bg-primary-dark text-white rounded-xl text-[12.5px] font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5 active:scale-95"
             >
               {submitting && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-              <span>{isEdit ? 'Update Account' : 'Create Account'}</span>
+              <span>{isEdit ? 'Save Changes' : 'Create Account'}</span>
             </button>
           </div>
         </form>
@@ -931,28 +931,28 @@ function PasswordResetModal({ isOpen, customer, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy/60 backdrop-blur-xs animate-fade-in">
-      <div className="bg-surface border border-border w-full max-w-md rounded-2xl shadow-xl overflow-hidden">
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between bg-surface-alt/40">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-navy/60 backdrop-blur-xs animate-fade-in">
+      <div className="bg-surface border border-border w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between bg-surface-alt/70">
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5 text-amber-600" />
-            <h2 className="text-[15px] font-extrabold text-text-primary">
+            <h2 className="text-[15px] font-extrabold text-navy">
               Reset Password: {customer.name}
             </h2>
           </div>
-          <button type="button" onClick={onClose} className="p-1 text-text-tertiary hover:text-text-primary">
+          <button type="button" onClick={onClose} className="p-1 text-text-tertiary hover:text-navy rounded-lg cursor-pointer">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <p className="text-[12px] text-text-secondary">
+          <p className="text-[12.5px] text-text-secondary leading-relaxed">
             Set a new login password for <span className="font-bold text-navy">{customer.email}</span>. The customer will be able to log in immediately with this password.
           </p>
 
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-[11px] font-bold text-text-tertiary uppercase">New Password *</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-[11.5px] font-bold text-navy">New Password *</label>
               <button
                 type="button"
                 onClick={generateRandomPassword}
@@ -969,14 +969,14 @@ function PasswordResetModal({ isOpen, customer, onClose, onSaved }) {
                 placeholder="Min. 6 characters"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full px-3.5 py-2 pr-10 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
+                className="w-full px-3 py-2 pr-9 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-primary cursor-pointer p-1"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-navy cursor-pointer p-1"
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
             </div>
           </div>
@@ -1020,7 +1020,7 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
               {customer?.name ? customer.name.charAt(0).toUpperCase() : 'C'}
             </div>
             <div>
-              <h2 className="text-[17px] font-extrabold text-text-primary leading-tight">
+              <h2 className="text-[17px] font-extrabold text-navy leading-tight">
                 {customer?.name || 'Customer Details'}
               </h2>
               <p className="text-[12px] text-text-secondary">{customer?.company || 'Individual Account'}</p>
@@ -1059,7 +1059,7 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
             <div className="grid grid-cols-2 gap-3 p-4 bg-surface-alt rounded-2xl border border-border">
               <div>
                 <span className="text-[11px] font-bold text-text-tertiary uppercase">Current Balance</span>
-                <p className={`text-[20px] font-mono font-extrabold mt-0.5 ${parseFloat(customer.current_balance) > 0 ? 'text-emerald-700' : 'text-text-primary'}`}>
+                <p className={`text-[20px] font-mono font-extrabold mt-0.5 ${parseFloat(customer.current_balance) > 0 ? 'text-emerald-700' : 'text-navy'}`}>
                   {formatCurrency(customer.current_balance || 0)}
                 </p>
               </div>
