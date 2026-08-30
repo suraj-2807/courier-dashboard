@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Users,
@@ -620,13 +621,15 @@ function CustomerFormModal({ isOpen, customer, onClose, onSaved }) {
     }
   }
 
-  return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 bg-slate-900/20 backdrop-blur-[2px] animate-fade-in"
-      onClick={onClose}
-    >
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fade-in">
+      {/* Light subtle backdrop */}
       <div
-        className="bg-surface border border-border w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col my-auto"
+        className="fixed inset-0 bg-slate-900/10 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+      <div
+        className="relative bg-surface border border-border w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col my-auto z-10"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Fixed Header */}
@@ -892,7 +895,8 @@ function CustomerFormModal({ isOpen, customer, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -936,13 +940,15 @@ function PasswordResetModal({ isOpen, customer, onClose, onSaved }) {
     }
   }
 
-  return (
-    <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/20 backdrop-blur-[2px] animate-fade-in"
-      onClick={onClose}
-    >
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in">
+      {/* Light backdrop */}
       <div
-        className="bg-surface border border-border w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col my-auto"
+        className="fixed inset-0 bg-slate-900/10 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+      <div
+        className="relative bg-surface border border-border w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col my-auto z-10"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-3.5 border-b border-border flex items-center justify-between bg-surface">
@@ -1012,7 +1018,8 @@ function PasswordResetModal({ isOpen, customer, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
@@ -1022,13 +1029,18 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
   const customer = data?.customer
   const shipments = data?.recent_shipments || []
 
-  return (
-    <div
-      className="fixed inset-0 z-[9999] overflow-hidden bg-slate-900/20 backdrop-blur-[2px] flex justify-end animate-fade-in"
-      onClick={onClose}
-    >
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] overflow-hidden flex justify-end animate-fade-in">
+      {/* 100% Invisible click-away backdrop - NO DARK OVERLAY */}
       <div
-        className="w-full max-w-xl bg-surface border-l border-border h-full flex flex-col shadow-2xl animate-slide-in"
+        className="fixed inset-0 bg-black/[0.03] cursor-default"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Full 100vh Height Slide-out Drawer */}
+      <div
+        className="relative w-full max-w-lg sm:max-w-xl md:max-w-2xl bg-surface border-l border-border h-screen flex flex-col shadow-[-16px_0_40px_rgba(0,0,0,0.12)] z-10 animate-slide-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Fixed Header */}
@@ -1063,7 +1075,7 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
           </div>
         </div>
 
-        {/* Scrollable Content */}
+        {/* Scrollable Content Body */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
           {isLoading ? (
             <div className="p-12 text-center">
@@ -1189,6 +1201,7 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
