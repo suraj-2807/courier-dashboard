@@ -208,8 +208,18 @@ function getForwardingInfo(b) {
     return s
   }
 
-  const primaryVendorAwb = clean(b?.vendor_awb_number)
+  let rawData = null
+  if (b?.vendor_raw_response) {
+    try {
+      const raw = typeof b.vendor_raw_response === 'string' ? JSON.parse(b.vendor_raw_response) : b.vendor_raw_response
+      rawData = raw?.response || raw?.data || raw
+    } catch {}
+  }
+
   const ourAwb = clean(b?.tracking_number)
+  const primaryVendorAwb = clean(
+    b?.vendor_awb_number || rawData?.AwbNo || rawData?.awbNo || rawData?.AWBNo || rawData?.docket_no || rawData?.docketNo || ''
+  )
 
   const isValidFwd = (val) => {
     const c = clean(val)
@@ -218,18 +228,21 @@ function getForwardingInfo(b) {
     return c
   }
 
+  // Check explicit database columns first
   let fwdNo = isValidFwd(b?.vendor_awb_number_2) || isValidFwd(b?.forwarding_no) || isValidFwd(b?.vendor_awb_2) || isValidFwd(b?.awb_2) || isValidFwd(b?.secondary_awb)
   let carrier = b?.secondary_carrier || b?.forwarding_vendor || b?.forwarded_vendor || ''
 
-  if (!fwdNo && b?.vendor_raw_response) {
-    try {
-      const raw = typeof b.vendor_raw_response === 'string' ? JSON.parse(b.vendor_raw_response) : b.vendor_raw_response
-      const resp = raw?.response || raw?.data || raw
-      fwdNo = isValidFwd(resp?.ForwardingNo) || isValidFwd(resp?.ForwardingNo1) || isValidFwd(resp?.forwarding_no) || isValidFwd(resp?.Forwarding_No) || isValidFwd(resp?.vendor_awb_2) || isValidFwd(resp?.vendorAwb2) || ''
-      if (!carrier && (resp?.ForwardingCarrier || resp?.Carrier || resp?.carrier || resp?.secondary_carrier)) {
-        carrier = resp?.ForwardingCarrier || resp?.Carrier || resp?.carrier || resp?.secondary_carrier
+  // Fallback to raw response ONLY if strictly distinct from primary vendor AWB and our AWB
+  if (!fwdNo && rawData) {
+    const rawFwd = clean(
+      rawData?.ForwardingNo || rawData?.ForwardingNo1 || rawData?.forwarding_no || rawData?.Forwarding_No || rawData?.vendor_awb_2 || rawData?.vendorAwb2
+    )
+    if (isValidFwd(rawFwd)) {
+      fwdNo = rawFwd
+      if (!carrier && (rawData?.ForwardingCarrier || rawData?.Carrier || rawData?.carrier || rawData?.secondary_carrier)) {
+        carrier = rawData?.ForwardingCarrier || rawData?.Carrier || rawData?.carrier || rawData?.secondary_carrier
       }
-    } catch {}
+    }
   }
 
   if (fwdNo && (!carrier || carrier === 'Forwarded Vendor' || carrier === 'Carrier')) {
@@ -240,7 +253,8 @@ function getForwardingInfo(b) {
 
   return {
     forwardingNo: fwdNo || '',
-    forwardingCarrier: carrier ? String(carrier).trim() : ''
+    forwardingCarrier: carrier ? String(carrier).trim() : '',
+    primaryVendorAwb
   }
 }
 
@@ -263,7 +277,6 @@ export default function BookingsPage() {
   const [searchInput, setSearchInput] = useState(search)
   const [selectedIds, setSelectedIds] = useState([])
   const [isExporting, setIsExporting] = useState(false)
-  const [isSyncingTracking, setIsSyncingTracking] = useState(false)
   const [syncingRowIds, setSyncingRowIds] = useState(new Set())
   const autoSyncedIdsRef = useRef(new Set())
   const limit = 10
@@ -564,27 +577,6 @@ export default function BookingsPage() {
     }
   }
 
-  const handleSyncForwarding = async () => {
-    setIsSyncingTracking(true)
-    const toastId = toast.loading('Syncing forwarding & tracking numbers from vendor APIs...')
-    try {
-      const visibleIds = selectedIds.length > 0 ? selectedIds : (data?.bookings?.map(b => b.id) || [])
-      const res = await bookingsApi.syncTracking(visibleIds)
-      const updatedCount = res.data?.summary?.updatedForwarding || 0
-      toast.success(
-        updatedCount > 0 
-          ? `Updated ${updatedCount} forwarding number(s)!` 
-          : 'Tracking & forwarding numbers are up to date.',
-        { id: toastId }
-      )
-      refetch()
-    } catch (err) {
-      toast.error(err?.response?.data?.message || 'Failed to sync tracking numbers', { id: toastId })
-    } finally {
-      setIsSyncingTracking(false)
-    }
-  }
-
   const isTrashTab = statusFilter === 'trashed'
 
   return (
@@ -602,18 +594,6 @@ export default function BookingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {!isTrashTab && (
-            <button
-              type="button"
-              onClick={handleSyncForwarding}
-              disabled={isSyncingTracking}
-              className="flex items-center gap-1.5 px-3.5 py-[7px] border border-amber-300 rounded-xl text-[12px] font-bold text-amber-900 bg-amber-50 hover:bg-amber-100/80 transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
-              title="Sync latest forwarding numbers & live tracking from vendor APIs"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-amber-700 ${isSyncingTracking ? 'animate-spin' : ''}`} />
-              <span>{isSyncingTracking ? 'Syncing...' : 'Sync Forwarding'}</span>
-            </button>
-          )}
           <button
             type="button"
             onClick={handleExportExcel}
@@ -815,12 +795,12 @@ export default function BookingsPage() {
                       {/* Vendor AWB (Dedicated Column) */}
                       <td className="px-4 py-3.5">
                         <div className="space-y-0.5">
-                          {b.vendor_awb_number ? (
+                          {(b.vendor_awb_number || fwd.primaryVendorAwb) ? (
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[12px] font-bold text-[#1a237e]">
-                                {b.vendor_awb_number}
+                                {b.vendor_awb_number || fwd.primaryVendorAwb}
                               </span>
-                              <CopyButton text={b.vendor_awb_number} label="Vendor AWB copied!" />
+                              <CopyButton text={b.vendor_awb_number || fwd.primaryVendorAwb} label="Vendor AWB copied!" />
                             </div>
                           ) : (
                             <span className="text-[12px] text-text-tertiary italic">—</span>
