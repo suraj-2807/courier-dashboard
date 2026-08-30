@@ -15,13 +15,15 @@ import {
   updateBookingBilling,
   trashBookings,
   restoreBookings,
-  deletePermanentBookings
+  deletePermanentBookings,
+  syncTrackingController
 } from './booking.controller.js'
 
 const router = express.Router()
 
 router.post('/', authMiddleware, createBooking)
 router.post('/save', authMiddleware, saveBooking)
+router.post('/sync-tracking', authMiddleware, syncTrackingController)
 router.post('/trash', authMiddleware, trashBookings)
 router.post('/restore', authMiddleware, restoreBookings)
 router.post('/delete-permanent', authMiddleware, deletePermanentBookings)

@@ -297,10 +297,35 @@ export const getBookingRequests = async (req, res) => {
       whereClauses.push('status = ?')
       params.push(status)
     }
-    if (search) {
-      whereClauses.push('(request_awb LIKE ? OR customer_name LIKE ? OR sender_name LIKE ? OR receiver_name LIKE ? OR sender_city LIKE ? OR receiver_city LIKE ?)')
-      const like = `%${search}%`
-      params.push(like, like, like, like, like, like)
+    if (search && search.trim()) {
+      const term = `%${search.trim()}%`
+      const searchFields = [
+        'request_awb',
+        'customer_name',
+        'customer_email',
+        'customer_phone',
+        'customer_company',
+        'sender_name',
+        'sender_company',
+        'sender_phone',
+        'sender_city',
+        'sender_pincode',
+        'receiver_name',
+        'receiver_company',
+        'receiver_phone',
+        'receiver_city',
+        'receiver_country',
+        'receiver_pincode',
+        'order_reference',
+        'content_description'
+      ]
+      const sqlParts = searchFields.map(f => `\`${f}\` LIKE ?`)
+      sqlParts.push("DATE_FORMAT(created_at, '%d/%m/%Y') LIKE ?")
+      sqlParts.push("DATE_FORMAT(created_at, '%Y-%m-%d') LIKE ?")
+      whereClauses.push(`(${sqlParts.join(' OR ')})`)
+      for (let i = 0; i < sqlParts.length; i++) {
+        params.push(term)
+      }
     }
 
     const whereStr = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : ''

@@ -721,7 +721,10 @@ function pe_admin_ajax_shipments()
     if ($search) {
         $like = '%' . $wpdb->esc_like($search) . '%';
         $search_where = $wpdb->prepare(
-            " AND (CAST(a.AWBNO AS CHAR) LIKE %s OR a.CNEENAME LIKE %s OR a.DESTNAME LIKE %s OR a.SNAME LIKE %s OR CAST(a.AWBDATE AS CHAR) LIKE %s OR a.VENDORAWB1 LIKE %s OR a.VENDORAWB2 LIKE %s)",
+            " AND (CAST(a.AWBNO AS CHAR) LIKE %s OR a.CNEENAME LIKE %s OR a.DESTNAME LIKE %s OR a.SNAME LIKE %s OR CAST(a.AWBDATE AS CHAR) LIKE %s OR a.VENDORAWB1 LIKE %s OR a.VENDORAWB2 LIKE %s OR a.VENDNAME LIKE %s OR a.CUSTNAME LIKE %s OR a.ORIGIN LIKE %s)",
+            $like,
+            $like,
+            $like,
             $like,
             $like,
             $like,
@@ -1255,7 +1258,10 @@ function pe_admin_ajax_export()
     $where = "1=1";
     if ($search) {
         $like = '%' . $wpdb->esc_like($search) . '%';
-        $where .= $wpdb->prepare(" AND (CAST(a.AWBNO AS CHAR) LIKE %s OR a.CNEENAME LIKE %s OR a.DESTNAME LIKE %s)", $like, $like, $like);
+        $where .= $wpdb->prepare(
+            " AND (CAST(a.AWBNO AS CHAR) LIKE %s OR a.CNEENAME LIKE %s OR a.DESTNAME LIKE %s OR a.SNAME LIKE %s OR CAST(a.AWBDATE AS CHAR) LIKE %s OR a.VENDORAWB1 LIKE %s OR a.VENDORAWB2 LIKE %s OR a.VENDNAME LIKE %s OR a.CUSTNAME LIKE %s OR a.ORIGIN LIKE %s)",
+            $like, $like, $like, $like, $like, $like, $like, $like, $like, $like
+        );
     }
     $sql = "SELECT a.AWBID as c_id, a.AWBNO, a.CNEENAME as CONSIGNEE, a.DESTNAME as DESTINATION,
                    a.CHARGEWEIGHT as WEIGHT, a.ACTUALWEIGHT, COALESCE(a.SERVICE, 0) as SERVICE,

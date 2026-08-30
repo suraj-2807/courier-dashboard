@@ -211,9 +211,38 @@ export default class GenericAdapter extends BaseAdapter {
       }
     }
 
+    // Extract forwarding number if present
+    let forwardingNumber = String(
+      this._getNestedValue(responseBody, 'data.forwarding_no') ||
+      this._getNestedValue(responseBody, 'forwarding_no') ||
+      this._getNestedValue(responseBody, 'data.vendor_awb_2') ||
+      this._getNestedValue(responseBody, 'vendor_awb_2') ||
+      this._getNestedValue(responseBody, 'ForwardingNo') ||
+      ''
+    ).trim()
+
+    if (forwardingNumber === String(awbNumber).trim() || forwardingNumber === '0' || forwardingNumber === 'null') {
+      forwardingNumber = ''
+    }
+
+    let secondaryCarrier = String(
+      this._getNestedValue(responseBody, 'data.secondary_carrier') ||
+      this._getNestedValue(responseBody, 'secondary_carrier') ||
+      this._getNestedValue(responseBody, 'ForwardingCarrier') ||
+      ''
+    ).trim()
+
+    if (forwardingNumber && !secondaryCarrier) {
+      if (/^1Z/i.test(forwardingNumber)) secondaryCarrier = 'UPS'
+      else if (/^[0-9]{12}$/.test(forwardingNumber)) secondaryCarrier = 'FEDEX'
+      else if (/^[0-9]{10}$/.test(forwardingNumber)) secondaryCarrier = 'DHL'
+    }
+
     return {
       success,
       awbNumber,
+      forwardingNumber,
+      secondaryCarrier,
       trackingUrl: String(trackingUrl),
       labelUrl: String(labelUrl),
       errorMessage: success ? '' : (

@@ -23,7 +23,8 @@ import {
   AlertTriangle,
   DollarSign,
   Tag,
-  Printer
+  Printer,
+  RefreshCw
 } from 'lucide-react'
 import { bookingsApi } from '../api/bookings.api'
 import StatusBadge from '../components/ui/StatusBadge'
@@ -262,6 +263,7 @@ export default function BookingsPage() {
   const [searchInput, setSearchInput] = useState(search)
   const [selectedIds, setSelectedIds] = useState([])
   const [isExporting, setIsExporting] = useState(false)
+  const [isSyncingTracking, setIsSyncingTracking] = useState(false)
   const limit = 10
   const navigate = useNavigate()
   const pushToApiMutation = usePushBookingToApi()
@@ -414,19 +416,17 @@ export default function BookingsPage() {
   }
 
   const handleSearch = (e) => {
-    if (e.key === 'Enter' || e.type === 'submit') {
-      e.preventDefault()
-      setSearchParams(prev => {
-        const next = new URLSearchParams(prev)
-        if (searchInput.trim()) {
-          next.set('search', searchInput.trim())
-        } else {
-          next.delete('search')
-        }
-        next.delete('page')
-        return next
-      })
-    }
+    if (e && e.preventDefault) e.preventDefault()
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (searchInput.trim()) {
+        next.set('search', searchInput.trim())
+      } else {
+        next.delete('search')
+      }
+      next.delete('page')
+      return next
+    })
   }
 
   const handleClearSearch = () => {
@@ -526,6 +526,27 @@ export default function BookingsPage() {
     }
   }
 
+  const handleSyncForwarding = async () => {
+    setIsSyncingTracking(true)
+    const toastId = toast.loading('Syncing forwarding & tracking numbers from vendor APIs...')
+    try {
+      const visibleIds = selectedIds.length > 0 ? selectedIds : (data?.bookings?.map(b => b.id) || [])
+      const res = await bookingsApi.syncTracking(visibleIds)
+      const updatedCount = res.data?.summary?.updatedForwarding || 0
+      toast.success(
+        updatedCount > 0 
+          ? `Updated ${updatedCount} forwarding number(s)!` 
+          : 'Tracking & forwarding numbers are up to date.',
+        { id: toastId }
+      )
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to sync tracking numbers', { id: toastId })
+    } finally {
+      setIsSyncingTracking(false)
+    }
+  }
+
   const isTrashTab = statusFilter === 'trashed'
 
   return (
@@ -543,6 +564,18 @@ export default function BookingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {!isTrashTab && (
+            <button
+              type="button"
+              onClick={handleSyncForwarding}
+              disabled={isSyncingTracking}
+              className="flex items-center gap-1.5 px-3.5 py-[7px] border border-amber-300 rounded-xl text-[12px] font-bold text-amber-900 bg-amber-50 hover:bg-amber-100/80 transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+              title="Sync latest forwarding numbers & live tracking from vendor APIs"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-amber-700 ${isSyncingTracking ? 'animate-spin' : ''}`} />
+              <span>{isSyncingTracking ? 'Syncing...' : 'Sync Forwarding'}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={handleExportExcel}
@@ -599,14 +632,14 @@ export default function BookingsPage() {
                 placeholder="Search AWB, Vendor AWB, Shipper, Consignee, Destination, Date..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={handleSearch}
                 className="bg-transparent text-[13px] text-text-primary placeholder:text-text-tertiary outline-none w-full"
               />
               {searchInput && (
                 <button
                   type="button"
-                  onClick={() => { setSearchInput(''); setSearch(''); setPage(1) }}
-                  className="text-text-tertiary hover:text-text-secondary cursor-pointer"
+                  onClick={handleClearSearch}
+                  className="text-text-tertiary hover:text-text-secondary cursor-pointer p-0.5"
+                  title="Clear search"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>

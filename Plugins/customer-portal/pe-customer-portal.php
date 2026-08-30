@@ -315,8 +315,8 @@ function pe_cp_ajax_shipments()
     if ($search) {
         $like = '%' . $wpdb->esc_like($search) . '%';
         $where .= $wpdb->prepare(
-            " AND (CAST(a.AWBNO AS CHAR) LIKE %s OR a.CNEENAME LIKE %s OR a.DESTNAME LIKE %s)",
-            $like, $like, $like
+            " AND (CAST(a.AWBNO AS CHAR) LIKE %s OR a.CNEENAME LIKE %s OR a.DESTNAME LIKE %s OR a.SNAME LIKE %s OR a.VENDORAWB1 LIKE %s OR a.VENDORAWB2 LIKE %s OR a.VENDNAME LIKE %s OR CAST(a.AWBDATE AS CHAR) LIKE %s)",
+            $like, $like, $like, $like, $like, $like, $like, $like
         );
     }
 
@@ -483,20 +483,19 @@ function pe_cp_ajax_my_requests()
     if ($search) {
         $like = '%' . $wpdb->esc_like($search) . '%';
         $where .= $wpdb->prepare(
-            " AND (request_awb LIKE %s OR receiver_name LIKE %s OR sender_city LIKE %s OR receiver_city LIKE %s)",
-            $like, $like, $like, $like
+            " AND (request_awb LIKE %s OR receiver_name LIKE %s OR sender_name LIKE %s OR sender_city LIKE %s OR receiver_city LIKE %s OR receiver_country LIKE %s OR customer_phone LIKE %s OR sender_phone LIKE %s OR receiver_phone LIKE %s OR order_reference LIKE %s)",
+            $like, $like, $like, $like, $like, $like, $like, $like, $like, $like
         );
     }
 
     $total = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where"));
 
-    $rows = $wpdb->get_results($wpdb->prepare(
+    $rows = $wpdb->get_results(
         "SELECT * FROM booking_requests 
          WHERE $where 
          ORDER BY id DESC 
-         LIMIT %d OFFSET %d",
-        $per, $offset
-    ));
+         LIMIT " . intval($per) . " OFFSET " . intval($offset)
+    );
 
     $data = [];
     foreach ($rows as $r) {

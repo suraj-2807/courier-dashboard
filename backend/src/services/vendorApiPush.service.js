@@ -155,13 +155,33 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
     })
 
     // Step 9: Update shipment with vendor response
-    await _updateShipmentVendorData(shipmentId, {
+    const shipmentVendorUpdates = {
       vendor_awb_number: parsed.awbNumber,
       vendor_tracking_url: parsed.trackingUrl,
       vendor_label_url: parsed.labelUrl,
       vendor_push_status: parsed.success ? 'success' : 'failed',
       vendor_raw_response: JSON.stringify(responseBody)
-    })
+    }
+
+    if (parsed.forwardingNumber) {
+      shipmentVendorUpdates.vendor_awb_number_2 = parsed.forwardingNumber
+      shipmentVendorUpdates.forwarding_no = parsed.forwardingNumber
+    }
+    if (parsed.secondaryCarrier) {
+      shipmentVendorUpdates.secondary_carrier = parsed.secondaryCarrier
+    }
+
+    await _updateShipmentVendorData(shipmentId, shipmentVendorUpdates)
+
+    // Schedule background tracking syncs (at 15s and 60s) to capture forwarding numbers generated asynchronously
+    if (parsed.success && shipmentId) {
+      setTimeout(() => {
+        import('./trackingSync.service.js').then(m => m.syncShipmentTracking(shipmentId)).catch(() => {})
+      }, 15000)
+      setTimeout(() => {
+        import('./trackingSync.service.js').then(m => m.syncShipmentTracking(shipmentId)).catch(() => {})
+      }, 60000)
+    }
 
     // Step 10: Update vendor config last push info
     await execute(
@@ -178,6 +198,8 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
     return {
       success: parsed.success,
       awbNumber: parsed.awbNumber,
+      forwardingNumber: parsed.forwardingNumber || '',
+      secondaryCarrier: parsed.secondaryCarrier || '',
       trackingUrl: parsed.trackingUrl,
       labelUrl: parsed.labelUrl,
       requestPayload,

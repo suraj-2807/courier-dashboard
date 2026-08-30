@@ -414,10 +414,19 @@ export default class PacificAdapter extends BaseAdapter {
       || (response.AWBNo && String(response.AWBNo).trim() !== '')
       || (response.AwbNo && String(response.AwbNo).trim() !== '')
 
-    // Extract AWB / tracking number
-    const awbNumber = String(
-      response.ForwardingNo || response.ForwardingNo1 || response.AwbNo || response.awbNo || response.AWBNo || ''
-    ).trim()
+    // Extract primary AWB and secondary Forwarding Number
+    const primaryAwb = String(response.AWBNo || response.AwbNo || response.awbNo || response.DocketNo || '').trim()
+    const rawFwd = String(response.ForwardingNo || response.ForwardingNo1 || response.Forwarding_No || response.VendorAWBNo || response.VendorAWBNo2 || '').trim()
+    
+    let awbNumber = primaryAwb || rawFwd
+    let forwardingNumber = (rawFwd && rawFwd !== primaryAwb) ? rawFwd : ''
+
+    let secondaryCarrier = response.ForwardingCarrier || response.Carrier || response.carrier || ''
+    if (forwardingNumber && !secondaryCarrier) {
+      if (/^1Z/i.test(forwardingNumber)) secondaryCarrier = 'UPS'
+      else if (/^[0-9]{12}$/.test(forwardingNumber)) secondaryCarrier = 'FEDEX'
+      else if (/^[0-9]{10}$/.test(forwardingNumber)) secondaryCarrier = 'DHL'
+    }
 
     // Extract Label URL / Base64 pdf data (Pacific sends Pdfdownload or BoxLabel)
     let labelUrl = response.Label || response.AuxLbl || response.label || response.BoxLabel || response.boxlabel || response.Pdfdownload || response.pdfdownload || ''
@@ -443,7 +452,15 @@ export default class PacificAdapter extends BaseAdapter {
       }
     }
 
-    return { success, awbNumber, trackingUrl, labelUrl, errorMessage }
+    return { 
+      success, 
+      awbNumber, 
+      forwardingNumber,
+      secondaryCarrier,
+      trackingUrl, 
+      labelUrl, 
+      errorMessage 
+    }
   }
 
   // ─── Private helpers ───

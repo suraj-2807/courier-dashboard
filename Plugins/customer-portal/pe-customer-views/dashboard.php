@@ -345,7 +345,11 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
 
       <!-- Search & Filters -->
       <div class="cp-fb">
-        <div class="cp-fs"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="cp-search" placeholder="Search AWB, consignee, destination..." onkeydown="if(event.key==='Enter')cpLoadShipments(1);"></div>
+        <div class="cp-fs" style="position:relative; width: 100%; max-width: 450px;">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="cp-search" placeholder="Search AWB, consignee, destination..." oninput="cpDebounceShipmentsSearch()" onkeydown="if(event.key==='Enter')cpLoadShipments(1);">
+          <button type="button" id="cp-search-clear" onclick="cpClearShipmentsSearch()" style="display:none; position:absolute; right:12px; top:50%; transform:translateY(-50%); background:transparent; border:none; color:var(--cptext3); cursor:pointer; font-size:13px;"><i class="fa-solid fa-xmark"></i></button>
+        </div>
       </div>
       <div id="cp-shipments-container"></div>
     </div>
@@ -359,7 +363,11 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
 
       <!-- Filters & Search -->
       <div class="cp-fb" style="flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
-        <div class="cp-fs" style="min-width: 250px;"><i class="fa-solid fa-magnifying-glass"></i><input type="text" id="cp-req-search" placeholder="Search AWB, consignee, city..." onkeydown="if(event.key==='Enter')cpLoadRequests(1);"></div>
+        <div class="cp-fs" style="position:relative; min-width: 250px; flex: 1; max-width: 450px;">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="cp-req-search" placeholder="Search AWB, consignee, city..." oninput="cpDebounceRequestsSearch()" onkeydown="if(event.key==='Enter')cpLoadRequests(1);">
+          <button type="button" id="cp-req-search-clear" onclick="cpClearRequestsSearch()" style="display:none; position:absolute; right:12px; top:50%; transform:translateY(-50%); background:transparent; border:none; color:var(--cptext3); cursor:pointer; font-size:13px;"><i class="fa-solid fa-xmark"></i></button>
+        </div>
         
         <!-- Status Tabs for Requests -->
         <div class="cp-status-tabs" style="display: flex; gap: 6px; background: rgba(0,0,0,0.03); padding: 4px; border-radius: 8px; border: 1px solid var(--cpbdr);">
@@ -602,7 +610,44 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
 <div class="cp-toast-container" id="cp-toast-container"></div>
 
 <script>
-var cpPage=1, cpSearch='';
+var cpPage=1, cpSearch='', cpShipSearchTimer=null;
+var cpReqPage=1, cpReqSearch='', cpReqStatus='', cpReqSearchTimer=null;
+
+function cpDebounceShipmentsSearch() {
+    var val = (document.getElementById('cp-search')?.value || '').trim();
+    var clearBtn = document.getElementById('cp-search-clear');
+    if (clearBtn) clearBtn.style.display = val ? 'block' : 'none';
+    clearTimeout(cpShipSearchTimer);
+    cpShipSearchTimer = setTimeout(function() {
+        cpLoadShipments(1);
+    }, 350);
+}
+
+function cpClearShipmentsSearch() {
+    var inp = document.getElementById('cp-search');
+    if (inp) { inp.value = ''; }
+    var clearBtn = document.getElementById('cp-search-clear');
+    if (clearBtn) clearBtn.style.display = 'none';
+    cpLoadShipments(1);
+}
+
+function cpDebounceRequestsSearch() {
+    var val = (document.getElementById('cp-req-search')?.value || '').trim();
+    var clearBtn = document.getElementById('cp-req-search-clear');
+    if (clearBtn) clearBtn.style.display = val ? 'block' : 'none';
+    clearTimeout(cpReqSearchTimer);
+    cpReqSearchTimer = setTimeout(function() {
+        cpLoadRequests(1);
+    }, 350);
+}
+
+function cpClearRequestsSearch() {
+    var inp = document.getElementById('cp-req-search');
+    if (inp) { inp.value = ''; }
+    var clearBtn = document.getElementById('cp-req-search-clear');
+    if (clearBtn) clearBtn.style.display = 'none';
+    cpLoadRequests(1);
+}
 
 // Tab Switching Engine
 function cpSwitchTab(tabId, btn) {
@@ -631,8 +676,6 @@ function cpSwitchTab(tabId, btn) {
         cpLoadRequests(1);
     }
 }
-
-var cpReqPage=1, cpReqSearch='', cpReqStatus='';
 
 function cpSetRequestStatusFilter(st, btn) {
     document.querySelectorAll('.cp-status-tab').forEach(t => t.classList.remove('active'));

@@ -501,13 +501,28 @@ export default class FlySwiftAdapter extends BaseAdapter {
       }
     }
 
-    const errorMessage = !success
-      ? (responseBody.message || responseBody.error || (Array.isArray(responseBody.errors) ? responseBody.errors.join(', ') : 'FlySwift API Error'))
-      : ''
+    // Extract forwarding number if already returned in booking response
+    const respData = responseBody.data || responseBody
+    let forwardingNumber = String(
+      respData.forwarding_no || respData.forwording_no || respData.forwarding_awb || respData.vendor_awb_2 || respData.secondary_awb || ''
+    ).trim()
+
+    if (forwardingNumber === String(awbNumber).trim() || forwardingNumber === '0' || forwardingNumber === 'null' || forwardingNumber === 'undefined') {
+      forwardingNumber = ''
+    }
+
+    let secondaryCarrier = String(respData.secondary_carrier || respData.forwarding_carrier || respData.carrier || '').trim()
+    if (forwardingNumber && !secondaryCarrier) {
+      if (/^1Z/i.test(forwardingNumber)) secondaryCarrier = 'UPS'
+      else if (/^[0-9]{12}$/.test(forwardingNumber)) secondaryCarrier = 'FEDEX'
+      else if (/^[0-9]{10}$/.test(forwardingNumber)) secondaryCarrier = 'DHL'
+    }
 
     return {
       success,
       awbNumber: String(awbNumber).trim(),
+      forwardingNumber,
+      secondaryCarrier,
       trackingUrl,
       labelUrl,
       errorMessage

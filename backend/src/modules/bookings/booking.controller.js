@@ -5,6 +5,7 @@ import { generateInvoicePdf } from '../../services/invoicePdf.service.js'
 import { generateWaybillPdf } from '../../services/waybillPdf.service.js'
 import { generateBoxLabelsPdf } from '../../services/boxLabelPdf.service.js'
 import { syncToRemoteAwbEntry, syncToRemoteParcelHistory } from '../../services/remoteAwbEntry.service.js'
+import { syncShipmentsBatch } from '../../services/trackingSync.service.js'
 import { isSettingEnabled } from '../systemSettings/systemSettings.controller.js'
 import path from 'path'
 import fs from 'fs'
@@ -1708,31 +1709,43 @@ export const getBookings = async (req, res) => {
 
     if (search && search.trim()) {
       const term = `%${search.trim()}%`
-      whereConditions.push(`(
-        s.order_id LIKE ? OR
-        s.tracking_number LIKE ? OR
-        s.vendor_awb_number LIKE ? OR
-        s.sender_name LIKE ? OR
-        s.sender_phone LIKE ? OR
-        s.receiver_name LIKE ? OR
-        s.receiver_phone LIKE ? OR
-        s.receiver_country LIKE ? OR
-        s.receiver_city LIKE ? OR
-        snd.name LIKE ? OR
-        snd.phone LIKE ? OR
-        rcv.name LIKE ? OR
-        rcv.phone LIKE ? OR
-        rcv.country LIKE ? OR
-        rcv.city LIKE ? OR
-        DATE_FORMAT(s.created_at, '%d/%m/%Y') LIKE ? OR
-        DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ?
-      )`)
-      params.push(
-        term, term, term,
-        term, term, term, term, term, term,
-        term, term, term, term, term, term,
-        term, term
-      )
+      const searchFields = [
+        's.order_id',
+        's.tracking_number',
+        's.vendor_awb_number',
+        's.vendor_awb_number_2',
+        's.forwarding_no',
+        's.order_reference',
+        's.invoice_no',
+        's.vendor_code',
+        's.sender_name',
+        's.sender_company',
+        's.sender_phone',
+        's.receiver_name',
+        's.receiver_company',
+        's.receiver_phone',
+        's.receiver_country',
+        's.receiver_city',
+        's.receiver_pincode',
+        'snd.name',
+        'snd.company',
+        'snd.phone',
+        'rcv.name',
+        'rcv.company',
+        'rcv.phone',
+        'rcv.country',
+        'rcv.city',
+        'rcv.pincode',
+        'cp.name',
+        'vac.name'
+      ]
+      const sqlParts = searchFields.map(f => `${f} LIKE ?`)
+      sqlParts.push("DATE_FORMAT(s.created_at, '%d/%m/%Y') LIKE ?")
+      sqlParts.push("DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ?")
+      whereConditions.push(`(${sqlParts.join(' OR ')})`)
+      for (let i = 0; i < sqlParts.length; i++) {
+        params.push(term)
+      }
     }
 
     const whereClause = whereConditions.length > 0 ? ` WHERE ${whereConditions.join(' AND ')}` : ''
@@ -1841,6 +1854,22 @@ export const getBookings = async (req, res) => {
         vendor_api_configs
       }
     })
+
+    // Auto-detect shipments on this page missing forwarding numbers and trigger background sync
+    const missingFwdRows = dataRows.filter(r => 
+      (r.is_trashed === 0 || !r.is_trashed) &&
+      r.status !== 'delivered' && r.status !== 'cancelled' &&
+      (r.vendor_awb_number || r.tracking_number) &&
+      (!r.vendor_awb_number_2 || !r.forwarding_no)
+    )
+
+    if (missingFwdRows.length > 0) {
+      setImmediate(() => {
+        syncShipmentsBatch(missingFwdRows, { concurrency: 3 }).catch(err => {
+          console.warn('[getBookings] Background forwarding sync error:', err.message)
+        })
+      })
+    }
 
     return res.json({
       success: true,
@@ -2561,3 +2590,42 @@ export const updateBookingBilling = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Failed to update billing details' })
   }
 }
+
+/**
+ * Sync live tracking & forwarding numbers on demand (single or batch)
+ */
+export const syncTrackingController = async (req, res) => {
+  try {
+    const { ids } = req.body
+    let itemsToSync = []
+
+    if (Array.isArray(ids) && ids.length > 0) {
+      itemsToSync = ids
+    } else {
+      const rows = await query(`
+        SELECT id, tracking_number, vendor_awb_number, vendor_awb_number_2, forwarding_no, vendor_config_id, vendor_code
+        FROM shipments 
+        WHERE (is_trashed = 0 OR is_trashed IS NULL)
+          AND status NOT IN ('delivered', 'cancelled')
+          AND (vendor_awb_number != '' OR tracking_number != '')
+        ORDER BY created_at DESC
+        LIMIT 50
+      `)
+      itemsToSync = rows
+    }
+
+    const summary = await syncShipmentsBatch(itemsToSync, { force: true, concurrency: 4 })
+    return res.json({
+      success: true,
+      message: `Synced tracking for ${summary.synced} shipments (${summary.updatedForwarding} forwarding numbers updated)`,
+      summary
+    })
+  } catch (error) {
+    console.error('syncTrackingController Error:', error)
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    })
+  }
+}
+

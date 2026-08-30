@@ -32,12 +32,14 @@ class PE_Data {
         if (self::$done) return;
         self::$done = true;
 
-        if (!isset($_POST['awb']) || empty(trim($_POST['awb']))) return;
+        $raw_awb = $_POST['awb'] ?? ($_GET['awb'] ?? ($_REQUEST['awb'] ?? ($_GET['tracking_number'] ?? ($_GET['search'] ?? ($_GET['q'] ?? '')))));
+        if (empty(trim($raw_awb))) return;
         self::$searched = true;
         global $wpdb;
-        self::$awb = sanitize_text_field(trim($_POST['awb']));
+        self::$awb = sanitize_text_field(trim($raw_awb));
 
         // ── Try AWBENTRY first (new ERP table) ──
+        $search_int = intval(preg_replace('/\D/', '', self::$awb));
         $awb_row = $wpdb->get_row($wpdb->prepare(
             "SELECT a.*,
                     a.AWBID as c_id, CAST(a.AWBNO AS CHAR) as AWBNO_STR,
@@ -48,7 +50,10 @@ class PE_Data {
                     a.CNEEPHONE1 as PHONE, COALESCE(a.SHOWFWD, 0) as SHOWFWD_INT,
                     COALESCE(a.AUTOTRACK, 0) as API_VAL,
                     a.CARTONS as PIECES
-             FROM AWBENTRY a WHERE a.AWBNO = %d", intval(self::$awb)
+             FROM AWBENTRY a 
+             WHERE a.AWBNO = %d OR a.VENDORAWB1 = %s OR a.VENDORAWB2 = %s OR CAST(a.AWBNO AS CHAR) = %s
+             ORDER BY a.AWBID DESC LIMIT 1",
+            $search_int, self::$awb, self::$awb, self::$awb
         ));
 
         if ($awb_row) {

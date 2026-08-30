@@ -41,7 +41,7 @@ class PE_Data {
         if (self::$done) return;
         self::$done = true;
 
-        $raw_awb = $_POST['awb'] ?? ($_GET['awb'] ?? ($_REQUEST['awb'] ?? ''));
+        $raw_awb = $_POST['awb'] ?? ($_GET['awb'] ?? ($_REQUEST['awb'] ?? ($_GET['tracking_number'] ?? ($_GET['search'] ?? ($_GET['q'] ?? '')))));
         if (empty(trim($raw_awb))) {
             self::log('No AWB search input found in POST or GET request.');
             return;
@@ -213,7 +213,52 @@ class PE_Data {
         );
 
         if (!self::$result) {
-            self::log('Shipment Not Found in AWBENTRY or consignee table', ['searched_awb' => self::$awb]);
+            // Try checking booking_requests table for web booking requests
+            $bk_req = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
+                self::$awb, self::$awb
+            ));
+            if ($bk_req) {
+                $r = new stdClass();
+                $r->c_id        = $bk_req->id;
+                $r->AWBNO       = $bk_req->request_awb;
+                $r->CONSIGNEE   = $bk_req->receiver_name;
+                $r->DESTINATION = $bk_req->receiver_city . (!empty($bk_req->receiver_country) ? ', ' . $bk_req->receiver_country : '');
+                $r->WEIGHT      = $bk_req->weight;
+                $r->ACTUALWEIGHT= $bk_req->weight;
+                $r->SERVICE     = 0;
+                $r->BOOKINGDATE = date('Y-m-d', strtotime($bk_req->created_at));
+                $r->VENDORID1   = $bk_req->tracking_number ?? '';
+                $r->VENDORID2   = '';
+                $r->VENDNAME    = '';
+                $r->VENDCODE    = '';
+                $r->PHONE       = $bk_req->receiver_phone;
+                $r->SHOWFWD     = 0;
+                $r->API         = 0;
+                $r->REMARKS     = $bk_req->remarks ?? '';
+                $r->STATUS      = ucfirst($bk_req->status);
+                $r->PIECES      = $bk_req->no_of_pieces ?? 1;
+                self::$result = $r;
+                self::$status = $r->STATUS;
+
+                $req_updates = $wpdb->get_results($wpdb->prepare(
+                    "SELECT * FROM request_updates WHERE request_id = %d ORDER BY created_at ASC",
+                    $bk_req->id
+                ));
+                if ($req_updates) {
+                    foreach ($req_updates as $up) {
+                        self::$tracking[] = [
+                            'date' => date('d M Y', strtotime($up->created_at)),
+                            'time' => date('h:i A', strtotime($up->created_at)),
+                            'location' => $bk_req->sender_city ?? 'Origin',
+                            'activity' => $up->title . (!empty($up->description) ? ' - ' . $up->description : '')
+                        ];
+                    }
+                }
+                return;
+            }
+
+            self::log('Shipment Not Found in AWBENTRY or consignee or booking_requests table', ['searched_awb' => self::$awb]);
             return;
         }
 
