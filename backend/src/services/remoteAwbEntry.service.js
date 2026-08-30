@@ -407,6 +407,28 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
       service_code_raw: serviceCode
     }))
 
+    // Resolve customer code (ID) and customer name
+    let custCode = 'W001'
+    let custName = 'WALKING CUSTOMER'
+
+    if (shipment.customer_id) {
+      custCode = String(shipment.customer_id)
+      custName = (shipment.sender_name || shipment.sender_company || 'CUSTOMER').toUpperCase()
+    } else if (shipment.sender_email || shipment.sender_phone) {
+      try {
+        const [custRows] = await pool.query(
+          'SELECT id, name, company FROM tbl_customers WHERE (email != "" AND email IS NOT NULL AND LOWER(TRIM(email)) = ?) OR (phone != "" AND phone IS NOT NULL AND TRIM(phone) = ?) LIMIT 1',
+          [(shipment.sender_email || '').trim().toLowerCase(), (shipment.sender_phone || '').trim()]
+        )
+        if (custRows && custRows.length > 0) {
+          custCode = String(custRows[0].id)
+          custName = (custRows[0].name || custRows[0].company || shipment.sender_name || 'CUSTOMER').toUpperCase()
+        }
+      } catch (custErr) {
+        console.warn('[Remote AWBENTRY] Customer resolution notice:', custErr.message)
+      }
+    }
+
     // Check if AWBNO already exists in remote AWBENTRY
     const [existingRows] = await pool.execute('SELECT AWBID, AWBNO, VENDORAWB1 FROM AWBENTRY WHERE AWBNO = ? LIMIT 1', [awbNo])
 
@@ -434,8 +456,8 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
           bookingDate,              // AWBDATE
           pieces,                   // CARTONS
           'SRT',                    // ORIGIN
-          'W001',                   // CUSTCODE
-          'WALKING CUSTOMER',       // CUSTNAME
+          custCode,                 // CUSTCODE
+          custName,                 // CUSTNAME
 
           // Row 2: Sender details
           senderName,               // SNAME
@@ -542,8 +564,8 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
       bookingDate,                // AWBDATE
       pieces,                     // CARTONS
       'SRT',                      // ORIGIN
-      'W001',                     // CUSTCODE
-      'WALKING CUSTOMER',         // CUSTNAME
+      custCode,                   // CUSTCODE
+      custName,                   // CUSTNAME
 
       // Row 2: Sender details (9 values)
       senderName,                 // SNAME

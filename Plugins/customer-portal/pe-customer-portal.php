@@ -341,17 +341,47 @@ function pe_cp_ajax_shipments()
     $offset = ($page - 1) * $per;
     $search = sanitize_text_field($_POST['search'] ?? '');
 
-    // Match shipments by customer name, phone, or email
-    $customer_name = $wpdb->esc_like($cust['name']);
-    $customer_phone = $wpdb->esc_like($cust['phone'] ?? '');
-    $customer_email = $wpdb->esc_like($cust['email'] ?? '');
+    // Build precise WHERE clause for logged-in customer's shipments only
+    $cust_id = intval($cust['customer_id'] ?? ($cust['id'] ?? 0));
+    $cust_phone = trim($cust['phone'] ?? '');
+    $cust_email = trim($cust['email'] ?? '');
+    $cust_name = trim($cust['name'] ?? '');
 
-    $where = $wpdb->prepare(
-        "(a.SNAME LIKE %s OR a.SPHONE1 LIKE %s OR a.CUSTNAME LIKE %s)",
-        '%' . $customer_name . '%',
-        '%' . $customer_phone . '%',
-        '%' . $customer_name . '%'
-    );
+    $match_clauses = [];
+    $match_params = [];
+
+    // 1. CUSTCODE match (ID e.g. "1" or "CUST-1")
+    if ($cust_id > 0) {
+        $match_clauses[] = "a.CUSTCODE = %s OR a.CUSTCODE = %s";
+        $match_params[] = strval($cust_id);
+        $match_params[] = 'CUST-' . $cust_id;
+    }
+
+    // 2. Phone match (exact, non-empty)
+    if ($cust_phone !== '') {
+        $match_clauses[] = "a.SPHONE1 = %s OR a.SPHONE2 = %s";
+        $match_params[] = $cust_phone;
+        $match_params[] = $cust_phone;
+    }
+
+    // 3. Email match (exact in CUSTNAME or in REMARKS)
+    if ($cust_email !== '') {
+        $match_clauses[] = "LOWER(a.CUSTNAME) = LOWER(%s) OR a.REMARKS LIKE %s";
+        $match_params[] = $cust_email;
+        $match_params[] = '%' . $wpdb->esc_like($cust_email) . '%';
+    }
+
+    // 4. Exact full name match (NOT like '%%')
+    if (strlen($cust_name) >= 3) {
+        $match_clauses[] = "LOWER(TRIM(a.SNAME)) = LOWER(TRIM(%s))";
+        $match_params[] = $cust_name;
+    }
+
+    if (empty($match_clauses)) {
+        $where = "1=0";
+    } else {
+        $where = $wpdb->prepare("(" . implode(" OR ", $match_clauses) . ")", ...$match_params);
+    }
 
     if ($search) {
         $like = '%' . $wpdb->esc_like($search) . '%';
