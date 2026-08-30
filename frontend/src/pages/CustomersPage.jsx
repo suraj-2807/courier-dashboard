@@ -1028,27 +1028,27 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl bg-surface border-l border-border h-full overflow-y-auto flex flex-col shadow-2xl animate-slide-in"
+        className="w-full max-w-xl bg-surface border-l border-border h-full flex flex-col shadow-2xl animate-slide-in"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="p-5 border-b border-border flex items-center justify-between sticky top-0 bg-surface/95 backdrop-blur-sm z-10">
+        {/* Fixed Header */}
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary font-extrabold flex items-center justify-center text-[16px]">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary font-extrabold flex items-center justify-center text-[16px] flex-shrink-0">
               {customer?.name ? customer.name.charAt(0).toUpperCase() : 'C'}
             </div>
             <div>
               <h2 className="text-[17px] font-extrabold text-navy leading-tight">
                 {customer?.name || 'Customer Details'}
               </h2>
-              <p className="text-[12px] text-text-secondary">{customer?.company || 'Individual Account'}</p>
+              <p className="text-[12px] text-text-secondary mt-0.5">{customer?.company || 'Individual Account'}</p>
             </div>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={onEdit}
-              className="p-2 text-navy hover:text-primary hover:bg-surface-hover rounded-lg transition-colors cursor-pointer"
+              className="p-2 text-navy hover:text-primary hover:bg-surface-hover rounded-xl transition-colors cursor-pointer"
               title="Edit Customer"
             >
               <Edit2 className="w-4 h-4" />
@@ -1056,134 +1056,138 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
             <button
               type="button"
               onClick={onClose}
-              className="p-2 text-text-tertiary hover:text-text-primary rounded-lg transition-colors cursor-pointer"
+              className="p-2 text-text-tertiary hover:text-navy hover:bg-surface-hover rounded-xl transition-colors cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Content */}
-        {isLoading ? (
-          <div className="p-10 text-center">
-            <div className="w-8 h-8 border-3 border-border border-t-primary rounded-full animate-spin mx-auto" />
-            <p className="text-[13px] text-text-tertiary mt-2">Loading details...</p>
-          </div>
-        ) : !customer ? (
-          <div className="p-6 text-center text-text-tertiary">Customer information not found.</div>
-        ) : (
-          <div className="p-6 space-y-6 flex-1">
-            {/* Financial Summary Banner */}
-            <div className="grid grid-cols-2 gap-3 p-4 bg-surface-alt rounded-2xl border border-border">
-              <div>
-                <span className="text-[11px] font-bold text-text-tertiary uppercase">Current Balance</span>
-                <p className={`text-[20px] font-mono font-extrabold mt-0.5 ${parseFloat(customer.current_balance) > 0 ? 'text-emerald-700' : 'text-navy'}`}>
-                  {formatCurrency(customer.current_balance || 0)}
-                </p>
-              </div>
-              <div>
-                <span className="text-[11px] font-bold text-text-tertiary uppercase">Credit Limit</span>
-                <p className="text-[20px] font-mono font-extrabold text-indigo-700 mt-0.5">
-                  {formatCurrency(customer.credit_limit || 0)}
-                </p>
-              </div>
+        {/* Scrollable Content */}
+        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+          {isLoading ? (
+            <div className="p-12 text-center">
+              <div className="w-8 h-8 border-3 border-border border-t-primary rounded-full animate-spin mx-auto" />
+              <p className="text-[13px] text-text-tertiary mt-2 font-medium">Loading customer details...</p>
             </div>
+          ) : !customer ? (
+            <div className="p-8 text-center text-text-tertiary">Customer information not found.</div>
+          ) : (
+            <>
+              {/* Financial Summary Banner */}
+              <div className="grid grid-cols-2 gap-3 p-4 bg-surface-alt rounded-2xl border border-border shadow-2xs">
+                <div>
+                  <span className="text-[11px] font-bold text-text-tertiary uppercase tracking-wider">Current Balance</span>
+                  <p className={`text-[20px] font-mono font-extrabold mt-1 ${parseFloat(customer.current_balance) > 0 ? 'text-emerald-700' : 'text-navy'}`}>
+                    {formatCurrency(customer.current_balance || 0)}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-[11px] font-bold text-text-tertiary uppercase tracking-wider">Credit Limit</span>
+                  <p className="text-[20px] font-mono font-extrabold text-indigo-700 mt-1">
+                    {formatCurrency(customer.credit_limit || 0)}
+                  </p>
+                </div>
+              </div>
 
-            {/* Contact Details */}
-            <div className="space-y-3">
-              <h3 className="text-[12px] font-extrabold text-text-tertiary uppercase tracking-wider">Contact & Credentials</h3>
-              <div className="bg-surface-alt/50 border border-border rounded-xl p-3.5 space-y-2.5 text-[13px]">
-                <div className="flex items-center justify-between">
-                  <span className="text-text-tertiary">Email (Login):</span>
-                  <span className="font-mono font-semibold text-navy">{customer.email}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-text-tertiary">Phone:</span>
-                  <span className="font-mono font-semibold text-text-primary">{customer.phone || '—'}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-text-tertiary">Status:</span>
-                  <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${customer.status === 'active' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-surface text-text-tertiary'}`}>
-                    {customer.status === 'active' ? 'Active Portal' : 'Inactive'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-text-tertiary">Registered On:</span>
-                  <span className="text-text-secondary">{formatDate(customer.created_at)}</span>
-                </div>
-                {customer.last_login && (
+              {/* Contact Details */}
+              <div className="space-y-2.5">
+                <h3 className="text-[12px] font-extrabold text-text-tertiary uppercase tracking-wider">Contact & Credentials</h3>
+                <div className="bg-surface-alt/60 border border-border rounded-xl p-3.5 space-y-2.5 text-[13px]">
                   <div className="flex items-center justify-between">
-                    <span className="text-text-tertiary">Last Portal Login:</span>
-                    <span className="text-text-secondary">{formatDate(customer.last_login)}</span>
+                    <span className="text-text-tertiary">Email (Login ID):</span>
+                    <span className="font-mono font-bold text-navy">{customer.email}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-text-tertiary">Phone Number:</span>
+                    <span className="font-mono font-semibold text-text-primary">{customer.phone || '—'}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-text-tertiary">Portal Status:</span>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${customer.status === 'active' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-surface text-text-tertiary border border-border'}`}>
+                      {customer.status === 'active' ? 'Active Portal' : 'Inactive'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-text-tertiary">Account Created:</span>
+                    <span className="text-text-secondary">{formatDate(customer.created_at)}</span>
+                  </div>
+                  {customer.last_login && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-text-tertiary">Last Portal Login:</span>
+                      <span className="text-text-secondary">{formatDate(customer.last_login)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Address */}
+              <div className="space-y-2.5">
+                <h3 className="text-[12px] font-extrabold text-text-tertiary uppercase tracking-wider">Billing Address</h3>
+                <div className="bg-surface-alt/60 border border-border rounded-xl p-3.5 text-[13px] space-y-1">
+                  <p className="font-medium text-text-primary">{customer.address || '—'}</p>
+                  <p className="text-text-secondary text-[12px]">
+                    {[customer.city, customer.state, customer.pincode, customer.country || 'INDIA'].filter(Boolean).join(', ')}
+                  </p>
+                  {customer.gstin_no && (
+                    <p className="text-[11.5px] font-mono text-text-tertiary pt-1">
+                      GSTIN: {customer.gstin_no}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Recent Shipments */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[12px] font-extrabold text-text-tertiary uppercase tracking-wider">
+                    Recent Shipments ({shipments.length})
+                  </h3>
+                  {shipments.length > 0 && (
+                    <Link
+                      to={`/bookings?search=${encodeURIComponent(customer.email || customer.name)}`}
+                      className="text-[11.5px] font-bold text-primary hover:underline flex items-center gap-1"
+                    >
+                      <span>View All In Bookings</span>
+                      <ArrowUpRight className="w-3.5 h-3.5" />
+                    </Link>
+                  )}
+                </div>
+
+                {!shipments.length ? (
+                  <div className="p-4 text-center bg-surface-alt/40 rounded-xl border border-border text-text-tertiary text-[12.5px]">
+                    No shipments found for this customer yet.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-border border border-border rounded-xl overflow-hidden bg-surface">
+                    {shipments.map((s) => (
+                      <div key={s.id} className="p-3.5 flex items-center justify-between hover:bg-surface-hover transition-colors">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-navy text-[13px]">
+                              {s.tracking_number || s.order_id}
+                            </span>
+                            <span className="px-2 py-0.5 bg-surface-alt text-text-secondary rounded text-[10px] font-bold uppercase">
+                              {s.status}
+                            </span>
+                          </div>
+                          <p className="text-[11.5px] text-text-secondary mt-0.5">
+                            To: {s.receiver_name} ({s.receiver_city || s.receiver_country || '—'}) · {formatDateDDMMYYYY(s.created_at)}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-mono font-bold text-text-primary text-[12.5px]">
+                            {formatCurrency(s.total_amount || 0)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-            </div>
-
-            {/* Address */}
-            <div className="space-y-3">
-              <h3 className="text-[12px] font-extrabold text-text-tertiary uppercase tracking-wider">Billing Address</h3>
-              <div className="bg-surface-alt/50 border border-border rounded-xl p-3.5 text-[13px] space-y-1">
-                <p className="font-medium text-text-primary">{customer.address || '—'}</p>
-                <p className="text-text-secondary text-[12px]">
-                  {[customer.city, customer.state, customer.pincode, customer.country || 'INDIA'].filter(Boolean).join(', ')}
-                </p>
-                {customer.gstin_no && (
-                  <p className="text-[11.5px] font-mono text-text-tertiary pt-1">
-                    GSTIN: {customer.gstin_no}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Recent Shipments */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-[12px] font-extrabold text-text-tertiary uppercase tracking-wider">
-                  Recent Shipments ({shipments.length})
-                </h3>
-                <Link
-                  to={`/bookings?search=${encodeURIComponent(customer.email || customer.name)}`}
-                  className="text-[11.5px] font-bold text-primary hover:underline flex items-center gap-1"
-                >
-                  <span>View All</span>
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                </Link>
-              </div>
-
-              {!shipments.length ? (
-                <p className="text-[12.5px] text-text-tertiary py-3 text-center bg-surface-alt/30 rounded-xl border border-border">
-                  No shipments found for this customer.
-                </p>
-              ) : (
-                <div className="divide-y divide-border border border-border rounded-xl overflow-hidden bg-surface">
-                  {shipments.map((s) => (
-                    <div key={s.id} className="p-3 flex items-center justify-between hover:bg-surface-hover transition-colors">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-navy text-[13px]">
-                            {s.tracking_number || s.order_id}
-                          </span>
-                          <span className="px-2 py-0.5 bg-surface-alt text-text-secondary rounded text-[10px] font-bold uppercase">
-                            {s.status}
-                          </span>
-                        </div>
-                        <p className="text-[11.5px] text-text-secondary mt-0.5">
-                          To: {s.receiver_name} ({s.receiver_city || s.receiver_country || '—'}) · {formatDateDDMMYYYY(s.created_at)}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <span className="font-mono font-bold text-text-primary text-[12.5px]">
-                          {formatCurrency(s.total_amount || 0)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -48,7 +48,7 @@ export const getCustomers = async (req, res) => {
     )
     const total = countRows[0]?.total || 0
 
-    // Fetch customers
+    // Fetch customers with accurate matching
     const rows = await query(
       `SELECT 
         c.id, c.name, c.email, c.phone, c.company,
@@ -58,19 +58,29 @@ export const getCustomers = async (req, res) => {
         (
           SELECT COUNT(*) 
           FROM shipments s 
-          WHERE (s.sender_email = c.email OR s.sender_phone = c.phone OR s.sender_name = c.name)
-            AND (s.is_trashed = 0 OR s.is_trashed IS NULL)
+          WHERE (
+            (c.email IS NOT NULL AND c.email != '' AND LOWER(TRIM(s.sender_email)) = LOWER(TRIM(c.email))) OR
+            (c.phone IS NOT NULL AND c.phone != '' AND TRIM(s.sender_phone) = TRIM(c.phone))
+          )
+          AND (s.is_trashed = 0 OR s.is_trashed IS NULL)
         ) as total_shipments,
         (
           SELECT COALESCE(SUM(s.total_amount), 0)
           FROM shipments s
-          WHERE (s.sender_email = c.email OR s.sender_phone = c.phone OR s.sender_name = c.name)
-            AND (s.is_trashed = 0 OR s.is_trashed IS NULL)
+          WHERE (
+            (c.email IS NOT NULL AND c.email != '' AND LOWER(TRIM(s.sender_email)) = LOWER(TRIM(c.email))) OR
+            (c.phone IS NOT NULL AND c.phone != '' AND TRIM(s.sender_phone) = TRIM(c.phone))
+          )
+          AND (s.is_trashed = 0 OR s.is_trashed IS NULL)
         ) as total_spent,
         (
           SELECT COUNT(*)
           FROM booking_requests br
-          WHERE br.customer_id = c.id OR br.customer_email = c.email OR br.sender_email = c.email
+          WHERE (
+            br.customer_id = c.id OR 
+            (c.email IS NOT NULL AND c.email != '' AND (LOWER(TRIM(br.customer_email)) = LOWER(TRIM(c.email)) OR LOWER(TRIM(br.sender_email)) = LOWER(TRIM(c.email)))) OR
+            (c.phone IS NOT NULL AND c.phone != '' AND (TRIM(br.customer_phone) = TRIM(c.phone) OR TRIM(br.sender_phone) = TRIM(c.phone)))
+          )
         ) as total_requests
        FROM tbl_customers c
        ${whereClause}
@@ -130,24 +140,52 @@ export const getCustomerById = async (req, res) => {
     const customer = rows[0]
     delete customer.password // Don't leak hashed password
 
-    // Recent shipments
-    const shipments = await query(
-      `SELECT id, order_id, tracking_number, vendor_awb_number, status, total_amount, 
-              receiver_name, receiver_city, receiver_country, created_at
-       FROM shipments
-       WHERE (sender_email = ? OR sender_phone = ? OR sender_name = ?)
-         AND (is_trashed = 0 OR is_trashed IS NULL)
-       ORDER BY created_at DESC
-       LIMIT 10`,
-      [customer.email, customer.phone, customer.name]
-    )
+    // Build precise conditions for matching customer shipments
+    const matchConditions = []
+    const matchParams = []
+
+    if (customer.email && customer.email.trim()) {
+      matchConditions.push('LOWER(TRIM(sender_email)) = ?')
+      matchParams.push(customer.email.trim().toLowerCase())
+    }
+    if (customer.phone && customer.phone.trim()) {
+      matchConditions.push('TRIM(sender_phone) = ?')
+      matchParams.push(customer.phone.trim())
+    }
+
+    let shipments = []
+    if (matchConditions.length > 0) {
+      shipments = await query(
+        `SELECT id, order_id, tracking_number, vendor_awb_number, status, total_amount, 
+                receiver_name, receiver_city, receiver_country, created_at
+         FROM shipments
+         WHERE (${matchConditions.join(' OR ')})
+           AND (is_trashed = 0 OR is_trashed IS NULL)
+         ORDER BY created_at DESC
+         LIMIT 20`,
+        matchParams
+      )
+    }
 
     // Saved Addresses count
-    const addressCount = (await query(
+    let addressCount = 0
+    const addrConditions = ['customer_id = ?']
+    const addrParams = [customer.id]
+    if (customer.email && customer.email.trim()) {
+      addrConditions.push('LOWER(TRIM(customer_email)) = ?')
+      addrParams.push(customer.email.trim().toLowerCase())
+    }
+    if (customer.phone && customer.phone.trim()) {
+      addrConditions.push('TRIM(customer_phone) = ?')
+      addrParams.push(customer.phone.trim())
+    }
+
+    const addrRows = await query(
       `SELECT COUNT(*) as cnt FROM customer_addresses 
-       WHERE customer_id = ? OR customer_email = ? OR customer_phone = ?`,
-      [customer.id, customer.email, customer.phone]
-    ))[0]?.cnt || 0
+       WHERE (${addrConditions.join(' OR ')})`,
+      addrParams
+    )
+    addressCount = addrRows[0]?.cnt || 0
 
     return res.json({
       success: true,
