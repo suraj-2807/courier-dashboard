@@ -24,9 +24,15 @@ import {
   DollarSign,
   Tag,
   Printer,
-  RefreshCw
+  RefreshCw,
+  Calendar,
+  Globe,
+  Truck,
+  Filter,
+  SlidersHorizontal
 } from 'lucide-react'
 import { bookingsApi } from '../api/bookings.api'
+import { getActiveVendors } from '../api/apiSettings.api'
 import StatusBadge from '../components/ui/StatusBadge'
 import Pagination from '../components/ui/Pagination'
 import EmptyState from '../components/ui/EmptyState'
@@ -271,15 +277,19 @@ const STATUS_TABS = [
 export default function BookingsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const page = Math.max(1, parseInt(searchParams.get('page')) || 1)
+  const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit')) || 10))
   const search = searchParams.get('search') || ''
   const statusFilter = searchParams.get('status') || ''
+  const vendorFilter = searchParams.get('vendor') || ''
+  const countryFilter = searchParams.get('country') || ''
+  const fromDateFilter = searchParams.get('from_date') || ''
+  const toDateFilter = searchParams.get('to_date') || ''
 
   const [searchInput, setSearchInput] = useState(search)
   const [selectedIds, setSelectedIds] = useState([])
   const [isExporting, setIsExporting] = useState(false)
   const [syncingRowIds, setSyncingRowIds] = useState(new Set())
   const autoSyncedIdsRef = useRef(new Set())
-  const limit = 10
   const navigate = useNavigate()
   const pushToApiMutation = usePushBookingToApi()
   const [pushingId, setPushingId] = useState(null)
@@ -291,6 +301,14 @@ export default function BookingsPage() {
     staleTime: 1000 * 60 * 30
   })
 
+  // Fetch active vendor API configurations for vendor dropdown
+  const { data: activeVendorsData } = useQuery({
+    queryKey: ['active-vendors'],
+    queryFn: getActiveVendors,
+    staleTime: 1000 * 60 * 10
+  })
+  const activeVendors = activeVendorsData?.vendors || []
+
   const countryCodeToNameMap = useMemo(() => {
     const map = { ...ISO_COUNTRY_MAP }
     const list = countryCodesData?.countryCodes || []
@@ -300,6 +318,17 @@ export default function BookingsPage() {
       }
     })
     return map
+  }, [countryCodesData])
+
+  const availableCountries = useMemo(() => {
+    const set = new Set()
+    const commons = ['UNITED STATES', 'UNITED KINGDOM', 'CANADA', 'AUSTRALIA', 'UNITED ARAB EMIRATES', 'GERMANY', 'FRANCE', 'NEW ZEALAND', 'SINGAPORE', 'SAUDI ARABIA']
+    commons.forEach(c => set.add(c))
+    const list = countryCodesData?.countryCodes || []
+    list.forEach(item => {
+      if (item.country_name) set.add(item.country_name.trim().toUpperCase())
+    })
+    return Array.from(set).sort()
   }, [countryCodesData])
 
   const getFullCountryName = (codeOrName) => {
@@ -316,7 +345,11 @@ export default function BookingsPage() {
     page,
     limit,
     search,
-    status: statusFilter
+    status: statusFilter,
+    vendor: vendorFilter,
+    country: countryFilter,
+    from_date: fromDateFilter,
+    to_date: toDateFilter
   })
 
   // Automatic live forwarding sync when shipments load on the page
@@ -456,6 +489,122 @@ export default function BookingsPage() {
       return next
     })
   }
+
+  const handleLimitChange = (newLimit) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (newLimit === 10) {
+        next.delete('limit')
+      } else {
+        next.set('limit', String(newLimit))
+      }
+      next.delete('page')
+      return next
+    })
+  }
+
+  const handleVendorChange = (val) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (val) {
+        next.set('vendor', val)
+      } else {
+        next.delete('vendor')
+      }
+      next.delete('page')
+      return next
+    })
+  }
+
+  const handleCountryChange = (val) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (val) {
+        next.set('country', val)
+      } else {
+        next.delete('country')
+      }
+      next.delete('page')
+      return next
+    })
+  }
+
+  const handleFromDateChange = (val) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (val) {
+        next.set('from_date', val)
+      } else {
+        next.delete('from_date')
+      }
+      next.delete('page')
+      return next
+    })
+  }
+
+  const handleToDateChange = (val) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (val) {
+        next.set('to_date', val)
+      } else {
+        next.delete('to_date')
+      }
+      next.delete('page')
+      return next
+    })
+  }
+
+  const handleDatePreset = (preset) => {
+    const today = new Date()
+    const formatDateForInput = (d) => {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (preset === 'today') {
+        const str = formatDateForInput(today)
+        next.set('from_date', str)
+        next.set('to_date', str)
+      } else if (preset === 'yesterday') {
+        const y = new Date(today)
+        y.setDate(today.getDate() - 1)
+        const str = formatDateForInput(y)
+        next.set('from_date', str)
+        next.set('to_date', str)
+      } else if (preset === '7days') {
+        const d7 = new Date(today)
+        d7.setDate(today.getDate() - 7)
+        next.set('from_date', formatDateForInput(d7))
+        next.set('to_date', formatDateForInput(today))
+      } else if (preset === 'month') {
+        const mStart = new Date(today.getFullYear(), today.getMonth(), 1)
+        next.set('from_date', formatDateForInput(mStart))
+        next.set('to_date', formatDateForInput(today))
+      } else if (preset === 'all') {
+        next.delete('from_date')
+        next.delete('to_date')
+      }
+      next.delete('page')
+      return next
+    })
+  }
+
+  const handleClearAllFilters = () => {
+    setSearchInput('')
+    setSearchParams(prev => {
+      const next = new URLSearchParams()
+      if (statusFilter) next.set('status', statusFilter)
+      if (limit !== 10) next.set('limit', String(limit))
+      return next
+    })
+  }
+
+  const hasActiveFilters = Boolean(search || vendorFilter || countryFilter || fromDateFilter || toDateFilter)
 
   const handleTabChange = (val) => {
     setSelectedIds([])
@@ -700,6 +849,158 @@ export default function BookingsPage() {
                 </button>
               )}
             </div>
+          )}
+        </div>
+
+        {/* Secondary Filter Bar: Date Filter, Vendor Filter, Destination Country Filter */}
+        <div className="px-4 py-3 border-t border-border bg-surface-alt/40 flex flex-wrap items-center justify-between gap-3 text-[12px]">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Date Range Selector */}
+            <div className="flex items-center gap-1.5 bg-surface border border-border px-2.5 py-1.5 rounded-xl shadow-2xs">
+              <Calendar className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+              <span className="text-[11px] font-bold text-text-tertiary uppercase tracking-wider">Date:</span>
+              <input
+                type="date"
+                value={fromDateFilter}
+                onChange={(e) => handleFromDateChange(e.target.value)}
+                className="bg-transparent text-text-primary text-[12px] outline-none cursor-pointer"
+                title="From Date"
+              />
+              <span className="text-text-tertiary font-bold text-[11px]">to</span>
+              <input
+                type="date"
+                value={toDateFilter}
+                onChange={(e) => handleToDateChange(e.target.value)}
+                className="bg-transparent text-text-primary text-[12px] outline-none cursor-pointer"
+                title="To Date"
+              />
+              {(fromDateFilter || toDateFilter) && (
+                <button
+                  type="button"
+                  onClick={() => handleDatePreset('all')}
+                  className="text-text-tertiary hover:text-danger p-0.5 cursor-pointer ml-1"
+                  title="Clear dates"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Quick Date Presets */}
+            <div className="flex items-center gap-1">
+              {[
+                { id: 'today', label: 'Today' },
+                { id: 'yesterday', label: 'Yesterday' },
+                { id: '7days', label: '7 Days' },
+                { id: 'month', label: 'This Month' }
+              ].map((p) => {
+                const today = new Date()
+                const formatDateForInput = (d) => {
+                  const y = d.getFullYear()
+                  const m = String(d.getMonth() + 1).padStart(2, '0')
+                  const day = String(d.getDate()).padStart(2, '0')
+                  return `${y}-${m}-${day}`
+                }
+                const todayStr = formatDateForInput(today)
+                const yest = new Date(today)
+                yest.setDate(today.getDate() - 1)
+                const yestStr = formatDateForInput(yest)
+                const d7 = new Date(today)
+                d7.setDate(today.getDate() - 7)
+                const d7Str = formatDateForInput(d7)
+                const mStart = new Date(today.getFullYear(), today.getMonth(), 1)
+                const mStartStr = formatDateForInput(mStart)
+
+                const isActive = (
+                  (p.id === 'today' && fromDateFilter === todayStr && toDateFilter === todayStr) ||
+                  (p.id === 'yesterday' && fromDateFilter === yestStr && toDateFilter === yestStr) ||
+                  (p.id === '7days' && fromDateFilter === d7Str && toDateFilter === todayStr) ||
+                  (p.id === 'month' && fromDateFilter === mStartStr && toDateFilter === todayStr)
+                )
+
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleDatePreset(p.id)}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer ${
+                      isActive
+                        ? 'bg-navy text-white shadow-2xs'
+                        : 'bg-surface border border-border text-text-secondary hover:text-navy hover:bg-surface-hover'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Vendor / Carrier Filter */}
+            <div className="flex items-center gap-1.5 bg-surface border border-border px-2.5 py-1.5 rounded-xl shadow-2xs">
+              <Truck className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />
+              <select
+                value={vendorFilter}
+                onChange={(e) => handleVendorChange(e.target.value)}
+                className="bg-transparent text-text-primary text-[12px] font-semibold outline-none cursor-pointer max-w-[170px]"
+              >
+                <option value="">All Vendors / Carriers</option>
+                {activeVendors.map((v) => (
+                  <option key={v.id} value={v.vendor_code || v.id}>
+                    {v.name} {v.vendor_code ? `(${v.vendor_code})` : ''}
+                  </option>
+                ))}
+              </select>
+              {vendorFilter && (
+                <button
+                  type="button"
+                  onClick={() => handleVendorChange('')}
+                  className="text-text-tertiary hover:text-danger p-0.5 cursor-pointer"
+                  title="Clear vendor filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Country Filter */}
+            <div className="flex items-center gap-1.5 bg-surface border border-border px-2.5 py-1.5 rounded-xl shadow-2xs">
+              <Globe className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+              <select
+                value={countryFilter}
+                onChange={(e) => handleCountryChange(e.target.value)}
+                className="bg-transparent text-text-primary text-[12px] font-semibold outline-none cursor-pointer max-w-[160px]"
+              >
+                <option value="">All Countries</option>
+                {availableCountries.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              {countryFilter && (
+                <button
+                  type="button"
+                  onClick={() => handleCountryChange('')}
+                  className="text-text-tertiary hover:text-danger p-0.5 cursor-pointer"
+                  title="Clear country filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Reset Filters button */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearAllFilters}
+              className="flex items-center gap-1 px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ml-auto"
+              title="Reset all active search and filters"
+            >
+              <RotateCcw className="w-3 h-3 text-red-600" />
+              <span>Reset Filters</span>
+            </button>
           )}
         </div>
       </div>
@@ -1013,27 +1314,17 @@ export default function BookingsPage() {
               </table>
             </div>
 
-            {/* Footer with pagination */}
-            <div className="px-5 py-3 border-t border-border flex items-center justify-between">
-              <p className="text-[12px] text-text-tertiary font-medium">
-                Showing {((data.pagination.page - 1) * limit) + 1} to {Math.min(data.pagination.page * limit, data.pagination.total)} of {data.pagination.total} entries
-              </p>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page <= 1}
-                  className="px-3 py-1.5 border border-border rounded-lg text-[12px] font-medium text-text-secondary hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                >
-                  Prev
-                </button>
-                <button
-                  onClick={() => setPage(p => Math.min(data.pagination.totalPages, p + 1))}
-                  disabled={page >= data.pagination.totalPages}
-                  className="px-3 py-1.5 border border-border rounded-lg text-[12px] font-medium text-text-secondary hover:bg-surface-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                >
-                  Next
-                </button>
-              </div>
+            {/* Footer with enhanced Pagination & Per-Page Limit Controls (10, 20, 50, 100) */}
+            <div className="p-3 border-t border-border">
+              <Pagination
+                page={page}
+                totalPages={data?.pagination?.totalPages || data?.totalPages || 1}
+                onPageChange={setPage}
+                limit={limit}
+                onLimitChange={handleLimitChange}
+                total={data?.pagination?.total || data?.total || 0}
+                limitOptions={[10, 20, 50, 100]}
+              />
             </div>
           </>
         )}

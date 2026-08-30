@@ -1724,12 +1724,16 @@ export const getBookings = async (req, res) => {
       limit = 10,
       search = '',
       status = '',
+      vendor = '',
+      country = '',
+      from_date = '',
+      to_date = '',
       sort_by = 'created_at',
       sort_order = 'desc'
     } = req.query
 
     const pageNum = parseInt(page)
-    const limitNum = parseInt(limit)
+    const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 10))
     const offset = (pageNum - 1) * limitNum
 
     const allowedSortColumns = ['created_at', 'order_id', 'tracking_number', 'status', 'total_amount']
@@ -1756,6 +1760,45 @@ export const getBookings = async (req, res) => {
         whereConditions.push('s.status = ?')
         params.push(status)
       }
+    }
+
+    // Vendor / Carrier filter
+    if (vendor && vendor.trim()) {
+      const vTerm = vendor.trim()
+      if (!isNaN(vTerm)) {
+        whereConditions.push('(s.vendor_config_id = ? OR s.courier_provider_id = ?)')
+        params.push(parseInt(vTerm), parseInt(vTerm))
+      } else {
+        const vWildcard = `%${vTerm}%`
+        whereConditions.push(`(
+          s.vendor_code LIKE ? OR 
+          vac.vendor_code LIKE ? OR 
+          vac.name LIKE ? OR 
+          cp.code LIKE ? OR 
+          cp.name LIKE ?
+        )`)
+        params.push(vWildcard, vWildcard, vWildcard, vWildcard, vWildcard)
+      }
+    }
+
+    // Destination Country filter
+    if (country && country.trim()) {
+      const cTerm = country.trim()
+      whereConditions.push(`(
+        CONVERT(rcv.country USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci OR
+        CONVERT(rcv.country USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
+      )`)
+      params.push(cTerm, `%${cTerm}%`)
+    }
+
+    // Date range filters
+    if (from_date && from_date.trim()) {
+      whereConditions.push('s.created_at >= ?')
+      params.push(`${from_date.trim()} 00:00:00`)
+    }
+    if (to_date && to_date.trim()) {
+      whereConditions.push('s.created_at <= ?')
+      params.push(`${to_date.trim()} 23:59:59`)
     }
 
     if (search && search.trim()) {
