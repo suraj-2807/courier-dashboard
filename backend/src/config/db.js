@@ -38,25 +38,54 @@ const pool = mysql.createPool({
 })
 
 /**
+ * Execute a query with standard text protocol (supports DDL like SHOW, ALTER, CREATE, information_schema).
+ */
+export async function rawQuery(sql, params = []) {
+  if (params && params.length > 0) {
+    const [rows] = await pool.query(sql, params)
+    return rows
+  }
+  const [rows] = await pool.query(sql)
+  return rows
+}
+
+/**
  * Execute a SELECT query with parameterized values.
  * @param {string} sql - SQL query string with ? placeholders
  * @param {Array} params - Parameter values
  * @returns {Promise<Array>} Query result rows
  */
 export async function query(sql, params = []) {
-  const [rows] = await pool.execute(sql, params)
-  return rows
+  try {
+    const [rows] = await pool.execute(sql, params)
+    return rows
+  } catch (err) {
+    // If prepared statement protocol is unsupported (e.g. SHOW, ALTER, certain JSON functions), fallback to pool.query
+    if (err.code === 'ER_UNSUPPORTED_PS' || err.code === 'ER_NOT_SUPPORTED_YET') {
+      const [rows] = params && params.length > 0 ? await pool.query(sql, params) : await pool.query(sql)
+      return rows
+    }
+    throw err
+  }
 }
 
 /**
- * Execute an INSERT/UPDATE/DELETE query.
+ * Execute an INSERT/UPDATE/DELETE/ALTER query.
  * @param {string} sql - SQL query string with ? placeholders
  * @param {Array} params - Parameter values
  * @returns {Promise<Object>} ResultSetHeader with insertId, affectedRows, etc.
  */
 export async function execute(sql, params = []) {
-  const [result] = await pool.execute(sql, params)
-  return result
+  try {
+    const [result] = await pool.execute(sql, params)
+    return result
+  } catch (err) {
+    if (err.code === 'ER_UNSUPPORTED_PS' || err.code === 'ER_NOT_SUPPORTED_YET') {
+      const [result] = params && params.length > 0 ? await pool.query(sql, params) : await pool.query(sql)
+      return result
+    }
+    throw err
+  }
 }
 
 /**

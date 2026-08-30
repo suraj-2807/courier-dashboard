@@ -1,4 +1,4 @@
-import { query, execute } from '../../config/db.js'
+import { query, execute, rawQuery } from '../../config/db.js'
 import generateTracking from '../../utils/generateTracking.js'
 import { pushShipmentToVendor } from '../../services/vendorApiPush.service.js'
 import { generateInvoicePdf } from '../../services/invoicePdf.service.js'
@@ -1684,26 +1684,37 @@ async function getSafeTableColumns() {
     return tableColumnCache
   }
   try {
-    const [shipCols, sndCols, rcvCols, cpCols, vacCols] = await Promise.all([
-      query("SHOW COLUMNS FROM shipments").catch(() => []),
-      query("SHOW COLUMNS FROM senders").catch(() => []),
-      query("SHOW COLUMNS FROM receivers").catch(() => []),
-      query("SHOW COLUMNS FROM courier_providers").catch(() => []),
-      query("SHOW COLUMNS FROM vendor_api_configs").catch(() => [])
-    ])
+    const rows = await rawQuery(`
+      SELECT TABLE_NAME, COLUMN_NAME 
+      FROM information_schema.COLUMNS 
+      WHERE TABLE_SCHEMA = DATABASE()
+    `).catch(() => [])
 
-    tableColumnCache = {
-      s: new Set(shipCols.map(c => (c.Field || c.field || '').toLowerCase())),
-      snd: new Set(sndCols.map(c => (c.Field || c.field || '').toLowerCase())),
-      rcv: new Set(rcvCols.map(c => (c.Field || c.field || '').toLowerCase())),
-      cp: new Set(cpCols.map(c => (c.Field || c.field || '').toLowerCase())),
-      vac: new Set(vacCols.map(c => (c.Field || c.field || '').toLowerCase()))
+    if (Array.isArray(rows) && rows.length > 0) {
+      const s = new Set()
+      const snd = new Set()
+      const rcv = new Set()
+      const cp = new Set()
+      const vac = new Set()
+
+      for (const r of rows) {
+        const t = (r.TABLE_NAME || r.table_name || '').toLowerCase()
+        const c = (r.COLUMN_NAME || r.column_name || '').toLowerCase()
+        if (t === 'shipments') s.add(c)
+        else if (t === 'senders') snd.add(c)
+        else if (t === 'receivers') rcv.add(c)
+        else if (t === 'courier_providers') cp.add(c)
+        else if (t === 'vendor_api_configs') vac.add(c)
+      }
+
+      tableColumnCache = { s, snd, rcv, cp, vac }
+      lastTableCacheTime = now
+      return tableColumnCache
     }
-    lastTableCacheTime = now
-    return tableColumnCache
-  } catch {
-    return null
+  } catch (err) {
+    console.warn('Column cache inspection notice:', err.message)
   }
+  return null
 }
 
 export const getBookings = async (req, res) => {
@@ -1749,48 +1760,78 @@ export const getBookings = async (req, res) => {
 
     if (search && search.trim()) {
       const term = `%${search.trim()}%`
-      const candidateFields = [
-        { table: 's', col: 'order_id' },
-        { table: 's', col: 'tracking_number' },
-        { table: 's', col: 'vendor_awb_number' },
-        { table: 's', col: 'vendor_awb_number_2' },
-        { table: 's', col: 'forwarding_no' },
-        { table: 's', col: 'secondary_carrier' },
-        { table: 's', col: 'order_reference' },
-        { table: 's', col: 'invoice_no' },
-        { table: 's', col: 'vendor_code' },
-        { table: 's', col: 'sender_name' },
-        { table: 's', col: 'sender_company' },
-        { table: 's', col: 'sender_phone' },
-        { table: 's', col: 'receiver_name' },
-        { table: 's', col: 'receiver_company' },
-        { table: 's', col: 'receiver_phone' },
-        { table: 's', col: 'receiver_country' },
-        { table: 's', col: 'receiver_city' },
-        { table: 's', col: 'receiver_pincode' },
-        { table: 's', col: 'vendor_raw_response' },
-        { table: 'snd', col: 'name' },
-        { table: 'snd', col: 'company' },
-        { table: 'snd', col: 'phone' },
-        { table: 'rcv', col: 'name' },
-        { table: 'rcv', col: 'company' },
-        { table: 'rcv', col: 'phone' },
-        { table: 'rcv', col: 'country' },
-        { table: 'rcv', col: 'city' },
-        { table: 'rcv', col: 'pincode' },
-        { table: 'cp', col: 'name' },
-        { table: 'vac', col: 'name' }
-      ]
-
       const sqlParts = []
-      for (const item of candidateFields) {
-        if (!cols || (cols[item.table] && cols[item.table].has(item.col.toLowerCase()))) {
-          sqlParts.push(`${item.table}.${item.col} LIKE ?`)
+
+      if (cols && cols.s && cols.s.size > 0) {
+        // We have active DB column schema - check every candidate
+        const candidateFields = [
+          { table: 's', col: 'order_id' },
+          { table: 's', col: 'tracking_number' },
+          { table: 's', col: 'vendor_awb_number' },
+          { table: 's', col: 'vendor_awb_number_2' },
+          { table: 's', col: 'forwarding_no' },
+          { table: 's', col: 'secondary_carrier' },
+          { table: 's', col: 'order_reference' },
+          { table: 's', col: 'invoice_no' },
+          { table: 's', col: 'vendor_code' },
+          { table: 's', col: 'sender_name' },
+          { table: 's', col: 'sender_company' },
+          { table: 's', col: 'sender_phone' },
+          { table: 's', col: 'receiver_name' },
+          { table: 's', col: 'receiver_company' },
+          { table: 's', col: 'receiver_phone' },
+          { table: 's', col: 'receiver_country' },
+          { table: 's', col: 'receiver_city' },
+          { table: 's', col: 'receiver_pincode' },
+          { table: 's', col: 'vendor_raw_response' },
+          { table: 'snd', col: 'name' },
+          { table: 'snd', col: 'company' },
+          { table: 'snd', col: 'phone' },
+          { table: 'rcv', col: 'name' },
+          { table: 'rcv', col: 'company' },
+          { table: 'rcv', col: 'phone' },
+          { table: 'rcv', col: 'country' },
+          { table: 'rcv', col: 'city' },
+          { table: 'rcv', col: 'pincode' },
+          { table: 'cp', col: 'name' },
+          { table: 'vac', col: 'name' }
+        ]
+
+        for (const item of candidateFields) {
+          if (cols[item.table] && cols[item.table].has(item.col.toLowerCase())) {
+            sqlParts.push(`${item.table}.${item.col} LIKE ?`)
+            params.push(term)
+          }
+        }
+
+        if (cols.s.has('created_at')) {
+          sqlParts.push("DATE_FORMAT(s.created_at, '%d/%m/%Y') LIKE ?")
+          params.push(term)
+          sqlParts.push("DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ?")
           params.push(term)
         }
-      }
-
-      if (!cols || (cols.s && cols.s.has('created_at'))) {
+      } else {
+        // Guaranteed core columns only (100% safe in any MySQL courier-admin schema)
+        const guaranteedFields = [
+          's.order_id',
+          's.tracking_number',
+          's.vendor_awb_number',
+          's.order_reference',
+          's.vendor_code',
+          'snd.name',
+          'snd.phone',
+          'snd.city',
+          'rcv.name',
+          'rcv.phone',
+          'rcv.city',
+          'rcv.country',
+          'cp.name',
+          'vac.name'
+        ]
+        for (const f of guaranteedFields) {
+          sqlParts.push(`${f} LIKE ?`)
+          params.push(term)
+        }
         sqlParts.push("DATE_FORMAT(s.created_at, '%d/%m/%Y') LIKE ?")
         params.push(term)
         sqlParts.push("DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ?")
