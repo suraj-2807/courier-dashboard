@@ -1673,6 +1673,38 @@ export const createBooking = async (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 //  EXISTING CRUD (unchanged logic)
 // ═══════════════════════════════════════════════════════════════
+//  SAFE TABLE COLUMN CACHE (Prevents ER_BAD_FIELD_ERROR 500 crashes)
+// ═══════════════════════════════════════════════════════════════
+let tableColumnCache = null
+let lastTableCacheTime = 0
+
+async function getSafeTableColumns() {
+  const now = Date.now()
+  if (tableColumnCache && (now - lastTableCacheTime < 300000)) {
+    return tableColumnCache
+  }
+  try {
+    const [shipCols, sndCols, rcvCols, cpCols, vacCols] = await Promise.all([
+      query("SHOW COLUMNS FROM shipments").catch(() => []),
+      query("SHOW COLUMNS FROM senders").catch(() => []),
+      query("SHOW COLUMNS FROM receivers").catch(() => []),
+      query("SHOW COLUMNS FROM courier_providers").catch(() => []),
+      query("SHOW COLUMNS FROM vendor_api_configs").catch(() => [])
+    ])
+
+    tableColumnCache = {
+      s: new Set(shipCols.map(c => (c.Field || c.field || '').toLowerCase())),
+      snd: new Set(sndCols.map(c => (c.Field || c.field || '').toLowerCase())),
+      rcv: new Set(rcvCols.map(c => (c.Field || c.field || '').toLowerCase())),
+      cp: new Set(cpCols.map(c => (c.Field || c.field || '').toLowerCase())),
+      vac: new Set(vacCols.map(c => (c.Field || c.field || '').toLowerCase()))
+    }
+    lastTableCacheTime = now
+    return tableColumnCache
+  } catch {
+    return null
+  }
+}
 
 export const getBookings = async (req, res) => {
   try {
@@ -1693,14 +1725,23 @@ export const getBookings = async (req, res) => {
     const safeSortBy = allowedSortColumns.includes(sort_by) ? sort_by : 'created_at'
     const safeSortOrder = sort_order === 'asc' ? 'ASC' : 'DESC'
 
+    const cols = await getSafeTableColumns()
+
     let whereConditions = []
     const params = []
 
-    if (status === 'trashed') {
-      whereConditions.push('s.is_trashed = 1')
+    if (cols && cols.s && cols.s.has('is_trashed')) {
+      if (status === 'trashed') {
+        whereConditions.push('s.is_trashed = 1')
+      } else {
+        whereConditions.push('(s.is_trashed = 0 OR s.is_trashed IS NULL)')
+        if (status) {
+          whereConditions.push('s.status = ?')
+          params.push(status)
+        }
+      }
     } else {
-      whereConditions.push('(s.is_trashed = 0 OR s.is_trashed IS NULL)')
-      if (status) {
+      if (status && status !== 'trashed') {
         whereConditions.push('s.status = ?')
         params.push(status)
       }
@@ -1708,42 +1749,56 @@ export const getBookings = async (req, res) => {
 
     if (search && search.trim()) {
       const term = `%${search.trim()}%`
-      const searchFields = [
-        's.order_id',
-        's.tracking_number',
-        's.vendor_awb_number',
-        's.vendor_awb_number_2',
-        's.forwarding_no',
-        's.order_reference',
-        's.invoice_no',
-        's.vendor_code',
-        's.sender_name',
-        's.sender_company',
-        's.sender_phone',
-        's.receiver_name',
-        's.receiver_company',
-        's.receiver_phone',
-        's.receiver_country',
-        's.receiver_city',
-        's.receiver_pincode',
-        'snd.name',
-        'snd.company',
-        'snd.phone',
-        'rcv.name',
-        'rcv.company',
-        'rcv.phone',
-        'rcv.country',
-        'rcv.city',
-        'rcv.pincode',
-        'cp.name',
-        'vac.name'
+      const candidateFields = [
+        { table: 's', col: 'order_id' },
+        { table: 's', col: 'tracking_number' },
+        { table: 's', col: 'vendor_awb_number' },
+        { table: 's', col: 'vendor_awb_number_2' },
+        { table: 's', col: 'forwarding_no' },
+        { table: 's', col: 'secondary_carrier' },
+        { table: 's', col: 'order_reference' },
+        { table: 's', col: 'invoice_no' },
+        { table: 's', col: 'vendor_code' },
+        { table: 's', col: 'sender_name' },
+        { table: 's', col: 'sender_company' },
+        { table: 's', col: 'sender_phone' },
+        { table: 's', col: 'receiver_name' },
+        { table: 's', col: 'receiver_company' },
+        { table: 's', col: 'receiver_phone' },
+        { table: 's', col: 'receiver_country' },
+        { table: 's', col: 'receiver_city' },
+        { table: 's', col: 'receiver_pincode' },
+        { table: 's', col: 'vendor_raw_response' },
+        { table: 'snd', col: 'name' },
+        { table: 'snd', col: 'company' },
+        { table: 'snd', col: 'phone' },
+        { table: 'rcv', col: 'name' },
+        { table: 'rcv', col: 'company' },
+        { table: 'rcv', col: 'phone' },
+        { table: 'rcv', col: 'country' },
+        { table: 'rcv', col: 'city' },
+        { table: 'rcv', col: 'pincode' },
+        { table: 'cp', col: 'name' },
+        { table: 'vac', col: 'name' }
       ]
-      const sqlParts = searchFields.map(f => `${f} LIKE ?`)
-      sqlParts.push("DATE_FORMAT(s.created_at, '%d/%m/%Y') LIKE ?")
-      sqlParts.push("DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ?")
-      whereConditions.push(`(${sqlParts.join(' OR ')})`)
-      for (let i = 0; i < sqlParts.length; i++) {
+
+      const sqlParts = []
+      for (const item of candidateFields) {
+        if (!cols || (cols[item.table] && cols[item.table].has(item.col.toLowerCase()))) {
+          sqlParts.push(`${item.table}.${item.col} LIKE ?`)
+          params.push(term)
+        }
+      }
+
+      if (!cols || (cols.s && cols.s.has('created_at'))) {
+        sqlParts.push("DATE_FORMAT(s.created_at, '%d/%m/%Y') LIKE ?")
         params.push(term)
+        sqlParts.push("DATE_FORMAT(s.created_at, '%Y-%m-%d') LIKE ?")
+        params.push(term)
+      }
+
+      if (sqlParts.length > 0) {
+        whereConditions.push(`(${sqlParts.join(' OR ')})`)
       }
     }
 
