@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useBookings, usePushBookingToApi } from '../hooks/useBookings'
@@ -264,6 +264,8 @@ export default function BookingsPage() {
   const [selectedIds, setSelectedIds] = useState([])
   const [isExporting, setIsExporting] = useState(false)
   const [isSyncingTracking, setIsSyncingTracking] = useState(false)
+  const [syncingRowIds, setSyncingRowIds] = useState(new Set())
+  const autoSyncedIdsRef = useRef(new Set())
   const limit = 10
   const navigate = useNavigate()
   const pushToApiMutation = usePushBookingToApi()
@@ -303,6 +305,42 @@ export default function BookingsPage() {
     search,
     status: statusFilter
   })
+
+  // Automatic live forwarding sync when shipments load on the page
+  useEffect(() => {
+    if (!data?.bookings?.length) return
+
+    const missingFwdIds = data.bookings
+      .filter((b) => {
+        if (b.status === 'delivered' || b.status === 'cancelled' || b.is_trashed) return false
+        if (!b.vendor_awb_number && !b.tracking_number) return false
+        const fwd = getForwardingInfo(b)
+        return !fwd.forwardingNo
+      })
+      .map((b) => b.id)
+      .filter((id) => !autoSyncedIdsRef.current.has(id))
+
+    if (missingFwdIds.length > 0) {
+      missingFwdIds.forEach((id) => autoSyncedIdsRef.current.add(id))
+      setSyncingRowIds((prev) => new Set([...prev, ...missingFwdIds]))
+
+      bookingsApi
+        .syncTracking(missingFwdIds)
+        .then((res) => {
+          if (res.data?.summary?.updatedForwarding > 0) {
+            refetch()
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          setSyncingRowIds((prev) => {
+            const next = new Set(prev)
+            missingFwdIds.forEach((id) => next.delete(id))
+            return next
+          })
+        })
+    }
+  }, [data?.bookings, refetch])
 
   const handleExportExcel = async () => {
     setIsExporting(true)
@@ -807,6 +845,11 @@ export default function BookingsPage() {
                             <span className="block text-[10px] text-text-tertiary font-medium">
                               {fwd.forwardingCarrier || 'Forwarded Vendor'}
                             </span>
+                          </div>
+                        ) : syncingRowIds.has(b.id) ? (
+                          <div className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50/80 border border-amber-200/60 px-2 py-0.5 rounded-md animate-pulse">
+                            <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600" />
+                            <span>Syncing...</span>
                           </div>
                         ) : (
                           <span className="text-[12px] text-text-tertiary italic">—</span>
