@@ -621,19 +621,25 @@ function CustomerFormModal({ isOpen, customer, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-navy/60 backdrop-blur-xs animate-fade-in">
-      <div className="bg-surface border border-border w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col">
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 bg-slate-900/20 backdrop-blur-[2px] animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface border border-border w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col my-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Fixed Header */}
-        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between bg-surface-alt/70 flex-shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold flex-shrink-0">
               {isEdit ? <Edit2 className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
             </div>
             <div>
-              <h2 className="text-[15px] font-extrabold text-navy leading-tight">
+              <h2 className="text-[16px] font-extrabold text-navy leading-tight">
                 {isEdit ? `Edit Customer: ${customer.name}` : 'Create Customer Account'}
               </h2>
-              <p className="text-[11.5px] text-text-secondary">
+              <p className="text-[12px] text-text-secondary mt-0.5">
                 {isEdit ? 'Update profile, address, and credit settings.' : 'Customer will be able to log in to the PHP portal with these credentials.'}
               </p>
             </div>
@@ -643,7 +649,7 @@ function CustomerFormModal({ isOpen, customer, onClose, onSaved }) {
             onClick={onClose}
             className="p-1.5 text-text-tertiary hover:text-navy rounded-lg hover:bg-surface-hover transition-colors cursor-pointer"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -931,9 +937,15 @@ function PasswordResetModal({ isOpen, customer, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-navy/60 backdrop-blur-xs animate-fade-in">
-      <div className="bg-surface border border-border w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between bg-surface-alt/70">
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-900/20 backdrop-blur-[2px] animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="bg-surface border border-border w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col my-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-3.5 border-b border-border flex items-center justify-between bg-surface">
           <div className="flex items-center gap-2">
             <KeyRound className="w-5 h-5 text-amber-600" />
             <h2 className="text-[15px] font-extrabold text-navy">
@@ -985,14 +997,14 @@ function PasswordResetModal({ isOpen, customer, onClose, onSaved }) {
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-1.5 border border-border rounded-xl text-[12px] font-bold text-text-secondary hover:bg-surface-hover"
+              className="px-3.5 py-1.5 border border-border rounded-xl text-[12px] font-bold text-text-secondary hover:bg-surface-hover cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[12px] font-bold transition-all shadow-xs flex items-center gap-1.5"
+              className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-[12px] font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
             >
               {submitting && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
               <span>Reset & Save</span>
@@ -1011,8 +1023,14 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
   const shipments = data?.recent_shipments || []
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-navy/50 backdrop-blur-xs flex justify-end animate-fade-in">
-      <div className="w-full max-w-xl bg-surface border-l border-border h-full overflow-y-auto flex flex-col shadow-2xl animate-slide-in">
+    <div
+      className="fixed inset-0 z-[9999] overflow-hidden bg-slate-900/20 backdrop-blur-[2px] flex justify-end animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-xl bg-surface border-l border-border h-full overflow-y-auto flex flex-col shadow-2xl animate-slide-in"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="p-5 border-b border-border flex items-center justify-between sticky top-0 bg-surface/95 backdrop-blur-sm z-10">
           <div className="flex items-center gap-3">
