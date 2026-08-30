@@ -5,7 +5,6 @@ import { generateInvoicePdf } from '../../services/invoicePdf.service.js'
 import { generateWaybillPdf } from '../../services/waybillPdf.service.js'
 import { generateBoxLabelsPdf } from '../../services/boxLabelPdf.service.js'
 import { syncToRemoteAwbEntry, syncToRemoteParcelHistory } from '../../services/remoteAwbEntry.service.js'
-import { syncShipmentsBatch } from '../../services/trackingSync.service.js'
 import { isSettingEnabled } from '../systemSettings/systemSettings.controller.js'
 import path from 'path'
 import fs from 'fs'
@@ -1855,22 +1854,6 @@ export const getBookings = async (req, res) => {
       }
     })
 
-    // Auto-detect shipments on this page missing forwarding numbers and trigger background sync
-    const missingFwdRows = dataRows.filter(r => 
-      (r.is_trashed === 0 || !r.is_trashed) &&
-      r.status !== 'delivered' && r.status !== 'cancelled' &&
-      (r.vendor_awb_number || r.tracking_number) &&
-      (!r.vendor_awb_number_2 || !r.forwarding_no)
-    )
-
-    if (missingFwdRows.length > 0) {
-      setImmediate(() => {
-        syncShipmentsBatch(missingFwdRows, { concurrency: 3 }).catch(err => {
-          console.warn('[getBookings] Background forwarding sync error:', err.message)
-        })
-      })
-    }
-
     return res.json({
       success: true,
       bookings,
@@ -2614,6 +2597,7 @@ export const syncTrackingController = async (req, res) => {
       itemsToSync = rows
     }
 
+    const { syncShipmentsBatch } = await import('../../services/trackingSync.service.js')
     const summary = await syncShipmentsBatch(itemsToSync, { force: true, concurrency: 4 })
     return res.json({
       success: true,
