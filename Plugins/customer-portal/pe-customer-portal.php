@@ -191,44 +191,65 @@ add_action('wp_enqueue_scripts', 'pe_cp_enqueue');
 function pe_cp_ajax_login()
 {
     if (!check_ajax_referer('pe_cp_nonce', 'nonce', false)) {
-        wp_send_json_error(['message' => 'Security token expired. Please refresh.'], 403);
+        wp_send_json_error(['message' => 'Security token expired. Please refresh the page.'], 403);
     }
 
     global $wpdb;
-    $email_or_phone = sanitize_text_field($_POST['email_or_phone'] ?? '');
-    $pwd = $_POST['pwd'] ?? '';
+    $email_or_phone = isset($_POST['email_or_phone']) ? trim(sanitize_text_field(wp_unslash($_POST['email_or_phone']))) : '';
+    $pwd = isset($_POST['pwd']) ? wp_unslash($_POST['pwd']) : '';
 
-    if (!$email_or_phone || !$pwd) {
-        wp_send_json_error(['message' => 'Email/Phone and password are required']);
+    if (!$email_or_phone || $pwd === '') {
+        wp_send_json_error(['message' => 'Please enter your email/phone and password.']);
     }
 
-    // Check tbl_customers table
-    $table_exists = $wpdb->get_var("SHOW TABLES LIKE 'tbl_customers'");
-    if (!$table_exists) {
-        // Fallback: Try matching against AWBENTRY SNAME/SPHONE1 for demo
-        wp_send_json_error(['message' => 'Customer system not initialized. Contact admin.']);
+    // Determine correct table name
+    $table = 'tbl_customers';
+    $table_check = $wpdb->get_var("SHOW TABLES LIKE 'tbl_customers'");
+    if (!$table_check && !empty($wpdb->prefix)) {
+        $prefixed_check = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}tbl_customers'");
+        if ($prefixed_check) {
+            $table = "{$wpdb->prefix}tbl_customers";
+        }
     }
 
+    // Case-insensitive email and trimmed phone lookup
     $row = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM tbl_customers WHERE (email = %s OR phone = %s) AND status = 'active'",
+        "SELECT * FROM $table WHERE (LOWER(TRIM(email)) = LOWER(%s) OR TRIM(phone) = %s) LIMIT 1",
         $email_or_phone,
         $email_or_phone
     ));
 
     if (!$row) {
-        wp_send_json_error(['message' => 'Invalid credentials']);
+        wp_send_json_error(['message' => 'No account found with this email or phone number.']);
     }
 
-    // Verify password (bcrypt)
-    if (!password_verify($pwd, $row->password)) {
-        // Legacy MD5 fallback
-        if (md5($pwd) !== $row->password) {
-            wp_send_json_error(['message' => 'Invalid credentials']);
+    // Check account active status
+    if (isset($row->status) && $row->status !== 'active' && $row->status !== '1' && $row->status !== 1 && !empty($row->status)) {
+        wp_send_json_error(['message' => 'Your account is currently disabled. Please contact the administrator.']);
+    }
+
+    // Verify password (supports bcrypt $2a$, $2b$, $2y$, and legacy MD5)
+    $pwd_valid = false;
+    if (!empty($row->password)) {
+        if (password_verify($pwd, $row->password)) {
+            $pwd_valid = true;
+        } elseif (md5($pwd) === $row->password) {
+            $pwd_valid = true;
+            // Upgrade legacy MD5 hash to bcrypt
+            $wpdb->update($table, [
+                'password' => password_hash($pwd, PASSWORD_BCRYPT, ['cost' => 10])
+            ], ['id' => $row->id]);
+        } elseif ($pwd === $row->password) {
+            // In case stored as plain text
+            $pwd_valid = true;
+            $wpdb->update($table, [
+                'password' => password_hash($pwd, PASSWORD_BCRYPT, ['cost' => 10])
+            ], ['id' => $row->id]);
         }
-        // Auto-upgrade to bcrypt
-        $wpdb->update('tbl_customers', [
-            'password' => password_hash($pwd, PASSWORD_BCRYPT, ['cost' => 12])
-        ], ['id' => $row->id]);
+    }
+
+    if (!$pwd_valid) {
+        wp_send_json_error(['message' => 'Incorrect password. Please verify and try again or request a password reset from admin.']);
     }
 
     // Create session
@@ -244,12 +265,12 @@ function pe_cp_ajax_login()
         'fingerprint' => pe_cp_fingerprint(),
     ]);
 
-    $wpdb->update('tbl_customers', [
+    $wpdb->update($table, [
         'last_login' => current_time('mysql'),
     ], ['id' => $row->id]);
 
     wp_send_json_success([
-        'message' => 'Welcome back! Redirecting...',
+        'message' => 'Welcome back, ' . esc_html($row->name) . '! Redirecting...',
         'new_nonce' => wp_create_nonce('pe_cp_nonce')
     ]);
 }
