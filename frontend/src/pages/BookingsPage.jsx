@@ -400,39 +400,44 @@ export default function BookingsPage() {
     }
   }
 
-  // Open our official Shipping Bill (Waybill) PDF
+  // 1. Open our official Shipping Bill (Waybill) PDF (Dollar icon)
   const handleOpenOurBillRow = async (b) => {
-    const toastId = toast.loading('Opening Shipping Bill...')
+    const toastId = toast.loading('Opening Our Shipping Bill...')
     try {
       const res = await bookingsApi.downloadWaybill(b.id)
       const blob = new Blob([res.data], { type: 'application/pdf' })
       const url = window.URL.createObjectURL(blob)
       window.open(url, '_blank')
-      toast.success('Shipping Bill opened in new tab', { id: toastId })
+      toast.success('Our Shipping Bill opened in new tab', { id: toastId })
     } catch (err) {
       toast.error('Failed to open Shipping Bill', { id: toastId })
     }
   }
 
-  // Open Vendor Invoice (from API response)
-  const handleOpenInvoiceRow = (b) => {
-    openVendorDocument(b, 'invoice')
+  // 2. Open Vendor Invoice (File icon)
+  const handleOpenVendorInvoiceRow = (b) => {
+    openVendorDocument(b, 'vendor_invoice')
   }
 
-  // Open Vendor Label (from API response)
-  const handleOpenLabelRow = (b) => {
-    openVendorDocument(b, 'label')
+  // 3. Open Vendor Shipper Copy / Vendor Bill (Download icon)
+  const handleOpenVendorShipperCopyRow = (b) => {
+    openVendorDocument(b, 'vendor_shipper_copy')
   }
 
-  // Open Prince Official Box / Thermal Label PDF
+  // 4. Open Vendor Label / Box Label (Box icon)
+  const handleOpenVendorBoxLabelRow = (b) => {
+    openVendorDocument(b, 'vendor_box_label')
+  }
+
+  // 5. Open Our Prince Official Box / Thermal Label PDF (Tag icon)
   const handleOpenPrinceLabelRow = async (b) => {
-    const toastId = toast.loading('Opening Prince Box Label...')
+    const toastId = toast.loading('Opening Our Box Label...')
     try {
       const res = await bookingsApi.downloadBoxLabels(b.id)
       const blob = new Blob([res.data], { type: 'application/pdf' })
       const url = window.URL.createObjectURL(blob)
       window.open(url, '_blank')
-      toast.success('Prince Label opened in new tab', { id: toastId })
+      toast.success('Our Box Label opened in new tab', { id: toastId })
     } catch (err) {
       toast.error('Failed to open Prince Label', { id: toastId })
     }
@@ -910,47 +915,57 @@ export default function BookingsPage() {
                                 <Eye className="w-4 h-4" />
                               </Link>
 
-                              {/* 2. Our Official Shipping Bill (Dollar icon) */}
+                              {/* 2. Dollar icon: Our Bill / Waybill */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenOurBillRow(b)}
                                 className="p-1.5 text-navy hover:text-primary hover:bg-navy/5 rounded-lg transition-colors cursor-pointer"
-                                title="Open Shipping Bill / Waybill (Ours)"
+                                title="Our Shipping Bill / Waybill"
                               >
                                 <DollarSign className="w-4 h-4" />
                               </button>
 
-                              {/* 3. Vendor Invoice — open in new tab (Download icon) */}
+                              {/* 3. File icon: Vendor Invoice */}
                               <button
                                 type="button"
-                                onClick={() => handleOpenInvoiceRow(b)}
+                                onClick={() => handleOpenVendorInvoiceRow(b)}
+                                className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition-colors cursor-pointer"
+                                title="Vendor Invoice (Commercial / Freeform Invoice)"
+                              >
+                                <FileText className="w-4 h-4" />
+                              </button>
+
+                              {/* 4. Download icon: Vendor Shipper Copy / Vendor Bill */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenVendorShipperCopyRow(b)}
                                 className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                                title="Open Commercial / Vendor Invoice"
+                                title="Vendor Shipper Copy / Vendor Bill"
                               >
                                 <Download className="w-4 h-4" />
                               </button>
 
-                              {/* 4. Vendor Label — open in new tab (Box icon) */}
+                              {/* 5. Box icon: Vendor Label */}
                               <button
                                 type="button"
-                                onClick={() => handleOpenLabelRow(b)}
+                                onClick={() => handleOpenVendorBoxLabelRow(b)}
                                 className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
-                                title="Open Vendor Label"
+                                title="Vendor Box / Barcode Label"
                               >
                                 <Package className="w-4 h-4" />
                               </button>
 
-                              {/* 5. Prince Official Box / Thermal Label (Prince Label icon) */}
+                              {/* 6. Tag icon: Our Label (Prince Box / Thermal Label) */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenPrinceLabelRow(b)}
                                 className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                                title="Open Prince Box / Thermal Label (Cleaned Layout)"
+                                title="Our Prince Box / Thermal Label"
                               >
                                 <Tag className="w-4 h-4" />
                               </button>
 
-                              {/* 6. Edit / View Booking Form */}
+                              {/* 7. Edit / View Booking Form */}
                               <Link
                                 to={`/bookings/edit/${b.id}`}
                                 className="p-1.5 text-navy hover:text-primary hover:bg-primary/5 rounded-lg transition-colors font-bold flex items-center gap-1 text-[11px]"

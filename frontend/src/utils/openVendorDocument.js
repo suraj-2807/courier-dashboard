@@ -59,22 +59,22 @@ export async function openVendorDocument(booking, docType = 'document') {
         let matchedItem = null
 
         if (type.includes('invoice')) {
-          // Find invoice PDF
+          // 1. Vendor Invoice (e.g. freeform_invoice.pdf, invoice.pdf)
           matchedItem = labelsArr.find(l => {
             const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
-            return fn.includes('invoice') || l?.type === 'invoice' || l?.invoice
+            return fn.includes('invoice') || fn.includes('freeform') || fn.includes('commercial') || l?.type === 'invoice' || l?.invoice
           })
-        } else if (type.includes('box')) {
-          // Find box label PDF
+        } else if (type.includes('shipper') || type.includes('bill') || type.includes('copy')) {
+          // 2. Vendor Shipper Copy / Vendor Bill (e.g. vendor_shipper_copy.pdf)
           matchedItem = labelsArr.find(l => {
             const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
-            return fn.includes('box') || fn.includes('label')
+            return fn.includes('shipper') || fn.includes('copy') || fn.includes('waybill') || fn.includes('bill')
           })
-        } else if (type.includes('label') || type.includes('shipper')) {
-          // Find shipper copy or general label PDF (exclude freeform invoice)
+        } else if (type.includes('box') || type.includes('label')) {
+          // 3. Vendor Box / Barcode Label (e.g. vendor_box_label.pdf)
           matchedItem = labelsArr.find(l => {
             const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
-            return (fn.includes('shipper') || fn.includes('copy') || fn.includes('label') || fn.includes('waybill') || fn.includes('awb')) && !fn.includes('invoice')
+            return fn.includes('box') || (fn.includes('label') && !fn.includes('shipper') && !fn.includes('invoice'))
           }) || labelsArr.find(l => {
             const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
             return !fn.includes('invoice')
@@ -102,24 +102,23 @@ export async function openVendorDocument(booking, docType = 'document') {
           }
           if (openBase64(valStr)) return true
         }
-      } else if (type.includes('box')) {
-        const boxVal = resp.BoxLabel || resp.boxlabel || resp.Boxlabel || resp.box_label || resp.Label || resp.label ||
-                       raw.BoxLabel || raw.boxlabel || raw.Label || raw.label
-        if (boxVal) {
-          const valStr = String(boxVal).trim()
+      } else if (type.includes('shipper') || type.includes('bill') || type.includes('copy')) {
+        const shipVal = resp.AuxLbl || resp.auxlbl || resp.Pdfdownload || resp.pdfdownload || resp.Pdf || resp.pdf ||
+                        resp.BoxLabel || resp.boxlabel || resp.Label || resp.label ||
+                        raw.AuxLbl || raw.auxlbl || raw.Pdfdownload || raw.pdfdownload
+        if (shipVal) {
+          const valStr = String(shipVal).trim()
           if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
             window.open(valStr, '_blank')
             return true
           }
           if (openBase64(valStr)) return true
         }
-      } else {
-        // Label / document / shipper copy
-        const lblVal = resp.BoxLabel || resp.boxlabel || resp.Label || resp.label || resp.AuxLbl || resp.auxlbl ||
-                       resp.Pdfdownload || resp.pdfdownload || resp.Pdf || resp.pdf ||
-                       raw.BoxLabel || raw.boxlabel || raw.Label || raw.label || raw.Pdfdownload || raw.pdfdownload
-        if (lblVal) {
-          const valStr = String(lblVal).trim()
+      } else if (type.includes('box') || type.includes('label')) {
+        const boxVal = resp.BoxLabel || resp.boxlabel || resp.Boxlabel || resp.box_label || resp.Label || resp.label ||
+                       raw.BoxLabel || raw.boxlabel || raw.Label || raw.label
+        if (boxVal) {
+          const valStr = String(boxVal).trim()
           if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
             window.open(valStr, '_blank')
             return true

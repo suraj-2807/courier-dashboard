@@ -35,9 +35,9 @@ import {
   Loader2,
   Edit,
   Plane,
-  Box,
-  Globe,
-  AlertCircle
+  AlertCircle,
+  DollarSign,
+  Tag
 } from 'lucide-react'
 import StatusBadge from '../components/ui/StatusBadge'
 import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters'
@@ -148,26 +148,47 @@ export default function BookingDetailPage() {
     }
   }
 
-  const handleOpenVendorInvoice = async () => {
-    await openVendorDocument(booking, 'invoice')
-  }
-
-  // Official Shipping Bill (Ours)
+  // 1. Official Shipping Bill (Ours - Dollar icon)
   const handleOpenOurBill = async () => {
-    const toastId = toast.loading('Opening Shipping Bill...')
+    const toastId = toast.loading('Opening Our Shipping Bill...')
     try {
       const res = await bookingsApi.downloadWaybill(booking.id)
       const blob = new Blob([res.data], { type: 'application/pdf' })
       const url = window.URL.createObjectURL(blob)
       window.open(url, '_blank')
-      toast.success('Shipping Bill opened in new tab', { id: toastId })
+      toast.success('Our Shipping Bill opened in new tab', { id: toastId })
     } catch (err) {
       toast.error('Failed to open Shipping Bill', { id: toastId })
     }
   }
 
+  // 2. Vendor Invoice (File icon)
+  const handleOpenVendorInvoice = async () => {
+    await openVendorDocument(booking, 'vendor_invoice')
+  }
+
+  // 3. Vendor Shipper Copy / Vendor Bill (Download icon)
+  const handleOpenVendorShipperCopy = async () => {
+    await openVendorDocument(booking, 'vendor_shipper_copy')
+  }
+
+  // 4. Vendor Box Labels (Box icon)
   const handleOpenVendorLabels = async () => {
-    await openVendorDocument(booking, 'box label')
+    await openVendorDocument(booking, 'vendor_box_label')
+  }
+
+  // 5. Our Prince Box / Thermal Label (Tag icon)
+  const handleOpenPrinceLabel = async () => {
+    const toastId = toast.loading('Opening Our Box Label...')
+    try {
+      const res = await bookingsApi.downloadBoxLabels(booking.id)
+      const blob = new Blob([res.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      toast.success('Our Box Label opened in new tab', { id: toastId })
+    } catch (err) {
+      toast.error('Failed to open Prince Label', { id: toastId })
+    }
   }
 
   const handlePushToApi = async () => {
@@ -321,34 +342,54 @@ export default function BookingDetailPage() {
             {booking.is_locked ? 'View Full Form (Locked)' : 'Edit Shipment'}
           </Link>
 
-          {/* Open Vendor Invoice in New Tab */}
-          <button
-            onClick={handleOpenVendorInvoice}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-surface hover:bg-surface-hover border border-border text-navy text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
-            title="Open Vendor Invoice in New Tab"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Invoice
-          </button>
-
-          {/* Official Shipping Bill (Ours) — open in new tab */}
+          {/* 1. Official Shipping Bill (Ours) (Dollar icon) */}
           <button
             onClick={handleOpenOurBill}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-navy hover:bg-navy-light text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-            title="Open Shipping Bill (Ours) in New Tab"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-navy hover:bg-navy-light text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+            title="Open Our Shipping Bill / Waybill"
           >
-            <FileText className="w-3.5 h-3.5" />
-            Shipping Bill
+            <DollarSign className="w-3.5 h-3.5" />
+            Our Bill
           </button>
 
-          {/* Open Vendor Box Labels in New Tab */}
+          {/* 2. Vendor Invoice (File icon) */}
+          <button
+            onClick={handleOpenVendorInvoice}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-900 text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
+            title="Open Vendor Invoice (Commercial / Freeform Invoice)"
+          >
+            <FileText className="w-3.5 h-3.5 text-purple-700" />
+            Vendor Invoice
+          </button>
+
+          {/* 3. Vendor Shipper Copy / Vendor Bill (Download icon) */}
+          <button
+            onClick={handleOpenVendorShipperCopy}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
+            title="Open Vendor Shipper Copy / Vendor Bill"
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-700" />
+            Vendor Shipper Copy
+          </button>
+
+          {/* 4. Vendor Box Labels (Box icon) */}
           <button
             onClick={handleOpenVendorLabels}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-            title="Open Vendor Box Labels in New Tab"
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
+            title="Open Vendor Box / Barcode Label"
           >
-            <Package className="w-3.5 h-3.5" />
-            Box Labels ({booking.no_of_pieces || 1})
+            <Package className="w-3.5 h-3.5 text-amber-700" />
+            Vendor Label
+          </button>
+
+          {/* 5. Our Prince Box Label (Tag icon) */}
+          <button
+            onClick={handleOpenPrinceLabel}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-900 text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
+            title="Open Our Prince Box / Thermal Label"
+          >
+            <Tag className="w-3.5 h-3.5 text-blue-700" />
+            Our Label
           </button>
 
           {/* Push to API button for draft */}

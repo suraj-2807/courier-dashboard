@@ -2447,19 +2447,22 @@ export const getVendorDocument = async (req, res) => {
           let matchedItem = null
 
           if (reqType.includes('invoice')) {
+            // 1. Vendor Invoice (e.g. freeform_invoice.pdf, invoice.pdf)
             matchedItem = labelsArr.find(l => {
               const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
-              return fn.includes('invoice') || l?.type === 'invoice' || l?.invoice
+              return fn.includes('invoice') || fn.includes('freeform') || fn.includes('commercial') || l?.type === 'invoice' || l?.invoice
             })
-          } else if (reqType.includes('box')) {
+          } else if (reqType.includes('shipper') || reqType.includes('bill') || reqType.includes('copy')) {
+            // 2. Vendor Shipper Copy / Vendor Bill (e.g. vendor_shipper_copy.pdf)
             matchedItem = labelsArr.find(l => {
               const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
-              return fn.includes('box') || fn.includes('label')
+              return fn.includes('shipper') || fn.includes('copy') || fn.includes('waybill') || fn.includes('bill')
             })
-          } else if (reqType.includes('label') || reqType.includes('shipper')) {
+          } else if (reqType.includes('box') || reqType.includes('label')) {
+            // 3. Vendor Box / Barcode Label (e.g. vendor_box_label.pdf)
             matchedItem = labelsArr.find(l => {
               const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
-              return (fn.includes('shipper') || fn.includes('copy') || fn.includes('label') || fn.includes('waybill') || fn.includes('awb')) && !fn.includes('invoice')
+              return fn.includes('box') || (fn.includes('label') && !fn.includes('shipper') && !fn.includes('invoice'))
             }) || labelsArr.find(l => {
               const fn = String(l?.filename || l?.file_name || l?.name || '').toLowerCase()
               return !fn.includes('invoice')
@@ -2485,7 +2488,18 @@ export const getVendorDocument = async (req, res) => {
             }
             return serveBase64Pdf(valStr, `Invoice_${b.tracking_number || b.id}.pdf`)
           }
-        } else if (reqType.includes('box')) {
+        } else if (reqType.includes('shipper') || reqType.includes('bill') || reqType.includes('copy')) {
+          const shipVal = resp.AuxLbl || resp.auxlbl || resp.Pdfdownload || resp.pdfdownload || resp.Pdf || resp.pdf ||
+                          resp.BoxLabel || resp.boxlabel || resp.Label || resp.label ||
+                          raw.AuxLbl || raw.auxlbl || raw.Pdfdownload || raw.pdfdownload
+          if (shipVal) {
+            const valStr = String(shipVal).trim()
+            if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
+              return res.redirect(valStr)
+            }
+            return serveBase64Pdf(valStr, `ShipperCopy_${b.tracking_number || b.id}.pdf`)
+          }
+        } else if (reqType.includes('box') || reqType.includes('label')) {
           const boxVal = resp.BoxLabel || resp.boxlabel || resp.Boxlabel || resp.box_label || resp.Label || resp.label ||
                          raw.BoxLabel || raw.boxlabel || raw.Label || raw.label
           if (boxVal) {
@@ -2494,18 +2508,6 @@ export const getVendorDocument = async (req, res) => {
               return res.redirect(valStr)
             }
             return serveBase64Pdf(valStr, `BoxLabel_${b.tracking_number || b.id}.pdf`)
-          }
-        } else {
-          // Label / document / shipper copy
-          const lblVal = resp.BoxLabel || resp.boxlabel || resp.Label || resp.label || resp.AuxLbl || resp.auxlbl ||
-                         resp.Pdfdownload || resp.pdfdownload || resp.Pdf || resp.pdf ||
-                         raw.BoxLabel || raw.boxlabel || raw.Label || raw.label || raw.Pdfdownload || raw.pdfdownload
-          if (lblVal) {
-            const valStr = String(lblVal).trim()
-            if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
-              return res.redirect(valStr)
-            }
-            return serveBase64Pdf(valStr, `Label_${b.tracking_number || b.id}.pdf`)
           }
         }
       }
