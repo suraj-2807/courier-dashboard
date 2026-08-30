@@ -23,13 +23,15 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  UserCheck
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 
 const navItems = [
   { label: 'Dashboard', path: '/', icon: LayoutDashboard },
   { label: 'Shipments', path: '/bookings', icon: Package },
+  { label: 'Customers', path: '/customers', icon: UserCheck },
   { label: 'Customer Requests', path: '/booking-requests', icon: ClipboardList },
   { label: 'Tracking', path: '/tracking', icon: MapPin },
   { label: 'Users & Contacts', path: '/users', icon: Users },

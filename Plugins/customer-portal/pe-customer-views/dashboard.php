@@ -35,9 +35,18 @@ $where_requests = $wpdb->prepare(
     ...array_merge(
         [$cust_email_for_req, $cust_email_for_req, $cust_phone_for_req, $cust_phone_for_req],
         $cust_id_for_req ? [$cust_id_for_req] : []
-    )
-);
 $pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE status = 'pending' AND ($where_requests)"));
+
+// Fetch customer balance & credit limit
+$cust_balance = 0.00;
+$cust_credit_limit = 0.00;
+if (!empty($cust['customer_id'])) {
+    $cb = $wpdb->get_row($wpdb->prepare("SELECT current_balance, credit_limit FROM tbl_customers WHERE id = %d", intval($cust['customer_id'])));
+    if ($cb) {
+        $cust_balance = floatval($cb->current_balance);
+        $cust_credit_limit = floatval($cb->credit_limit);
+    }
+}
 ?>
 <style>
 #wpadminbar{display:none!important}html{margin-top:0!important}
@@ -325,11 +334,12 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
       </div>
 
       <!-- Stats -->
-      <div class="cp-stats">
+      <div class="cp-stats" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
         <div class="cp-stat"><div><div class="cp-stat-label">Total Shipments</div><div class="cp-stat-value"><?php echo number_format($ts); ?></div><div class="cp-stat-desc r">All time</div></div><div class="cp-stat-icon"><i class="fa-solid fa-boxes-stacked"></i></div></div>
         <div class="cp-stat"><div><div class="cp-stat-label">In Transit</div><div class="cp-stat-value"><?php echo str_pad($tc, 2, '0', STR_PAD_LEFT); ?></div><div class="cp-stat-desc w">On the way</div></div><div class="cp-stat-icon"><i class="fa-solid fa-truck"></i></div></div>
         <div class="cp-stat"><div><div class="cp-stat-label">Delivered</div><div class="cp-stat-value"><?php echo number_format($dc); ?></div><div class="cp-stat-desc g">Completed</div></div><div class="cp-stat-icon"><i class="fa-solid fa-circle-check"></i></div></div>
-        <div class="cp-stat"><div><div class="cp-stat-label">Active</div><div class="cp-stat-value"><?php echo str_pad($ts - $dc, 2, '0', STR_PAD_LEFT); ?></div><div class="cp-stat-desc b">In progress</div></div><div class="cp-stat-icon"><i class="fa-solid fa-signal"></i></div></div>
+        <div class="cp-stat"><div><div class="cp-stat-label">Account Balance</div><div class="cp-stat-value" style="font-size:20px; font-weight:800; color:<?php echo $cust_balance > 0 ? 'var(--cpgreen)' : 'var(--cptext)'; ?>">₹<?php echo number_format($cust_balance, 2); ?></div><div class="cp-stat-desc b">Available / Net</div></div><div class="cp-stat-icon"><i class="fa-solid fa-wallet"></i></div></div>
+        <div class="cp-stat"><div><div class="cp-stat-label">Credit Limit</div><div class="cp-stat-value" style="font-size:20px; font-weight:800; color:var(--cpblue);">₹<?php echo number_format($cust_credit_limit, 2); ?></div><div class="cp-stat-desc r">Approved Limit</div></div><div class="cp-stat-icon"><i class="fa-solid fa-shield-halved"></i></div></div>
       </div>
 
       <!-- Quick CTA -->
@@ -1005,7 +1015,7 @@ function cpLoadShipments(p) {
         if (!d.success) return;
         var r = d.data, h = '';
         h += '<div class="cp-tc"><div class="cp-th"><h3><i class="fa-solid fa-layer-group"></i> Your Shipments <span class="badge">' + r.total + '</span></h3></div>';
-        h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>AWB</th><th>Date</th><th>Consignee</th><th>Destination</th><th>Weight</th><th>Status</th></tr></thead><tbody>';
+        h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>AWB</th><th>Booking Date</th><th>Consignee</th><th>Destination</th><th>Weight</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
         if (!r.rows.length) h += '<tr><td colspan="7" style="text-align:center;padding:50px;color:var(--cptext3)"><i class="fa-solid fa-inbox" style="font-size:28px;display:block;margin-bottom:10px;opacity:.2"></i>No shipments found</td></tr>';
         r.rows.forEach(function(rw) {
             var stDot = cpGetStatusDot(rw.status);
@@ -1015,6 +1025,7 @@ function cpLoadShipments(p) {
             h += '<td class="nmc">' + rw.consignee + '</td>';
             h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + rw.destination + '</td>';
             h += '<td style="font-weight:600">' + (rw.weight || '—') + ' kg</td>';
+            h += '<td style="font-weight:700;color:var(--cptext)">' + (rw.amount ? '₹' + Number(rw.amount).toLocaleString('en-IN') : '—') + '</td>';
             h += '<td><div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span>' + stDot.label + '</div></td></tr>';
         });
         h += '</tbody></table></div>';
@@ -1048,6 +1059,10 @@ function cpShowDetail(awb) {
         h += '<div class="cp-df"><div class="l">Destination</div><div class="v">' + (s.destination || '—') + '</div></div>';
         h += '<div class="cp-df"><div class="l">Weight</div><div class="v">' + (s.weight || '—') + ' kg</div></div>';
         h += '<div class="cp-df"><div class="l">Pieces</div><div class="v">' + (s.pieces || '1') + '</div></div>';
+        if (s.amount) {
+            h += '<div class="cp-df"><div class="l">Total Amount</div><div class="v" style="font-weight:800;color:var(--cpgreen)">₹' + Number(s.amount).toLocaleString('en-IN') + '</div></div>';
+            h += '<div class="cp-df"><div class="l">Balance Due</div><div class="v" style="font-weight:700;' + (s.balance > 0 ? 'color:var(--cpred)' : 'color:var(--cptext2)') + '">₹' + Number(s.balance || 0).toLocaleString('en-IN') + '</div></div>';
+        }
         if (s.vendor) h += '<div class="cp-df"><div class="l">Carrier</div><div class="v">' + s.vendor + '</div></div>';
         if (s.vendor_awb) h += '<div class="cp-df"><div class="l">Vendor AWB</div><div class="v" style="font-family:Courier New,monospace">' + s.vendor_awb + '</div></div>';
         h += '</div></div>';

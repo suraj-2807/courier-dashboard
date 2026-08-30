@@ -416,6 +416,72 @@ export async function initializeDb() {
       console.error('Forwarding number cleanup warning:', cleanFwdErr.message)
     }
 
+    // ── Customers Accounts Table (tbl_customers for PHP portal & React Admin) ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS tbl_customers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(150) NOT NULL,
+        phone VARCHAR(50) DEFAULT '',
+        company VARCHAR(150) DEFAULT '',
+        password VARCHAR(255) NOT NULL,
+        address TEXT DEFAULT NULL,
+        city VARCHAR(100) DEFAULT '',
+        state VARCHAR(100) DEFAULT '',
+        pincode VARCHAR(20) DEFAULT '',
+        country VARCHAR(100) DEFAULT 'INDIA',
+        gstin_no VARCHAR(50) DEFAULT '',
+        credit_limit DECIMAL(12,2) DEFAULT 0.00,
+        current_balance DECIMAL(12,2) DEFAULT 0.00,
+        status ENUM('active','inactive') DEFAULT 'active',
+        last_login DATETIME DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY idx_email (email),
+        INDEX idx_phone (phone),
+        INDEX idx_status (status)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+      console.log('tbl_customers table ready.')
+    } catch (tcErr) {
+      if (tcErr.code !== 'ER_TABLE_EXISTS_ERROR') {
+        console.error('tbl_customers table migration error:', tcErr.message)
+      }
+    }
+
+    // Column migration for tbl_customers (ensure address/balance/credit_limit columns exist)
+    try {
+      const tcCols = await query("SHOW COLUMNS FROM tbl_customers")
+      if (Array.isArray(tcCols)) {
+        const existingTcCols = new Set(tcCols.map(c => c.Field.toLowerCase()))
+        const neededTcCols = [
+          { name: 'phone', type: "VARCHAR(50) DEFAULT ''" },
+          { name: 'company', type: "VARCHAR(150) DEFAULT ''" },
+          { name: 'address', type: "TEXT DEFAULT NULL" },
+          { name: 'city', type: "VARCHAR(100) DEFAULT ''" },
+          { name: 'state', type: "VARCHAR(100) DEFAULT ''" },
+          { name: 'pincode', type: "VARCHAR(20) DEFAULT ''" },
+          { name: 'country', type: "VARCHAR(100) DEFAULT 'INDIA'" },
+          { name: 'gstin_no', type: "VARCHAR(50) DEFAULT ''" },
+          { name: 'credit_limit', type: "DECIMAL(12,2) DEFAULT 0.00" },
+          { name: 'current_balance', type: "DECIMAL(12,2) DEFAULT 0.00" },
+          { name: 'status', type: "ENUM('active','inactive') DEFAULT 'active'" },
+          { name: 'last_login', type: "DATETIME DEFAULT NULL" }
+        ]
+        for (const col of neededTcCols) {
+          if (!existingTcCols.has(col.name.toLowerCase())) {
+            try {
+              await execute(`ALTER TABLE tbl_customers ADD COLUMN ${col.name} ${col.type}`)
+              console.log(`tbl_customers.${col.name} column added.`)
+            } catch (addColErr) {
+              console.warn(`tbl_customers.${col.name} column add notice:`, addColErr.message)
+            }
+          }
+        }
+      }
+    } catch (tcColErr) {
+      console.warn('tbl_customers column inspection notice:', tcColErr.message)
+    }
+
     // ── Customer Addresses Table ──
     try {
       await execute(`CREATE TABLE IF NOT EXISTS customer_addresses (

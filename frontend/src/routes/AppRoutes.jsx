@@ -14,6 +14,7 @@ import CustomerBookingPage from '../pages/CustomerBookingPage'
 import BookingRequestsPage from '../pages/BookingRequestsPage'
 import UsersPage from '../pages/UsersPage'
 import ProductsPage from '../pages/ProductsPage'
+import CustomersPage from '../pages/CustomersPage'
 
 export default function AppRoutes() {
   return (
@@ -28,6 +29,16 @@ export default function AppRoutes() {
           <ProtectedRoute>
             <DashboardLayout>
               <DashboardPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/customers"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <CustomersPage />
             </DashboardLayout>
           </ProtectedRoute>
         }

@@ -917,8 +917,12 @@ export const saveBooking = async (req, res) => {
         ]
       )
     } else {
-      // New shipment insertion
-      tracking_number = await generateTracking()
+      // New shipment insertion - preserve request_awb / tracking_number if provided (e.g. from customer request)
+      if (fields.request_awb || fields.tracking_number || req.body.request_awb || req.body.tracking_number) {
+        tracking_number = String(fields.request_awb || fields.tracking_number || req.body.request_awb || req.body.tracking_number).trim()
+      } else {
+        tracking_number = await generateTracking()
+      }
       const order_id = tracking_number
 
       const shipmentResult = await execute(
@@ -1432,8 +1436,12 @@ export const createBooking = async (req, res) => {
         ]
       )
     } else {
-      // New shipment insertion
-      tracking_number = await generateTracking()
+      // New shipment insertion - preserve request_awb / tracking_number if provided (e.g. from customer request)
+      if (fields.request_awb || fields.tracking_number || req.body.request_awb || req.body.tracking_number) {
+        tracking_number = String(fields.request_awb || fields.tracking_number || req.body.request_awb || req.body.tracking_number).trim()
+      } else {
+        tracking_number = await generateTracking()
+      }
       order_id = tracking_number
 
       const shipmentResult = await execute(
@@ -1483,7 +1491,7 @@ export const createBooking = async (req, res) => {
           fields.remarks || '',
           fields.vendor_config_id ? 'processing' : 'booked',
           fields.vendor_config_id ? 'pending' : 'skipped',
-          false,
+          fields.vendor_config_id ? true : false,
           snap.sender_name,
           snap.sender_company,
           snap.sender_phone,
@@ -1638,15 +1646,19 @@ export const createBooking = async (req, res) => {
         }
 
         if (reqRow) {
-          const effectiveTracking = vendorResult?.awbNumber || tracking_number
+          const effectiveTracking = tracking_number
           await execute(
             `UPDATE booking_requests SET status = 'confirmed', shipment_id = ?, tracking_number = ? WHERE id = ?`,
             [shipmentId, effectiveTracking, reqRow.id]
           )
 
+          const updateDesc = vendorResult?.awbNumber 
+            ? `Booking confirmed. Tracking: ${effectiveTracking} (Vendor AWB: ${vendorResult.awbNumber})`
+            : `Booking confirmed. Tracking: ${effectiveTracking}`
+
           await execute(
             `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
-            [reqRow.id, 'shipment_created', 'Shipment Confirmed', `Booking confirmed. Tracking: ${effectiveTracking}`, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking })]
+            [reqRow.id, 'shipment_created', 'Shipment Confirmed', updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking, vendor_awb: vendorResult?.awbNumber || '' })]
           )
         }
       } catch (reqSyncErr) {

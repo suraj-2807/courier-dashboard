@@ -699,7 +699,10 @@ export default function NewBookingPage() {
       terms_of_trade: rd.terms_of_trade || 'CIF',
       invoice_note: rd.invoice_note || '',
       hs_code: rd.hs_code || '',
-      export_reason: rd.export_reason || ''
+      export_reason: rd.export_reason || '',
+      tracking_number: rd.request_awb || '',
+      request_awb: rd.request_awb || '',
+      from_request: rd.id || fromRequestId
     }))
 
     // Parse and populate parcels from request data
@@ -1125,8 +1128,9 @@ export default function NewBookingPage() {
     required_performa: form.required_performa,
     required_label: form.required_label,
 
-    from_request: fromRequestId || undefined,
-    request_awb: requestAwb || undefined
+    from_request: fromRequestId || form.from_request || undefined,
+    request_awb: requestAwb || form.request_awb || form.tracking_number || undefined,
+    tracking_number: form.tracking_number || requestAwb || undefined
   }
   }
 

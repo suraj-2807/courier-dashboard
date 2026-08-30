@@ -325,7 +325,7 @@ function pe_cp_ajax_shipments()
     $rows = $wpdb->get_results(
         "SELECT a.AWBID as c_id, a.AWBNO, a.CNEENAME as CONSIGNEE, a.DESTNAME as DESTINATION,
                 a.CHARGEWEIGHT as WEIGHT, a.AWBDATE as BOOKINGDATE, a.VENDNAME as vendor,
-                a.SNAME, a.VENDORAWB1
+                a.SNAME, a.VENDORAWB1, a.NETAMOUNT, a.TOTAL, a.CHARGES, a.RECEIPTAMOUNT
          FROM AWBENTRY a
          WHERE $where
          ORDER BY a.AWBID DESC
@@ -341,12 +341,18 @@ function pe_cp_ajax_shipments()
         ));
         $status = $ph ?: 'SHIPMENT BOOKED';
 
+        $amt = floatval($r->TOTAL ?: ($r->NETAMOUNT ?: $r->CHARGES));
+        $rec = floatval($r->RECEIPTAMOUNT ?? 0);
+
         $data[] = [
             'awb' => $r->AWBNO,
             'consignee' => $r->CONSIGNEE,
             'destination' => $r->DESTINATION,
             'weight' => $r->WEIGHT,
-            'booking_date' => $r->BOOKINGDATE,
+            'booking_date' => !empty($r->BOOKINGDATE) ? date('d M Y', strtotime($r->BOOKINGDATE)) : '',
+            'amount' => $amt,
+            'receipt_amount' => $rec,
+            'balance' => max(0, $amt - $rec),
             'vendor' => $r->vendor ?? '',
             'status' => $status,
             'shipper' => $r->SNAME ?? '',
@@ -360,11 +366,24 @@ function pe_cp_ajax_shipments()
     $count_delivered = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND LOWER(COALESCE($_st_sub, '')) LIKE '%delivered%'"));
     $count_transit = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND (LOWER(COALESCE($_st_sub, '')) LIKE '%transit%' OR LOWER(COALESCE($_st_sub, '')) LIKE '%departed%')"));
 
+    // Fetch customer balance
+    $cust_balance = 0.00;
+    $cust_credit_limit = 0.00;
+    if (!empty($cust['customer_id'])) {
+        $cb = $wpdb->get_row($wpdb->prepare("SELECT current_balance, credit_limit FROM tbl_customers WHERE id = %d", intval($cust['customer_id'])));
+        if ($cb) {
+            $cust_balance = floatval($cb->current_balance);
+            $cust_credit_limit = floatval($cb->credit_limit);
+        }
+    }
+
     wp_send_json_success([
         'rows' => $data,
         'total' => $total,
         'pages' => max(1, ceil($total / $per)),
         'page' => $page,
+        'balance' => $cust_balance,
+        'credit_limit' => $cust_credit_limit,
         'counts' => [
             'all' => $count_all,
             'delivered' => $count_delivered,
@@ -405,10 +424,14 @@ function pe_cp_ajax_shipment_detail()
         $awb
     ));
 
+    $totAmount = floatval($row->TOTAL ?: ($row->NETAMOUNT ?: $row->CHARGES));
+    $recAmount = floatval($row->RECEIPTAMOUNT ?? 0);
+
     wp_send_json_success([
         'shipment' => [
             'awb' => $row->AWBNO,
-            'date' => $row->AWBDATE,
+            'date' => !empty($row->AWBDATE) ? date('d M Y', strtotime($row->AWBDATE)) : '',
+            'raw_date' => $row->AWBDATE,
             'shipper' => $row->SNAME,
             'consignee' => $row->CNEENAME,
             'destination' => $row->DESTNAME,
