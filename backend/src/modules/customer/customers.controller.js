@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs'
 import { query, execute } from '../../config/db.js'
 import { syncCustomerToWP, deleteCustomerFromWP } from '../../utils/wpSync.js'
+import { syncCustomerToRemoteDb, deleteCustomerFromRemoteDb } from '../../services/remoteCustomer.service.js'
 
 /**
  * GET /api/customers
@@ -274,7 +275,16 @@ export const createCustomer = async (req, res) => {
     const created = createdRows[0]
     delete created.password
 
-    // Sync to WordPress database
+    // Sync directly to remote Hostinger DB (u364134727_nwNLR) & WP
+    syncCustomerToRemoteDb({
+      name: name.trim(),
+      email: cleanEmail,
+      phone: cleanPhone,
+      company: (company || '').trim(),
+      password: hashedPassword,
+      status: status === 'inactive' ? 'inactive' : 'active'
+    }).catch((err) => console.error('[Remote DB Customer Sync Error]:', err.message))
+
     syncCustomerToWP({
       id: newId,
       name: name.trim(),
@@ -394,7 +404,16 @@ export const updateCustomer = async (req, res) => {
     const updated = updatedRows[0]
     delete updated.password
 
-    // Sync to WordPress database
+    // Sync to remote Hostinger DB & WP
+    syncCustomerToRemoteDb({
+      name: name ? name.trim() : existing[0].name,
+      email: cleanEmail,
+      phone: phone !== undefined ? phone.trim() : existing[0].phone,
+      company: company !== undefined ? company.trim() : existing[0].company,
+      password: hashedPassword || undefined,
+      status: status || existing[0].status
+    }).catch((err) => console.error('[Remote DB Customer Sync Error]:', err.message))
+
     syncCustomerToWP({
       id,
       name: name ? name.trim() : existing[0].name,
@@ -433,13 +452,21 @@ export const toggleCustomerStatus = async (req, res) => {
     const { id } = req.params
     const { status } = req.body
 
-    const existing = await query('SELECT status, email FROM tbl_customers WHERE id = ?', [id])
+    const existing = await query('SELECT status, email, name, phone, company FROM tbl_customers WHERE id = ?', [id])
     if (!existing || existing.length === 0) {
       return res.status(404).json({ success: false, message: 'Customer not found' })
     }
 
     const nextStatus = status || (existing[0].status === 'active' ? 'inactive' : 'active')
     await execute('UPDATE tbl_customers SET status = ? WHERE id = ?', [nextStatus, id])
+
+    syncCustomerToRemoteDb({
+      email: existing[0].email,
+      name: existing[0].name,
+      phone: existing[0].phone,
+      company: existing[0].company,
+      status: nextStatus
+    }).catch((err) => console.error('[Remote DB Customer Status Sync Error]:', err.message))
 
     syncCustomerToWP({
       id,
@@ -471,6 +498,10 @@ export const deleteCustomer = async (req, res) => {
     }
 
     await execute('DELETE FROM tbl_customers WHERE id = ?', [id])
+
+    deleteCustomerFromRemoteDb(existing[0].email).catch((err) =>
+      console.error('[Remote DB Customer Delete Error]:', err.message)
+    )
 
     deleteCustomerFromWP(id, existing[0].email).catch((err) =>
       console.error('[WP Customer Delete Sync Error]:', err.message)
