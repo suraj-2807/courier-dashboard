@@ -121,3 +121,62 @@ export async function syncAwbToWP(awbData) {
     console.error('[WP Sync] AWB sync error:', err.message)
   }
 }
+
+/**
+ * Sync a customer account (create / update) to WordPress database
+ *
+ * @param {Object} customerData
+ */
+export async function syncCustomerToWP(customerData) {
+  if (!WP_SYNC_URL || !WP_SYNC_KEY) {
+    console.log('[WP Sync] Skipped — WP_SYNC_URL or WP_SYNC_KEY not configured')
+    return
+  }
+
+  try {
+    const url = `${WP_SYNC_URL}/wp-json/pe-cp/v1/sync-customer`
+    console.log(`[WP Sync] Syncing customer ${customerData.email} to WP...`)
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Sync-Key': WP_SYNC_KEY
+      },
+      body: JSON.stringify(customerData)
+    })
+
+    const data = await res.json()
+    if (!res.ok) {
+      console.error('[WP Sync] Customer sync failed:', res.status, data)
+    } else {
+      console.log(`[WP Sync] Customer ${customerData.email} synced to WP successfully`)
+    }
+  } catch (err) {
+    console.error('[WP Sync] Customer sync error:', err.message)
+  }
+}
+
+/**
+ * Sync customer deletion to WordPress database
+ *
+ * @param {string|number} id
+ * @param {string} email
+ */
+export async function deleteCustomerFromWP(id, email) {
+  if (!WP_SYNC_URL || !WP_SYNC_KEY) return
+
+  try {
+    const url = `${WP_SYNC_URL}/wp-json/pe-cp/v1/sync-customer-delete`
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Sync-Key': WP_SYNC_KEY
+      },
+      body: JSON.stringify({ id, email })
+    })
+  } catch (err) {
+    console.error('[WP Sync] Customer delete sync error:', err.message)
+  }
+}

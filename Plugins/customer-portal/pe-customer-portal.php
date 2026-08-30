@@ -212,15 +212,35 @@ function pe_cp_ajax_login()
         }
     }
 
-    // Case-insensitive email and trimmed phone lookup
+    // Case-insensitive email, trimmed phone, or name lookup
     $row = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM $table WHERE (LOWER(TRIM(email)) = LOWER(%s) OR TRIM(phone) = %s) LIMIT 1",
+        "SELECT * FROM $table WHERE (LOWER(TRIM(email)) = LOWER(%s) OR TRIM(phone) = %s OR LOWER(TRIM(name)) = LOWER(%s)) LIMIT 1",
+        $email_or_phone,
         $email_or_phone,
         $email_or_phone
     ));
 
+    // Fallback: Check if user exists in standard WordPress users table
     if (!$row) {
-        wp_send_json_error(['message' => 'No account found with this email or phone number.']);
+        $wp_user = get_user_by('email', $email_or_phone);
+        if (!$wp_user) {
+            $wp_user = get_user_by('login', $email_or_phone);
+        }
+        if ($wp_user && wp_check_password($pwd, $wp_user->user_pass, $wp_user->ID)) {
+            // Auto-create tbl_customers record
+            $wpdb->insert($table, [
+                'name' => $wp_user->display_name ?: $wp_user->user_login,
+                'email' => $wp_user->user_email,
+                'phone' => get_user_meta($wp_user->ID, 'billing_phone', true) ?: '',
+                'password' => password_hash($pwd, PASSWORD_BCRYPT, ['cost' => 10]),
+                'status' => 'active'
+            ]);
+            $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table WHERE id = %d", $wpdb->insert_id));
+        }
+    }
+
+    if (!$row) {
+        wp_send_json_error(['message' => 'No account found with this email, username, or phone number.']);
     }
 
     // Check account active status
@@ -1138,6 +1158,57 @@ add_action('init', function () {
 
     $charset = $wpdb->get_charset_collate();
 
+    // Check if tbl_customers table exists
+    if (!$wpdb->get_var("SHOW TABLES LIKE 'tbl_customers'")) {
+        $wpdb->query("CREATE TABLE IF NOT EXISTS tbl_customers (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            email VARCHAR(150) NOT NULL,
+            phone VARCHAR(50) DEFAULT '',
+            company VARCHAR(150) DEFAULT '',
+            password VARCHAR(255) NOT NULL,
+            address TEXT DEFAULT NULL,
+            city VARCHAR(100) DEFAULT '',
+            state VARCHAR(100) DEFAULT '',
+            pincode VARCHAR(20) DEFAULT '',
+            country VARCHAR(100) DEFAULT 'INDIA',
+            gstin_no VARCHAR(50) DEFAULT '',
+            credit_limit DECIMAL(12,2) DEFAULT 0.00,
+            current_balance DECIMAL(12,2) DEFAULT 0.00,
+            status ENUM('active','inactive') DEFAULT 'active',
+            last_login DATETIME DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY idx_email (email),
+            KEY idx_phone (phone),
+            KEY idx_status (status)
+        ) $charset");
+    } else {
+        // Table exists, check for and add any missing columns dynamically (self-healing)
+        $cols = $wpdb->get_col("DESCRIBE tbl_customers");
+        if ($cols) {
+            $needed = [
+                'phone' => "VARCHAR(50) DEFAULT ''",
+                'company' => "VARCHAR(150) DEFAULT ''",
+                'address' => "TEXT DEFAULT NULL",
+                'city' => "VARCHAR(100) DEFAULT ''",
+                'state' => "VARCHAR(100) DEFAULT ''",
+                'pincode' => "VARCHAR(20) DEFAULT ''",
+                'country' => "VARCHAR(100) DEFAULT 'INDIA'",
+                'gstin_no' => "VARCHAR(50) DEFAULT ''",
+                'credit_limit' => "DECIMAL(12,2) DEFAULT 0.00",
+                'current_balance' => "DECIMAL(12,2) DEFAULT 0.00",
+                'status' => "ENUM('active','inactive') DEFAULT 'active'",
+                'last_login' => "DATETIME DEFAULT NULL"
+            ];
+            foreach ($needed as $col_name => $col_def) {
+                if (!in_array($col_name, $cols)) {
+                    $wpdb->query("ALTER TABLE tbl_customers ADD COLUMN $col_name $col_def");
+                }
+            }
+        }
+    }
+
     // Check if customer_addresses table exists
     if (!$wpdb->get_var("SHOW TABLES LIKE 'customer_addresses'")) {
         $wpdb->query("CREATE TABLE IF NOT EXISTS customer_addresses (
@@ -1315,7 +1386,110 @@ add_action('rest_api_init', function () {
         'callback' => 'pe_cp_rest_sync_awb',
         'permission_callback' => 'pe_cp_rest_verify_sync_key',
     ]);
+
+    // Sync a customer account (create/update) from Node.js backend
+    register_rest_route('pe-cp/v1', '/sync-customer', [
+        'methods' => 'POST',
+        'callback' => 'pe_cp_rest_sync_customer',
+        'permission_callback' => 'pe_cp_rest_verify_sync_key',
+    ]);
+
+    // Sync a customer deletion from Node.js backend
+    register_rest_route('pe-cp/v1', '/sync-customer-delete', [
+        'methods' => 'POST',
+        'callback' => 'pe_cp_rest_sync_customer_delete',
+        'permission_callback' => 'pe_cp_rest_verify_sync_key',
+    ]);
 });
+
+/**
+ * REST: Sync a customer account into the WP database.
+ * Called by Node.js backend on customer create or update.
+ */
+function pe_cp_rest_sync_customer($request)
+{
+    global $wpdb;
+    $d = $request->get_json_params();
+
+    $email = sanitize_email($d['email'] ?? '');
+    if (!$email) {
+        return new WP_REST_Response(['success' => false, 'message' => 'email required'], 400);
+    }
+
+    $name = sanitize_text_field($d['name'] ?? '');
+    $phone = sanitize_text_field($d['phone'] ?? '');
+    $company = sanitize_text_field($d['company'] ?? '');
+    $password = $d['password'] ?? '';
+    $address = sanitize_text_field($d['address'] ?? '');
+    $city = sanitize_text_field($d['city'] ?? '');
+    $state = sanitize_text_field($d['state'] ?? '');
+    $pincode = sanitize_text_field($d['pincode'] ?? '');
+    $country = sanitize_text_field($d['country'] ?? 'INDIA');
+    $gstin_no = sanitize_text_field($d['gstin_no'] ?? '');
+    $credit_limit = floatval($d['credit_limit'] ?? 0);
+    $current_balance = floatval($d['current_balance'] ?? 0);
+    $status = ($d['status'] ?? 'active') === 'inactive' ? 'inactive' : 'active';
+
+    $exists = $wpdb->get_row($wpdb->prepare("SELECT id, password FROM tbl_customers WHERE LOWER(TRIM(email)) = LOWER(%s)", $email));
+    if ($exists) {
+        $update_data = [
+            'name' => $name,
+            'phone' => $phone,
+            'company' => $company,
+            'address' => $address,
+            'city' => $city,
+            'state' => $state,
+            'pincode' => $pincode,
+            'country' => $country,
+            'gstin_no' => $gstin_no,
+            'credit_limit' => $credit_limit,
+            'current_balance' => $current_balance,
+            'status' => $status
+        ];
+        if (!empty($password)) {
+            $update_data['password'] = $password;
+        }
+        $wpdb->update('tbl_customers', $update_data, ['id' => $exists->id]);
+        return new WP_REST_Response(['success' => true, 'message' => 'Customer updated in WP', 'id' => $exists->id]);
+    } else {
+        $wpdb->insert('tbl_customers', [
+            'name' => $name,
+            'email' => $email,
+            'phone' => $phone,
+            'company' => $company,
+            'password' => $password,
+            'address' => $address,
+            'city' => $city,
+            'state' => $state,
+            'pincode' => $pincode,
+            'country' => $country,
+            'gstin_no' => $gstin_no,
+            'credit_limit' => $credit_limit,
+            'current_balance' => $current_balance,
+            'status' => $status
+        ]);
+        return new WP_REST_Response(['success' => true, 'message' => 'Customer created in WP', 'id' => $wpdb->insert_id]);
+    }
+}
+
+/**
+ * REST: Sync customer deletion.
+ */
+function pe_cp_rest_sync_customer_delete($request)
+{
+    global $wpdb;
+    $d = $request->get_json_params();
+    $email = sanitize_email($d['email'] ?? '');
+    $id = intval($d['id'] ?? 0);
+
+    if ($email) {
+        $wpdb->query($wpdb->prepare("DELETE FROM tbl_customers WHERE email = %s", $email));
+    } elseif ($id) {
+        $wpdb->delete('tbl_customers', ['id' => $id]);
+    }
+
+    return new WP_REST_Response(['success' => true, 'message' => 'Customer deleted from WP']);
+}
 
 /**
  * Verify the sync API key from the request header.

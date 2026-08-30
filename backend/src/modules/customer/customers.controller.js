@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs'
 import { query, execute } from '../../config/db.js'
+import { syncCustomerToWP, deleteCustomerFromWP } from '../../utils/wpSync.js'
 
 /**
  * GET /api/customers
@@ -273,6 +274,25 @@ export const createCustomer = async (req, res) => {
     const created = createdRows[0]
     delete created.password
 
+    // Sync to WordPress database
+    syncCustomerToWP({
+      id: newId,
+      name: name.trim(),
+      email: cleanEmail,
+      phone: cleanPhone,
+      company: (company || '').trim(),
+      password: hashedPassword,
+      address: (address || '').trim(),
+      city: (city || '').trim(),
+      state: (state || '').trim(),
+      pincode: (pincode || '').trim(),
+      country: (country || 'INDIA').trim(),
+      gstin_no: (gstin_no || '').trim(),
+      credit_limit: parseFloat(credit_limit) || 0.00,
+      current_balance: parseFloat(current_balance) || 0.00,
+      status: status === 'inactive' ? 'inactive' : 'active'
+    }).catch((err) => console.error('[WP Customer Sync Error]:', err.message))
+
     return res.status(201).json({
       success: true,
       message: 'Customer account created successfully',
@@ -356,8 +376,9 @@ export const updateCustomer = async (req, res) => {
     ]
 
     // If new password provided, hash it
+    let hashedPassword = null
     if (password && password.trim().length >= 6) {
-      const hashedPassword = await bcrypt.hash(password.trim(), 10)
+      hashedPassword = await bcrypt.hash(password.trim(), 10)
       queryParts.push('password = ?')
       params.push(hashedPassword)
     }
@@ -372,6 +393,25 @@ export const updateCustomer = async (req, res) => {
     const updatedRows = await query('SELECT * FROM tbl_customers WHERE id = ?', [id])
     const updated = updatedRows[0]
     delete updated.password
+
+    // Sync to WordPress database
+    syncCustomerToWP({
+      id,
+      name: name ? name.trim() : existing[0].name,
+      email: cleanEmail,
+      phone: phone !== undefined ? phone.trim() : existing[0].phone,
+      company: company !== undefined ? company.trim() : existing[0].company,
+      address: address !== undefined ? address.trim() : existing[0].address,
+      city: city !== undefined ? city.trim() : existing[0].city,
+      state: state !== undefined ? state.trim() : existing[0].state,
+      pincode: pincode !== undefined ? pincode.trim() : existing[0].pincode,
+      country: country !== undefined ? country.trim() : existing[0].country,
+      gstin_no: gstin_no !== undefined ? gstin_no.trim() : existing[0].gstin_no,
+      credit_limit: credit_limit !== undefined ? (parseFloat(credit_limit) || 0) : existing[0].credit_limit,
+      current_balance: current_balance !== undefined ? (parseFloat(current_balance) || 0) : existing[0].current_balance,
+      status: status || existing[0].status,
+      ...(hashedPassword ? { password: hashedPassword } : {})
+    }).catch((err) => console.error('[WP Customer Update Sync Error]:', err.message))
 
     return res.json({
       success: true,
@@ -393,13 +433,19 @@ export const toggleCustomerStatus = async (req, res) => {
     const { id } = req.params
     const { status } = req.body
 
-    const existing = await query('SELECT status FROM tbl_customers WHERE id = ?', [id])
+    const existing = await query('SELECT status, email FROM tbl_customers WHERE id = ?', [id])
     if (!existing || existing.length === 0) {
       return res.status(404).json({ success: false, message: 'Customer not found' })
     }
 
     const nextStatus = status || (existing[0].status === 'active' ? 'inactive' : 'active')
     await execute('UPDATE tbl_customers SET status = ? WHERE id = ?', [nextStatus, id])
+
+    syncCustomerToWP({
+      id,
+      email: existing[0].email,
+      status: nextStatus
+    }).catch((err) => console.error('[WP Customer Status Sync Error]:', err.message))
 
     return res.json({
       success: true,
@@ -419,12 +465,16 @@ export const toggleCustomerStatus = async (req, res) => {
 export const deleteCustomer = async (req, res) => {
   try {
     const { id } = req.params
-    const existing = await query('SELECT id, name FROM tbl_customers WHERE id = ?', [id])
+    const existing = await query('SELECT id, name, email FROM tbl_customers WHERE id = ?', [id])
     if (!existing || existing.length === 0) {
       return res.status(404).json({ success: false, message: 'Customer not found' })
     }
 
     await execute('DELETE FROM tbl_customers WHERE id = ?', [id])
+
+    deleteCustomerFromWP(id, existing[0].email).catch((err) =>
+      console.error('[WP Customer Delete Sync Error]:', err.message)
+    )
 
     return res.json({
       success: true,
