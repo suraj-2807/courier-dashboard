@@ -853,6 +853,9 @@ function cpRenderRequestDetail(awb, silent) {
         h += '<div class="cp-df"><div class="l">Weight</div><div class="v">' + (r.weight || '—') + ' kg</div></div>';
         h += '<div class="cp-df"><div class="l">No. of Pieces</div><div class="v">' + (r.no_of_pieces || '1') + '</div></div>';
         h += '<div class="cp-df"><div class="l">Declared Value</div><div class="v">₹' + (r.declared_value || '0') + '</div></div>';
+        if (r.total_amount || r.shipping_charge) {
+            h += '<div class="cp-df"><div class="l">Final Amount / Charges</div><div class="v" style="font-weight:800; color:var(--cpred);">₹' + (r.total_amount || r.shipping_charge || '0') + '</div></div>';
+        }
         if (r.content_description) h += '<div class="cp-df fl"><div class="l">Content Description</div><div class="v">' + r.content_description + '</div></div>';
         if (r.remarks) h += '<div class="cp-df fl"><div class="l">Special Instructions / Remarks</div><div class="v">' + r.remarks + '</div></div>';
         if (r.admin_notes) h += '<div class="cp-df fl" style="border-color:rgba(187,0,19,.15); background:rgba(187,0,19,.02);"><div class="l" style="color:var(--cpred)">Admin Notes</div><div class="v">' + r.admin_notes + '</div></div>';

@@ -225,20 +225,17 @@ export default function BookingDetailPage() {
     )
   }
 
-  if (isError || !booking) {
+  if (isError || (!isLoading && !booking)) {
     return (
-      <div className="bg-surface border border-border rounded-2xl p-14 text-center animate-fade-in">
-        <div className="w-14 h-14 bg-danger-bg rounded-2xl flex items-center justify-center mx-auto mb-4">
-          <Package className="w-7 h-7 text-danger" />
-        </div>
-        <h3 className="text-[16px] font-bold text-text-primary mb-1">Booking Not Found</h3>
+      <div className="p-8 text-center bg-surface border border-border rounded-2xl max-w-lg mx-auto mt-12">
+        <h2 className="text-[18px] font-bold text-text-primary mb-2">Shipment Not Found</h2>
         <p className="text-[13px] text-text-secondary mb-5">The requested booking could not be loaded.</p>
-        <Link
-          to="/bookings"
+        <button
+          onClick={handleBack}
           className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-[13px] font-bold rounded-xl hover:bg-primary-dark transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back to Bookings
-        </Link>
+        </button>
       </div>
     )
   }
@@ -314,7 +311,7 @@ export default function BookingDetailPage() {
       <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
         <div>
           <button
-            onClick={() => navigate(-1)}
+            onClick={handleBack}
             className="inline-flex items-center gap-1.5 text-[12px] font-bold text-text-tertiary hover:text-primary transition-colors mb-1.5 cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" /> Back
@@ -690,7 +687,7 @@ export default function BookingDetailPage() {
 
             <button
               type="button"
-              onClick={() => navigate(-1)}
+              onClick={handleBack}
               className="px-3 py-1.5 rounded-xl text-[11px] font-bold text-text-secondary hover:text-primary hover:bg-surface-hover transition-colors cursor-pointer"
             >
               Back to Shipments

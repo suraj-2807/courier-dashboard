@@ -1814,59 +1814,64 @@ export const getBookings = async (req, res) => {
     }
 
     if (search && search.trim()) {
-      const term = `%${search.trim()}%`
-      const sqlParts = []
+      const fullTerm = search.trim()
+      const tokens = fullTerm.split(/\s+/).filter(t => t.length > 0)
 
+      const candidateFields = [
+        { table: 's', col: 'order_id' },
+        { table: 's', col: 'tracking_number' },
+        { table: 's', col: 'vendor_awb_number' },
+        { table: 's', col: 'vendor_awb_number_2' },
+        { table: 's', col: 'forwarding_no' },
+        { table: 's', col: 'secondary_carrier' },
+        { table: 's', col: 'order_reference' },
+        { table: 's', col: 'invoice_no' },
+        { table: 's', col: 'vendor_code' },
+        { table: 's', col: 'sender_name' },
+        { table: 's', col: 'sender_company' },
+        { table: 's', col: 'sender_phone' },
+        { table: 's', col: 'sender_city' },
+        { table: 's', col: 'sender_state' },
+        { table: 's', col: 'sender_pincode' },
+        { table: 's', col: 'sender_country' },
+        { table: 's', col: 'receiver_name' },
+        { table: 's', col: 'receiver_company' },
+        { table: 's', col: 'receiver_phone' },
+        { table: 's', col: 'receiver_country' },
+        { table: 's', col: 'receiver_city' },
+        { table: 's', col: 'receiver_state' },
+        { table: 's', col: 'receiver_pincode' },
+        { table: 's', col: 'vendor_raw_response' },
+        { table: 'snd', col: 'name' },
+        { table: 'snd', col: 'company' },
+        { table: 'snd', col: 'phone' },
+        { table: 'snd', col: 'city' },
+        { table: 'snd', col: 'state' },
+        { table: 'snd', col: 'country' },
+        { table: 'snd', col: 'pincode' },
+        { table: 'rcv', col: 'name' },
+        { table: 'rcv', col: 'company' },
+        { table: 'rcv', col: 'phone' },
+        { table: 'rcv', col: 'country' },
+        { table: 'rcv', col: 'city' },
+        { table: 'rcv', col: 'state' },
+        { table: 'rcv', col: 'pincode' },
+        { table: 'cp', col: 'name' },
+        { table: 'vac', col: 'name' }
+      ]
+
+      const activeFields = []
       if (cols && cols.s && cols.s.size > 0) {
-        // We have active DB column schema - check every candidate
-        const candidateFields = [
-          { table: 's', col: 'order_id' },
-          { table: 's', col: 'tracking_number' },
-          { table: 's', col: 'vendor_awb_number' },
-          { table: 's', col: 'vendor_awb_number_2' },
-          { table: 's', col: 'forwarding_no' },
-          { table: 's', col: 'secondary_carrier' },
-          { table: 's', col: 'order_reference' },
-          { table: 's', col: 'invoice_no' },
-          { table: 's', col: 'vendor_code' },
-          { table: 's', col: 'sender_name' },
-          { table: 's', col: 'sender_company' },
-          { table: 's', col: 'sender_phone' },
-          { table: 's', col: 'receiver_name' },
-          { table: 's', col: 'receiver_company' },
-          { table: 's', col: 'receiver_phone' },
-          { table: 's', col: 'receiver_country' },
-          { table: 's', col: 'receiver_city' },
-          { table: 's', col: 'receiver_pincode' },
-          { table: 's', col: 'vendor_raw_response' },
-          { table: 'snd', col: 'name' },
-          { table: 'snd', col: 'company' },
-          { table: 'snd', col: 'phone' },
-          { table: 'rcv', col: 'name' },
-          { table: 'rcv', col: 'company' },
-          { table: 'rcv', col: 'phone' },
-          { table: 'rcv', col: 'country' },
-          { table: 'rcv', col: 'city' },
-          { table: 'rcv', col: 'pincode' },
-          { table: 'cp', col: 'name' },
-          { table: 'vac', col: 'name' }
-        ]
-
         for (const item of candidateFields) {
           if (cols[item.table] && cols[item.table].has(item.col.toLowerCase())) {
-            sqlParts.push(`CONVERT(${item.table}.${item.col} USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
-            params.push(term)
+            activeFields.push(`CONVERT(${item.table}.${item.col} USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
           }
         }
-
         if (cols.s.has('created_at')) {
-          sqlParts.push("CONVERT(DATE_FORMAT(s.created_at, '%d/%m/%Y') USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci")
-          params.push(term)
-          sqlParts.push("CONVERT(DATE_FORMAT(s.created_at, '%Y-%m-%d') USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci")
-          params.push(term)
+          activeFields.push("CONVERT(DATE_FORMAT(s.created_at, '%d/%m/%Y') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
+          activeFields.push("CONVERT(DATE_FORMAT(s.created_at, '%Y-%m-%d') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
         }
       } else {
-        // Guaranteed core columns only (100% safe in any MySQL courier-admin schema)
         const guaranteedFields = [
           's.order_id',
           's.tracking_number',
@@ -1874,9 +1879,11 @@ export const getBookings = async (req, res) => {
           's.order_reference',
           's.vendor_code',
           'snd.name',
+          'snd.company',
           'snd.phone',
           'snd.city',
           'rcv.name',
+          'rcv.company',
           'rcv.phone',
           'rcv.city',
           'rcv.country',
@@ -1884,17 +1891,32 @@ export const getBookings = async (req, res) => {
           'vac.name'
         ]
         for (const f of guaranteedFields) {
-          sqlParts.push(`CONVERT(${f} USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
-          params.push(term)
+          activeFields.push(`CONVERT(${f} USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
         }
-        sqlParts.push("CONVERT(DATE_FORMAT(s.created_at, '%d/%m/%Y') USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci")
-        params.push(term)
-        sqlParts.push("CONVERT(DATE_FORMAT(s.created_at, '%Y-%m-%d') USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci")
-        params.push(term)
+        activeFields.push("CONVERT(DATE_FORMAT(s.created_at, '%d/%m/%Y') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
+        activeFields.push("CONVERT(DATE_FORMAT(s.created_at, '%Y-%m-%d') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
       }
 
-      if (sqlParts.length > 0) {
-        whereConditions.push(`(${sqlParts.join(' OR ')})`)
+      if (activeFields.length > 0) {
+        if (tokens.length > 1) {
+          const tokenClauses = []
+          for (const token of tokens) {
+            const tLike = `%${token}%`
+            const tokenOrs = activeFields.map(f => `${f} LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
+            tokenClauses.push(`(${tokenOrs.join(' OR ')})`)
+            for (let i = 0; i < activeFields.length; i++) {
+              params.push(tLike)
+            }
+          }
+          whereConditions.push(`(${tokenClauses.join(' AND ')})`)
+        } else {
+          const tLike = `%${fullTerm}%`
+          const sqlParts = activeFields.map(f => `${f} LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
+          whereConditions.push(`(${sqlParts.join(' OR ')})`)
+          for (let i = 0; i < activeFields.length; i++) {
+            params.push(tLike)
+          }
+        }
       }
     }
 

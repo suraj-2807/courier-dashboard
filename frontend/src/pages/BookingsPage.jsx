@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useBookings, usePushBookingToApi } from '../hooks/useBookings'
 import { countryCodesApi } from '../api/countryCodes.api'
@@ -276,6 +276,7 @@ const STATUS_TABS = [
 
 export default function BookingsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const location = useLocation()
   const page = Math.max(1, parseInt(searchParams.get('page')) || 1)
   const limit = Math.min(200, Math.max(1, parseInt(searchParams.get('limit')) || 10))
   const search = searchParams.get('search') || ''
@@ -293,6 +294,18 @@ export default function BookingsPage() {
   const navigate = useNavigate()
   const pushToApiMutation = usePushBookingToApi()
   const [pushingId, setPushingId] = useState(null)
+
+  // Restore saved query filters when opening /bookings without params
+  useEffect(() => {
+    if (!location.search || location.search === '?') {
+      const savedQuery = sessionStorage.getItem('pe_admin_bookings_query')
+      if (savedQuery && savedQuery !== '?' && savedQuery.length > 1) {
+        navigate(`/bookings${savedQuery}`, { replace: true })
+      }
+    } else {
+      sessionStorage.setItem('pe_admin_bookings_query', location.search)
+    }
+  }, [location.search, navigate])
 
   // Fetch full country codes list
   const { data: countryCodesData } = useQuery({
@@ -594,6 +607,7 @@ export default function BookingsPage() {
 
   const handleClearAllFilters = () => {
     setSearchInput('')
+    sessionStorage.removeItem('pe_admin_bookings_query')
     setSearchParams(prev => {
       const next = new URLSearchParams()
       if (statusFilter) next.set('status', statusFilter)
