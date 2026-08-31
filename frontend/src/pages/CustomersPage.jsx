@@ -735,11 +735,14 @@ function CustomerFormModal({ isOpen, customer, onClose, onSaved }) {
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  name="password"
                   required={!isEdit}
                   placeholder={isEdit ? '••••••••' : 'Min. 6 characters'}
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full px-3 py-1.5 pr-9 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
+                  data-case="normal"
+                  style={{ textTransform: 'none' }}
+                  className="w-full px-3 py-1.5 pr-9 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary normal-case"
                 />
                 <button
                   type="button"
@@ -983,11 +986,14 @@ function PasswordResetModal({ isOpen, customer, onClose, onSaved }) {
             <div className="relative">
               <input
                 type={showPassword ? 'text' : 'password'}
+                name="password"
                 required
                 placeholder="Min. 6 characters"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full px-3 py-2 pr-9 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary"
+                data-case="normal"
+                style={{ textTransform: 'none' }}
+                className="w-full px-3 py-2 pr-9 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono outline-none focus:border-primary normal-case"
               />
               <button
                 type="button"

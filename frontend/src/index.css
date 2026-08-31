@@ -62,21 +62,6 @@ input, select, textarea, optgroup {
   background-color: #FFFFFF;
 }
 
-input:not([type="email"]):not([type="password"]):not([type="number"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]),
-textarea {
-  text-transform: uppercase;
-}
-
-input[type="email"],
-input[type="password"],
-input[type="text"][autocomplete="current-password"],
-input[name="password"],
-input[type="text"][name="password"],
-input[type="text"][id="login-password"],
-#login-password {
-  text-transform: none !important;
-}
-
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
   font-weight: 700;
@@ -181,15 +166,25 @@ input[type="text"][readonly] {
   font-family: var(--font-family-body) !important;
 }
 
-/* ── Capitalize all text inputs by default ───── */
-input:not([type="email"]):not([type="password"]):not([type="number"]):not([type="date"]):not([type="time"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]),
-textarea {
+/* ── Capitalize text inputs by default (excluding passwords, emails, etc.) ───── */
+input:not([type="email"]):not([type="password"]):not([type="number"]):not([type="date"]):not([type="time"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([name*="password" i]):not([name*="email" i]):not([id*="password" i]):not([id*="email" i]):not([autocomplete*="password" i]):not(.normal-case):not([data-case="normal"]),
+textarea:not(.normal-case):not([data-case="normal"]) {
   text-transform: uppercase;
 }
 
+/* ── Always keep password, email and normal-case inputs in natural case ── */
 input[type="email"],
 input[type="password"],
-input[type="text"][autocomplete="current-password"],
-input[name="password"] {
+input[name*="password" i],
+input[name*="email" i],
+input[id*="password" i],
+input[id*="email" i],
+input[autocomplete*="password" i],
+input[autocomplete*="username" i],
+input.normal-case,
+textarea.normal-case,
+.normal-case,
+[data-case="normal"] {
   text-transform: none !important;
 }
+

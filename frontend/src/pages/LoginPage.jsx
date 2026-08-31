@@ -76,12 +76,16 @@ export default function LoginPage() {
                   </div>
                   <input
                     id="login-email"
+                    name="email"
                     type="email"
                     placeholder="user@princecourier.com"
+                    autoComplete="username"
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                     required
-                    className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-xl text-[14px] text-text-primary placeholder:text-text-tertiary outline-none focus:ring-2 focus:ring-primary/15 focus:border-primary/40 transition-all"
+                    data-case="normal"
+                    style={{ textTransform: 'none' }}
+                    className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-xl text-[14px] text-text-primary placeholder:text-text-tertiary outline-none focus:ring-2 focus:ring-primary/15 focus:border-primary/40 transition-all normal-case"
                   />
                 </div>
               </div>
@@ -105,14 +109,16 @@ export default function LoginPage() {
                   </div>
                   <input
                     id="login-password"
+                    name="password"
                     type={showPassword ? 'text' : 'password'}
                     placeholder="••••••••"
                     autoComplete="current-password"
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     required
+                    data-case="normal"
                     style={{ textTransform: 'none' }}
-                    className="w-full pl-10 pr-11 py-2.5 bg-surface border border-border rounded-xl text-[14px] text-text-primary placeholder:text-text-tertiary outline-none focus:ring-2 focus:ring-primary/15 focus:border-primary/40 transition-all"
+                    className="w-full pl-10 pr-11 py-2.5 bg-surface border border-border rounded-xl text-[14px] text-text-primary placeholder:text-text-tertiary outline-none focus:ring-2 focus:ring-primary/15 focus:border-primary/40 transition-all normal-case"
                   />
                   <button
                     type="button"
