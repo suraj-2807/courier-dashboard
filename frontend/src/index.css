@@ -70,7 +70,10 @@ textarea {
 input[type="email"],
 input[type="password"],
 input[type="text"][autocomplete="current-password"],
-input[name="password"] {
+input[name="password"],
+input[type="text"][name="password"],
+input[type="text"][id="login-password"],
+#login-password {
   text-transform: none !important;
 }
 
