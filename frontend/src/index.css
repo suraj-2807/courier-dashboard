@@ -67,8 +67,11 @@ textarea {
   text-transform: uppercase;
 }
 
-input[type="email"], input[type="password"] {
-  text-transform: none;
+input[type="email"],
+input[type="password"],
+input[type="text"][autocomplete="current-password"],
+input[name="password"] {
+  text-transform: none !important;
 }
 
 h1, h2, h3, h4, h5, h6 {
@@ -182,6 +185,8 @@ textarea {
 }
 
 input[type="email"],
-input[type="password"] {
+input[type="password"],
+input[type="text"][autocomplete="current-password"],
+input[name="password"] {
   text-transform: none !important;
 }
