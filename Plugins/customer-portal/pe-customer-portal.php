@@ -757,6 +757,7 @@ function pe_cp_ajax_update_profile()
     ]);
 }
 add_action('wp_ajax_pe_cp_update_profile', 'pe_cp_ajax_update_profile');
+add_action('wp_ajax_nopriv_pe_cp_update_profile', 'pe_cp_ajax_update_profile');
 
 // ══════════════════════════════════════
 //  AJAX: UPDATE PASSWORD
@@ -799,6 +800,7 @@ function pe_cp_ajax_update_password()
     ]);
 }
 add_action('wp_ajax_pe_cp_update_password', 'pe_cp_ajax_update_password');
+add_action('wp_ajax_nopriv_pe_cp_update_password', 'pe_cp_ajax_update_password');
 
 // ══════════════════════════════════════
 //  AJAX: GET ADDRESSES
@@ -829,6 +831,7 @@ function pe_cp_ajax_get_addresses()
     wp_send_json_success(['addresses' => $rows ?: []]);
 }
 add_action('wp_ajax_pe_cp_get_addresses', 'pe_cp_ajax_get_addresses');
+add_action('wp_ajax_nopriv_pe_cp_get_addresses', 'pe_cp_ajax_get_addresses');
 
 // ══════════════════════════════════════
 //  AJAX: SAVE ADDRESS
@@ -899,6 +902,7 @@ function pe_cp_ajax_save_address()
     wp_send_json_success(['message' => 'Address saved successfully!', 'address' => $row]);
 }
 add_action('wp_ajax_pe_cp_save_address', 'pe_cp_ajax_save_address');
+add_action('wp_ajax_nopriv_pe_cp_save_address', 'pe_cp_ajax_save_address');
 
 // ══════════════════════════════════════
 //  AJAX: DELETE ADDRESS
@@ -915,6 +919,7 @@ function pe_cp_ajax_delete_address()
     wp_send_json_success(['message' => 'Address deleted']);
 }
 add_action('wp_ajax_pe_cp_delete_address', 'pe_cp_ajax_delete_address');
+add_action('wp_ajax_nopriv_pe_cp_delete_address', 'pe_cp_ajax_delete_address');
 
 // ══════════════════════════════════════
 //  AJAX: GET DOCUMENTS
@@ -945,6 +950,7 @@ function pe_cp_ajax_get_documents()
     wp_send_json_success(['documents' => $rows ?: []]);
 }
 add_action('wp_ajax_pe_cp_get_documents', 'pe_cp_ajax_get_documents');
+add_action('wp_ajax_nopriv_pe_cp_get_documents', 'pe_cp_ajax_get_documents');
 
 // ══════════════════════════════════════
 //  AJAX: UPLOAD DOCUMENT
@@ -994,6 +1000,7 @@ function pe_cp_ajax_upload_document()
     }
 }
 add_action('wp_ajax_pe_cp_upload_document', 'pe_cp_ajax_upload_document');
+add_action('wp_ajax_nopriv_pe_cp_upload_document', 'pe_cp_ajax_upload_document');
 
 // ══════════════════════════════════════
 //  AJAX: DELETE DOCUMENT
@@ -1010,6 +1017,7 @@ function pe_cp_ajax_delete_document()
     wp_send_json_success(['message' => 'Document deleted']);
 }
 add_action('wp_ajax_pe_cp_delete_document', 'pe_cp_ajax_delete_document');
+add_action('wp_ajax_nopriv_pe_cp_delete_document', 'pe_cp_ajax_delete_document');
 
 // ══════════════════════════════════════
 //  SHORTCODE: [pe_customer_portal]
@@ -1098,6 +1106,18 @@ register_activation_hook(__FILE__, function () {
         declared_value DECIMAL(10,2) DEFAULT 0,
         is_fragile TINYINT DEFAULT 0,
         remarks TEXT,
+        parcels LONGTEXT DEFAULT NULL,
+        invoice_items LONGTEXT DEFAULT NULL,
+        documents LONGTEXT DEFAULT NULL,
+        order_reference VARCHAR(100) DEFAULT '',
+        payment_mode VARCHAR(30) DEFAULT 'prepaid',
+        shipping_charge DECIMAL(10,2) DEFAULT 0,
+        invoice_type VARCHAR(30) DEFAULT 'INVOICE',
+        invoice_currency VARCHAR(10) DEFAULT 'INR',
+        hs_code VARCHAR(50) DEFAULT '',
+        export_reason VARCHAR(255) DEFAULT '',
+        terms_of_trade VARCHAR(20) DEFAULT 'CIF',
+        invoice_note TEXT DEFAULT NULL,
         status VARCHAR(20) DEFAULT 'pending',
         admin_notes TEXT,
         shipment_id INT DEFAULT NULL,
@@ -1362,6 +1382,18 @@ add_action('init', function () {
                 'admin_notes'         => "TEXT AFTER status",
                 'shipment_id'         => "INT DEFAULT NULL AFTER admin_notes",
                 'tracking_number'     => "VARCHAR(50) DEFAULT NULL AFTER shipment_id",
+                'parcels'             => "LONGTEXT DEFAULT NULL AFTER remarks",
+                'invoice_items'       => "LONGTEXT DEFAULT NULL AFTER parcels",
+                'documents'           => "LONGTEXT DEFAULT NULL AFTER invoice_items",
+                'order_reference'     => "VARCHAR(100) DEFAULT '' AFTER documents",
+                'payment_mode'        => "VARCHAR(30) DEFAULT 'prepaid' AFTER order_reference",
+                'shipping_charge'     => "DECIMAL(10,2) DEFAULT 0 AFTER payment_mode",
+                'invoice_type'        => "VARCHAR(30) DEFAULT 'INVOICE' AFTER shipping_charge",
+                'invoice_currency'    => "VARCHAR(10) DEFAULT 'INR' AFTER invoice_type",
+                'hs_code'             => "VARCHAR(50) DEFAULT '' AFTER invoice_currency",
+                'export_reason'       => "VARCHAR(255) DEFAULT '' AFTER hs_code",
+                'terms_of_trade'      => "VARCHAR(20) DEFAULT 'CIF' AFTER export_reason",
+                'invoice_note'        => "TEXT DEFAULT NULL AFTER terms_of_trade",
             ];
 
             foreach ($missing_columns as $col => $definition) {
@@ -1382,6 +1414,55 @@ add_action('init', function () {
             metadata LONGTEXT DEFAULT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             KEY idx_request_id (request_id)
+        ) $charset");
+    }
+
+    if (!$wpdb->get_var("SHOW TABLES LIKE 'customer_addresses'")) {
+        $wpdb->query("CREATE TABLE IF NOT EXISTS customer_addresses (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            customer_id INT DEFAULT NULL,
+            customer_email VARCHAR(150) DEFAULT '',
+            customer_phone VARCHAR(50) DEFAULT '',
+            address_type VARCHAR(20) DEFAULT 'both',
+            name VARCHAR(100) NOT NULL,
+            company VARCHAR(150) DEFAULT '',
+            phone VARCHAR(50) NOT NULL,
+            phone_2 VARCHAR(50) DEFAULT '',
+            email VARCHAR(150) DEFAULT '',
+            address TEXT NOT NULL,
+            address_2 VARCHAR(255) DEFAULT '',
+            city VARCHAR(100) NOT NULL,
+            state VARCHAR(100) DEFAULT '',
+            pincode VARCHAR(20) DEFAULT '',
+            country VARCHAR(100) DEFAULT 'INDIA',
+            gstin_type VARCHAR(50) DEFAULT '',
+            gstin_no VARCHAR(50) DEFAULT '',
+            is_default TINYINT(1) DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY idx_cust_id (customer_id),
+            KEY idx_cust_email (customer_email)
+        ) $charset");
+    }
+
+    if (!$wpdb->get_var("SHOW TABLES LIKE 'customer_documents'")) {
+        $wpdb->query("CREATE TABLE IF NOT EXISTS customer_documents (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            customer_id INT DEFAULT NULL,
+            customer_email VARCHAR(150) DEFAULT '',
+            customer_phone VARCHAR(50) DEFAULT '',
+            doc_type VARCHAR(100) NOT NULL,
+            doc_name VARCHAR(255) DEFAULT '',
+            doc_number VARCHAR(100) DEFAULT '',
+            file_url VARCHAR(500) NOT NULL,
+            file_name VARCHAR(255) DEFAULT '',
+            file_size INT DEFAULT 0,
+            file_type VARCHAR(50) DEFAULT '',
+            notes TEXT DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            KEY idx_cust_id (customer_id),
+            KEY idx_cust_email (customer_email)
         ) $charset");
     }
 
@@ -1591,6 +1672,18 @@ function pe_cp_rest_sync_booking($request)
         'declared_value'      => floatval($d['declared_value'] ?? 0),
         'is_fragile'          => intval($d['is_fragile'] ?? 0),
         'remarks'             => sanitize_textarea_field($d['remarks'] ?? ''),
+        'parcels'             => $d['parcels'] ?? null,
+        'invoice_items'       => $d['invoice_items'] ?? null,
+        'documents'           => $d['documents'] ?? null,
+        'order_reference'     => sanitize_text_field($d['order_reference'] ?? ''),
+        'payment_mode'        => sanitize_text_field($d['payment_mode'] ?? 'prepaid'),
+        'shipping_charge'     => floatval($d['shipping_charge'] ?? 0),
+        'invoice_type'        => sanitize_text_field($d['invoice_type'] ?? 'INVOICE'),
+        'invoice_currency'    => sanitize_text_field($d['invoice_currency'] ?? 'INR'),
+        'hs_code'             => sanitize_text_field($d['hs_code'] ?? ''),
+        'export_reason'       => sanitize_text_field($d['export_reason'] ?? ''),
+        'terms_of_trade'      => sanitize_text_field($d['terms_of_trade'] ?? 'CIF'),
+        'invoice_note'        => sanitize_textarea_field($d['invoice_note'] ?? ''),
         'status'              => sanitize_text_field($d['status'] ?? 'pending'),
     ]);
 

@@ -525,7 +525,9 @@ export default class FlySwiftAdapter extends BaseAdapter {
       secondaryCarrier,
       trackingUrl,
       labelUrl,
-      errorMessage
+      errorMessage: success ? '' : (
+        responseBody?.message || responseBody?.error || responseBody?.msg || responseBody?.data?.message || 'Vendor API returned failure'
+      )
     }
   }
 

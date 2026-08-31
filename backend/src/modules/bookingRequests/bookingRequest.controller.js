@@ -253,6 +253,18 @@ export const createBookingRequest = async (req, res) => {
       declared_value: parseFloat(declared_value) || 0,
       is_fragile: is_fragile ? 1 : 0,
       remarks: remarks || '',
+      parcels: parcelsJson || null,
+      invoice_items: invItemsJson || null,
+      documents: docsJson || null,
+      order_reference: order_reference || '',
+      payment_mode: payment_mode || 'prepaid',
+      shipping_charge: parseFloat(shipping_charge) || 0,
+      invoice_type: invoice_type || 'INVOICE',
+      invoice_currency: invoice_currency || 'INR',
+      hs_code: hs_code || '',
+      export_reason: export_reason || '',
+      terms_of_trade: terms_of_trade || 'CIF',
+      invoice_note: invoice_note || '',
       status: 'pending'
     }).catch(() => {}) // never throw
 
@@ -346,6 +358,19 @@ export const getBookingRequests = async (req, res) => {
       `SELECT * FROM booking_requests ${whereStr} ORDER BY ${safeSortBy} ${safeSortOrder} LIMIT ${limitNum} OFFSET ${offset}`,
       params
     )
+
+    const jsonFields = ['parcels', 'invoice_items', 'documents']
+    rows.forEach(r => {
+      jsonFields.forEach(field => {
+        if (r[field] && typeof r[field] === 'string') {
+          try {
+            r[field] = JSON.parse(r[field])
+          } catch (e) {
+            r[field] = null
+          }
+        }
+      })
+    })
 
     return res.json({
       success: true,
