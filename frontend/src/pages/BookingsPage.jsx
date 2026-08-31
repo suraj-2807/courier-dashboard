@@ -1248,12 +1248,12 @@ export default function BookingsPage() {
                                 <FileText className="w-4 h-4" />
                               </button>
 
-                              {/* 4. Download icon: Vendor Shipper Copy / Vendor Bill */}
+                              {/* 4. Download icon: Vendor AWB Copy / Vendor Bill */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenVendorShipperCopyRow(b)}
                                 className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
-                                title="Vendor Shipper Copy / Vendor Bill"
+                                title="Vendor AWB Copy / Vendor Bill"
                               >
                                 <Download className="w-4 h-4" />
                               </button>

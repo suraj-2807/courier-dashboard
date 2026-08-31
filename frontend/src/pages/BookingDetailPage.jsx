@@ -453,14 +453,14 @@ export default function BookingDetailPage() {
             Vendor Invoice
           </button>
 
-          {/* 3. Vendor Shipper Copy / Vendor Bill (Download icon) */}
+          {/* 3. Vendor AWB Copy / Vendor Bill (Download icon) */}
           <button
             onClick={handleOpenVendorShipperCopy}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
-            title="Open Vendor Shipper Copy / Vendor Bill"
+            title="Open Vendor AWB Copy / Vendor Bill"
           >
             <Download className="w-3.5 h-3.5 text-emerald-700" />
-            Vendor Shipper Copy
+            Vendor AWB Copy
           </button>
 
           {/* 4. Vendor Box Labels (Box icon) */}
