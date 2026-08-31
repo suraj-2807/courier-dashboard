@@ -295,18 +295,6 @@ export default function BookingsPage() {
   const pushToApiMutation = usePushBookingToApi()
   const [pushingId, setPushingId] = useState(null)
 
-  // Restore saved query filters when opening /bookings without params
-  useEffect(() => {
-    if (!location.search || location.search === '?') {
-      const savedQuery = sessionStorage.getItem('pe_admin_bookings_query')
-      if (savedQuery && savedQuery !== '?' && savedQuery.length > 1) {
-        navigate(`/bookings${savedQuery}`, { replace: true })
-      }
-    } else {
-      sessionStorage.setItem('pe_admin_bookings_query', location.search)
-    }
-  }, [location.search, navigate])
-
   // Fetch full country codes list
   const { data: countryCodesData } = useQuery({
     queryKey: ['country-codes'],
@@ -607,13 +595,7 @@ export default function BookingsPage() {
 
   const handleClearAllFilters = () => {
     setSearchInput('')
-    sessionStorage.removeItem('pe_admin_bookings_query')
-    setSearchParams(prev => {
-      const next = new URLSearchParams()
-      if (statusFilter) next.set('status', statusFilter)
-      if (limit !== 10) next.set('limit', String(limit))
-      return next
-    })
+    setSearchParams({})
   }
 
   const hasActiveFilters = Boolean(search || vendorFilter || countryFilter || fromDateFilter || toDateFilter)

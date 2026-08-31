@@ -77,8 +77,7 @@ export default function BookingDetailPage() {
   const pushToApiMutation = usePushBookingToApi()
 
   const handleBack = () => {
-    const savedQuery = sessionStorage.getItem('pe_admin_bookings_query') || ''
-    navigate(`/bookings${savedQuery}`)
+    navigate('/bookings')
   }
 
   // Billing edit modal state
