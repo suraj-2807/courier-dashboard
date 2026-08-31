@@ -2,7 +2,139 @@ import { bookingsApi } from '../api/bookings.api'
 import toast from 'react-hot-toast'
 
 /**
- * Universal helper to open the vendor's label / invoice PDF in a new tab.
+ * Detect mobile devices
+ */
+export function isMobileDevice() {
+  if (typeof navigator === 'undefined') return false
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '')
+}
+
+/**
+ * Universal helper to open or download a PDF Blob on both desktop and mobile.
+ * Works seamlessly on iOS Safari, Android Chrome, and Desktop browsers.
+ */
+export function openPdfBlob(blobData, filename = 'document.pdf') {
+  try {
+    const blob = blobData instanceof Blob 
+      ? blobData 
+      : new Blob([blobData], { type: 'application/pdf' })
+
+    const blobUrl = window.URL.createObjectURL(blob)
+    const isMobile = isMobileDevice()
+
+    if (isMobile) {
+      // Mobile Safari / Chrome handles direct download or file trigger reliably
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = filename
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      document.body.appendChild(link)
+      link.click()
+      setTimeout(() => {
+        if (link.parentNode) link.parentNode.removeChild(link)
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 120000)
+      }, 300)
+      return true
+    }
+
+    // On Desktop: try opening in a new tab first
+    const newTab = window.open(blobUrl, '_blank')
+    if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+      // Popup blocked fallback: Trigger download link
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = filename
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      document.body.appendChild(link)
+      link.click()
+      setTimeout(() => {
+        if (link.parentNode) link.parentNode.removeChild(link)
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 120000)
+      }, 300)
+    } else {
+      setTimeout(() => window.URL.revokeObjectURL(blobUrl), 120000)
+    }
+    return true
+  } catch (err) {
+    console.error('Failed to open PDF blob:', err)
+    return false
+  }
+}
+
+/**
+ * Universal helper to open a PDF URL (HTTP/HTTPS or data URI)
+ */
+export function openPdfUrl(urlStr, filename = 'document.pdf') {
+  if (!urlStr || typeof urlStr !== 'string') return false
+  const cleanUrl = urlStr.trim()
+
+  if (cleanUrl.startsWith('data:application/pdf;base64,') || (cleanUrl.startsWith('data:') && cleanUrl.includes('base64,'))) {
+    const base64Data = cleanUrl.split('base64,')[1]
+    return openBase64Pdf(base64Data, filename)
+  }
+
+  try {
+    const isMobile = isMobileDevice()
+    if (isMobile) {
+      const link = document.createElement('a')
+      link.href = cleanUrl
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      setTimeout(() => {
+        if (link.parentNode) link.parentNode.removeChild(link)
+      }, 300)
+      return true
+    }
+
+    const newTab = window.open(cleanUrl, '_blank', 'noopener,noreferrer')
+    if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+      const link = document.createElement('a')
+      link.href = cleanUrl
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      document.body.appendChild(link)
+      link.click()
+      setTimeout(() => {
+        if (link.parentNode) link.parentNode.removeChild(link)
+      }, 300)
+    }
+    return true
+  } catch (err) {
+    console.error('Failed to open PDF URL:', err)
+    return false
+  }
+}
+
+/**
+ * Universal helper to decode base64 string and display/download PDF
+ */
+export function openBase64Pdf(base64Str, filename = 'document.pdf') {
+  try {
+    if (!base64Str || typeof base64Str !== 'string') return false
+    const clean = String(base64Str).replace(/^data:application\/pdf;base64,/, '').trim()
+    if (clean.length < 50) return false
+
+    const byteChars = atob(clean)
+    const byteNums = new Array(byteChars.length)
+    for (let i = 0; i < byteChars.length; i++) {
+      byteNums[i] = byteChars.charCodeAt(i)
+    }
+    const byteArray = new Uint8Array(byteNums)
+    const blob = new Blob([byteArray], { type: 'application/pdf' })
+    return openPdfBlob(blob, filename)
+  } catch (err) {
+    console.warn('Failed to parse client-side base64 PDF:', err.message)
+    return false
+  }
+}
+
+/**
+ * Universal helper to open the vendor's label / invoice PDF.
  * 
  * Supports:
  * 1. Base64 encoded PDF inside vendor_raw_response (labels array with filename discernment, or Pdfdownload, BoxLabel, etc.)
@@ -17,28 +149,8 @@ export async function openVendorDocument(booking, docType = 'document') {
   }
 
   const type = String(docType || 'document').toLowerCase().trim()
-
-  // Helper to open base64 string directly in a new tab
-  const openBase64 = (base64Str) => {
-    try {
-      if (!base64Str || typeof base64Str !== 'string') return false
-      const clean = String(base64Str).replace(/^data:application\/pdf;base64,/, '').trim()
-      if (clean.length < 50) return false
-      const byteChars = atob(clean)
-      const byteNums = new Array(byteChars.length)
-      for (let i = 0; i < byteChars.length; i++) {
-        byteNums[i] = byteChars.charCodeAt(i)
-      }
-      const byteArray = new Uint8Array(byteNums)
-      const blob = new Blob([byteArray], { type: 'application/pdf' })
-      const blobUrl = URL.createObjectURL(blob)
-      window.open(blobUrl, '_blank')
-      return true
-    } catch (err) {
-      console.warn('Failed to parse client-side base64 PDF:', err.message)
-      return false
-    }
-  }
+  const awb = booking.tracking_number || booking.order_id || booking.id
+  const fileName = `${type}_${awb}.pdf`
 
   // 1. Check vendor_raw_response in memory first with smart docType matching
   if (booking.vendor_raw_response) {
@@ -87,7 +199,7 @@ export async function openVendorDocument(booking, docType = 'document') {
         }
 
         const b64 = matchedItem?.label || matchedItem?.pdf || matchedItem?.invoice || (typeof matchedItem === 'string' ? matchedItem : '')
-        if (b64 && openBase64(b64)) return true
+        if (b64 && openBase64Pdf(b64, fileName)) return true
       }
 
       // Check Pacific Express / direct response properties
@@ -97,10 +209,9 @@ export async function openVendorDocument(booking, docType = 'document') {
         if (invVal) {
           const valStr = String(invVal).trim()
           if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
-            window.open(valStr, '_blank')
-            return true
+            return openPdfUrl(valStr, fileName)
           }
-          if (openBase64(valStr)) return true
+          if (openBase64Pdf(valStr, fileName)) return true
         }
       } else if (type.includes('shipper') || type.includes('bill') || type.includes('copy')) {
         const shipVal = resp.AuxLbl || resp.auxlbl || resp.Pdfdownload || resp.pdfdownload || resp.Pdf || resp.pdf ||
@@ -109,10 +220,9 @@ export async function openVendorDocument(booking, docType = 'document') {
         if (shipVal) {
           const valStr = String(shipVal).trim()
           if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
-            window.open(valStr, '_blank')
-            return true
+            return openPdfUrl(valStr, fileName)
           }
-          if (openBase64(valStr)) return true
+          if (openBase64Pdf(valStr, fileName)) return true
         }
       } else if (type.includes('box') || type.includes('label')) {
         const boxVal = resp.BoxLabel || resp.boxlabel || resp.Boxlabel || resp.box_label || resp.Label || resp.label ||
@@ -120,10 +230,9 @@ export async function openVendorDocument(booking, docType = 'document') {
         if (boxVal) {
           const valStr = String(boxVal).trim()
           if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
-            window.open(valStr, '_blank')
-            return true
+            return openPdfUrl(valStr, fileName)
           }
-          if (openBase64(valStr)) return true
+          if (openBase64Pdf(valStr, fileName)) return true
         }
       }
     }
@@ -133,11 +242,10 @@ export async function openVendorDocument(booking, docType = 'document') {
   if (booking.vendor_label_url && !type.includes('invoice')) {
     const vUrl = String(booking.vendor_label_url).trim()
     if (vUrl.startsWith('data:application/pdf;base64,') || (vUrl.length > 200 && !vUrl.startsWith('http') && !vUrl.startsWith('/'))) {
-      if (openBase64(vUrl)) return true
+      if (openBase64Pdf(vUrl, fileName)) return true
     }
     if (vUrl.startsWith('http://') || vUrl.startsWith('https://')) {
-      window.open(vUrl, '_blank')
-      return true
+      return openPdfUrl(vUrl, fileName)
     }
   }
 
@@ -145,10 +253,8 @@ export async function openVendorDocument(booking, docType = 'document') {
   const toastId = toast.loading(`Loading vendor ${docType}...`)
   try {
     const res = await bookingsApi.getVendorDocument(booking.id, { type: docType })
-    const blob = new Blob([res.data], { type: 'application/pdf' })
-    const url = URL.createObjectURL(blob)
-    window.open(url, '_blank')
-    toast.success(`Vendor ${docType} opened in new tab`, { id: toastId })
+    openPdfBlob(res.data, fileName)
+    toast.success(`Vendor ${docType} loaded successfully`, { id: toastId })
     return true
   } catch (err) {
     const msg = err?.response?.data?.message || `No vendor ${docType} available from carrier API for this shipment`

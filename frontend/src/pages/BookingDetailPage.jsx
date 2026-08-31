@@ -46,7 +46,7 @@ import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters'
 import toast from 'react-hot-toast'
 import { systemSettingsApi } from '../api/systemSettings.api'
 import { useQuery } from '@tanstack/react-query'
-import { openVendorDocument } from '../utils/openVendorDocument'
+import { openVendorDocument, openPdfBlob } from '../utils/openVendorDocument'
 
 // ─── Progress Stage Definitions ─────────────────────────────────────
 const STAGES = [
@@ -152,13 +152,12 @@ export default function BookingDetailPage() {
 
   // 1. Official Shipping Bill (Ours - Dollar icon)
   const handleOpenOurBill = async () => {
-    const toastId = toast.loading('Opening Our Shipping Bill...')
+    const toastId = toast.loading('Loading Our Shipping Bill...')
     try {
       const res = await bookingsApi.downloadWaybill(booking.id)
-      const blob = new Blob([res.data], { type: 'application/pdf' })
-      const url = window.URL.createObjectURL(blob)
-      window.open(url, '_blank')
-      toast.success('Our Shipping Bill opened in new tab', { id: toastId })
+      const awb = booking.tracking_number || booking.order_id || booking.id
+      openPdfBlob(res.data, `ShippingBill_${awb}.pdf`)
+      toast.success('Our Shipping Bill opened successfully', { id: toastId })
     } catch (err) {
       toast.error('Failed to open Shipping Bill', { id: toastId })
     }
@@ -181,13 +180,12 @@ export default function BookingDetailPage() {
 
   // 5. Our Prince Box / Thermal Label (Tag icon)
   const handleOpenPrinceLabel = async () => {
-    const toastId = toast.loading('Opening Our Box Label...')
+    const toastId = toast.loading('Loading Our Box Label...')
     try {
       const res = await bookingsApi.downloadBoxLabels(booking.id)
-      const blob = new Blob([res.data], { type: 'application/pdf' })
-      const url = window.URL.createObjectURL(blob)
-      window.open(url, '_blank')
-      toast.success('Our Box Label opened in new tab', { id: toastId })
+      const awb = booking.tracking_number || booking.order_id || booking.id
+      openPdfBlob(res.data, `BoxLabels_${awb}.pdf`)
+      toast.success('Our Box Label opened successfully', { id: toastId })
     } catch (err) {
       toast.error('Failed to open Prince Label', { id: toastId })
     }
@@ -245,8 +243,67 @@ export default function BookingDetailPage() {
     )
   }
 
-  const sender = booking.senders
-  const receiver = booking.receivers
+  const sender = booking.senders ? {
+    ...booking.senders,
+    name: booking.senders.name || booking.sender_name || booking.sender_company || '',
+    company: booking.senders.company || booking.sender_company || '',
+    phone: booking.senders.phone || booking.sender_phone || '',
+    phone_2: booking.senders.phone_2 || booking.sender_phone_2 || '',
+    email: booking.senders.email || booking.sender_email || '',
+    address: booking.senders.address || booking.sender_address || '',
+    address_2: booking.senders.address_2 || booking.sender_address_2 || '',
+    city: booking.senders.city || booking.sender_city || '',
+    state: booking.senders.state || booking.sender_state || '',
+    pincode: booking.senders.pincode || booking.sender_pincode || '',
+    country: booking.senders.country || booking.sender_country || 'INDIA',
+    gstin_type: booking.senders.gstin_type || booking.sender_gstin_type || '',
+    gstin_no: booking.senders.gstin_no || booking.sender_gstin_no || ''
+  } : {
+    name: booking.sender_name || booking.sender_company || '',
+    company: booking.sender_company || '',
+    phone: booking.sender_phone || '',
+    phone_2: booking.sender_phone_2 || '',
+    email: booking.sender_email || '',
+    address: booking.sender_address || '',
+    address_2: booking.sender_address_2 || '',
+    city: booking.sender_city || '',
+    state: booking.sender_state || '',
+    pincode: booking.sender_pincode || '',
+    country: booking.sender_country || 'INDIA',
+    gstin_type: booking.sender_gstin_type || '',
+    gstin_no: booking.sender_gstin_no || ''
+  }
+
+  const receiver = booking.receivers ? {
+    ...booking.receivers,
+    name: booking.receivers.name || booking.receiver_name || booking.receiver_company || '',
+    company: booking.receivers.company || booking.receiver_company || '',
+    phone: booking.receivers.phone || booking.receiver_phone || '',
+    phone_2: booking.receivers.phone_2 || booking.receiver_phone_2 || '',
+    email: booking.receivers.email || booking.receiver_email || '',
+    address: booking.receivers.address || booking.receiver_address || '',
+    address_2: booking.receivers.address_2 || booking.receiver_address_2 || '',
+    city: booking.receivers.city || booking.receiver_city || '',
+    state: booking.receivers.state || booking.receiver_state || '',
+    pincode: booking.receivers.pincode || booking.receiver_pincode || '',
+    country: booking.receivers.country || booking.receiver_country || '',
+    gstin_type: booking.receivers.gstin_type || booking.receiver_gstin_type || '',
+    gstin_no: booking.receivers.gstin_no || booking.receiver_gstin_no || ''
+  } : {
+    name: booking.receiver_name || booking.receiver_company || '',
+    company: booking.receiver_company || '',
+    phone: booking.receiver_phone || '',
+    phone_2: booking.receiver_phone_2 || '',
+    email: booking.receiver_email || '',
+    address: booking.receiver_address || '',
+    address_2: booking.receiver_address_2 || '',
+    city: booking.receiver_city || '',
+    state: booking.receiver_state || '',
+    pincode: booking.receiver_pincode || '',
+    country: booking.receiver_country || '',
+    gstin_type: booking.receiver_gstin_type || '',
+    gstin_no: booking.receiver_gstin_no || ''
+  }
   const courier = booking.courier_providers
   const vendorConfig = booking.vendor_api_configs
   const events = booking.tracking_events || []
@@ -1004,45 +1061,76 @@ function VendorResponseCard({ booking, vendorConfig, liveTracking }) {
 }
 
 function PersonCard({ title, icon: Icon, person, fallbackName, fallbackCity, fallbackCountry, iconBg, iconColor }) {
-  const name = person?.name || fallbackName
+  const name = person?.name || fallbackName || person?.company
+  const company = person?.company && person?.company !== name ? person?.company : ''
   const address = person?.address
+  const address2 = person?.address_2
   const city = person?.city || fallbackCity
   const state = person?.state
   const country = person?.country || fallbackCountry
   const pincode = person?.pincode
+  const gstinNo = person?.gstin_no
+  const gstinType = person?.gstin_type
 
-  if (!name && !city) return null
+  if (!name && !city && !address) return null
 
   return (
-    <div className="bg-surface border border-border rounded-2xl p-5">
-      <h3 className="text-[13px] font-bold text-text-primary mb-3 flex items-center gap-2">
-        <div className={`w-6 h-6 ${iconBg} rounded-lg flex items-center justify-center`}>
-          <Icon className={`w-3 h-3 ${iconColor}`} />
-        </div>
-        {title}
-      </h3>
-      <div className="space-y-2">
-        {(person?.phone || person?.phone_2) && (
-          <p className="text-[12px] text-text-secondary flex items-center gap-1.5">
-            <Phone className="w-3 h-3 text-text-tertiary" />
-            <span>{[person.phone, person.phone_2].filter(Boolean).join(' / ')}</span>
-          </p>
-        )}
-        {person?.email && (
-          <p className="text-[12px] text-text-secondary flex items-center gap-1.5">
-            <Mail className="w-3 h-3 text-text-tertiary" /> {person.email}
-          </p>
-        )}
-        {(address || city) && (
-          <p className="text-[12px] text-text-secondary flex items-start gap-1.5">
-            <MapPin className="w-3 h-3 text-text-tertiary flex-shrink-0 mt-0.5" />
-            <span>
-              {[address, city, state].filter(Boolean).join(', ')}
-              {pincode ? ` — ${pincode}` : ''}
-              {country ? ` (${country})` : ''}
+    <div className="bg-surface border border-border rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-border/60">
+          <h3 className="text-[12px] font-extrabold uppercase tracking-wider text-text-tertiary flex items-center gap-2">
+            <div className={`w-6 h-6 ${iconBg} rounded-lg flex items-center justify-center`}>
+              <Icon className={`w-3.5 h-3.5 ${iconColor}`} />
+            </div>
+            {title}
+          </h3>
+          {country && (
+            <span className="text-[11px] font-bold text-navy bg-surface-alt px-2.5 py-0.5 rounded-md border border-border/60">
+              {country}
             </span>
-          </p>
-        )}
+          )}
+        </div>
+
+        {/* Person / Shipper / Receiver Name - Prominent */}
+        <div className="mb-3">
+          <h4 className="text-[15px] font-black text-navy leading-tight">
+            {name || '—'}
+          </h4>
+          {company && (
+            <p className="text-[12px] font-semibold text-text-secondary mt-0.5">
+              {company}
+            </p>
+          )}
+        </div>
+
+        <div className="space-y-2 text-[12px]">
+          {(person?.phone || person?.phone_2) && (
+            <p className="text-text-secondary flex items-center gap-2">
+              <Phone className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
+              <span className="font-medium">{[person.phone, person.phone_2].filter(Boolean).join(' / ')}</span>
+            </p>
+          )}
+          {person?.email && (
+            <p className="text-text-secondary flex items-center gap-2">
+              <Mail className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
+              <span className="font-medium truncate">{person.email}</span>
+            </p>
+          )}
+          {(address || address2 || city) && (
+            <p className="text-text-secondary flex items-start gap-2 pt-0.5">
+              <MapPin className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0 mt-0.5" />
+              <span className="font-medium leading-relaxed">
+                {[address, address2, city, state].filter(Boolean).join(', ')}
+                {pincode ? ` — ${pincode}` : ''}
+              </span>
+            </p>
+          )}
+          {gstinNo && (
+            <p className="text-[11px] text-text-tertiary font-mono pt-1">
+              <span className="font-bold">{gstinType || 'Tax ID / GST'}:</span> {gstinNo}
+            </p>
+          )}
+        </div>
       </div>
     </div>
   )

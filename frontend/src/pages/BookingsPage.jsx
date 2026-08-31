@@ -39,7 +39,7 @@ import EmptyState from '../components/ui/EmptyState'
 import ErrorState from '../components/ui/ErrorState'
 import { formatCurrency, formatDate, formatDateDDMMYYYY } from '../utils/formatters'
 import { exportShipmentsToExcel } from '../utils/exportShipmentsExcel'
-import { openVendorDocument } from '../utils/openVendorDocument'
+import { openVendorDocument, openPdfBlob } from '../utils/openVendorDocument'
 import toast from 'react-hot-toast'
 
 const ISO_COUNTRY_MAP = {
@@ -435,13 +435,12 @@ export default function BookingsPage() {
 
   // 1. Open our official Shipping Bill (Waybill) PDF (Dollar icon)
   const handleOpenOurBillRow = async (b) => {
-    const toastId = toast.loading('Opening Our Shipping Bill...')
+    const toastId = toast.loading('Loading Our Shipping Bill...')
     try {
       const res = await bookingsApi.downloadWaybill(b.id)
-      const blob = new Blob([res.data], { type: 'application/pdf' })
-      const url = window.URL.createObjectURL(blob)
-      window.open(url, '_blank')
-      toast.success('Our Shipping Bill opened in new tab', { id: toastId })
+      const awb = b.tracking_number || b.order_id || b.id
+      openPdfBlob(res.data, `ShippingBill_${awb}.pdf`)
+      toast.success('Our Shipping Bill opened successfully', { id: toastId })
     } catch (err) {
       toast.error('Failed to open Shipping Bill', { id: toastId })
     }
@@ -464,13 +463,12 @@ export default function BookingsPage() {
 
   // 5. Open Our Prince Official Box / Thermal Label PDF (Tag icon)
   const handleOpenPrinceLabelRow = async (b) => {
-    const toastId = toast.loading('Opening Our Box Label...')
+    const toastId = toast.loading('Loading Our Box Label...')
     try {
       const res = await bookingsApi.downloadBoxLabels(b.id)
-      const blob = new Blob([res.data], { type: 'application/pdf' })
-      const url = window.URL.createObjectURL(blob)
-      window.open(url, '_blank')
-      toast.success('Our Box Label opened in new tab', { id: toastId })
+      const awb = b.tracking_number || b.order_id || b.id
+      openPdfBlob(res.data, `BoxLabels_${awb}.pdf`)
+      toast.success('Our Box Label opened successfully', { id: toastId })
     } catch (err) {
       toast.error('Failed to open Prince Label', { id: toastId })
     }

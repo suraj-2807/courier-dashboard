@@ -919,7 +919,7 @@ function cpRenderRequestDetail(awb, silent) {
                 h += '<div style="flex:1; min-width:0;"><div class="l" style="font-size:12px; font-weight:600; color:var(--cptext1);">' + (doc.doc_type || doc.name || 'Document ' + (i+1)) + '</div>';
                 if (doc.doc_number) h += '<div style="font-size:10px; color:var(--cptext3);">No: ' + doc.doc_number + '</div>';
                 h += '</div>';
-                if (doc.file_url) h += '<a href="' + doc.file_url + '" target="_blank" style="font-size:11px; font-weight:700; color:var(--cpred); text-decoration:none;">View</a>';
+                if (doc.file_url) h += '<a href="' + doc.file_url + '" target="_blank" rel="noopener noreferrer" download style="font-size:11px; font-weight:700; color:var(--cpred); text-decoration:none; display:inline-flex; align-items:center; gap:4px;"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size:10px;"></i> View / Download</a>';
                 h += '</div>';
             });
             h += '</div></div>';
@@ -1436,7 +1436,7 @@ function cpRenderDocuments() {
         h += '<div style="border-top:1px solid var(--cpbdr); padding-top:10px; display:flex; justify-content:space-between; align-items:center;">';
         h += '<span style="font-size:11px; color:var(--cptext3); font-weight:600;">' + (sizeKb ? sizeKb + ' · ' : '') + (d.created_at ? d.created_at.substring(0, 10) : '') + '</span>';
         if (d.file_url) {
-            h += '<a href="' + d.file_url + '" target="_blank" style="font-size:12px; font-weight:700; color:var(--cpred); text-decoration:none; display:inline-flex; align-items:center; gap:4px;"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size:10px;"></i> View File</a>';
+            h += '<a href="' + d.file_url + '" target="_blank" rel="noopener noreferrer" download style="font-size:12px; font-weight:700; color:var(--cpred); text-decoration:none; display:inline-flex; align-items:center; gap:4px;"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size:10px;"></i> View / Download</a>';
         }
         h += '</div>';
         h += '</div>';
