@@ -151,95 +151,6 @@ export default function BookingDetailPage() {
     }
   }
 
-  // 1. Official Shipping Bill (Ours - Dollar icon)
-  const handleOpenOurBill = async () => {
-    const toastId = toast.loading('Loading Our Shipping Bill...')
-    try {
-      const res = await bookingsApi.downloadWaybill(booking.id)
-      const awb = booking.tracking_number || booking.order_id || booking.id
-      openPdfBlob(res.data, `ShippingBill_${awb}.pdf`)
-      toast.success('Our Shipping Bill opened successfully', { id: toastId })
-    } catch (err) {
-      toast.error('Failed to open Shipping Bill', { id: toastId })
-    }
-  }
-
-  // 2. Vendor Invoice (File icon)
-  const handleOpenVendorInvoice = async () => {
-    await openVendorDocument(booking, 'vendor_invoice')
-  }
-
-  // 3. Vendor Shipper Copy / Vendor Bill (Download icon)
-  const handleOpenVendorShipperCopy = async () => {
-    await openVendorDocument(booking, 'vendor_shipper_copy')
-  }
-
-  // 4. Vendor Box Labels (Box icon)
-  const handleOpenVendorLabels = async () => {
-    await openVendorDocument(booking, 'vendor_box_label')
-  }
-
-  // 5. Our Prince Box / Thermal Label (Tag icon)
-  const handleOpenPrinceLabel = async () => {
-    const toastId = toast.loading('Loading Our Box Label...')
-    try {
-      const res = await bookingsApi.downloadBoxLabels(booking.id)
-      const awb = booking.tracking_number || booking.order_id || booking.id
-      openPdfBlob(res.data, `BoxLabels_${awb}.pdf`)
-      toast.success('Our Box Label opened successfully', { id: toastId })
-    } catch (err) {
-      toast.error('Failed to open Prince Label', { id: toastId })
-    }
-  }
-
-  // 6. Share Final Amount & Labels with Customer via WhatsApp & Public Links
-  const handleShareWithCustomer = () => {
-    const awb = booking.tracking_number || booking.order_id || booking.id
-    const customerName = sender.name || booking.sender_name || 'Customer'
-    const consigneeName = receiver.name || booking.receiver_name || ''
-    const dest = receiver.city || receiver.country || booking.destination_country || ''
-    const amountVal = booking.total_amount || booking.shipping_charge
-    const amountStr = amountVal ? `₹${parseFloat(amountVal).toLocaleString('en-IN')}` : ''
-
-    const labelUrl = `https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/${awb}`
-    const waybillUrl = `https://purple-raccoon-753399.hostingersite.com/api/customer/waybill-pdf/${awb}`
-
-    let text = `📦 *Prince Express Shipment Update*\n\n`
-    text += `Dear *${customerName}*,\n`
-    text += `Your shipment *#${awb}* is booked & processed.\n\n`
-    if (consigneeName) text += `📍 *Consignee:* ${consigneeName} (${dest})\n`
-    if (amountStr) text += `💰 *Final Amount:* ${amountStr}\n`
-    text += `\n🏷️ *Download Box Label:* ${labelUrl}\n`
-    text += `📄 *Download Shipping Bill:* ${waybillUrl}\n\n`
-    text += `Thank you for choosing Prince Express!`
-
-    const phone = (sender.phone || '').replace(/[^0-9]/g, '')
-    const waUrl = phone && phone.length >= 10 ? `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}` : `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`
-
-    navigator.clipboard.writeText(text)
-    toast.success('Share text copied! Opening WhatsApp...')
-    window.open(waUrl, '_blank', 'noopener,noreferrer')
-  }
-
-  const handlePushToApi = async () => {
-    try {
-      await pushToApiMutation.mutateAsync({
-        id: booking.id,
-        payload: {
-          vendor_config_id: booking.vendor_config_id,
-          vendor_code: booking.vendor_code,
-          service_code: booking.service_code,
-          product_code: booking.product_code
-        }
-      })
-      toast.success('Successfully pushed to vendor API!')
-      refetch()
-      refetchLiveTracking()
-    } catch (err) {
-      toast.error(err?.response?.data?.message || 'Failed to push to vendor API')
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="space-y-4 animate-fade-in">
@@ -334,6 +245,95 @@ export default function BookingDetailPage() {
   const courier = booking.courier_providers
   const vendorConfig = booking.vendor_api_configs
   const events = booking.tracking_events || []
+
+  // 1. Official Shipping Bill (Ours - Dollar icon)
+  const handleOpenOurBill = async () => {
+    const toastId = toast.loading('Loading Our Shipping Bill...')
+    try {
+      const res = await bookingsApi.downloadWaybill(booking.id)
+      const awb = booking.tracking_number || booking.order_id || booking.id
+      openPdfBlob(res.data, `ShippingBill_${awb}.pdf`)
+      toast.success('Our Shipping Bill opened successfully', { id: toastId })
+    } catch (err) {
+      toast.error('Failed to open Shipping Bill', { id: toastId })
+    }
+  }
+
+  // 2. Vendor Invoice (File icon)
+  const handleOpenVendorInvoice = async () => {
+    await openVendorDocument(booking, 'vendor_invoice')
+  }
+
+  // 3. Vendor Shipper Copy / Vendor Bill (Download icon)
+  const handleOpenVendorShipperCopy = async () => {
+    await openVendorDocument(booking, 'vendor_shipper_copy')
+  }
+
+  // 4. Vendor Box Labels (Box icon)
+  const handleOpenVendorLabels = async () => {
+    await openVendorDocument(booking, 'vendor_box_label')
+  }
+
+  // 5. Our Prince Box / Thermal Label (Tag icon)
+  const handleOpenPrinceLabel = async () => {
+    const toastId = toast.loading('Loading Our Box Label...')
+    try {
+      const res = await bookingsApi.downloadBoxLabels(booking.id)
+      const awb = booking.tracking_number || booking.order_id || booking.id
+      openPdfBlob(res.data, `BoxLabels_${awb}.pdf`)
+      toast.success('Our Box Label opened successfully', { id: toastId })
+    } catch (err) {
+      toast.error('Failed to open Prince Label', { id: toastId })
+    }
+  }
+
+  // 6. Share Final Amount & Labels with Customer via WhatsApp & Public Links
+  const handleShareWithCustomer = () => {
+    const awb = booking.tracking_number || booking.order_id || booking.id
+    const customerName = sender.name || booking.sender_name || 'Customer'
+    const consigneeName = receiver.name || booking.receiver_name || ''
+    const dest = receiver.city || receiver.country || booking.destination_country || ''
+    const amountVal = booking.total_amount || booking.shipping_charge
+    const amountStr = amountVal ? `₹${parseFloat(amountVal).toLocaleString('en-IN')}` : ''
+
+    const labelUrl = `https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/${awb}`
+    const waybillUrl = `https://purple-raccoon-753399.hostingersite.com/api/customer/waybill-pdf/${awb}`
+
+    let text = `📦 *Prince Express Shipment Update*\n\n`
+    text += `Dear *${customerName}*,\n`
+    text += `Your shipment *#${awb}* is booked & processed.\n\n`
+    if (consigneeName) text += `📍 *Consignee:* ${consigneeName} (${dest})\n`
+    if (amountStr) text += `💰 *Final Amount:* ${amountStr}\n`
+    text += `\n🏷️ *Download Box Label:* ${labelUrl}\n`
+    text += `📄 *Download Shipping Bill:* ${waybillUrl}\n\n`
+    text += `Thank you for choosing Prince Express!`
+
+    const phone = (sender.phone || '').replace(/[^0-9]/g, '')
+    const waUrl = phone && phone.length >= 10 ? `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}` : `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`
+
+    navigator.clipboard.writeText(text)
+    toast.success('Share text copied! Opening WhatsApp...')
+    window.open(waUrl, '_blank', 'noopener,noreferrer')
+  }
+
+  const handlePushToApi = async () => {
+    try {
+      await pushToApiMutation.mutateAsync({
+        id: booking.id,
+        payload: {
+          vendor_config_id: booking.vendor_config_id,
+          vendor_code: booking.vendor_code,
+          service_code: booking.service_code,
+          product_code: booking.product_code
+        }
+      })
+      toast.success('Successfully pushed to vendor API!')
+      refetch()
+      refetchLiveTracking()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to push to vendor API')
+    }
+  }
 
   return (
     <div className="animate-fade-in">

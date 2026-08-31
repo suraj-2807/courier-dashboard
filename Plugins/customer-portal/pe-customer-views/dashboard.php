@@ -932,13 +932,11 @@ function cpRenderRequestDetail(awb, silent) {
         var labelAwb = r.tracking_number || r.request_awb;
         var labelUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/' + encodeURIComponent(labelAwb);
         var waybillUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/waybill-pdf/' + encodeURIComponent(labelAwb);
-        var waMsg = encodeURIComponent('Prince Express Shipment #' + labelAwb + '\nStatus: ' + stLabel + '\nDestination: ' + (r.receiver_city || r.receiver_country || '') + (r.total_amount ? '\nAmount: ₹' + r.total_amount : '') + '\n\nDownload Box Label: ' + labelUrl);
 
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-tags"></i> Official Labels & Documents</h4>';
         h += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">';
         h += '  <a href="' + labelUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#ebf5ff; color:#1e40af; border:1px solid #bfdbfe; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-tag"></i> Download Box Label</a>';
         h += '  <a href="' + waybillUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-file-invoice-dollar"></i> Download Shipping Bill</a>';
-        h += '  <a href="https://api.whatsapp.com/send?text=' + waMsg + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; gap:6px; background:#25d366; color:#ffffff; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-brands fa-whatsapp"></i> Share on WhatsApp</a>';
         h += '</div></div>';
 
         // Timeline Section (Merges Status Changes + Shipping Events)
@@ -1121,13 +1119,11 @@ function cpShowDetail(awb) {
         // Official Box Labels & Shipping Documents
         var shpLabelUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/' + encodeURIComponent(s.awb);
         var shpWaybillUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/waybill-pdf/' + encodeURIComponent(s.awb);
-        var shpWaMsg = encodeURIComponent('Prince Express Shipment #' + s.awb + '\nConsignee: ' + (s.consignee || '') + '\nDestination: ' + (s.destination || '') + (s.amount ? '\nAmount: ₹' + s.amount : '') + '\n\nDownload Box Label: ' + shpLabelUrl);
 
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-tags"></i> Official Labels & Documents</h4>';
         h += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">';
         h += '  <a href="' + shpLabelUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#ebf5ff; color:#1e40af; border:1px solid #bfdbfe; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-tag"></i> Download Box Label</a>';
         h += '  <a href="' + shpWaybillUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-file-invoice-dollar"></i> Download Shipping Bill</a>';
-        h += '  <a href="https://api.whatsapp.com/send?text=' + shpWaMsg + '" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items:center; gap:6px; background:#25d366; color:#ffffff; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-brands fa-whatsapp"></i> Share on WhatsApp</a>';
         h += '</div></div>';
 
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-route"></i> Tracking History</h4>';
