@@ -2344,7 +2344,7 @@ export const updateBookingStatus = async (req, res) => {
 
 // Helper to fetch complete shipment details with sender & receiver for PDF generation
 async function getFullShipmentContext(shipmentId) {
-  const rows = await query(
+  let rows = await query(
     `SELECT s.*,
       snd.id as s_id, snd.name as s_name, snd.phone as s_phone, snd.phone_2 as s_phone_2, snd.email as s_email,
       snd.address as s_address, snd.city as s_city, snd.state as s_state, snd.pincode as s_pincode, snd.country as s_country,
@@ -2356,7 +2356,76 @@ async function getFullShipmentContext(shipmentId) {
      WHERE s.id = ? OR s.tracking_number = ? OR s.order_id = ? OR s.vendor_awb_number = ?`,
     [shipmentId, shipmentId, shipmentId, shipmentId]
   )
-  if (!rows || rows.length === 0) return null
+
+  if (!rows || rows.length === 0) {
+    // Fallback: check booking_requests table
+    const reqRows = await query(
+      'SELECT * FROM booking_requests WHERE id = ? OR request_awb = ? OR tracking_number = ?',
+      [shipmentId, shipmentId, shipmentId]
+    )
+    if (reqRows && reqRows.length > 0) {
+      const br = reqRows[0]
+      if (br.shipment_id) {
+        return getFullShipmentContext(br.shipment_id)
+      }
+      // Mock shipment structure from booking_requests
+      const bMock = {
+        ...br,
+        id: br.id,
+        tracking_number: br.tracking_number || br.request_awb,
+        order_id: br.request_awb,
+        created_at: br.created_at,
+        weight: br.weight || br.chargeable_weight,
+        package_type: br.package_type,
+        no_of_pieces: br.no_of_pieces || 1,
+        declared_value: br.declared_value,
+        total_amount: br.total_amount || br.shipping_charge,
+        shipping_charge: br.shipping_charge,
+        destination_country: br.receiver_country
+      }
+      const sender = {
+        name: br.sender_name || '',
+        company: br.sender_company || '',
+        phone: br.sender_phone || '',
+        phone_2: br.sender_phone_2 || '',
+        email: br.sender_email || '',
+        address: br.sender_address || '',
+        address_2: br.sender_address_2 || '',
+        city: br.sender_city || '',
+        state: br.sender_state || '',
+        pincode: br.sender_pincode || '',
+        country: br.sender_country || 'INDIA'
+      }
+      const receiver = {
+        name: br.receiver_name || '',
+        company: br.receiver_company || '',
+        phone: br.receiver_phone || '',
+        phone_2: br.receiver_phone_2 || '',
+        email: br.receiver_email || '',
+        address: br.receiver_address || '',
+        address_2: br.receiver_address_2 || '',
+        city: br.receiver_city || '',
+        state: br.receiver_state || '',
+        pincode: br.receiver_pincode || '',
+        country: br.receiver_country || ''
+      }
+      let parcels = []
+      if (br.parcels) {
+        try {
+          parcels = typeof br.parcels === 'string' ? JSON.parse(br.parcels) : br.parcels
+        } catch { }
+      }
+      let invoiceItems = []
+      if (br.invoice_items) {
+        try {
+          invoiceItems = typeof br.invoice_items === 'string' ? JSON.parse(br.invoice_items) : br.invoice_items
+        } catch { }
+      }
+      return { b: bMock, sender, receiver, parcels, invoiceItems }
+    }
+    return null
+  }
+
   const b = rows[0]
 
   const sender = {

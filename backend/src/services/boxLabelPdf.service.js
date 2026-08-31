@@ -272,20 +272,11 @@ export async function generateBoxLabelsPdf(params) {
         // Divider line above Weight
         doc.moveTo(startX, midY + 246).lineTo(rightStripX, midY + 246).strokeColor(NAVY).lineWidth(0.75).stroke()
 
-        // 3. Actual Box Weight & Final Amount
+        // 3. Actual Box Weight
         const parcelObj = parcels[i - 1] || {}
         const boxWeight = parcelObj.weight ? parseFloat(parcelObj.weight).toFixed(2) : (parseFloat(shipment.weight || 0) / totalBoxes).toFixed(2)
 
-        doc.fillColor(NAVY).fontSize(9).font('Helvetica-Bold').text(`Actual Box Wt: ${boxWeight} kg`, startX + 6, midY + 254)
-
-        const finalAmount = shipment.total_amount || shipment.shipping_charge || shipment.declared_value || ''
-        if (finalAmount && parseFloat(finalAmount) > 0) {
-          const formattedAmount = `₹${parseFloat(finalAmount).toLocaleString('en-IN')}`
-          doc.fillColor(RED).fontSize(9).font('Helvetica-Bold').text(`Total Amount: ${formattedAmount}`, startX + 6, midY + 254, { width: leftW - 12, align: 'right' })
-        } else if (shipment.final_chargeable_weight || shipment.chargeable_weight) {
-          const chgWt = parseFloat(shipment.final_chargeable_weight || shipment.chargeable_weight || 0).toFixed(2)
-          doc.fillColor('#4B5563').fontSize(8.5).font('Helvetica-Bold').text(`Chg Wt: ${chgWt} kg`, startX + 6, midY + 254, { width: leftW - 12, align: 'right' })
-        }
+        doc.fillColor(NAVY).fontSize(9.5).font('Helvetica-Bold').text(`Actual Box Weight : ${boxWeight} kg`, startX + 6, midY + 254)
 
         // ── Bottom Banner & Barcode Section (Height: 100 pt) ──
         const botY = midY + midHeight

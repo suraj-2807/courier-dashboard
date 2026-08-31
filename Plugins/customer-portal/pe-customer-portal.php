@@ -509,6 +509,8 @@ function pe_cp_ajax_shipment_detail()
             'origin' => $row->ORIGIN ?? '',
             'weight' => $row->CHARGEWEIGHT ?: $row->ACTUALWEIGHT,
             'pieces' => $row->PIECES ?? 1,
+            'amount' => $totAmount,
+            'balance' => $totAmount - $recAmount,
             'vendor' => $row->VENDNAME ?? '',
             'vendor_awb' => $row->VENDORAWB1 ?? '',
             'product' => $row->PRODNAME ?? '',

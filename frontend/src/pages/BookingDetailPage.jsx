@@ -39,7 +39,8 @@ import {
   Globe,
   AlertCircle,
   DollarSign,
-  Tag
+  Tag,
+  Share2
 } from 'lucide-react'
 import StatusBadge from '../components/ui/StatusBadge'
 import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters'
@@ -189,6 +190,35 @@ export default function BookingDetailPage() {
     } catch (err) {
       toast.error('Failed to open Prince Label', { id: toastId })
     }
+  }
+
+  // 6. Share Final Amount & Labels with Customer via WhatsApp & Public Links
+  const handleShareWithCustomer = () => {
+    const awb = booking.tracking_number || booking.order_id || booking.id
+    const customerName = sender.name || booking.sender_name || 'Customer'
+    const consigneeName = receiver.name || booking.receiver_name || ''
+    const dest = receiver.city || receiver.country || booking.destination_country || ''
+    const amountVal = booking.total_amount || booking.shipping_charge
+    const amountStr = amountVal ? `₹${parseFloat(amountVal).toLocaleString('en-IN')}` : ''
+
+    const labelUrl = `https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/${awb}`
+    const waybillUrl = `https://purple-raccoon-753399.hostingersite.com/api/customer/waybill-pdf/${awb}`
+
+    let text = `📦 *Prince Express Shipment Update*\n\n`
+    text += `Dear *${customerName}*,\n`
+    text += `Your shipment *#${awb}* is booked & processed.\n\n`
+    if (consigneeName) text += `📍 *Consignee:* ${consigneeName} (${dest})\n`
+    if (amountStr) text += `💰 *Final Amount:* ${amountStr}\n`
+    text += `\n🏷️ *Download Box Label:* ${labelUrl}\n`
+    text += `📄 *Download Shipping Bill:* ${waybillUrl}\n\n`
+    text += `Thank you for choosing Prince Express!`
+
+    const phone = (sender.phone || '').replace(/[^0-9]/g, '')
+    const waUrl = phone && phone.length >= 10 ? `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}` : `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`
+
+    navigator.clipboard.writeText(text)
+    toast.success('Share text copied! Opening WhatsApp...')
+    window.open(waUrl, '_blank', 'noopener,noreferrer')
   }
 
   const handlePushToApi = async () => {
@@ -446,6 +476,16 @@ export default function BookingDetailPage() {
           >
             <Tag className="w-3.5 h-3.5 text-blue-700" />
             Our Label
+          </button>
+
+          {/* 6. Share with Customer (WhatsApp / Link) */}
+          <button
+            onClick={handleShareWithCustomer}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold rounded-xl transition-colors cursor-pointer shadow-xs"
+            title="Share shipment details, final amount & label download link via WhatsApp"
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            Share with Customer
           </button>
 
           {/* Push to API button for draft */}
