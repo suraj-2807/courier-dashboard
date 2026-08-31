@@ -569,8 +569,7 @@ function pe_cp_ajax_my_requests()
         $params[] = $like_phone;
     }
 
-    $where_str = count($where_conds) > 0 ? "(" . implode(" OR ", $where_conds) . ")" : "1=1";
-    $where = $wpdb->prepare($where_str, ...$params);
+    $where = count($where_conds) > 0 ? $wpdb->prepare("(" . implode(" OR ", $where_conds) . ")", ...$params) : "1=1";
 
     if ($status) {
         $where .= $wpdb->prepare(" AND status = %s", $status);

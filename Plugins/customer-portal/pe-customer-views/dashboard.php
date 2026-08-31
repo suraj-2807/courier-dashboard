@@ -925,6 +925,9 @@ function cpRenderRequestDetail(awb, silent) {
                 if (doc.file_url) h += '<a href="' + doc.file_url + '" target="_blank" rel="noopener noreferrer" download style="font-size:11px; font-weight:700; color:var(--cpred); text-decoration:none; display:inline-flex; align-items:center; gap:4px;"><i class="fa-solid fa-arrow-up-right-from-square" style="font-size:10px;"></i> View / Download</a>';
                 h += '</div>';
             });
+            h += '</div></div>';
+        }
+
         // Official Box Labels & Shipping Documents
         var labelAwb = r.tracking_number || r.request_awb;
         var labelUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/' + encodeURIComponent(labelAwb);
