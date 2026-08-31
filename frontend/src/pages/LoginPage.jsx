@@ -67,7 +67,7 @@ export default function LoginPage() {
 
               {/* Email */}
               <div>
-                <label className="block text-[11px] font-bold text-text-secondary mb-2 uppercase tracking-[1px]">
+                <label className="block text-[13px] font-semibold text-text-secondary mb-2">
                   Corporate Email
                 </label>
                 <div className="relative">
@@ -89,7 +89,7 @@ export default function LoginPage() {
               {/* Password */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-[1px]">
+                  <label className="block text-[13px] font-semibold text-text-secondary">
                     Password
                   </label>
                   <button
