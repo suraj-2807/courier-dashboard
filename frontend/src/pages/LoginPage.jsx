@@ -107,9 +107,11 @@ export default function LoginPage() {
                     id="login-password"
                     type={showPassword ? 'text' : 'password'}
                     placeholder="••••••••"
+                    autoComplete="current-password"
                     value={form.password}
                     onChange={(e) => setForm({ ...form, password: e.target.value })}
                     required
+                    style={{ textTransform: 'none' }}
                     className="w-full pl-10 pr-11 py-2.5 bg-surface border border-border rounded-xl text-[14px] text-text-primary placeholder:text-text-tertiary outline-none focus:ring-2 focus:ring-primary/15 focus:border-primary/40 transition-all"
                   />
                   <button
