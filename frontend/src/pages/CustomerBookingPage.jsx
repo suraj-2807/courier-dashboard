@@ -181,6 +181,7 @@ export default function CustomerBookingPage() {
   ])
 
   // Invoice items state
+  const invoiceDescRefs = useRef([])
   const [invoiceItems, setInvoiceItems] = useState([
     { sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }
   ])
@@ -1675,8 +1676,14 @@ export default function CustomerBookingPage() {
                       </select>
                     </div>
                     <div className="px-1">
-                      <input type="text" placeholder="Item description" value={item.description} onChange={e => updateInvoiceItem(idx, 'description', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-[13px] text-navy font-medium" />
+                      <input
+                        type="text"
+                        placeholder="Item description"
+                        value={item.description}
+                        ref={el => (invoiceDescRefs.current[idx] = el)}
+                        onChange={e => updateInvoiceItem(idx, 'description', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-[13px] text-navy font-medium"
+                      />
                     </div>
                     <div className="px-1">
                       <input type="text" placeholder="" value={item.hs_code} onChange={e => updateInvoiceItem(idx, 'hs_code', e.target.value)}
@@ -1706,12 +1713,28 @@ export default function CustomerBookingPage() {
                         className="w-full bg-transparent focus:outline-none text-xs text-right text-text-primary" />
                     </div>
                     <div className="px-1">
-                      <input type="number" step="0.01" placeholder="" value={item.unit_rates} onChange={e => updateInvoiceItem(idx, 'unit_rates', e.target.value)}
-                        className="w-full bg-transparent focus:outline-none text-xs text-right text-text-primary" />
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder=""
+                        value={item.unit_rates}
+                        onChange={e => updateInvoiceItem(idx, 'unit_rates', e.target.value)}
+                        className="w-full bg-transparent focus:outline-none text-xs text-right text-text-primary"
+                        onKeyDown={e => {
+                          if (e.key === 'Tab' && !e.shiftKey && idx === invoiceItems.length - 1) {
+                            e.preventDefault()
+                            addInvoiceItem()
+                            setTimeout(() => {
+                              const newRef = invoiceDescRefs.current[idx + 1]
+                              if (newRef) newRef.focus()
+                            }, 50)
+                          }
+                        }}
+                      />
                     </div>
                     <div className="px-1">
-                      <input type="number" step="0.01" placeholder="" readOnly value={item.amount}
-                        className="w-full bg-transparent focus:outline-none text-xs text-right font-extrabold text-primary" />
+                      <input type="number" step="0.01" placeholder="" readOnly tabIndex={-1} value={item.amount}
+                        className="w-full bg-transparent focus:outline-none text-xs text-right font-extrabold text-primary cursor-default" />
                     </div>
                     <div className="px-1 text-center">
                       <button type="button" onClick={() => removeInvoiceItem(idx)}
