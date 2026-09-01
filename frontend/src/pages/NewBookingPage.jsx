@@ -188,10 +188,13 @@ export default function NewBookingPage() {
   ])
 
   const addInvoiceItem = () => {
-    setInvoiceItems(prev => [
-      ...prev,
-      { sr_no: prev.length + 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }
-    ])
+    setInvoiceItems(prev => {
+      const lastBoxNo = prev.length > 0 ? prev[prev.length - 1].box_no : '1'
+      return [
+        ...prev,
+        { sr_no: prev.length + 1, box_no: lastBoxNo, description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }
+      ]
+    })
   }
 
   const removeInvoiceItem = (index) => {
