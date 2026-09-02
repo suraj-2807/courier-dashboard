@@ -169,7 +169,10 @@ export async function initializeDb() {
       { name: 'order_reference', type: "VARCHAR(255) DEFAULT ''" },
       { name: 'is_locked', type: "BOOLEAN DEFAULT FALSE" },
       { name: 'is_trashed', type: "TINYINT(1) DEFAULT 0" },
-      { name: 'trashed_at', type: "DATETIME DEFAULT NULL" }
+      { name: 'trashed_at', type: "DATETIME DEFAULT NULL" },
+      { name: 'customer_id', type: "INT DEFAULT NULL" },
+      { name: 'customer_name', type: "VARCHAR(150) DEFAULT 'Walk-in Customer'" },
+      { name: 'customer_type', type: "VARCHAR(50) DEFAULT 'walkin'" }
     ]
 
     for (const col of requiredShipmentCols) {

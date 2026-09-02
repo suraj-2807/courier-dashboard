@@ -4,7 +4,8 @@ import { pushShipmentToVendor } from '../../services/vendorApiPush.service.js'
 import { generateInvoicePdf } from '../../services/invoicePdf.service.js'
 import { generateWaybillPdf } from '../../services/waybillPdf.service.js'
 import { generateBoxLabelsPdf } from '../../services/boxLabelPdf.service.js'
-import { syncToRemoteAwbEntry, syncToRemoteParcelHistory } from '../../services/remoteAwbEntry.service.js'
+import { syncToRemoteAwbEntry, syncToRemoteParcelHistory, syncBookingRequestStatusToRemoteDb } from '../../services/remoteAwbEntry.service.js'
+import { syncStatusToWP } from '../../utils/wpSync.js'
 import { isSettingEnabled } from '../systemSettings/systemSettings.controller.js'
 import path from 'path'
 import fs from 'fs'
@@ -18,8 +19,17 @@ const __dirname = path.dirname(__filename)
  * Shared between saveBooking and createBooking.
  */
 function extractBookingFields(body) {
+  const custId = body.customer_id ? parseInt(body.customer_id) : null
+  const custType = body.customer_type || (custId ? 'registered' : 'walkin')
+  const custName = body.customer_name || (custType === 'walkin' ? 'Walk-in Customer' : (body.sender_name || 'Walk-in Customer'))
+
   return {
     id: body.id,
+    customer_id: custId,
+    customer_name: custName,
+    customer_type: custType,
+    from_request: body.from_request || body.booking_request_id || undefined,
+    request_awb: body.request_awb || undefined,
     sender_id: body.sender_id,
     receiver_id: body.receiver_id,
     courier_provider_id: body.courier_provider_id,
@@ -136,6 +146,59 @@ function extractBookingFields(body) {
     invoice_items: body.invoice_items,
     invoice_type: body.invoice_type,
     invoice_note: body.invoice_note
+  }
+}
+
+/**
+ * Link and confirm a booking request when creating or saving a shipment.
+ * Updates local DB, remote Hostinger DB, and syncs to WordPress.
+ */
+async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentId, effectiveTracking) {
+  if (!fromRequestId && !requestAwb) return
+  try {
+    let reqRow = null
+    if (fromRequestId) {
+      const reqRows = await query('SELECT * FROM booking_requests WHERE id = ?', [fromRequestId])
+      if (reqRows.length > 0) reqRow = reqRows[0]
+    }
+    if (!reqRow && requestAwb) {
+      const reqRows = await query('SELECT * FROM booking_requests WHERE request_awb = ?', [requestAwb])
+      if (reqRows.length > 0) reqRow = reqRows[0]
+    }
+
+    if (reqRow) {
+      await execute(
+        `UPDATE booking_requests SET status = 'confirmed', shipment_id = ?, tracking_number = ? WHERE id = ?`,
+        [shipmentId, effectiveTracking, reqRow.id]
+      )
+
+      const updateDesc = `Booking confirmed. Tracking Number: ${effectiveTracking}`
+
+      await execute(
+        `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
+        [reqRow.id, 'shipment_created', 'Shipment Confirmed', updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking })]
+      )
+
+      // Direct sync to remote Hostinger DB
+      syncBookingRequestStatusToRemoteDb({
+        requestAwb: reqRow.request_awb,
+        requestId: reqRow.id,
+        status: 'confirmed',
+        shipmentId: shipmentId,
+        trackingNumber: effectiveTracking
+      }).catch((err) => console.warn('[Remote DB Request Sync Notice]:', err.message))
+
+      // Sync to WordPress
+      syncStatusToWP({
+        request_awb: reqRow.request_awb,
+        status: 'confirmed',
+        shipment_id: shipmentId,
+        tracking_number: effectiveTracking,
+        updates: [{ type: 'shipment_created', title: 'Shipment Confirmed', description: updateDesc }]
+      }).catch((err) => console.warn('[WP Sync Request Notice]:', err.message))
+    }
+  } catch (err) {
+    console.error('Failed to link and confirm booking request:', err.message)
   }
 }
 
@@ -838,6 +901,7 @@ export const saveBooking = async (req, res) => {
 
       await execute(
         `UPDATE shipments SET
+          customer_id = ?, customer_name = ?, customer_type = ?,
           sender_id = ?, receiver_id = ?, courier_provider_id = ?, vendor_config_id = ?,
           vendor_code = ?, service_code = ?, product_code = ?, weight = ?, chargeable_weight = ?, \`length\` = ?, breadth = ?, height = ?,
           no_of_pieces = ?, content_description = ?, declared_value = ?, cod_amount = ?,
@@ -854,6 +918,9 @@ export const saveBooking = async (req, res) => {
           invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?
         WHERE id = ?`,
         [
+          fields.customer_id || null,
+          fields.customer_name || 'Walk-in Customer',
+          fields.customer_type || 'walkin',
           finalSenderId || null,
           finalReceiverId || null,
           fields.courier_provider_id || null,
@@ -927,7 +994,8 @@ export const saveBooking = async (req, res) => {
 
       const shipmentResult = await execute(
         `INSERT INTO shipments (
-          order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
+          order_id, customer_id, customer_name, customer_type,
+          sender_id, receiver_id, courier_provider_id, vendor_config_id,
           vendor_code, service_code, product_code, tracking_number, weight, chargeable_weight, \`length\`, breadth, height,
           no_of_pieces, content_description, declared_value, cod_amount,
           payment_mode, package_type, total_amount, shipping_charge,
@@ -941,9 +1009,12 @@ export const saveBooking = async (req, res) => {
           receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
           invoice_type, invoice_note, invoice_items, parcels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
+          fields.customer_id || null,
+          fields.customer_name || 'Walk-in Customer',
+          fields.customer_type || 'walkin',
           finalSenderId || null,
           finalReceiverId || null,
           fields.courier_provider_id || null,
@@ -1013,6 +1084,14 @@ export const saveBooking = async (req, res) => {
       )
       shipmentId = shipmentResult.insertId
     }
+
+    // Link booking request if created from a customer request
+    await linkAndConfirmBookingRequest(
+      fields.from_request || req.body.from_request || req.body.booking_request_id,
+      fields.request_awb || req.body.request_awb,
+      shipmentId,
+      tracking_number
+    )
 
     // Generate invoice PDF
     let invoicePdfPath = ''
@@ -1353,6 +1432,7 @@ export const createBooking = async (req, res) => {
       // Update existing shipment in place (KEEP THE SAME AWB!)
       await execute(
         `UPDATE shipments SET
+          customer_id = ?, customer_name = ?, customer_type = ?,
           sender_id = ?, receiver_id = ?, courier_provider_id = ?, vendor_config_id = ?,
           vendor_code = ?, service_code = ?, product_code = ?, weight = ?, chargeable_weight = ?, \`length\` = ?, breadth = ?, height = ?,
           no_of_pieces = ?, content_description = ?, declared_value = ?, cod_amount = ?,
@@ -1369,6 +1449,9 @@ export const createBooking = async (req, res) => {
           invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?
         WHERE id = ?`,
         [
+          fields.customer_id || null,
+          fields.customer_name || 'Walk-in Customer',
+          fields.customer_type || 'walkin',
           finalSenderId || null,
           finalReceiverId || null,
           fields.courier_provider_id || null,
@@ -1446,7 +1529,8 @@ export const createBooking = async (req, res) => {
 
       const shipmentResult = await execute(
         `INSERT INTO shipments (
-          order_id, sender_id, receiver_id, courier_provider_id, vendor_config_id,
+          order_id, customer_id, customer_name, customer_type,
+          sender_id, receiver_id, courier_provider_id, vendor_config_id,
           vendor_code, service_code, product_code, tracking_number, weight, chargeable_weight, \`length\`, breadth, height,
           no_of_pieces, content_description, declared_value, cod_amount,
           payment_mode, package_type, total_amount, shipping_charge,
@@ -1460,9 +1544,12 @@ export const createBooking = async (req, res) => {
           receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
           invoice_type, invoice_note, invoice_items, parcels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
+          fields.customer_id || null,
+          fields.customer_name || 'Walk-in Customer',
+          fields.customer_type || 'walkin',
           finalSenderId || null,
           finalReceiverId || null,
           fields.courier_provider_id || null,
@@ -1630,41 +1717,10 @@ export const createBooking = async (req, res) => {
     }
 
     // Link booking request if applicable
-    const fromRequestId = req.body.from_request || req.body.booking_request_id
-    const requestAwb = req.body.request_awb
+    const fromRequestId = req.body.from_request || req.body.booking_request_id || fields.from_request
+    const requestAwb = req.body.request_awb || fields.request_awb
+    await linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentId, tracking_number)
 
-    if (fromRequestId || requestAwb) {
-      try {
-        let reqRow = null
-        if (fromRequestId) {
-          const reqRows = await query('SELECT * FROM booking_requests WHERE id = ?', [fromRequestId])
-          if (reqRows.length > 0) reqRow = reqRows[0]
-        }
-        if (!reqRow && requestAwb) {
-          const reqRows = await query('SELECT * FROM booking_requests WHERE request_awb = ?', [requestAwb])
-          if (reqRows.length > 0) reqRow = reqRows[0]
-        }
-
-        if (reqRow) {
-          const effectiveTracking = tracking_number
-          await execute(
-            `UPDATE booking_requests SET status = 'confirmed', shipment_id = ?, tracking_number = ? WHERE id = ?`,
-            [shipmentId, effectiveTracking, reqRow.id]
-          )
-
-          const updateDesc = vendorResult?.awbNumber 
-            ? `Booking confirmed. Tracking: ${effectiveTracking} (Vendor AWB: ${vendorResult.awbNumber})`
-            : `Booking confirmed. Tracking: ${effectiveTracking}`
-
-          await execute(
-            `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
-            [reqRow.id, 'shipment_created', 'Shipment Confirmed', updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking, vendor_awb: vendorResult?.awbNumber || '' })]
-          )
-        }
-      } catch (reqSyncErr) {
-        console.error('Failed to update booking request:', reqSyncErr.message)
-      }
-    }
 
     const shipmentRows = await query('SELECT * FROM shipments WHERE id = ?', [shipmentId])
 

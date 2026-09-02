@@ -349,7 +349,12 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
         <div class="cp-user-avatar"><?php echo strtoupper(substr($cust['name'], 0, 1)); ?></div>
         <div class="cp-user-details">
           <div class="cp-user-name" id="cp-sidebar-uname"><?php echo esc_html($cust['name']); ?></div>
-          <div class="cp-user-role">Customer Account</div>
+          <div class="cp-user-role" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+            <span>Customer</span>
+            <?php if (!empty($cust['customer_id'])): ?>
+              <span style="background:var(--cpblue);color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:4px;letter-spacing:0.5px;">CUST-<?php echo str_pad(intval($cust['customer_id']), 4, '0', STR_PAD_LEFT); ?></span>
+            <?php endif; ?>
+          </div>
         </div>
       </div>
       <button class="cp-logout-btn" onclick="cpLogout()">
@@ -431,6 +436,31 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
       <div class="cp-hdr-wrap">
         <h1 class="cp-page-title">Account Settings</h1>
         <p class="cp-page-sub">Keep your contact information up-to-date and manage password security.</p>
+      </div>
+
+      <!-- Account Overview Banner -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:20px;">
+        <div style="background:var(--cpcard); border:1px solid var(--cpbdr); border-radius:12px; padding:14px 18px; display:flex; align-items:center; gap:12px; box-shadow:var(--cpsh);">
+          <div style="width:40px; height:40px; border-radius:10px; background:rgba(59,130,246,0.1); color:var(--cpblue); display:flex; align-items:center; justify-content:center; font-size:18px;"><i class="fa-solid fa-id-badge"></i></div>
+          <div>
+            <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--cptext3); letter-spacing:0.5px;">Customer ID</div>
+            <div style="font-size:16px; font-weight:800; color:var(--cptext); font-family:Courier New,monospace;"><?php echo !empty($cust['customer_id']) ? 'CUST-' . str_pad(intval($cust['customer_id']), 4, '0', STR_PAD_LEFT) : '—'; ?></div>
+          </div>
+        </div>
+        <div style="background:var(--cpcard); border:1px solid var(--cpbdr); border-radius:12px; padding:14px 18px; display:flex; align-items:center; gap:12px; box-shadow:var(--cpsh);">
+          <div style="width:40px; height:40px; border-radius:10px; background:rgba(16,185,129,0.1); color:var(--cpgreen); display:flex; align-items:center; justify-content:center; font-size:18px;"><i class="fa-solid fa-wallet"></i></div>
+          <div>
+            <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--cptext3); letter-spacing:0.5px;">Current Balance</div>
+            <div style="font-size:16px; font-weight:800; color:<?php echo $cust_balance > 0 ? 'var(--cpgreen)' : 'var(--cptext)'; ?>">₹<?php echo number_format($cust_balance, 2); ?></div>
+          </div>
+        </div>
+        <div style="background:var(--cpcard); border:1px solid var(--cpbdr); border-radius:12px; padding:14px 18px; display:flex; align-items:center; gap:12px; box-shadow:var(--cpsh);">
+          <div style="width:40px; height:40px; border-radius:10px; background:rgba(239,68,68,0.1); color:var(--cpred); display:flex; align-items:center; justify-content:center; font-size:18px;"><i class="fa-solid fa-shield-halved"></i></div>
+          <div>
+            <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--cptext3); letter-spacing:0.5px;">Credit Limit</div>
+            <div style="font-size:16px; font-weight:800; color:var(--cpblue);">₹<?php echo number_format($cust_credit_limit, 2); ?></div>
+          </div>
+        </div>
       </div>
 
       <div class="cp-profile-grid">
@@ -1112,8 +1142,6 @@ function cpShowDetail(awb) {
             h += '<div class="cp-df"><div class="l">Total Amount</div><div class="v" style="font-weight:800;color:var(--cpgreen)">₹' + Number(s.amount).toLocaleString('en-IN') + '</div></div>';
             h += '<div class="cp-df"><div class="l">Balance Due</div><div class="v" style="font-weight:700;' + (s.balance > 0 ? 'color:var(--cpred)' : 'color:var(--cptext2)') + '">₹' + Number(s.balance || 0).toLocaleString('en-IN') + '</div></div>';
         }
-        if (s.vendor) h += '<div class="cp-df"><div class="l">Carrier</div><div class="v">' + s.vendor + '</div></div>';
-        if (s.vendor_awb) h += '<div class="cp-df"><div class="l">Vendor AWB</div><div class="v" style="font-family:Courier New,monospace">' + s.vendor_awb + '</div></div>';
         h += '</div></div>';
 
         // Official Box Labels & Shipping Documents

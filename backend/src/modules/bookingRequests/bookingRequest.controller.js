@@ -1,5 +1,6 @@
 import { query, execute } from '../../config/db.js'
 import { syncBookingToWP, syncStatusToWP } from '../../utils/wpSync.js'
+import { syncBookingRequestStatusToRemoteDb } from '../../services/remoteAwbEntry.service.js'
 
 /**
  * Generate a 7-digit random AWB number for booking requests.
@@ -511,6 +512,16 @@ export const updateBookingRequestStatus = async (req, res) => {
       )
       wpUpdates.push({ type: 'admin_note', title: 'Admin Note Added', description: admin_notes })
     }
+
+    // ── Direct sync to remote Hostinger DB ──
+    syncBookingRequestStatusToRemoteDb({
+      requestAwb: newRequest.request_awb,
+      requestId: newRequest.id,
+      status: newRequest.status,
+      shipmentId: newRequest.shipment_id,
+      trackingNumber: newRequest.tracking_number,
+      adminNotes: newRequest.admin_notes
+    }).catch(() => {})
 
     // ── Fire-and-forget sync to WordPress DB ──
     syncStatusToWP({

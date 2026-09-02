@@ -662,7 +662,7 @@ function attachCompanyOriginEvents(result, matchedShipment) {
       date: dateStr,
       time: timeStr,
       location: `${originCity}, ${originCountry} (PRINCE EXPRESS HUB)`,
-      status: `Shipment Manifested & Dispatched to ${vendorName}`,
+      status: 'Shipment Manifested & Dispatched from Origin Hub',
       rawDate: dateStr,
       rawTime: timeStr
     },

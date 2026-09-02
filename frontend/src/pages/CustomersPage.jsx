@@ -344,13 +344,18 @@ export default function CustomersPage() {
                             {c.name ? c.name.charAt(0).toUpperCase() : 'C'}
                           </div>
                           <div>
-                            <button
-                              type="button"
-                              onClick={() => setDetailCustomerId(c.id)}
-                              className="font-bold text-navy hover:text-primary transition-colors text-left cursor-pointer"
-                            >
-                              {c.name}
-                            </button>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => setDetailCustomerId(c.id)}
+                                className="font-bold text-navy hover:text-primary transition-colors text-left cursor-pointer"
+                              >
+                                {c.name}
+                              </button>
+                              <span className="font-mono text-[10px] font-extrabold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
+                                CUST-{String(c.id).padStart(4, '0')}
+                              </span>
+                            </div>
                             {c.company && (
                               <p className="text-[11.5px] text-text-tertiary flex items-center gap-1 mt-0.5">
                                 <Building2 className="w-3 h-3 text-text-tertiary flex-shrink-0" />
@@ -1056,9 +1061,14 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
               {customer?.name ? customer.name.charAt(0).toUpperCase() : 'C'}
             </div>
             <div>
-              <h2 className="text-[17px] font-extrabold text-navy leading-tight">
-                {customer?.name || 'Customer Details'}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-[17px] font-extrabold text-navy leading-tight">
+                  {customer?.name || 'Customer Details'}
+                </h2>
+                <span className="font-mono text-[11px] font-extrabold bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded-md">
+                  CUST-{String(customerId).padStart(4, '0')}
+                </span>
+              </div>
               <p className="text-[12px] text-text-secondary mt-0.5">{customer?.company || 'Individual Account'}</p>
             </div>
           </div>

@@ -411,10 +411,14 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
     let custCode = 'W001'
     let custName = 'WALKING CUSTOMER'
 
-    if (shipment.customer_id) {
+    const isWalkin = shipment.customer_type === 'walkin' || (!shipment.customer_id && !shipment.customer_name)
+
+    if (!isWalkin && shipment.customer_id) {
       custCode = String(shipment.customer_id)
-      custName = (shipment.sender_name || shipment.sender_company || 'CUSTOMER').toUpperCase()
-    } else if (shipment.sender_email || shipment.sender_phone) {
+      custName = (shipment.customer_name || shipment.sender_name || shipment.sender_company || 'CUSTOMER').toUpperCase()
+    } else if (!isWalkin && shipment.customer_name && shipment.customer_name !== 'Walk-in Customer') {
+      custName = shipment.customer_name.toUpperCase()
+    } else if (!isWalkin && (shipment.sender_email || shipment.sender_phone)) {
       try {
         const [custRows] = await pool.query(
           'SELECT id, name, company FROM tbl_customers WHERE (email != "" AND email IS NOT NULL AND LOWER(TRIM(email)) = ?) OR (phone != "" AND phone IS NOT NULL AND TRIM(phone) = ?) LIMIT 1',
@@ -717,3 +721,58 @@ export async function syncToRemoteParcelHistory(shipment, activity = 'SHIPMENT B
     return { success: false, error: err.message }
   }
 }
+
+/**
+ * Direct sync of booking request status update to remote Hostinger database (booking_requests table).
+ * Ensures customer portal immediately reflects 'confirmed'/'processing'/'rejected' status & tracking number.
+ */
+export async function syncBookingRequestStatusToRemoteDb({ requestAwb, requestId, status, shipmentId, trackingNumber, adminNotes }) {
+  try {
+    const pool = getRemotePool()
+    if (!pool) return false
+
+    const updates = []
+    const params = []
+
+    if (status) {
+      updates.push('status = ?')
+      params.push(status)
+    }
+    if (shipmentId !== undefined) {
+      updates.push('shipment_id = ?')
+      params.push(shipmentId)
+    }
+    if (trackingNumber !== undefined) {
+      updates.push('tracking_number = ?')
+      params.push(trackingNumber)
+    }
+    if (adminNotes !== undefined) {
+      updates.push('admin_notes = ?')
+      params.push(adminNotes)
+    }
+
+    if (updates.length === 0) return false
+
+    let whereClause = ''
+    if (requestAwb) {
+      whereClause = 'request_awb = ?'
+      params.push(requestAwb)
+    } else if (requestId) {
+      whereClause = 'id = ?'
+      params.push(requestId)
+    } else {
+      return false
+    }
+
+    await pool.execute(
+      `UPDATE booking_requests SET ${updates.join(', ')} WHERE ${whereClause}`,
+      params
+    )
+    console.log(`[Remote DB Booking Request Sync] Status updated for ${requestAwb || requestId} -> ${status}`)
+    return true
+  } catch (err) {
+    console.warn('[Remote DB Booking Request Sync Warning]:', err.message)
+    return false
+  }
+}
+

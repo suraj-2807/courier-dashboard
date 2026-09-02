@@ -1145,6 +1145,22 @@ export default function BookingsPage() {
                           <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5">
                             {getFullCountryName(b.senders?.country || b.sender_country || 'INDIA')}
                           </p>
+                          {b.customer_id || b.customer_type === 'registered' ? (
+                            <div className="mt-1">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded max-w-full truncate">
+                                <span className="font-mono font-black shrink-0">CUST-{String(b.customer_id || '').padStart(4, '0')}</span>
+                                {b.customer_name && b.customer_name !== 'Walk-in Customer' && (
+                                  <span className="truncate">{b.customer_name}</span>
+                                )}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="mt-1">
+                              <span className="inline-flex items-center gap-1 text-[9.5px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded">
+                                Walk-in Customer
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </td>
 

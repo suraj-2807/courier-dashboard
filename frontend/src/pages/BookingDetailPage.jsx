@@ -541,8 +541,18 @@ export default function BookingDetailPage() {
               </div>
               Shipment Details
             </h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-x-5 gap-y-4">
               <InfoField icon={Calendar} label="Booked On" value={formatDate(booking.created_at)} />
+              <InfoField
+                icon={User}
+                label="Customer / Account"
+                value={
+                  booking.customer_id || booking.customer_type === 'registered'
+                    ? `${booking.customer_name || 'Customer'} (CUST-${String(booking.customer_id || '').padStart(4, '0')})`
+                    : 'Walk-in Customer'
+                }
+                highlight={Boolean(booking.customer_id)}
+              />
               <InfoField
                 icon={Truck}
                 label="Carrier / Network"

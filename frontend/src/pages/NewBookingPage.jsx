@@ -9,6 +9,8 @@ import { receiversApi } from '../api/receivers.api'
 import { productsApi } from '../api/products.api'
 import { countryCodesApi } from '../api/countryCodes.api'
 import { systemSettingsApi } from '../api/systemSettings.api'
+import { customersApi } from '../api/customers.api'
+import api from '../api/axios'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
 import {
   ArrowLeft,
@@ -36,6 +38,10 @@ import {
 import toast from 'react-hot-toast'
 
 const INITIAL_FORM = {
+  // Customer Identification
+  customer_id: null,
+  customer_name: 'Walk-in Customer',
+  customer_type: 'walkin',
   // Step 1 — Sender
   sender_name: '',
   sender_company: '',
@@ -386,6 +392,12 @@ export default function NewBookingPage() {
     ).slice(0, 8)
   }, [allReceivers, form.receiver_name])
 
+  // Selected Registered Customer object
+  const selectedCustomerObj = useMemo(() => {
+    if (!form.customer_id) return null
+    return registeredCustomers.find(c => c.id === parseInt(form.customer_id))
+  }, [form.customer_id, registeredCustomers])
+
   // Normalize document type from DB to match dropdown <option> values exactly
   const normalizeDocType = (raw, isSender = true) => {
     if (!raw) return ''
@@ -501,6 +513,23 @@ export default function NewBookingPage() {
   const isGeneralLocked = isLocked
   const isBillingLocked = isLocked && !allowPostPushEdit
 
+  // Fetch registered customers list for booking customer selector
+  const { data: customersResp } = useQuery({
+    queryKey: ['customers-list'],
+    queryFn: () => customersApi.getAll({ limit: 200 })
+  })
+  const registeredCustomers = customersResp?.data?.customers || []
+
+  // Fallback query if opened via from_request but location.state is missing (e.g. page refresh)
+  const { data: fetchedRequestData } = useQuery({
+    queryKey: ['booking-request-detail', fromRequestId],
+    queryFn: async () => {
+      const res = await api.get(`/booking-requests/${fromRequestId}`)
+      return res.data?.request
+    },
+    enabled: !!fromRequestId && !location.state?.requestData
+  })
+
   // Pre-fill form when editing an existing shipment
   useEffect(() => {
     if (!editBookingData) return
@@ -511,6 +540,9 @@ export default function NewBookingPage() {
     setForm(prev => ({
       ...prev,
       id: b.id,
+      customer_id: b.customer_id || null,
+      customer_name: b.customer_name || (b.customer_type === 'walkin' ? 'Walk-in Customer' : (sender.name || b.sender_name || 'Walk-in Customer')),
+      customer_type: b.customer_type || (b.customer_id ? 'registered' : 'walkin'),
       sender_name: sender.name || b.sender_name || '',
       sender_company: b.sender_company || sender.company || '',
       sender_email: sender.email || b.sender_email || '',
@@ -651,14 +683,21 @@ export default function NewBookingPage() {
     }
   }, [fromRequestId])
 
-  // Pre-fill from request data passed via route state (from BookingRequestsPage)
+  // Pre-fill from request data passed via route state (from BookingRequestsPage) or fetched fallback
   useEffect(() => {
     if (!fromRequestId) return
-    const rd = location.state?.requestData
+    const rd = location.state?.requestData || fetchedRequestData
     if (!rd) return
+
+    const custId = rd.customer_id ? parseInt(rd.customer_id) : null
+    const custType = custId ? 'registered' : (rd.customer_type || 'walkin')
+    const custName = rd.customer_name || (custType === 'walkin' ? 'Walk-in Customer' : (rd.sender_name || 'Walk-in Customer'))
 
     setForm(prev => ({
       ...prev,
+      customer_id: custId,
+      customer_name: custName,
+      customer_type: custType,
       sender_name: rd.sender_name || '',
       sender_company: rd.sender_company || '',
       sender_email: rd.sender_email || '',
@@ -688,13 +727,12 @@ export default function NewBookingPage() {
       package_type: rd.package_type || 'parcel',
       weight: String(rd.weight || ''),
       length: String(rd.length || ''),
-      breadth: String(rd.breadth || ''),
+      breadth: String(rd.breadth || rd.width || ''),
       height: String(rd.height || ''),
       no_of_pieces: String(rd.no_of_pieces || '1'),
       content_description: rd.content_description || '',
       declared_value: String(rd.declared_value || ''),
       remarks: rd.remarks || '',
-      customer_name: rd.customer_name || rd.sender_name || '',
       payment_mode: rd.payment_mode || 'prepaid',
       order_reference: rd.order_reference || '',
       invoice_type: rd.invoice_type || 'INVOICE',
@@ -708,21 +746,29 @@ export default function NewBookingPage() {
       from_request: rd.id || fromRequestId
     }))
 
-    // Parse and populate parcels from request data
+    // Parse and populate parcels from request data (preserving all multi-box dimensions/weights)
     if (rd.parcels) {
       try {
-        const pList = typeof rd.parcels === 'string' ? JSON.parse(rd.parcels) : rd.parcels
+        let pList = rd.parcels
+        if (typeof pList === 'string') {
+          try { pList = JSON.parse(pList) } catch (e) {}
+        }
+        if (typeof pList === 'string') {
+          try { pList = JSON.parse(pList) } catch (e) {}
+        }
         if (Array.isArray(pList) && pList.length > 0) {
-          setParcels(pList.map((p, i) => ({
+          const parsedParcels = pList.map((p, i) => ({
             parcel_no: p.parcel_no || i + 1,
             box_no: String(p.box_no || i + 1),
-            weight: String(p.weight || ''),
-            length: String(p.length || ''),
-            breadth: String(p.breadth || ''),
-            height: String(p.height || ''),
-            volumetric_weight: String(p.volumetric_weight || ''),
-            chargeable_weight: String(p.chargeable_weight || '')
-          })))
+            weight: String(p.weight !== undefined && p.weight !== null ? p.weight : ''),
+            length: String(p.length !== undefined && p.length !== null ? p.length : ''),
+            breadth: String((p.breadth || p.width) !== undefined && (p.breadth || p.width) !== null ? (p.breadth || p.width) : ''),
+            height: String(p.height !== undefined && p.height !== null ? p.height : ''),
+            volumetric_weight: String(p.volumetric_weight !== undefined && p.volumetric_weight !== null ? p.volumetric_weight : ''),
+            chargeable_weight: String(p.chargeable_weight !== undefined && p.chargeable_weight !== null ? p.chargeable_weight : '')
+          }))
+          setParcels(parsedParcels)
+          setForm(prev => ({ ...prev, no_of_pieces: String(parsedParcels.length) }))
         }
       } catch (err) {
         console.warn('Failed to parse parcels from request:', err)
@@ -732,7 +778,13 @@ export default function NewBookingPage() {
     // Parse and populate invoice items from request data
     if (rd.invoice_items) {
       try {
-        const items = typeof rd.invoice_items === 'string' ? JSON.parse(rd.invoice_items) : rd.invoice_items
+        let items = rd.invoice_items
+        if (typeof items === 'string') {
+          try { items = JSON.parse(items) } catch (e) {}
+        }
+        if (typeof items === 'string') {
+          try { items = JSON.parse(items) } catch (e) {}
+        }
         if (Array.isArray(items) && items.length > 0) {
           setInvoiceItems(items)
         }
@@ -740,7 +792,7 @@ export default function NewBookingPage() {
         console.warn('Failed to parse invoice_items from request:', err)
       }
     }
-  }, [fromRequestId, location.state])
+  }, [fromRequestId, location.state, fetchedRequestData])
 
   // Safe parsing helper functions
   const safeArr = (val) => {
@@ -856,7 +908,11 @@ export default function NewBookingPage() {
           })
         }
       } else if (next.length > count) {
-        return next.slice(0, count)
+        // Protect pre-filled / existing multi-box data from being sliced if subsequent boxes contain values
+        const hasSubsequentData = next.slice(count).some(p => p.weight || p.length || p.breadth || p.height)
+        if (!hasSubsequentData) {
+          return next.slice(0, count)
+        }
       }
       return next
     })
@@ -1131,6 +1187,9 @@ export default function NewBookingPage() {
     required_performa: form.required_performa,
     required_label: form.required_label,
 
+    customer_id: form.customer_id ? parseInt(form.customer_id) : null,
+    customer_name: form.customer_type === 'walkin' ? 'Walk-in Customer' : (form.customer_name || form.sender_name || 'Walk-in Customer'),
+    customer_type: form.customer_type || (form.customer_id ? 'registered' : 'walkin'),
     from_request: fromRequestId || form.from_request || undefined,
     request_awb: requestAwb || form.request_awb || form.tracking_number || undefined,
     tracking_number: form.tracking_number || requestAwb || undefined
@@ -1355,6 +1414,110 @@ export default function NewBookingPage() {
           <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs flex flex-col justify-between">
             <div>
               <RedBadge title="Shipper Details" icon={User} />
+
+              {/* Customer Account Selector: Walk-in vs Registered Customer */}
+              <div className="mb-3 p-2.5 bg-surface-alt/70 border border-border/80 rounded-xl">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-text-secondary flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-primary" />
+                    Customer Type
+                  </span>
+                  <div className="inline-flex p-0.5 bg-surface border border-border rounded-lg">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm(prev => ({
+                          ...prev,
+                          customer_type: 'walkin',
+                          customer_id: null,
+                          customer_name: 'Walk-in Customer'
+                        }))
+                      }}
+                      className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
+                        form.customer_type === 'walkin'
+                          ? 'bg-navy text-white shadow-xs'
+                          : 'text-text-secondary hover:text-navy'
+                      }`}
+                    >
+                      Walk-in
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForm(prev => ({
+                          ...prev,
+                          customer_type: 'registered'
+                        }))
+                      }}
+                      className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
+                        form.customer_type === 'registered'
+                          ? 'bg-primary text-white shadow-xs'
+                          : 'text-text-secondary hover:text-primary'
+                      }`}
+                    >
+                      Registered
+                    </button>
+                  </div>
+                </div>
+
+                {form.customer_type === 'registered' ? (
+                  <div className="space-y-1.5 pt-1.5 border-t border-border/60">
+                    <label className="block text-[10.5px] font-bold text-text-tertiary uppercase tracking-wider">
+                      Select Customer Account
+                    </label>
+                    <select
+                      value={form.customer_id || ''}
+                      onChange={(e) => {
+                        const selectedId = e.target.value ? parseInt(e.target.value) : null
+                        const cust = registeredCustomers.find(c => c.id === selectedId)
+                        if (cust) {
+                          setForm(prev => ({
+                            ...prev,
+                            customer_id: cust.id,
+                            customer_name: cust.name,
+                            customer_type: 'registered',
+                            sender_name: prev.sender_name || cust.name || '',
+                            sender_company: prev.sender_company || cust.company || '',
+                            sender_email: prev.sender_email || cust.email || '',
+                            sender_phone: prev.sender_phone || cust.phone || '',
+                            sender_address: prev.sender_address || cust.address || '',
+                            sender_city: prev.sender_city || cust.city || '',
+                            sender_state: prev.sender_state || cust.state || '',
+                            sender_pincode: prev.sender_pincode || cust.pincode || '',
+                            sender_gstin_no: prev.sender_gstin_no || cust.gst_number || ''
+                          }))
+                        } else {
+                          setForm(prev => ({ ...prev, customer_id: null, customer_name: '' }))
+                        }
+                      }}
+                      className="w-full bg-surface border border-border rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-navy focus:border-primary focus:outline-none"
+                    >
+                      <option value="">-- Choose Registered Customer --</option>
+                      {registeredCustomers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {`CUST-${String(c.id).padStart(4, '0')} • ${c.name}${c.company ? ` (${c.company})` : ''} — Bal: ₹${parseFloat(c.current_balance || 0).toFixed(2)}`}
+                        </option>
+                      ))}
+                    </select>
+
+                    {selectedCustomerObj && (
+                      <div className="flex items-center justify-between text-[11px] bg-primary/5 border border-primary/20 px-2.5 py-1.5 rounded-lg text-navy">
+                        <span className="font-bold">
+                          ID: <span className="font-mono text-primary font-black">CUST-{String(selectedCustomerObj.id).padStart(4, '0')}</span>
+                        </span>
+                        <span className="font-bold">
+                          Balance: <span className="font-mono text-emerald-700">₹{parseFloat(selectedCustomerObj.current_balance || 0).toFixed(2)}</span>
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between text-[11px] text-text-tertiary bg-surface px-2.5 py-1.5 rounded-lg border border-border/60">
+                    <span>Account: <strong className="text-navy font-bold">Walk-in Customer</strong></span>
+                    <span className="font-mono text-[10px] bg-slate-100 text-slate-700 font-extrabold px-1.5 py-0.5 rounded border border-slate-200">WALK-IN</span>
+                  </div>
+                )}
+              </div>
 
               <div className="space-y-2.5">
                 <div ref={senderContainerRef} className="relative">
