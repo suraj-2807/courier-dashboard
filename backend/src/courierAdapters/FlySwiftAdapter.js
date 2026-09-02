@@ -521,38 +521,47 @@ export default class FlySwiftAdapter extends BaseAdapter {
     // Deep-extract error message from vendor response
     let errorMessage = ''
     if (!success) {
-      // Try nested validation errors object (e.g. Bhabani/ITDServices: { errors: { email: ['required'], phone: ['invalid'] } })
-      if (responseBody.errors && typeof responseBody.errors === 'object' && !Array.isArray(responseBody.errors)) {
-        const allErrors = []
-        for (const [field, msgs] of Object.entries(responseBody.errors)) {
-          if (Array.isArray(msgs)) {
-            allErrors.push(...msgs.map(m => `${field}: ${m}`))
-          } else if (typeof msgs === 'string') {
-            allErrors.push(`${field}: ${msgs}`)
-          }
+      const errorParts = []
+
+      // Check configured response_error_path if available
+      if (this.config && this.config.response_error_path) {
+        const customErr = this.extractValueByPath(responseBody, this.config.response_error_path)
+        if (customErr) {
+          errorParts.push(typeof customErr === 'object' ? JSON.stringify(customErr) : String(customErr))
         }
-        if (allErrors.length > 0) errorMessage = allErrors.join('; ')
       }
-      // Try errors as array
-      if (!errorMessage && Array.isArray(responseBody.errors) && responseBody.errors.length > 0) {
-        errorMessage = responseBody.errors.map(e => typeof e === 'string' ? e : (e.message || e.msg || JSON.stringify(e))).join('; ')
-      }
-      // Try data.errors
-      if (!errorMessage && responseBody.data?.errors && typeof responseBody.data.errors === 'object') {
-        if (Array.isArray(responseBody.data.errors)) {
-          errorMessage = responseBody.data.errors.map(e => typeof e === 'string' ? e : (e.message || JSON.stringify(e))).join('; ')
+
+      // Check nested errors object (e.g. Bhabani/ITDServices: { message: "The given data was invalid.", errors: { consignee_email: ["..."] } })
+      const errorObj = responseBody?.errors || responseBody?.data?.errors
+      if (errorObj && typeof errorObj === 'object') {
+        if (Array.isArray(errorObj)) {
+          errorParts.push(...errorObj.map(e => typeof e === 'string' ? e : (e.message || e.msg || JSON.stringify(e))))
         } else {
-          const allErrors = []
-          for (const [field, msgs] of Object.entries(responseBody.data.errors)) {
-            if (Array.isArray(msgs)) allErrors.push(...msgs.map(m => `${field}: ${m}`))
-            else if (typeof msgs === 'string') allErrors.push(`${field}: ${msgs}`)
+          for (const [field, msgs] of Object.entries(errorObj)) {
+            const readableField = field.replace(/_/g, ' ')
+            if (Array.isArray(msgs)) {
+              errorParts.push(...msgs.map(m => `${readableField}: ${m}`))
+            } else if (typeof msgs === 'string') {
+              errorParts.push(`${readableField}: ${msgs}`)
+            } else if (typeof msgs === 'object' && msgs !== null) {
+              errorParts.push(`${readableField}: ${JSON.stringify(msgs)}`)
+            }
           }
-          if (allErrors.length > 0) errorMessage = allErrors.join('; ')
         }
       }
-      // Fallback to flat message/error/msg fields
-      if (!errorMessage) {
-        errorMessage = responseBody?.message || responseBody?.error || responseBody?.msg || responseBody?.data?.message || responseBody?.data?.error || 'Vendor API returned failure'
+
+      // Top-level message
+      const topMsg = responseBody?.message || responseBody?.msg || responseBody?.error_description || responseBody?.error
+      if (topMsg && typeof topMsg === 'string') {
+        if (!errorParts.some(p => p.toLowerCase().includes(topMsg.toLowerCase()))) {
+          errorParts.unshift(topMsg)
+        }
+      }
+
+      if (errorParts.length > 0) {
+        errorMessage = errorParts.join(' | ')
+      } else {
+        errorMessage = responseBody?.data?.message || responseBody?.data?.error || responseBody?.raw || 'Vendor API returned failure'
       }
     }
 

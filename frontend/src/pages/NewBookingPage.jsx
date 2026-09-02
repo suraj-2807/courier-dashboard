@@ -166,6 +166,7 @@ export default function NewBookingPage() {
   const [form, setForm] = useState(INITIAL_FORM)
   const [submitting, setSubmitting] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
+  const [pushError, setPushError] = useState(null)
 
   // Custom input mode toggles for vendor, service, and product codes
   const [customVendorMode, setCustomVendorMode] = useState(false)
@@ -1292,10 +1293,24 @@ export default function NewBookingPage() {
   // PUSH TO API — saves + pushes to vendor API in one step, locks the booking
   const handleSubmit = async (e) => {
     if (e) e.preventDefault()
+    setPushError(null)
     if (!validateForm()) return
 
     if (!form.vendor_config_id) {
-      toast.error('Please select a Vendor API to push to')
+      const msg = 'Please select a Vendor API to push to'
+      setPushError(msg)
+      toast.error(msg)
+      return
+    }
+
+    // Check if selected vendor requires receiver email (e.g. Bhabani / ITDServices / FlySwift)
+    const selectedVendor = activeVendors.find(v => String(v.id) === String(form.vendor_config_id))
+    const vCode = (selectedVendor?.vendor_code || form.vendor_code || '').toLowerCase()
+    if ((vCode.includes('bhabani') || vCode.includes('itd') || vCode.includes('flyswift')) && !form.receiver_email) {
+      const msg = `${selectedVendor?.name || 'Selected Vendor API'} requires a Receiver Email address. Please enter Receiver Email before pushing.`
+      setPushError(msg)
+      toast.error(msg, { duration: 8000 })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
 
@@ -1309,18 +1324,23 @@ export default function NewBookingPage() {
       const vendorErr = result?.vendor_result?.error || result?.vendor_result?.errorMessage
 
       if (vendorPushed) {
+        setPushError(null)
         toast.success(`Booking created & pushed! Our AWB: ${ourAwb} | Vendor AWB: ${vendorAwb}`)
         navigate('/bookings')
       } else if (form.vendor_config_id) {
-        toast.error(`Vendor API Push Failed: ${vendorErr || 'Validation or connection error'}. Shipment created as Our AWB: ${ourAwb}`, { duration: 8000 })
-        navigate('/bookings')
+        const errMsg = `Vendor API Push Failed: ${vendorErr || 'Validation or connection error'}. Shipment saved as AWB: ${ourAwb}`
+        setPushError(errMsg)
+        toast.error(errMsg, { duration: 10000 })
+        window.scrollTo({ top: 0, behavior: 'smooth' })
       } else {
         toast.success(`Booking created! Our AWB: ${ourAwb}`)
         navigate('/bookings')
       }
     } catch (err) {
       const errorMsg = err?.response?.data?.message || err?.response?.data?.error || err.message || 'Failed to create booking'
-      toast.error(errorMsg, { duration: 8000 })
+      setPushError(errorMsg)
+      toast.error(errorMsg, { duration: 10000 })
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } finally {
       setSubmitting(false)
     }
@@ -1412,6 +1432,131 @@ export default function NewBookingPage() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
+        {/* ── Push Error Banner ── */}
+        {pushError && (
+          <div className="p-4 bg-red-50 border-2 border-red-400 rounded-xl flex items-start justify-between gap-3 animate-fade-in">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Shield className="w-4 h-4 text-red-600" />
+              </div>
+              <div>
+                <h4 className="text-sm font-extrabold text-red-900">Vendor API Push Failed</h4>
+                <p className="text-xs mt-1 font-medium text-red-700 leading-relaxed">{pushError}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPushError(null)}
+              className="text-red-400 hover:text-red-600 text-lg font-bold flex-shrink-0 leading-none cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {/* ── Customer Account Type ── */}
+        <fieldset disabled={isGeneralLocked}>
+          <div className="bg-surface rounded-2xl border border-border p-4 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+              <div className="flex items-center gap-2.5 flex-shrink-0">
+                <div className="w-7 h-7 bg-navy/5 rounded-lg flex items-center justify-center text-navy">
+                  <User className="w-4 h-4" />
+                </div>
+                <span className="text-sm font-bold text-navy tracking-tight">Customer Account</span>
+              </div>
+
+              <div className="inline-flex p-0.5 bg-surface-alt border border-border rounded-lg flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm(prev => ({
+                      ...prev,
+                      customer_type: 'walkin',
+                      customer_id: null,
+                      customer_name: 'Walk-in Customer'
+                    }))
+                  }}
+                  className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all ${
+                    form.customer_type === 'walkin'
+                      ? 'bg-navy text-white shadow-xs'
+                      : 'text-text-secondary hover:text-navy'
+                  }`}
+                >
+                  Walk-in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm(prev => ({
+                      ...prev,
+                      customer_type: 'registered'
+                    }))
+                  }}
+                  className={`px-3 py-1.5 text-[11px] font-bold rounded-md transition-all ${
+                    form.customer_type === 'registered'
+                      ? 'bg-primary text-white shadow-xs'
+                      : 'text-text-secondary hover:text-primary'
+                  }`}
+                >
+                  Registered
+                </button>
+              </div>
+
+              {form.customer_type === 'registered' ? (
+                <div className="flex items-center gap-3 flex-1 min-w-0 flex-wrap sm:flex-nowrap">
+                  <select
+                    value={form.customer_id || ''}
+                    onChange={(e) => {
+                      const selectedId = e.target.value ? parseInt(e.target.value) : null
+                      const cust = registeredCustomers.find(c => c.id === selectedId)
+                      if (cust) {
+                        setForm(prev => ({
+                          ...prev,
+                          customer_id: cust.id,
+                          customer_name: cust.name,
+                          customer_type: 'registered',
+                          sender_name: prev.sender_name || cust.name || '',
+                          sender_company: prev.sender_company || cust.company || '',
+                          sender_email: prev.sender_email || cust.email || '',
+                          sender_phone: prev.sender_phone || cust.phone || '',
+                          sender_address: prev.sender_address || cust.address || '',
+                          sender_city: prev.sender_city || cust.city || '',
+                          sender_state: prev.sender_state || cust.state || '',
+                          sender_pincode: prev.sender_pincode || cust.pincode || '',
+                          sender_gstin_no: prev.sender_gstin_no || cust.gst_number || ''
+                        }))
+                      } else {
+                        setForm(prev => ({ ...prev, customer_id: null, customer_name: '' }))
+                      }
+                    }}
+                    className="flex-1 min-w-0 bg-surface border border-border rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-navy focus:border-primary focus:outline-none"
+                  >
+                    <option value="">-- Choose Registered Customer --</option>
+                    {registeredCustomers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {`CUST-${String(c.id).padStart(4, '0')} • ${c.name}${c.company ? ` (${c.company})` : ''} — Bal: ₹${parseFloat(c.current_balance || 0).toFixed(2)}`}
+                      </option>
+                    ))}
+                  </select>
+
+                  {selectedCustomerObj && (
+                    <div className="flex items-center gap-3 text-[11px] bg-primary/5 border border-primary/20 px-3 py-1.5 rounded-lg text-navy flex-shrink-0">
+                      <span className="font-bold">
+                        ID: <span className="font-mono text-primary font-black">CUST-{String(selectedCustomerObj.id).padStart(4, '0')}</span>
+                      </span>
+                      <span className="font-bold">
+                        Balance: <span className="font-mono text-emerald-700">₹{parseFloat(selectedCustomerObj.current_balance || 0).toFixed(2)}</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <span className="font-mono text-[10px] bg-slate-100 text-slate-700 font-extrabold px-2 py-1 rounded border border-slate-200">WALK-IN</span>
+              )}
+            </div>
+          </div>
+        </fieldset>
+
         {/* ── Main 3 Columns Layout ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
@@ -1421,109 +1566,6 @@ export default function NewBookingPage() {
             <div>
               <RedBadge title="Shipper Details" icon={User} />
 
-              {/* Customer Account Selector: Walk-in vs Registered Customer */}
-              <div className="mb-3 p-2.5 bg-surface-alt/70 border border-border/80 rounded-xl">
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="text-[11px] font-black uppercase tracking-wider text-text-secondary flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-primary" />
-                    Customer Type
-                  </span>
-                  <div className="inline-flex p-0.5 bg-surface border border-border rounded-lg">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForm(prev => ({
-                          ...prev,
-                          customer_type: 'walkin',
-                          customer_id: null,
-                          customer_name: 'Walk-in Customer'
-                        }))
-                      }}
-                      className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
-                        form.customer_type === 'walkin'
-                          ? 'bg-navy text-white shadow-xs'
-                          : 'text-text-secondary hover:text-navy'
-                      }`}
-                    >
-                      Walk-in
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForm(prev => ({
-                          ...prev,
-                          customer_type: 'registered'
-                        }))
-                      }}
-                      className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-all ${
-                        form.customer_type === 'registered'
-                          ? 'bg-primary text-white shadow-xs'
-                          : 'text-text-secondary hover:text-primary'
-                      }`}
-                    >
-                      Registered
-                    </button>
-                  </div>
-                </div>
-
-                {form.customer_type === 'registered' ? (
-                  <div className="space-y-1.5 pt-1.5 border-t border-border/60">
-                    <label className="block text-[10.5px] font-bold text-text-tertiary uppercase tracking-wider">
-                      Select Customer Account
-                    </label>
-                    <select
-                      value={form.customer_id || ''}
-                      onChange={(e) => {
-                        const selectedId = e.target.value ? parseInt(e.target.value) : null
-                        const cust = registeredCustomers.find(c => c.id === selectedId)
-                        if (cust) {
-                          setForm(prev => ({
-                            ...prev,
-                            customer_id: cust.id,
-                            customer_name: cust.name,
-                            customer_type: 'registered',
-                            sender_name: prev.sender_name || cust.name || '',
-                            sender_company: prev.sender_company || cust.company || '',
-                            sender_email: prev.sender_email || cust.email || '',
-                            sender_phone: prev.sender_phone || cust.phone || '',
-                            sender_address: prev.sender_address || cust.address || '',
-                            sender_city: prev.sender_city || cust.city || '',
-                            sender_state: prev.sender_state || cust.state || '',
-                            sender_pincode: prev.sender_pincode || cust.pincode || '',
-                            sender_gstin_no: prev.sender_gstin_no || cust.gst_number || ''
-                          }))
-                        } else {
-                          setForm(prev => ({ ...prev, customer_id: null, customer_name: '' }))
-                        }
-                      }}
-                      className="w-full bg-surface border border-border rounded-lg px-2.5 py-1.5 text-[12px] font-semibold text-navy focus:border-primary focus:outline-none"
-                    >
-                      <option value="">-- Choose Registered Customer --</option>
-                      {registeredCustomers.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {`CUST-${String(c.id).padStart(4, '0')} • ${c.name}${c.company ? ` (${c.company})` : ''} — Bal: ₹${parseFloat(c.current_balance || 0).toFixed(2)}`}
-                        </option>
-                      ))}
-                    </select>
-
-                    {selectedCustomerObj && (
-                      <div className="flex items-center justify-between text-[11px] bg-primary/5 border border-primary/20 px-2.5 py-1.5 rounded-lg text-navy">
-                        <span className="font-bold">
-                          ID: <span className="font-mono text-primary font-black">CUST-{String(selectedCustomerObj.id).padStart(4, '0')}</span>
-                        </span>
-                        <span className="font-bold">
-                          Balance: <span className="font-mono text-emerald-700">₹{parseFloat(selectedCustomerObj.current_balance || 0).toFixed(2)}</span>
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between text-[11px] text-text-tertiary bg-surface px-2.5 py-1.5 rounded-lg border border-border/60">
-                    <span>Account: <strong className="text-navy font-bold">Walk-in Customer</strong></span>
-                    <span className="font-mono text-[10px] bg-slate-100 text-slate-700 font-extrabold px-1.5 py-0.5 rounded border border-slate-200">WALK-IN</span>
-                  </div>
-                )}
-              </div>
 
               <div className="space-y-2.5">
                 <div ref={senderContainerRef} className="relative">
@@ -2772,6 +2814,28 @@ export default function NewBookingPage() {
           )}
         </div>
         </fieldset>
+
+        {/* ── Bottom Push Error Banner ── */}
+        {pushError && (
+          <div className="p-4 bg-red-50 border-2 border-red-400 rounded-xl flex items-start justify-between gap-3 animate-fade-in">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Shield className="w-4 h-4 text-red-600" />
+              </div>
+              <div>
+                <h4 className="text-sm font-extrabold text-red-900">Vendor API Push Failed</h4>
+                <p className="text-xs mt-1 font-medium text-red-700 leading-relaxed">{pushError}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPushError(null)}
+              className="text-red-400 hover:text-red-600 text-lg font-bold flex-shrink-0 leading-none cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+        )}
 
         {/* ── Footer Submit Bar ── */}
         <div className="bg-surface rounded-2xl border border-border p-4 shadow-xs flex items-center justify-between flex-wrap gap-3">

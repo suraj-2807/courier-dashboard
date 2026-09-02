@@ -136,10 +136,21 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
     })
 
     responseStatus = response.status
-    responseBody = await response.json().catch(() => ({}))
+    const rawText = await response.text().catch(() => '')
+    try {
+      responseBody = rawText ? JSON.parse(rawText) : {}
+    } catch {
+      responseBody = { message: rawText, raw: rawText }
+    }
 
     // Step 7: Parse response
     const parsed = adapter.parseResponse(responseBody)
+    if (responseStatus >= 400) {
+      parsed.success = false
+      if (!parsed.errorMessage) {
+        parsed.errorMessage = responseBody?.message || responseBody?.error || (rawText ? String(rawText).slice(0, 300) : `HTTP ${responseStatus} Error`)
+      }
+    }
 
     // Step 8: Log the push attempt
     await _logPushAttempt({
