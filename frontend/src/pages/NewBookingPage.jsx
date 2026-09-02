@@ -483,8 +483,8 @@ export default function NewBookingPage() {
   const [searchParams] = useSearchParams()
   const location = useLocation()
   const editId = paramId || searchParams.get('edit') || searchParams.get('id')
-  const fromRequestId = searchParams.get('from_request')
-  const requestAwb = searchParams.get('request_awb')
+  const fromRequestId = searchParams.get('from_request') || location.state?.requestData?.id || null
+  const requestAwb = searchParams.get('request_awb') || location.state?.requestData?.request_awb || null
 
   // Fetch existing booking when editing
   const { data: editBookingData, isLoading: loadingEditBooking } = useQuery({
@@ -1304,17 +1304,23 @@ export default function NewBookingPage() {
       const result = await createBooking.mutateAsync(buildPayload())
 
       const ourAwb = result?.booking?.tracking_number || 'N/A'
-      const vendorAwb = result?.vendor_result?.awbNumber || 'N/A'
+      const vendorAwb = result?.vendor_result?.awbNumber || ''
       const vendorPushed = result?.vendor_result?.success
+      const vendorErr = result?.vendor_result?.error || result?.vendor_result?.errorMessage
 
-      toast.success(
-        vendorPushed
-          ? `Booking created & pushed! Our AWB: ${ourAwb} | Vendor AWB: ${vendorAwb}`
-          : `Booking created! Our AWB: ${ourAwb}`
-      )
-      navigate('/bookings')
+      if (vendorPushed) {
+        toast.success(`Booking created & pushed! Our AWB: ${ourAwb} | Vendor AWB: ${vendorAwb}`)
+        navigate('/bookings')
+      } else if (form.vendor_config_id) {
+        toast.error(`Vendor API Push Failed: ${vendorErr || 'Validation or connection error'}. Shipment created as Our AWB: ${ourAwb}`, { duration: 8000 })
+        navigate('/bookings')
+      } else {
+        toast.success(`Booking created! Our AWB: ${ourAwb}`)
+        navigate('/bookings')
+      }
     } catch (err) {
-      toast.error(err?.response?.data?.message || err.message || 'Failed to create booking')
+      const errorMsg = err?.response?.data?.message || err?.response?.data?.error || err.message || 'Failed to create booking'
+      toast.error(errorMsg, { duration: 8000 })
     } finally {
       setSubmitting(false)
     }

@@ -518,6 +518,44 @@ export default class FlySwiftAdapter extends BaseAdapter {
       else if (/^[0-9]{10}$/.test(forwardingNumber)) secondaryCarrier = 'DHL'
     }
 
+    // Deep-extract error message from vendor response
+    let errorMessage = ''
+    if (!success) {
+      // Try nested validation errors object (e.g. Bhabani/ITDServices: { errors: { email: ['required'], phone: ['invalid'] } })
+      if (responseBody.errors && typeof responseBody.errors === 'object' && !Array.isArray(responseBody.errors)) {
+        const allErrors = []
+        for (const [field, msgs] of Object.entries(responseBody.errors)) {
+          if (Array.isArray(msgs)) {
+            allErrors.push(...msgs.map(m => `${field}: ${m}`))
+          } else if (typeof msgs === 'string') {
+            allErrors.push(`${field}: ${msgs}`)
+          }
+        }
+        if (allErrors.length > 0) errorMessage = allErrors.join('; ')
+      }
+      // Try errors as array
+      if (!errorMessage && Array.isArray(responseBody.errors) && responseBody.errors.length > 0) {
+        errorMessage = responseBody.errors.map(e => typeof e === 'string' ? e : (e.message || e.msg || JSON.stringify(e))).join('; ')
+      }
+      // Try data.errors
+      if (!errorMessage && responseBody.data?.errors && typeof responseBody.data.errors === 'object') {
+        if (Array.isArray(responseBody.data.errors)) {
+          errorMessage = responseBody.data.errors.map(e => typeof e === 'string' ? e : (e.message || JSON.stringify(e))).join('; ')
+        } else {
+          const allErrors = []
+          for (const [field, msgs] of Object.entries(responseBody.data.errors)) {
+            if (Array.isArray(msgs)) allErrors.push(...msgs.map(m => `${field}: ${m}`))
+            else if (typeof msgs === 'string') allErrors.push(`${field}: ${msgs}`)
+          }
+          if (allErrors.length > 0) errorMessage = allErrors.join('; ')
+        }
+      }
+      // Fallback to flat message/error/msg fields
+      if (!errorMessage) {
+        errorMessage = responseBody?.message || responseBody?.error || responseBody?.msg || responseBody?.data?.message || responseBody?.data?.error || 'Vendor API returned failure'
+      }
+    }
+
     return {
       success,
       awbNumber: String(awbNumber).trim(),
@@ -525,9 +563,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
       secondaryCarrier,
       trackingUrl,
       labelUrl,
-      errorMessage: success ? '' : (
-        responseBody?.message || responseBody?.error || responseBody?.msg || responseBody?.data?.message || 'Vendor API returned failure'
-      )
+      errorMessage
     }
   }
 

@@ -62,6 +62,7 @@ export async function syncCustomerToRemoteDb(customerData) {
 
   try {
     const {
+      id,
       name,
       email,
       phone = '',
@@ -99,16 +100,39 @@ export async function syncCustomerToRemoteDb(customerData) {
           [cleanName, cleanPhone, cleanCompany, cleanStatus, existingId]
         )
       }
+
+      // If an explicit ID was provided and differs, update it
+      if (id && parseInt(id) > 0 && existingId !== parseInt(id)) {
+        try {
+          await pool.query('UPDATE tbl_customers SET id = ? WHERE id = ?', [parseInt(id), existingId])
+          console.log(`[Remote DB] Customer ${cleanEmail} ID updated from ${existingId} to ${id}`)
+          return parseInt(id)
+        } catch (idErr) {
+          console.warn(`[Remote DB] Could not reassign customer ID to ${id}:`, idErr.message)
+        }
+      }
+
       console.log(`[Remote DB] Customer ${cleanEmail} updated in remote Hostinger DB (id: ${existingId})`)
       return existingId
     } else {
-      const [result] = await pool.query(
-        `INSERT INTO tbl_customers (name, email, phone, company, password, status)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [cleanName, cleanEmail, cleanPhone, cleanCompany, password, cleanStatus]
-      )
-      console.log(`[Remote DB] Customer ${cleanEmail} inserted into remote Hostinger DB (insertId: ${result.insertId})`)
-      return result.insertId
+      if (id && parseInt(id) > 0) {
+        await pool.query(
+          `INSERT INTO tbl_customers (id, name, email, phone, company, password, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE name = VALUES(name), phone = VALUES(phone), company = VALUES(company), status = VALUES(status)`,
+          [parseInt(id), cleanName, cleanEmail, cleanPhone, cleanCompany, password, cleanStatus]
+        )
+        console.log(`[Remote DB] Customer ${cleanEmail} inserted into remote Hostinger DB with id ${id}`)
+        return parseInt(id)
+      } else {
+        const [result] = await pool.query(
+          `INSERT INTO tbl_customers (name, email, phone, company, password, status)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [cleanName, cleanEmail, cleanPhone, cleanCompany, password, cleanStatus]
+        )
+        console.log(`[Remote DB] Customer ${cleanEmail} inserted into remote Hostinger DB (insertId: ${result.insertId})`)
+        return result.insertId
+      }
     }
   } catch (err) {
     console.error('[Remote DB Customer Sync Error]:', err.message)

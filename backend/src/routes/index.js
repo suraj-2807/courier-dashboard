@@ -41,13 +41,14 @@ router.use('/customers', customersRoutes)
 // Public Customer endpoints (for WP Portal iframe & Customer Portal)
 import { createBooking, getBoxLabelsPdf, getWaybillPdf, getInvoicePdf } from '../modules/bookings/booking.controller.js'
 import { getActiveVendors } from '../modules/apiSettings/apiSettings.controller.js'
-import { createBookingRequest, getCustomerRequests, getCustomerRequest } from '../modules/bookingRequests/bookingRequest.controller.js'
+import { createBookingRequest, getCustomerRequests, getCustomerRequest, cancelBookingRequest } from '../modules/bookingRequests/bookingRequest.controller.js'
 import customerRoutes from '../modules/customer/customer.routes.js'
 
 const customerRouter = express.Router()
 customerRouter.get('/active-vendors', getActiveVendors)
 customerRouter.post('/bookings', createBooking)
 customerRouter.post('/booking-requests', createBookingRequest)
+customerRouter.post('/booking-requests/cancel', cancelBookingRequest)
 customerRouter.get('/my-requests', getCustomerRequests)
 customerRouter.get('/my-requests/:request_awb', getCustomerRequest)
 customerRouter.get('/labels-pdf/:id', getBoxLabelsPdf)

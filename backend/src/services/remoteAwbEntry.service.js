@@ -885,4 +885,135 @@ export async function syncBookingRequestToRemoteDb(reqData) {
   }
 }
 
+/**
+ * Insert an initial AWBENTRY row + 'SHIPMENT BOOKED' parcel_history entry
+ * when a customer creates a new booking request.
+ * This makes the shipment visible in the customer portal immediately.
+ */
+export async function syncInitialRequestToAwbEntry(reqData) {
+  try {
+    const pool = getRemotePool()
+    if (!pool) return false
 
+    const awb = reqData.request_awb
+    if (!awb) return false
+
+    // Check if already exists in AWBENTRY
+    const [existing] = await pool.query('SELECT AWBNO FROM AWBENTRY WHERE AWBNO = ? LIMIT 1', [awb])
+    if (existing && existing.length > 0) {
+      console.log(`[Remote DB] AWBENTRY already exists for ${awb}, skipping initial insert`)
+      return true
+    }
+
+    const custCode = reqData.customer_id ? String(reqData.customer_id) : ''
+    const custName = (reqData.customer_name || '').slice(0, 100)
+    const senderName = (reqData.sender_name || '').slice(0, 100)
+    const senderAddr1 = (reqData.sender_address || '').slice(0, 200)
+    const senderAddr2 = (reqData.sender_address_2 || '').slice(0, 200)
+    const senderCity = (reqData.sender_city || '').slice(0, 100)
+    const senderPin = (reqData.sender_pincode || '').slice(0, 10)
+    const senderPhone = (reqData.sender_phone || '').slice(0, 20)
+    const cneeName = (reqData.receiver_name || '').slice(0, 100)
+    const cneeAddr1 = (reqData.receiver_address || '').slice(0, 200)
+    const cneeAddr2 = (reqData.receiver_address_2 || '').slice(0, 200)
+    const cneeCity = (reqData.receiver_city || '').slice(0, 100)
+    const cneePin = (reqData.receiver_pincode || '').slice(0, 10)
+    const cneePhone = (reqData.receiver_phone || '').slice(0, 20)
+    const destName = (reqData.receiver_city || reqData.receiver_country || '').slice(0, 100)
+    const weight = parseFloat(reqData.weight) || 0
+    const pieces = parseInt(reqData.no_of_pieces) || 1
+    const payType = (reqData.payment_mode || 'prepaid').toUpperCase()
+
+    await pool.query(
+      `INSERT INTO AWBENTRY (
+        AWBNO, AWBDATE, CUSTCODE, CUSTNAME,
+        SNAME, SADDRESS1, SADDRESS2, SCITY, SPINCODE, SPHONE1,
+        CNEENAME, CNEEADDRESS1, CNEEADDRESS2, CNEECITY, CNEEPINCODE, CNEEPHONE1,
+        DESTNAME, ACTUALWEIGHT, CHARGEWEIGHT, CARTONS, PAYMENTTYPE, REMARKS
+      ) VALUES (?, CURDATE(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        awb, custCode, custName,
+        senderName, senderAddr1, senderAddr2, senderCity, senderPin, senderPhone,
+        cneeName, cneeAddr1, cneeAddr2, cneeCity, cneePin, cneePhone,
+        destName, weight, weight, pieces, payType,
+        `Booking Request - ${reqData.content_description || 'Customer Submission'}`
+      ]
+    )
+
+    // Insert initial parcel_history entry
+    const now = new Date()
+    const dateStr = now.toISOString().slice(0, 10)
+    const timeStr = now.toTimeString().slice(0, 8)
+
+    await pool.query(
+      `INSERT INTO parcel_history (AWBNO, date, time, activity, location)
+       VALUES (?, ?, ?, 'SHIPMENT BOOKED', ?)`,
+      [awb, dateStr, timeStr, senderCity || 'ORIGIN']
+    )
+
+    console.log(`[Remote DB] Initial AWBENTRY + parcel_history created for request ${awb}`)
+    return true
+  } catch (err) {
+    console.warn('[Remote DB Initial AWBENTRY Insert Warning]:', err.message)
+    return false
+  }
+}
+
+/**
+ * Cancel a pending booking request in the remote DB.
+ * - Checks status; refuses if already confirmed
+ * - Updates booking_requests.status = 'cancelled'
+ * - Adds 'SHIPMENT CANCELLED' to parcel_history
+ */
+export async function cancelBookingRequestInRemoteDb(requestAwb, customerId) {
+  try {
+    const pool = getRemotePool()
+    if (!pool) return { success: false, message: 'Remote DB not available' }
+
+    if (!requestAwb) return { success: false, message: 'No AWB provided' }
+
+    // Check current status
+    const [rows] = await pool.query(
+      'SELECT id, status, customer_id FROM booking_requests WHERE request_awb = ? LIMIT 1',
+      [requestAwb]
+    )
+
+    if (!rows || rows.length === 0) {
+      return { success: false, message: 'Booking request not found' }
+    }
+
+    const req = rows[0]
+
+    if (req.status === 'confirmed') {
+      return { success: false, message: 'Confirmed bookings cannot be cancelled' }
+    }
+
+    // Verify ownership if customerId provided
+    if (customerId && req.customer_id && String(req.customer_id) !== String(customerId)) {
+      return { success: false, message: 'You do not have permission to cancel this request' }
+    }
+
+    // Update status to cancelled
+    await pool.query(
+      'UPDATE booking_requests SET status = ? WHERE request_awb = ?',
+      ['cancelled', requestAwb]
+    )
+
+    // Add cancellation entry to parcel_history
+    const now = new Date()
+    const dateStr = now.toISOString().slice(0, 10)
+    const timeStr = now.toTimeString().slice(0, 8)
+
+    await pool.query(
+      `INSERT INTO parcel_history (AWBNO, date, time, activity, location)
+       VALUES (?, ?, ?, 'SHIPMENT CANCELLED', 'SYSTEM')`,
+      [requestAwb, dateStr, timeStr]
+    )
+
+    console.log(`[Remote DB] Booking request ${requestAwb} cancelled`)
+    return { success: true }
+  } catch (err) {
+    console.error('[Remote DB Cancel Request Error]:', err.message)
+    return { success: false, message: err.message }
+  }
+}

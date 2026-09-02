@@ -66,7 +66,7 @@ export default function BookingRequestsPage() {
   const navigate = useNavigate()
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('')
+  const [activeTab, setActiveTab] = useState('pending')
   const [search, setSearch] = useState('')
   const [counts, setCounts] = useState({ all: 0, pending: 0, processing: 0, confirmed: 0, rejected: 0 })
   const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0 })

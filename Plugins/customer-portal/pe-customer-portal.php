@@ -491,21 +491,47 @@ function pe_cp_ajax_shipment_detail()
     $totAmount = floatval($row->TOTAL ?: ($row->NETAMOUNT ?: $row->CHARGES));
     $recAmount = floatval($row->RECEIPTAMOUNT ?? 0);
 
+    // Look up booking_requests for detailed addresses if available
+    $breq = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
+        strval($row->AWBNO), strval($row->AWBNO)
+    ));
+
+    $s_addr = trim(implode(', ', array_filter([$row->SADDRESS1 ?? '', $row->SADDRESS2 ?? '', $row->SADDRESS3 ?? '', $row->SCITY ?? '', $row->SPINCODE ?? ''])));
+    if (empty($s_addr) && $breq) {
+        $s_addr = trim(implode(', ', array_filter([$breq->sender_address ?? '', $breq->sender_address_2 ?? '', $breq->sender_city ?? '', $breq->sender_state ?? '', $breq->sender_pincode ?? '', $breq->sender_country ?? ''])));
+    }
+
+    $c_addr = trim(implode(', ', array_filter([$row->CNEEADDRESS1 ?? '', $row->CNEEADDRESS2 ?? '', $row->CNEEADDRESS3 ?? '', $row->CNEECITY ?? '', $row->CNEEPINCODE ?? '', $row->DESTNAME ?? ''])));
+    if (empty($c_addr) && $breq) {
+        $c_addr = trim(implode(', ', array_filter([$breq->receiver_address ?? '', $breq->receiver_address_2 ?? '', $breq->receiver_city ?? '', $breq->receiver_state ?? '', $breq->receiver_pincode ?? '', $breq->receiver_country ?? ''])));
+    }
+
+    $forwarding_no = trim(strval($row->VENDORAWB2 ?? ''));
+    if (empty($forwarding_no) && $breq && !empty($breq->forwarding_no)) {
+        $forwarding_no = trim(strval($breq->forwarding_no));
+    }
+
     wp_send_json_success([
         'shipment' => [
             'awb' => $row->AWBNO,
             'date' => !empty($row->AWBDATE) ? date('d M Y', strtotime($row->AWBDATE)) : '',
             'raw_date' => $row->AWBDATE,
             'shipper' => $row->SNAME,
+            'shipper_address' => $s_addr,
+            'shipper_phone' => $row->SPHONE1 ?? ($breq->sender_phone ?? ''),
             'consignee' => $row->CNEENAME,
+            'consignee_address' => $c_addr,
+            'consignee_phone' => $row->CNEEPHONE1 ?? ($breq->receiver_phone ?? ''),
             'destination' => $row->DESTNAME,
             'origin' => $row->ORIGIN ?? '',
             'weight' => $row->CHARGEWEIGHT ?: $row->ACTUALWEIGHT,
             'pieces' => $row->PIECES ?? 1,
             'amount' => $totAmount,
             'balance' => $totAmount - $recAmount,
-            'vendor' => '',
-            'vendor_awb' => '',
+            'vendor' => '', // Excluded by requirement
+            'vendor_awb' => '', // Excluded by requirement
+            'forwarding_number' => $forwarding_no, // Explicitly included
             'product' => $row->PRODNAME ?? '',
         ],
         'tracking' => array_map(function ($h) {
@@ -520,6 +546,79 @@ function pe_cp_ajax_shipment_detail()
 }
 add_action('wp_ajax_pe_cp_shipment_detail', 'pe_cp_ajax_shipment_detail');
 add_action('wp_ajax_nopriv_pe_cp_shipment_detail', 'pe_cp_ajax_shipment_detail');
+
+// ══════════════════════════════════════
+//  AJAX: CANCEL / DELETE BOOKING REQUEST
+// ══════════════════════════════════════
+
+function pe_cp_ajax_cancel_request()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+
+    $cust = pe_cp_get_user();
+    $cust_id = intval($cust['customer_id'] ?? ($cust['id'] ?? 0));
+    $cust_email = strtolower(trim($cust['email'] ?? ''));
+
+    $request_awb = sanitize_text_field($_POST['request_awb'] ?? '');
+    if (!$request_awb) {
+        wp_send_json_error(['message' => 'Request AWB is required']);
+    }
+
+    $req = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM booking_requests WHERE request_awb = %s LIMIT 1",
+        $request_awb
+    ));
+
+    if (!$req) {
+        wp_send_json_error(['message' => 'Booking request not found']);
+    }
+
+    if ($req->status === 'confirmed') {
+        wp_send_json_error(['message' => 'Confirmed shipments cannot be cancelled']);
+    }
+
+    // Verify ownership
+    if ($cust_id > 0 && $req->customer_id && intval($req->customer_id) !== $cust_id) {
+        if ($cust_email === '' || strtolower(trim($req->customer_email)) !== $cust_email) {
+            wp_send_json_error(['message' => 'You do not have permission to cancel this request']);
+        }
+    }
+
+    // Update status in booking_requests
+    $wpdb->update(
+        'booking_requests',
+        ['status' => 'cancelled'],
+        ['request_awb' => $request_awb]
+    );
+
+    // Delete or remove the pending booking entry from AWBENTRY
+    $wpdb->query($wpdb->prepare(
+        "DELETE FROM AWBENTRY WHERE AWBNO = %s AND (CUSTCODE = %s OR CUSTCODE = %s OR CUSTCODE = %s OR CUSTCODE = '')",
+        $request_awb, strval($cust_id), 'CUST-' . $cust_id, 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT)
+    ));
+
+    // Record cancellation event in parcel_history
+    $wpdb->insert('parcel_history', [
+        'AWBNO' => $request_awb,
+        'date' => current_time('Y-m-d'),
+        'time' => current_time('H:i:s'),
+        'activity' => 'SHIPMENT CANCELLED',
+        'location' => 'CUSTOMER PORTAL'
+    ]);
+
+    // Record timeline update
+    $wpdb->insert('request_updates', [
+        'request_id' => $req->id,
+        'update_type' => 'warning',
+        'title' => 'Booking Cancelled',
+        'description' => 'Booking request was cancelled by customer.'
+    ]);
+
+    wp_send_json_success(['message' => 'Booking request cancelled successfully']);
+}
+add_action('wp_ajax_pe_cp_cancel_request', 'pe_cp_ajax_cancel_request');
+add_action('wp_ajax_nopriv_pe_cp_cancel_request', 'pe_cp_ajax_cancel_request');
 
 // ══════════════════════════════════════
 //  AJAX: CUSTOMER REQUESTS

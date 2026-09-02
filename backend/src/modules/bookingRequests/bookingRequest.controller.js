@@ -1,6 +1,6 @@
 import { query, execute } from '../../config/db.js'
 import { syncBookingToWP, syncStatusToWP } from '../../utils/wpSync.js'
-import { syncBookingRequestStatusToRemoteDb, syncBookingRequestToRemoteDb } from '../../services/remoteAwbEntry.service.js'
+import { syncBookingRequestStatusToRemoteDb, syncBookingRequestToRemoteDb, syncInitialRequestToAwbEntry, cancelBookingRequestInRemoteDb } from '../../services/remoteAwbEntry.service.js'
 
 /**
  * Generate a 7-digit random AWB number for booking requests.
@@ -271,6 +271,7 @@ export const createBookingRequest = async (req, res) => {
     }
 
     syncBookingRequestToRemoteDb(bookingSyncPayload).catch(() => {})
+    syncInitialRequestToAwbEntry(bookingSyncPayload).catch(() => {})
     syncBookingToWP(bookingSyncPayload).catch(() => {})
 
     return res.status(201).json({
@@ -619,6 +620,59 @@ export const getCustomerRequests = async (req, res) => {
       requests
     })
   } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  PUBLIC: Customer cancels a pending booking request
+// ═══════════════════════════════════════════════
+
+export const cancelBookingRequest = async (req, res) => {
+  try {
+    const { request_awb, customer_id, customer_email } = req.body
+
+    if (!request_awb) {
+      return res.status(400).json({ success: false, message: 'request_awb is required' })
+    }
+
+    // Check in local DB
+    const rows = await query('SELECT * FROM booking_requests WHERE request_awb = ? LIMIT 1', [request_awb])
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking request not found' })
+    }
+
+    const booking = rows[0]
+
+    if (booking.status === 'confirmed') {
+      return res.status(400).json({ success: false, message: 'Confirmed bookings cannot be cancelled' })
+    }
+
+    // Verify ownership
+    if (customer_id && booking.customer_id && String(booking.customer_id) !== String(customer_id)) {
+      return res.status(403).json({ success: false, message: 'You do not have permission to cancel this request' })
+    }
+
+    // Update local DB
+    await execute('UPDATE booking_requests SET status = ? WHERE request_awb = ?', ['cancelled', request_awb])
+
+    // Cancel in remote DB (AWBENTRY + booking_requests)
+    cancelBookingRequestInRemoteDb(request_awb, customer_id).catch(() => {})
+
+    // Sync status to WP
+    syncStatusToWP({
+      request_awb,
+      status: 'cancelled',
+      updates: [{
+        update_type: 'warning',
+        title: 'Booking Cancelled',
+        description: 'This booking request has been cancelled by the customer.'
+      }]
+    }).catch(() => {})
+
+    return res.json({ success: true, message: 'Booking request cancelled successfully' })
+  } catch (error) {
+    console.error('cancelBookingRequest error:', error)
     return res.status(500).json({ success: false, message: error.message })
   }
 }

@@ -810,8 +810,8 @@ function cpLoadRequests(p, silent) {
         cpReqLastHash = newHash;
         var h = '';
         h += '<div class="cp-tc"><div class="cp-th"><h3><i class="fa-solid fa-clipboard-list"></i> Booking Requests <span class="badge">' + r.total + '</span></h3></div>';
-        h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>Request AWB</th><th>Date Submitted</th><th>Receiver</th><th>Destination</th><th>Package</th><th>Status</th></tr></thead><tbody>';
-        if (!r.rows.length) h += '<tr><td colspan="6" style="text-align:center;padding:50px;color:var(--cptext3)"><i class="fa-solid fa-inbox" style="font-size:28px;display:block;margin-bottom:10px;opacity:.2"></i>No booking requests found</td></tr>';
+        h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>Request AWB</th><th>Date Submitted</th><th>Receiver</th><th>Destination</th><th>Package</th><th>Status</th><th style="text-align:center;">Action</th></tr></thead><tbody>';
+        if (!r.rows.length) h += '<tr><td colspan="7" style="text-align:center;padding:50px;color:var(--cptext3)"><i class="fa-solid fa-inbox" style="font-size:28px;display:block;margin-bottom:10px;opacity:.2"></i>No booking requests found</td></tr>';
         
         r.rows.forEach(function(rw) {
             var stLabel = rw.status.charAt(0).toUpperCase() + rw.status.slice(1);
@@ -820,13 +820,19 @@ function cpLoadRequests(p, silent) {
             
             var formattedDate = rw.created_at ? new Date(rw.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
             
+            var actionHtml = '';
+            if (rw.status !== 'confirmed' && rw.status !== 'cancelled') {
+                actionHtml = '<button onclick="event.stopPropagation(); cpCancelBookingRequest(\'' + rw.request_awb + '\')" title="Cancel this request" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;"><i class="fa-solid fa-trash-can"></i> Cancel</button>';
+            }
+            
             h += '<tr onclick="cpShowRequestDetail(\'' + rw.request_awb + '\')">'; 
             h += '<td class="awbc">' + rw.request_awb + '</td>';
             h += '<td style="font-weight:600;color:var(--cptext2)">' + formattedDate + '</td>';
             h += '<td class="nmc">' + (rw.receiver_name || '—') + '</td>';
             h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + (rw.receiver_city || '—') + '</td>';
             h += '<td style="font-weight:600">' + (rw.weight || '—') + ' kg (' + (rw.package_type || 'parcel') + ')</td>';
-            h += '<td><div class="cp-st"><span class="cp-dot ' + dotClass + '"></span><span class="' + stClass + '">' + stLabel + '</span></div></td></tr>';
+            h += '<td><div class="cp-st"><span class="cp-dot ' + dotClass + '"></span><span class="' + stClass + '">' + stLabel + '</span></div></td>';
+            h += '<td style="text-align:center;">' + actionHtml + '</td></tr>';
         });
         h += '</tbody></table></div>';
         h += '<div class="cp-pg"><div class="cp-pi">Showing <strong>' + r.rows.length + '</strong> of <strong>' + r.total + '</strong> · Page ' + r.page + '/' + r.pages + '</div><div class="cp-pbs">';
@@ -863,7 +869,12 @@ function cpRenderRequestDetail(awb, silent) {
         var formattedDate = r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
         
         var h = '';
-        h += '<div class="cp-dh"><h3><i class="fa-solid fa-clipboard-list"></i> Request ' + r.request_awb + ' <span class="cp-live-badge" style="font-size:9px"><span class="cp-live-dot"></span>Live</span></h3><button class="cp-dc" onclick="cpCloseDetail()"><i class="fa-solid fa-xmark"></i></button></div>';
+        h += '<div class="cp-dh"><h3><i class="fa-solid fa-clipboard-list"></i> Request ' + r.request_awb + ' <span class="cp-live-badge" style="font-size:9px"><span class="cp-live-dot"></span>Live</span></h3>';
+        h += '<div style="display:flex;align-items:center;gap:8px;">';
+        if (r.status !== 'confirmed' && r.status !== 'cancelled') {
+            h += '<button onclick="cpCancelBookingRequest(\'' + r.request_awb + '\')" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="fa-solid fa-trash-can"></i> Cancel Request</button>';
+        }
+        h += '<button class="cp-dc" onclick="cpCloseDetail()"><i class="fa-solid fa-xmark"></i></button></div></div>';
         h += '<div class="cp-db-body">';
         
         // Status & Link to Shipment
@@ -1027,6 +1038,23 @@ function cpRenderRequestDetail(awb, silent) {
     });
 }
 
+function cpCancelBookingRequest(awb) {
+    if (!confirm('Are you sure you want to cancel booking request ' + awb + '? This cannot be undone.')) {
+        return;
+    }
+    cpAjax('pe_cp_cancel_request', { request_awb: awb }, function(d) {
+        if (d.success) {
+            cpShowToast('success', 'Cancelled', d.data?.message || 'Booking request has been cancelled.');
+            cpLoadRequests(1);
+            if (cpDetailOpenAwb === awb) {
+                cpCloseDetail();
+            }
+        } else {
+            cpShowToast('error', 'Cancellation Failed', d.data?.message || 'Failed to cancel booking request.');
+        }
+    });
+}
+
 // AJAX request wrapper
 function cpAjax(action, params, callback, retried) {
     var fd = new FormData();
@@ -1148,17 +1176,22 @@ function cpShowDetail(awb) {
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-circle-info"></i> Current Status</h4><div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0"><span class="cp-dot ' + stDot.dot + '" style="width:10px;height:10px"></span><span style="font-size:15px;font-weight:700;color:#0f172a">' + stDot.label + '</span></div></div>';
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-box"></i> Shipment Details</h4><div class="cp-dg">';
         h += '<div class="cp-df"><div class="l">AWB Number</div><div class="v" style="font-family:Courier New,monospace">' + s.awb + '</div></div>';
+        if (s.forwarding_number) {
+            h += '<div class="cp-df"><div class="l">Forwarding Number</div><div class="v" style="font-family:Courier New,monospace;font-weight:700;color:#1e40af;">' + s.forwarding_number + '</div></div>';
+        }
         h += '<div class="cp-df"><div class="l">Booking Date</div><div class="v">' + (s.date || '—') + '</div></div>';
-        h += '<div class="cp-df"><div class="l">Shipper</div><div class="v">' + (s.shipper || '—') + '</div></div>';
-        h += '<div class="cp-df"><div class="l">Consignee</div><div class="v">' + (s.consignee || '—') + '</div></div>';
-        h += '<div class="cp-df"><div class="l">Origin</div><div class="v">' + (s.origin || '—') + '</div></div>';
-        h += '<div class="cp-df"><div class="l">Destination</div><div class="v">' + (s.destination || '—') + '</div></div>';
         h += '<div class="cp-df"><div class="l">Weight</div><div class="v">' + (s.weight || '—') + ' kg</div></div>';
         h += '<div class="cp-df"><div class="l">Pieces</div><div class="v">' + (s.pieces || '1') + '</div></div>';
         if (s.amount) {
             h += '<div class="cp-df"><div class="l">Total Amount</div><div class="v" style="font-weight:800;color:var(--cpgreen)">₹' + Number(s.amount).toLocaleString('en-IN') + '</div></div>';
             h += '<div class="cp-df"><div class="l">Balance Due</div><div class="v" style="font-weight:700;' + (s.balance > 0 ? 'color:var(--cpred)' : 'color:var(--cptext2)') + '">₹' + Number(s.balance || 0).toLocaleString('en-IN') + '</div></div>';
         }
+        h += '</div></div>';
+
+        // Sender & Receiver Route and Address Details
+        h += '<div class="cp-ds"><h4><i class="fa-solid fa-location-dot"></i> Route & Address Information</h4><div class="cp-dg">';
+        h += '<div class="cp-df fl"><div class="l">Shipper (Sender)</div><div class="v" style="font-weight:700;">' + (s.shipper || '—') + (s.shipper_phone ? ' (' + s.shipper_phone + ')' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (s.shipper_address || s.origin || '—') + '</div></div></div>';
+        h += '<div class="cp-df fl"><div class="l">Consignee (Receiver)</div><div class="v" style="font-weight:700;">' + (s.consignee || '—') + (s.consignee_phone ? ' (' + s.consignee_phone + ')' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (s.consignee_address || s.destination || '—') + '</div></div></div>';
         h += '</div></div>';
 
         // Official Box Labels & Shipping Documents

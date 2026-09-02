@@ -276,12 +276,19 @@ export default function CustomerBookingPage() {
   const updateParcel = (index, field, value) => {
     setParcels(prev => {
       const updated = [...prev]
-      const item = { ...updated[index], [field]: value }
+      let sanitizedVal = value
 
-      const l = parseFloat(field === 'length' ? value : item.length) || 0
-      const b = parseFloat(field === 'breadth' ? value : item.breadth) || 0
-      const h = parseFloat(field === 'height' ? value : item.height) || 0
-      const act = parseFloat(field === 'weight' ? value : item.weight) || 0
+      // Centimeters must not have point values (integers only)
+      if (['length', 'breadth', 'height'].includes(field)) {
+        sanitizedVal = sanitizedVal === '' ? '' : String(parseInt(String(sanitizedVal).replace(/\D/g, ''), 10) || '')
+      }
+
+      const item = { ...updated[index], [field]: sanitizedVal }
+
+      const l = parseInt(item.length, 10) || 0
+      const b = parseInt(item.breadth, 10) || 0
+      const h = parseInt(item.height, 10) || 0
+      const act = parseFloat(item.weight) || 0
 
       let vol = 0
       if (l > 0 && b > 0 && h > 0) {
@@ -290,15 +297,15 @@ export default function CustomerBookingPage() {
       const maxWeight = Math.max(act, vol)
       const chg = maxWeight > 0 ? Math.ceil(maxWeight) : 0
 
-      item.volumetric_weight = vol > 0 ? String(vol) : ''
-      item.chargeable_weight = chg > 0 ? String(chg) : ''
+      item.volumetric_weight = vol > 0 ? vol.toFixed(2) : ''
+      item.chargeable_weight = chg > 0 ? chg.toFixed(2) : ''
       updated[index] = item
       return updated
     })
   }
 
   // Calculate totals from parcels array
-  const totalParcelActual = Math.round(parcels.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0) * 1000) / 1000
+  const totalParcelActual = Math.round(parcels.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0) * 100) / 100
   const totalParcelVol = Math.round(parcels.reduce((sum, p) => sum + (parseFloat(p.volumetric_weight) || 0), 0) * 100) / 100
   const totalParcelChg = parcels.reduce((sum, p) => sum + (parseFloat(p.chargeable_weight) || Math.ceil(Math.max(parseFloat(p.weight) || 0, parseFloat(p.volumetric_weight) || 0))), 0)
 
@@ -1282,20 +1289,14 @@ export default function CustomerBookingPage() {
                   className="w-full bg-transparent focus:outline-none text-[14px] text-navy font-bold"
                 />
               </div>
-              <div className="px-4 py-3 border-r border-border">
+              <div className="px-4 py-3 border-r border-border bg-surface-alt/20">
                 <span className="text-[10px] font-extrabold uppercase text-text-secondary block mb-1 tracking-wider">Actual Weight (kg)</span>
                 <input
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  readOnly
                   placeholder="0.00"
-                  value={form.weight}
-                  onChange={e => {
-                    updateForm('weight', e.target.value)
-                    if (parcels.length === 1) {
-                      updateParcel(0, 'weight', e.target.value)
-                    }
-                  }}
-                  className="w-full bg-transparent focus:outline-none text-[14px] text-navy font-bold"
+                  value={totalParcelActual > 0 ? totalParcelActual.toFixed(2) : (parseFloat(form.weight) ? parseFloat(form.weight).toFixed(2) : '0.00')}
+                  className="w-full bg-transparent focus:outline-none text-[14px] text-navy font-bold cursor-not-allowed"
                 />
               </div>
               <div className="px-4 py-3 border-r border-border bg-navy/5">
@@ -1345,17 +1346,30 @@ export default function CustomerBookingPage() {
                       updateParcel(pIdx, 'weight', e.target.value)
                       if (parcels.length === 1) updateForm('weight', e.target.value)
                     }}
+                    onBlur={e => {
+                      const num = parseFloat(e.target.value)
+                      if (!isNaN(num) && num > 0) {
+                        const formatted = num.toFixed(2)
+                        updateParcel(pIdx, 'weight', formatted)
+                        if (parcels.length === 1) updateForm('weight', formatted)
+                      }
+                    }}
                     className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy"
                   />
                 </div>
                 <div className="px-2 py-1 border-r border-border-light">
                   <input
                     type="number"
+                    step="1"
                     placeholder="L"
                     value={p.length ?? ''}
+                    onKeyDown={e => {
+                      if (e.key === '.' || e.key === ',') e.preventDefault()
+                    }}
                     onChange={e => {
-                      updateParcel(pIdx, 'length', e.target.value)
-                      if (parcels.length === 1) updateForm('length', e.target.value)
+                      const val = e.target.value.replace(/\D/g, '')
+                      updateParcel(pIdx, 'length', val)
+                      if (parcels.length === 1) updateForm('length', val)
                     }}
                     className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
                   />
@@ -1363,11 +1377,16 @@ export default function CustomerBookingPage() {
                 <div className="px-2 py-1 border-r border-border-light">
                   <input
                     type="number"
+                    step="1"
                     placeholder="B"
                     value={p.breadth ?? ''}
+                    onKeyDown={e => {
+                      if (e.key === '.' || e.key === ',') e.preventDefault()
+                    }}
                     onChange={e => {
-                      updateParcel(pIdx, 'breadth', e.target.value)
-                      if (parcels.length === 1) updateForm('breadth', e.target.value)
+                      const val = e.target.value.replace(/\D/g, '')
+                      updateParcel(pIdx, 'breadth', val)
+                      if (parcels.length === 1) updateForm('breadth', val)
                     }}
                     className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
                   />
@@ -1375,11 +1394,16 @@ export default function CustomerBookingPage() {
                 <div className="px-2 py-1 border-r border-border-light">
                   <input
                     type="number"
+                    step="1"
                     placeholder="H"
                     value={p.height ?? ''}
+                    onKeyDown={e => {
+                      if (e.key === '.' || e.key === ',') e.preventDefault()
+                    }}
                     onChange={e => {
-                      updateParcel(pIdx, 'height', e.target.value)
-                      if (parcels.length === 1) updateForm('height', e.target.value)
+                      const val = e.target.value.replace(/\D/g, '')
+                      updateParcel(pIdx, 'height', val)
+                      if (parcels.length === 1) updateForm('height', val)
                     }}
                     className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
                   />

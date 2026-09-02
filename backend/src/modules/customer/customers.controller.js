@@ -277,6 +277,7 @@ export const createCustomer = async (req, res) => {
 
     // Sync directly to remote Hostinger DB (u364134727_nwNLR) & WP
     syncCustomerToRemoteDb({
+      id: newId,
       name: name.trim(),
       email: cleanEmail,
       phone: cleanPhone,
