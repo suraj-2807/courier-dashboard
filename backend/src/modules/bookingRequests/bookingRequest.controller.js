@@ -1,6 +1,6 @@
 import { query, execute } from '../../config/db.js'
 import { syncBookingToWP, syncStatusToWP } from '../../utils/wpSync.js'
-import { syncBookingRequestStatusToRemoteDb } from '../../services/remoteAwbEntry.service.js'
+import { syncBookingRequestStatusToRemoteDb, syncBookingRequestToRemoteDb } from '../../services/remoteAwbEntry.service.js'
 
 /**
  * Generate a 7-digit random AWB number for booking requests.
@@ -224,8 +224,8 @@ export const createBookingRequest = async (req, res) => {
       )
     }
 
-    // ── Fire-and-forget sync to WordPress DB ──
-    syncBookingToWP({
+    // ── Dual Sync to Remote DB and WordPress DB ──
+    const bookingSyncPayload = {
       request_awb,
       customer_id: resolvedCustomerId,
       customer_name: customer_name || sender_name || '',
@@ -247,6 +247,7 @@ export const createBookingRequest = async (req, res) => {
       package_type: package_type || 'parcel',
       weight: parseFloat(weight) || 0,
       length: parseFloat(length) || 0,
+      length_cm: parseFloat(length) || 0,
       breadth: parseFloat(breadth) || 0,
       height: parseFloat(height) || 0,
       no_of_pieces: parseInt(no_of_pieces) || 1,
@@ -267,7 +268,10 @@ export const createBookingRequest = async (req, res) => {
       terms_of_trade: terms_of_trade || 'CIF',
       invoice_note: invoice_note || '',
       status: 'pending'
-    }).catch(() => {}) // never throw
+    }
+
+    syncBookingRequestToRemoteDb(bookingSyncPayload).catch(() => {})
+    syncBookingToWP(bookingSyncPayload).catch(() => {})
 
     return res.status(201).json({
       success: true,

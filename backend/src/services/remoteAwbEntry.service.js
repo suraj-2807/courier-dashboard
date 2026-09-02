@@ -776,3 +776,90 @@ export async function syncBookingRequestStatusToRemoteDb({ requestAwb, requestId
   }
 }
 
+/**
+ * Direct sync of a new booking request to the remote Hostinger database (booking_requests table).
+ * Guarantees that requests submitted by customers appear immediately in the customer portal.
+ */
+export async function syncBookingRequestToRemoteDb(reqData) {
+  try {
+    const pool = getRemotePool()
+    if (!pool) return false
+
+    const awb = reqData.request_awb
+    if (!awb) return false
+
+    const [existing] = await pool.query('SELECT id FROM booking_requests WHERE request_awb = ? LIMIT 1', [awb])
+    if (existing && existing.length > 0) return true
+
+    const parcelsJson = typeof reqData.parcels === 'string' ? reqData.parcels : (Array.isArray(reqData.parcels) ? JSON.stringify(reqData.parcels) : null)
+    const invItemsJson = typeof reqData.invoice_items === 'string' ? reqData.invoice_items : (Array.isArray(reqData.invoice_items) ? JSON.stringify(reqData.invoice_items) : null)
+    const docsJson = typeof reqData.documents === 'string' ? reqData.documents : (Array.isArray(reqData.documents) ? JSON.stringify(reqData.documents) : null)
+
+    await pool.query(
+      `INSERT INTO booking_requests (
+        request_awb, customer_id, customer_name, customer_email, customer_phone, customer_company,
+        sender_name, sender_company, sender_email, sender_phone,
+        sender_address, sender_address_2, sender_city, sender_pincode,
+        sender_state, sender_country, sender_gstin_type, sender_gstin_no,
+        receiver_name, receiver_email, receiver_phone,
+        receiver_address, receiver_address_2, receiver_city, receiver_pincode,
+        receiver_state, receiver_country, receiver_gstin_type, receiver_gstin_no,
+        package_type, weight, \`length\`, length_cm, breadth, height, no_of_pieces,
+        content_description, declared_value, is_fragile, remarks,
+        order_reference, payment_mode, shipping_charge,
+        invoice_type, invoice_currency, hs_code, export_reason, terms_of_trade, invoice_note,
+        invoice_items, parcels, documents, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        awb,
+        reqData.customer_id || null,
+        reqData.customer_name || '',
+        reqData.customer_email || '',
+        reqData.customer_phone || '',
+        reqData.customer_company || '',
+        reqData.sender_name || '', reqData.sender_company || '',
+        reqData.sender_email || '', reqData.sender_phone || '',
+        reqData.sender_address || '', reqData.sender_address_2 || '',
+        reqData.sender_city || '', reqData.sender_pincode || '',
+        reqData.sender_state || '', reqData.sender_country || 'INDIA',
+        reqData.sender_gstin_type || '', reqData.sender_gstin_no || '',
+        reqData.receiver_name || '', reqData.receiver_email || '', reqData.receiver_phone || '',
+        reqData.receiver_address || '', reqData.receiver_address_2 || '',
+        reqData.receiver_city || '', reqData.receiver_pincode || '',
+        reqData.receiver_state || '', reqData.receiver_country || '',
+        reqData.receiver_gstin_type || '', reqData.receiver_gstin_no || '',
+        reqData.package_type || 'parcel',
+        parseFloat(reqData.weight) || 0,
+        parseFloat(reqData.length || reqData.length_cm) || 0,
+        parseFloat(reqData.length || reqData.length_cm) || 0,
+        parseFloat(reqData.breadth) || 0,
+        parseFloat(reqData.height) || 0,
+        parseInt(reqData.no_of_pieces) || 1,
+        reqData.content_description || '',
+        parseFloat(reqData.declared_value) || 0,
+        reqData.is_fragile ? 1 : 0,
+        reqData.remarks || '',
+        reqData.order_reference || '',
+        reqData.payment_mode || 'prepaid',
+        parseFloat(reqData.shipping_charge) || 0,
+        reqData.invoice_type || 'INVOICE',
+        reqData.invoice_currency || 'INR',
+        reqData.hs_code || '',
+        reqData.export_reason || '',
+        reqData.terms_of_trade || 'CIF',
+        reqData.invoice_note || '',
+        invItemsJson,
+        parcelsJson,
+        docsJson,
+        reqData.status || 'pending'
+      ]
+    )
+    console.log(`[Remote DB Booking Request Sync] New request inserted: ${awb}`)
+    return true
+  } catch (err) {
+    console.warn('[Remote DB Booking Request Insert Warning]:', err.message)
+    return false
+  }
+}
+
+

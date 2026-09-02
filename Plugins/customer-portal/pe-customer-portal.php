@@ -341,27 +341,28 @@ function pe_cp_ajax_shipments()
     $offset = ($page - 1) * $per;
     $search = sanitize_text_field($_POST['search'] ?? '');
 
-    // Build precise WHERE clause for logged-in customer's shipments only
+    // Build comprehensive WHERE clause for logged-in customer's shipments
     $cust_id = intval($cust['customer_id'] ?? ($cust['id'] ?? 0));
     $cust_phone = trim($cust['phone'] ?? '');
-    $cust_email = trim($cust['email'] ?? '');
+    $cust_email = strtolower(trim($cust['email'] ?? ''));
     $cust_name = trim($cust['name'] ?? '');
 
     $match_clauses = [];
     $match_params = [];
 
-    // 1. CUSTCODE match (ID e.g. "1" or "CUST-1")
+    // 1. CUSTCODE match (ID e.g. "2", "CUST-2", "CUST-0002")
     if ($cust_id > 0) {
-        $match_clauses[] = "a.CUSTCODE = %s OR a.CUSTCODE = %s";
+        $match_clauses[] = "a.CUSTCODE = %s OR a.CUSTCODE = %s OR a.CUSTCODE = %s";
         $match_params[] = strval($cust_id);
         $match_params[] = 'CUST-' . $cust_id;
+        $match_params[] = 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT);
     }
 
-    // 2. Phone match (exact, non-empty)
-    if ($cust_phone !== '') {
-        $match_clauses[] = "a.SPHONE1 = %s OR a.SPHONE2 = %s";
-        $match_params[] = $cust_phone;
-        $match_params[] = $cust_phone;
+    // 2. Customer Name match against CUSTNAME or SNAME
+    if (strlen($cust_name) >= 2) {
+        $match_clauses[] = "LOWER(TRIM(a.CUSTNAME)) = LOWER(TRIM(%s)) OR LOWER(TRIM(a.SNAME)) = LOWER(TRIM(%s))";
+        $match_params[] = $cust_name;
+        $match_params[] = $cust_name;
     }
 
     // 3. Email match (exact in CUSTNAME or in REMARKS)
@@ -371,16 +372,45 @@ function pe_cp_ajax_shipments()
         $match_params[] = '%' . $wpdb->esc_like($cust_email) . '%';
     }
 
-    // 4. Exact full name match (NOT like '%%')
-    if (strlen($cust_name) >= 3) {
-        $match_clauses[] = "LOWER(TRIM(a.SNAME)) = LOWER(TRIM(%s))";
-        $match_params[] = $cust_name;
+    // 4. Phone match (from customer profile or their booking requests)
+    $customer_phones = array_filter([$cust_phone]);
+    if ($cust_id > 0 || $cust_email !== '') {
+        $req_phones = $wpdb->get_col($wpdb->prepare(
+            "SELECT DISTINCT customer_phone FROM booking_requests WHERE (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = LOWER(%s))) AND customer_phone != ''",
+            $cust_id, $cust_email
+        ));
+        if (!empty($req_phones)) {
+            $customer_phones = array_unique(array_merge($customer_phones, $req_phones));
+        }
+    }
+    foreach ($customer_phones as $ph) {
+        $clean_ph = preg_replace('/[^0-9]/', '', $ph);
+        if (strlen($clean_ph) >= 10) {
+            $last10 = substr($clean_ph, -10);
+            $match_clauses[] = "a.SPHONE1 LIKE %s OR a.SPHONE2 LIKE %s";
+            $match_params[] = '%' . $wpdb->esc_like($last10) . '%';
+            $match_params[] = '%' . $wpdb->esc_like($last10) . '%';
+        }
+    }
+
+    // 5. Linked AWBs from Customer's Booking Requests
+    if ($cust_id > 0 || $cust_email !== '') {
+        $match_clauses[] = "a.AWBNO IN (SELECT request_awb FROM booking_requests WHERE request_awb != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = LOWER(%s))))";
+        $match_params[] = $cust_id;
+        $match_params[] = $cust_email;
+
+        $match_clauses[] = "a.AWBNO IN (SELECT tracking_number FROM booking_requests WHERE tracking_number IS NOT NULL AND tracking_number != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = LOWER(%s))))";
+        $match_params[] = $cust_id;
+        $match_params[] = $cust_email;
     }
 
     if (empty($match_clauses)) {
         $where = "1=0";
     } else {
-        $where = $wpdb->prepare("(" . implode(" OR ", $match_clauses) . ")", ...$match_params);
+        $where = "(" . implode(" OR ", $match_clauses) . ")";
+        if (!empty($match_params)) {
+            $where = $wpdb->prepare($where, ...$match_params);
+        }
     }
 
     if ($search) {
@@ -549,7 +579,7 @@ function pe_cp_ajax_my_requests()
     $cust_phone_last10 = strlen($cust_phone) >= 10 ? substr($cust_phone, -10) : $cust_phone;
     $cust_id = intval($cust['customer_id'] ?? 0);
 
-    // Flexible matching by customer_id, email, or phone
+    // Flexible matching by customer_id, email, phone, or name
     $where_conds = [];
     $params = [];
 
@@ -568,10 +598,17 @@ function pe_cp_ajax_my_requests()
         $params[] = $like_phone;
         $params[] = $like_phone;
     }
+    $cust_name = trim($cust['name'] ?? '');
+    if (strlen($cust_name) >= 3) {
+        $where_conds[] = "LOWER(TRIM(customer_name)) = %s OR LOWER(TRIM(sender_name)) = %s";
+        $params[] = strtolower($cust_name);
+        $params[] = strtolower($cust_name);
+    }
 
-    $where = count($where_conds) > 0 ? $wpdb->prepare("(" . implode(" OR ", $where_conds) . ")", ...$params) : "1=1";
+    $where_base = count($where_conds) > 0 ? $wpdb->prepare("(" . implode(" OR ", $where_conds) . ")", ...$params) : "1=1";
+    $where = $where_base;
 
-    if ($status) {
+    if ($status && $status !== 'all') {
         $where .= $wpdb->prepare(" AND status = %s", $status);
     }
 
@@ -610,9 +647,7 @@ function pe_cp_ajax_my_requests()
         ];
     }
 
-    // Get count breakdown for requests
-    $where_base = $where;
-
+    // Get accurate count breakdown for requests tab badges
     $count_all = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base"));
     $count_pending = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'pending'"));
     $count_processing = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'processing'"));
@@ -1666,6 +1701,7 @@ function pe_cp_rest_sync_booking($request)
         'package_type'        => sanitize_text_field($d['package_type'] ?? 'parcel'),
         'weight'              => floatval($d['weight'] ?? 0),
         'length'              => floatval($d['length'] ?? ($d['length_cm'] ?? 0)),
+        'length_cm'           => floatval($d['length_cm'] ?? ($d['length'] ?? 0)),
         'breadth'             => floatval($d['breadth'] ?? 0),
         'height'              => floatval($d['height'] ?? 0),
         'no_of_pieces'        => intval($d['no_of_pieces'] ?? 1),

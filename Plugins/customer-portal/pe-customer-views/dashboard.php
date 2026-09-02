@@ -3,27 +3,28 @@ if (!defined('ABSPATH')) exit;
 $cust = pe_cp_get_user();
 global $wpdb;
 
-// Build precise WHERE clause for logged-in customer's shipments only
+// Build comprehensive WHERE clause for logged-in customer's shipments only
 $cust_id = intval($cust['customer_id'] ?? ($cust['id'] ?? 0));
 $cust_phone = trim($cust['phone'] ?? '');
-$cust_email = trim($cust['email'] ?? '');
+$cust_email = strtolower(trim($cust['email'] ?? ''));
 $cust_name = trim($cust['name'] ?? '');
 
 $match_clauses = [];
 $match_params = [];
 
-// 1. CUSTCODE match (ID e.g. "1" or "CUST-1")
+// 1. CUSTCODE match (ID e.g. "2", "CUST-2", "CUST-0002")
 if ($cust_id > 0) {
-    $match_clauses[] = "a.CUSTCODE = %s OR a.CUSTCODE = %s";
+    $match_clauses[] = "a.CUSTCODE = %s OR a.CUSTCODE = %s OR a.CUSTCODE = %s";
     $match_params[] = strval($cust_id);
     $match_params[] = 'CUST-' . $cust_id;
+    $match_params[] = 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT);
 }
 
-// 2. Phone match (exact, non-empty)
-if ($cust_phone !== '') {
-    $match_clauses[] = "a.SPHONE1 = %s OR a.SPHONE2 = %s";
-    $match_params[] = $cust_phone;
-    $match_params[] = $cust_phone;
+// 2. Customer Name match against CUSTNAME or SNAME
+if (strlen($cust_name) >= 2) {
+    $match_clauses[] = "LOWER(TRIM(a.CUSTNAME)) = LOWER(TRIM(%s)) OR LOWER(TRIM(a.SNAME)) = LOWER(TRIM(%s))";
+    $match_params[] = $cust_name;
+    $match_params[] = $cust_name;
 }
 
 // 3. Email match (exact in CUSTNAME or in REMARKS)
@@ -33,16 +34,45 @@ if ($cust_email !== '') {
     $match_params[] = '%' . $wpdb->esc_like($cust_email) . '%';
 }
 
-// 4. Exact full name match (NOT like '%%')
-if (strlen($cust_name) >= 3) {
-    $match_clauses[] = "LOWER(TRIM(a.SNAME)) = LOWER(TRIM(%s))";
-    $match_params[] = $cust_name;
+// 4. Phone match (from customer profile or their booking requests)
+$customer_phones = array_filter([$cust_phone]);
+if ($cust_id > 0 || $cust_email !== '') {
+    $req_phones = $wpdb->get_col($wpdb->prepare(
+        "SELECT DISTINCT customer_phone FROM booking_requests WHERE (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = LOWER(%s))) AND customer_phone != ''",
+        $cust_id, $cust_email
+    ));
+    if (!empty($req_phones)) {
+        $customer_phones = array_unique(array_merge($customer_phones, $req_phones));
+    }
+}
+foreach ($customer_phones as $ph) {
+    $clean_ph = preg_replace('/[^0-9]/', '', $ph);
+    if (strlen($clean_ph) >= 10) {
+        $last10 = substr($clean_ph, -10);
+        $match_clauses[] = "a.SPHONE1 LIKE %s OR a.SPHONE2 LIKE %s";
+        $match_params[] = '%' . $wpdb->esc_like($last10) . '%';
+        $match_params[] = '%' . $wpdb->esc_like($last10) . '%';
+    }
+}
+
+// 5. Linked AWBs from Customer's Booking Requests
+if ($cust_id > 0 || $cust_email !== '') {
+    $match_clauses[] = "a.AWBNO IN (SELECT request_awb FROM booking_requests WHERE request_awb != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = LOWER(%s))))";
+    $match_params[] = $cust_id;
+    $match_params[] = $cust_email;
+
+    $match_clauses[] = "a.AWBNO IN (SELECT tracking_number FROM booking_requests WHERE tracking_number IS NOT NULL AND tracking_number != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = LOWER(%s))))";
+    $match_params[] = $cust_id;
+    $match_params[] = $cust_email;
 }
 
 if (empty($match_clauses)) {
     $where_cust = "1=0";
 } else {
-    $where_cust = $wpdb->prepare("(" . implode(" OR ", $match_clauses) . ")", ...$match_params);
+    $where_cust = "(" . implode(" OR ", $match_clauses) . ")";
+    if (!empty($match_params)) {
+        $where_cust = $wpdb->prepare($where_cust, ...$match_params);
+    }
 }
 
 $_st = "(SELECT ph.activity FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO ORDER BY ph.date DESC, ph.time DESC LIMIT 1)";
@@ -59,17 +89,33 @@ $iframe_booking_url = esc_url(add_query_arg([
 ], PE_ADMIN_PORTAL_URL));
 
 // Count pending requests for sidebar badge
-$cust_email_for_req = $cust['email'] ?? '';
-$cust_phone_for_req = $cust['phone'] ?? '';
-$cust_id_for_req = $cust['customer_id'] ?? 0;
-$where_requests = $wpdb->prepare(
-    "(customer_email = %s OR sender_email = %s OR customer_phone = %s OR sender_phone = %s" .
-    ($cust_id_for_req ? " OR customer_id = %d" : "") . ")",
-    ...array_merge(
-        [$cust_email_for_req, $cust_email_for_req, $cust_phone_for_req, $cust_phone_for_req],
-        $cust_id_for_req ? [$cust_id_for_req] : []
-    )
-);
+$req_conds = [];
+$req_params = [];
+if ($cust_id > 0) {
+    $req_conds[] = "customer_id = %d";
+    $req_params[] = $cust_id;
+}
+if ($cust_email !== '') {
+    $req_conds[] = "LOWER(TRIM(customer_email)) = %s OR LOWER(TRIM(sender_email)) = %s";
+    $req_params[] = $cust_email;
+    $req_params[] = $cust_email;
+}
+if (!empty($customer_phones)) {
+    foreach ($customer_phones as $ph) {
+        $clean_p = preg_replace('/[^0-9]/', '', $ph);
+        if (strlen($clean_p) >= 10) {
+            $req_conds[] = "customer_phone LIKE %s OR sender_phone LIKE %s";
+            $req_params[] = '%' . $wpdb->esc_like(substr($clean_p, -10)) . '%';
+            $req_params[] = '%' . $wpdb->esc_like(substr($clean_p, -10)) . '%';
+        }
+    }
+}
+if (strlen($cust_name) >= 3) {
+    $req_conds[] = "LOWER(TRIM(customer_name)) = %s OR LOWER(TRIM(sender_name)) = %s";
+    $req_params[] = strtolower($cust_name);
+    $req_params[] = strtolower($cust_name);
+}
+$where_requests = !empty($req_conds) ? $wpdb->prepare("(" . implode(" OR ", $req_conds) . ")", ...$req_params) : "1=0";
 $pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE status = 'pending' AND ($where_requests)"));
 
 // Fetch customer balance & credit limit
@@ -764,7 +810,12 @@ function cpLoadRequests(p, silent) {
     cpReqSearch = document.getElementById('cp-req-search').value;
     if (!silent) document.getElementById('cp-requests-container').innerHTML = cpSkeleton();
     cpAjax('pe_cp_my_requests', { page: cpReqPage, search: cpReqSearch, status: cpReqStatus }, function(d) {
-        if (!d.success) return;
+        if (!d.success) {
+            if (!silent) {
+                document.getElementById('cp-requests-container').innerHTML = '<div style="text-align:center;padding:50px;color:var(--cptext3);"><i class="fa-solid fa-triangle-exclamation" style="font-size:28px;display:block;margin-bottom:10px;color:var(--cpred);"></i>' + (d.data?.message || 'Unable to load booking requests. Please try refreshing.') + '<br><button class="cp-cta-btn-link" onclick="cpLoadRequests(1)" style="margin-top:14px;border:none;cursor:pointer;">Retry</button></div>';
+            }
+            return;
+        }
         var r = d.data;
         // Store hash to detect changes for polling
         var newHash = JSON.stringify(r.rows.map(function(rw){return rw.request_awb+':'+rw.status}));
@@ -1091,7 +1142,10 @@ function cpLoadShipments(p) {
     cpSearch = document.getElementById('cp-search').value;
     document.getElementById('cp-shipments-container').innerHTML = cpSkeleton();
     cpAjax('pe_cp_shipments', { page: cpPage, search: cpSearch }, function(d) {
-        if (!d.success) return;
+        if (!d.success) {
+            document.getElementById('cp-shipments-container').innerHTML = '<div style="text-align:center;padding:50px;color:var(--cptext3);"><i class="fa-solid fa-triangle-exclamation" style="font-size:28px;display:block;margin-bottom:10px;color:var(--cpred);"></i>' + (d.data?.message || 'Unable to load shipments. Please try refreshing.') + '<br><button class="cp-cta-btn-link" onclick="cpLoadShipments(1)" style="margin-top:14px;border:none;cursor:pointer;">Retry</button></div>';
+            return;
+        }
         var r = d.data, h = '';
         h += '<div class="cp-tc"><div class="cp-th"><h3><i class="fa-solid fa-layer-group"></i> Your Shipments <span class="badge">' + r.total + '</span></h3></div>';
         h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>AWB</th><th>Booking Date</th><th>Consignee</th><th>Destination</th><th>Weight</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
