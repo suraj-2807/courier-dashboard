@@ -264,6 +264,33 @@ function getForwardingInfo(b) {
   }
 }
 
+/**
+ * Parses a forwarding number string that may contain multiple piece AWBs
+ * (e.g. "1550 3036 0794 51Q 1550 3036 0794 52O 1550 3036 0794 53M 1550 3036 0794 54K").
+ * Returns an array of individual numbers if matched, or a single-item array otherwise.
+ */
+export function parseForwardingNumbers(raw) {
+  if (!raw || typeof raw !== 'string') return []
+  let text = raw.trim()
+  if (!text) return []
+  text = text.replace(/^FWD\s*:\s*/i, '')
+
+  // Specific 4-block pattern: 4 digits, space, 4 digits, space, 4 digits, space, 2-4 alphanumeric characters
+  const blockPattern = /\b\d{4}\s+\d{4}\s+\d{4}\s+[0-9A-Za-z]+\b/g
+  const blockMatches = text.match(blockPattern)
+  if (blockMatches && blockMatches.length > 1) {
+    return blockMatches
+  }
+
+  // Also handle newline, comma, or semicolon separated multi-AWBs
+  if (/[\n,;]/.test(text)) {
+    const parts = text.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean)
+    if (parts.length > 1) return parts
+  }
+
+  return [text]
+}
+
 const STATUS_TABS = [
   { value: '', label: 'All Shipments' },
   { value: 'draft', label: 'Draft' },
@@ -1114,18 +1141,48 @@ export default function BookingsPage() {
                       {/* Forwarding Number / Vendor AWB 2 (Dedicated Column) */}
                       <td className="px-4 py-3.5">
                         {fwd.forwardingNo ? (
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[11.5px] font-bold text-amber-900 shadow-2xs select-all">
-                                <span className="text-[9px] uppercase tracking-wider text-amber-700 font-extrabold">FWD:</span>
-                                {fwd.forwardingNo}
-                              </span>
-                              <CopyButton text={fwd.forwardingNo} label="Forwarding number copied!" />
-                            </div>
-                            <span className="block text-[10px] text-text-tertiary font-medium">
-                              {fwd.forwardingCarrier || 'Forwarded Vendor'}
-                            </span>
-                          </div>
+                          (() => {
+                            const fwdList = parseForwardingNumbers(fwd.forwardingNo)
+                            if (fwdList.length > 1) {
+                              return (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[9px] uppercase tracking-wider text-amber-700 font-extrabold bg-amber-100/80 border border-amber-200 px-1 py-0.5 rounded">
+                                      FWD:
+                                    </span>
+                                    <CopyButton text={fwdList.join('\n')} label="All forwarding numbers copied!" />
+                                  </div>
+                                  <div className="space-y-1">
+                                    {fwdList.map((item, idx) => (
+                                      <div key={idx} className="flex items-center gap-1">
+                                        <span className="font-mono text-[11px] font-bold text-amber-950 bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 rounded select-all block whitespace-nowrap">
+                                          {item}
+                                        </span>
+                                        <CopyButton text={item} label={`FWD #${idx + 1} copied!`} />
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <span className="block text-[10px] text-text-tertiary font-medium">
+                                    {fwd.forwardingCarrier || 'Forwarded Vendor'}
+                                  </span>
+                                </div>
+                              )
+                            }
+                            return (
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[11.5px] font-bold text-amber-900 shadow-2xs select-all">
+                                    <span className="text-[9px] uppercase tracking-wider text-amber-700 font-extrabold">FWD:</span>
+                                    {fwd.forwardingNo}
+                                  </span>
+                                  <CopyButton text={fwd.forwardingNo} label="Forwarding number copied!" />
+                                </div>
+                                <span className="block text-[10px] text-text-tertiary font-medium">
+                                  {fwd.forwardingCarrier || 'Forwarded Vendor'}
+                                </span>
+                              </div>
+                            )
+                          })()
                         ) : syncingRowIds.has(b.id) ? (
                           <div className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-50/80 border border-amber-200/60 px-2 py-0.5 rounded-md animate-pulse">
                             <Loader2 className="w-2.5 h-2.5 animate-spin text-amber-600" />

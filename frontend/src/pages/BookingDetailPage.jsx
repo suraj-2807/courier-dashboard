@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useBookingById, usePushBookingToApi } from '../hooks/useBookings'
 import { useLiveTracking } from '../hooks/useTracking'
 import { bookingsApi } from '../api/bookings.api'
+import { parseForwardingNumbers } from './BookingsPage'
 import {
   ArrowLeft,
   Package,
@@ -400,25 +401,70 @@ export default function BookingDetailPage() {
             )}
 
             {/* Secondary Carrier / Forwarding AWB (e.g. UPS / FedEx / Carrier AWB 2) */}
-            {(booking.vendor_awb_number_2 || booking.forwarding_no || (liveTracking?.shipmentInfo?.vendorAwbNo && liveTracking.shipmentInfo.vendorAwbNo !== booking.vendor_awb_number)) && (
-              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 px-3 py-1 rounded-lg">
-                <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
-                  {booking.secondary_carrier || liveTracking?.shipmentInfo?.secondaryCarrier || (/^1Z/i.test(booking.vendor_awb_number_2 || booking.forwarding_no || liveTracking?.shipmentInfo?.vendorAwbNo || '') ? 'UPS' : 'Forwarding')} AWB:
-                </span>
-                <button
-                  onClick={() => {
-                    const fwdNo = booking.vendor_awb_number_2 || booking.forwarding_no || liveTracking?.shipmentInfo?.vendorAwbNo
-                    navigator.clipboard.writeText(fwdNo)
-                    toast.success('Forwarding AWB copied!')
-                  }}
-                  className="inline-flex items-center gap-1 text-[13px] font-mono font-extrabold text-amber-900 hover:underline cursor-pointer"
-                  title="Copy Forwarding AWB"
-                >
-                  {booking.vendor_awb_number_2 || booking.forwarding_no || liveTracking?.shipmentInfo?.vendorAwbNo}
-                  <Copy className="w-3 h-3 text-amber-600" />
-                </button>
-              </div>
-            )}
+            {(booking.vendor_awb_number_2 || booking.forwarding_no || (liveTracking?.shipmentInfo?.vendorAwbNo && liveTracking.shipmentInfo.vendorAwbNo !== booking.vendor_awb_number)) && (() => {
+              const rawFwd = booking.vendor_awb_number_2 || booking.forwarding_no || liveTracking?.shipmentInfo?.vendorAwbNo
+              const fwdList = parseForwardingNumbers(rawFwd)
+              const carrier = booking.secondary_carrier || liveTracking?.shipmentInfo?.secondaryCarrier || (/^1Z/i.test(rawFwd || '') ? 'UPS' : 'Forwarding')
+
+              if (fwdList.length > 1) {
+                return (
+                  <div className="bg-amber-50 border border-amber-300 p-2.5 rounded-lg space-y-1.5">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
+                        {carrier} AWB ({fwdList.length} Pieces):
+                      </span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(fwdList.join('\n'))
+                          toast.success('All forwarding AWBs copied!')
+                        }}
+                        className="text-[10.5px] font-bold text-amber-700 hover:text-amber-900 underline cursor-pointer"
+                      >
+                        Copy All
+                      </button>
+                    </div>
+                    <div className="space-y-1">
+                      {fwdList.map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between gap-2 bg-white/80 border border-amber-200 px-2 py-1 rounded">
+                          <span className="text-[12px] font-mono font-extrabold text-amber-950 select-all">
+                            {item}
+                          </span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(item)
+                              toast.success(`Piece #${idx + 1} copied!`)
+                            }}
+                            className="p-0.5 text-amber-600 hover:text-amber-800 cursor-pointer"
+                            title={`Copy piece #${idx + 1}`}
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              }
+
+              return (
+                <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 px-3 py-1 rounded-lg">
+                  <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
+                    {carrier} AWB:
+                  </span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(rawFwd)
+                      toast.success('Forwarding AWB copied!')
+                    }}
+                    className="inline-flex items-center gap-1 text-[13px] font-mono font-extrabold text-amber-900 hover:underline cursor-pointer"
+                    title="Copy Forwarding AWB"
+                  >
+                    {rawFwd}
+                    <Copy className="w-3 h-3 text-amber-600" />
+                  </button>
+                </div>
+              )
+            })()}
           </div>
         </div>
 
