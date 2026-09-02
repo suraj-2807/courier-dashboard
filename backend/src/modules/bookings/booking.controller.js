@@ -1121,7 +1121,11 @@ export const saveBooking = async (req, res) => {
       [shipmentId]
     )
 
-    const updatedShipment = updatedRows[0] || {}
+    const updatedShipment = {
+      ...(updatedRows[0] || {}),
+      from_request: fields.from_request || req.body.from_request || req.body.booking_request_id,
+      request_awb: fields.request_awb || req.body.request_awb
+    }
 
     // Sync draft booking to remote Hostinger operations DB (AWBENTRY and parcel_history)
     try {
@@ -1678,11 +1682,14 @@ export const createBooking = async (req, res) => {
              WHERE s.id = ?`,
             [shipmentId]
           )
-          const syncShipment = fullShipmentRows[0] || {
+          const syncShipment = {
+            ...(fullShipmentRows[0] || {}),
             ...fields,
             id: shipmentId,
             tracking_number,
             order_id,
+            from_request: req.body.from_request || req.body.booking_request_id || fields.from_request,
+            request_awb: req.body.request_awb || fields.request_awb,
             vendor_awb_number: vendorResult.awbNumber || fields.vendor_code || ''
           }
           await syncToRemoteAwbEntry(syncShipment, vendorResult)

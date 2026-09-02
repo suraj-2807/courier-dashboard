@@ -433,6 +433,29 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
       }
     }
 
+    // Check if this shipment originated from a customer booking request
+    if (custCode === 'W001') {
+      try {
+        const fromReq = shipment.from_request || shipment.booking_request_id || 0
+        const reqAwb = shipment.request_awb || ''
+        const [reqRows] = await pool.query(
+          `SELECT customer_id, customer_name, customer_email, customer_phone 
+           FROM booking_requests 
+           WHERE (id > 0 AND id = ?) 
+              OR (request_awb != '' AND request_awb = ?) 
+              OR (tracking_number != '' AND tracking_number = ?)
+           LIMIT 1`,
+          [fromReq, reqAwb || String(awbNo), String(awbNo)]
+        )
+        if (reqRows && reqRows.length > 0 && reqRows[0].customer_id) {
+          custCode = String(reqRows[0].customer_id)
+          custName = (reqRows[0].customer_name || 'CUSTOMER').toUpperCase()
+        }
+      } catch (reqLookupErr) {
+        console.warn('[Remote AWBENTRY] Booking request customer lookup notice:', reqLookupErr.message)
+      }
+    }
+
     // Check if AWBNO already exists in remote AWBENTRY
     const [existingRows] = await pool.execute('SELECT AWBID, AWBNO, VENDORAWB1 FROM AWBENTRY WHERE AWBNO = ? LIMIT 1', [awbNo])
 

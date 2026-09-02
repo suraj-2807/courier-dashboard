@@ -341,65 +341,28 @@ function pe_cp_ajax_shipments()
     $offset = ($page - 1) * $per;
     $search = sanitize_text_field($_POST['search'] ?? '');
 
-    // Build comprehensive WHERE clause for logged-in customer's shipments
+    // Build strict WHERE clause: only shipments belonging to this specific customer
     $cust_id = intval($cust['customer_id'] ?? ($cust['id'] ?? 0));
-    $cust_phone = trim($cust['phone'] ?? '');
     $cust_email = strtolower(trim($cust['email'] ?? ''));
-    $cust_name = trim($cust['name'] ?? '');
 
     $match_clauses = [];
     $match_params = [];
 
-    // 1. CUSTCODE match (ID e.g. "2", "CUST-2", "CUST-0002")
+    // 1. Direct match by registered customer ID / code (strictly excluding walk-in 'W001')
     if ($cust_id > 0) {
-        $match_clauses[] = "a.CUSTCODE = %s OR a.CUSTCODE = %s OR a.CUSTCODE = %s";
+        $match_clauses[] = "(a.CUSTCODE IN (%s, %s, %s) AND a.CUSTCODE != 'W001' AND LOWER(COALESCE(a.CUSTNAME, '')) != 'walking customer')";
         $match_params[] = strval($cust_id);
         $match_params[] = 'CUST-' . $cust_id;
         $match_params[] = 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT);
     }
 
-    // 2. Customer Name match against CUSTNAME or SNAME
-    if (strlen($cust_name) >= 2) {
-        $match_clauses[] = "LOWER(TRIM(a.CUSTNAME)) = LOWER(TRIM(%s)) OR LOWER(TRIM(a.SNAME)) = LOWER(TRIM(%s))";
-        $match_params[] = $cust_name;
-        $match_params[] = $cust_name;
-    }
-
-    // 3. Email match (exact in CUSTNAME or in REMARKS)
-    if ($cust_email !== '') {
-        $match_clauses[] = "LOWER(a.CUSTNAME) = LOWER(%s) OR a.REMARKS LIKE %s";
-        $match_params[] = $cust_email;
-        $match_params[] = '%' . $wpdb->esc_like($cust_email) . '%';
-    }
-
-    // 4. Phone match (from customer profile or their booking requests)
-    $customer_phones = array_filter([$cust_phone]);
+    // 2. Exact match on shipments converted and pushed from THIS customer's booking requests
     if ($cust_id > 0 || $cust_email !== '') {
-        $req_phones = $wpdb->get_col($wpdb->prepare(
-            "SELECT DISTINCT customer_phone FROM booking_requests WHERE (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = LOWER(%s))) AND customer_phone != ''",
-            $cust_id, $cust_email
-        ));
-        if (!empty($req_phones)) {
-            $customer_phones = array_unique(array_merge($customer_phones, $req_phones));
-        }
-    }
-    foreach ($customer_phones as $ph) {
-        $clean_ph = preg_replace('/[^0-9]/', '', $ph);
-        if (strlen($clean_ph) >= 10) {
-            $last10 = substr($clean_ph, -10);
-            $match_clauses[] = "a.SPHONE1 LIKE %s OR a.SPHONE2 LIKE %s";
-            $match_params[] = '%' . $wpdb->esc_like($last10) . '%';
-            $match_params[] = '%' . $wpdb->esc_like($last10) . '%';
-        }
-    }
-
-    // 5. Linked AWBs from Customer's Booking Requests
-    if ($cust_id > 0 || $cust_email !== '') {
-        $match_clauses[] = "a.AWBNO IN (SELECT request_awb FROM booking_requests WHERE request_awb != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = LOWER(%s))))";
+        $match_clauses[] = "a.AWBNO IN (SELECT request_awb FROM booking_requests WHERE request_awb != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = %s)))";
         $match_params[] = $cust_id;
         $match_params[] = $cust_email;
 
-        $match_clauses[] = "a.AWBNO IN (SELECT tracking_number FROM booking_requests WHERE tracking_number IS NOT NULL AND tracking_number != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = LOWER(%s))))";
+        $match_clauses[] = "a.AWBNO IN (SELECT tracking_number FROM booking_requests WHERE tracking_number IS NOT NULL AND tracking_number != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = %s)))";
         $match_params[] = $cust_id;
         $match_params[] = $cust_email;
     }
