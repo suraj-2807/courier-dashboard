@@ -1179,15 +1179,8 @@ function cpShowDetail(awb) {
         if (s.forwarding_number) {
             var rawFwd = String(s.forwarding_number).trim().replace(/^FWD\s*:\s*/i, '');
             var blockMatches = rawFwd.match(/\b\d{4}\s+\d{4}\s+\d{4}\s+[0-9A-Za-z]+\b/g);
-            var fwdDisplay = '';
-            if (blockMatches && blockMatches.length > 1) {
-                fwdDisplay = blockMatches.map(function(item) {
-                    return '<span style="display:block;margin-bottom:3px;padding:2px 6px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;font-size:12px;">' + item + '</span>';
-                }).join('');
-            } else {
-                fwdDisplay = rawFwd;
-            }
-            h += '<div class="cp-df"><div class="l">Forwarding Number</div><div class="v" style="font-family:Courier New,monospace;font-weight:700;color:#1e40af;">' + fwdDisplay + '</div></div>';
+            var fwdDisplay = (blockMatches && blockMatches.length > 1) ? blockMatches.join('<br>') : rawFwd;
+            h += '<div class="cp-df"><div class="l">Forwarding Number</div><div class="v" style="font-family:Courier New,monospace;font-weight:700;color:#1e40af;line-height:1.4;">' + fwdDisplay + '</div></div>';
         }
         h += '<div class="cp-df"><div class="l">Booking Date</div><div class="v">' + (s.date || '—') + '</div></div>';
         h += '<div class="cp-df"><div class="l">Weight</div><div class="v">' + (s.weight || '—') + ' kg</div></div>';

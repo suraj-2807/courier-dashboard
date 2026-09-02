@@ -1142,40 +1142,15 @@ export default function BookingsPage() {
                       <td className="px-4 py-3.5">
                         {fwd.forwardingNo ? (
                           (() => {
-                            const fwdList = parseForwardingNumbers(fwd.forwardingNo)
-                            if (fwdList.length > 1) {
-                              return (
-                                <div className="space-y-1">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-[9px] uppercase tracking-wider text-amber-700 font-extrabold bg-amber-100/80 border border-amber-200 px-1 py-0.5 rounded">
-                                      FWD:
-                                    </span>
-                                    <CopyButton text={fwdList.join('\n')} label="All forwarding numbers copied!" />
-                                  </div>
-                                  <div className="space-y-1">
-                                    {fwdList.map((item, idx) => (
-                                      <div key={idx} className="flex items-center gap-1">
-                                        <span className="font-mono text-[11px] font-bold text-amber-950 bg-amber-50 border border-amber-200/80 px-1.5 py-0.5 rounded select-all block whitespace-nowrap">
-                                          {item}
-                                        </span>
-                                        <CopyButton text={item} label={`FWD #${idx + 1} copied!`} />
-                                      </div>
-                                    ))}
-                                  </div>
-                                  <span className="block text-[10px] text-text-tertiary font-medium">
-                                    {fwd.forwardingCarrier || 'Forwarded Vendor'}
-                                  </span>
-                                </div>
-                              )
-                            }
+                            const formattedFwd = parseForwardingNumbers(fwd.forwardingNo).join('\n')
                             return (
                               <div className="space-y-0.5">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[11.5px] font-bold text-amber-900 shadow-2xs select-all">
-                                    <span className="text-[9px] uppercase tracking-wider text-amber-700 font-extrabold">FWD:</span>
-                                    {fwd.forwardingNo}
+                                <div className="flex items-start gap-1.5 flex-wrap">
+                                  <span className="inline-flex items-start gap-1 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded text-[11.5px] font-bold text-amber-900 shadow-2xs select-all">
+                                    <span className="text-[9px] uppercase tracking-wider text-amber-700 font-extrabold select-none pt-0.5">FWD:</span>
+                                    <span className="whitespace-pre-line font-mono leading-tight">{formattedFwd}</span>
                                   </span>
-                                  <CopyButton text={fwd.forwardingNo} label="Forwarding number copied!" />
+                                  <CopyButton text={formattedFwd} label="Forwarding number copied!" />
                                 </div>
                                 <span className="block text-[10px] text-text-tertiary font-medium">
                                   {fwd.forwardingCarrier || 'Forwarded Vendor'}
