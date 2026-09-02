@@ -392,12 +392,6 @@ export default function NewBookingPage() {
     ).slice(0, 8)
   }, [allReceivers, form.receiver_name])
 
-  // Selected Registered Customer object
-  const selectedCustomerObj = useMemo(() => {
-    if (!form.customer_id) return null
-    return registeredCustomers.find(c => c.id === parseInt(form.customer_id))
-  }, [form.customer_id, registeredCustomers])
-
   // Normalize document type from DB to match dropdown <option> values exactly
   const normalizeDocType = (raw, isSender = true) => {
     if (!raw) return ''
@@ -519,6 +513,12 @@ export default function NewBookingPage() {
     queryFn: () => customersApi.getAll({ limit: 200 })
   })
   const registeredCustomers = customersResp?.data?.customers || []
+
+  // Selected Registered Customer object
+  const selectedCustomerObj = useMemo(() => {
+    if (!form.customer_id) return null
+    return registeredCustomers.find(c => c.id === parseInt(form.customer_id))
+  }, [form.customer_id, registeredCustomers])
 
   // Fallback query if opened via from_request but location.state is missing (e.g. page refresh)
   const { data: fetchedRequestData } = useQuery({
