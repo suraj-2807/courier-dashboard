@@ -1303,17 +1303,6 @@ export default function NewBookingPage() {
       return
     }
 
-    // Check if selected vendor requires receiver email (e.g. Bhabani / ITDServices / FlySwift)
-    const selectedVendor = activeVendors.find(v => String(v.id) === String(form.vendor_config_id))
-    const vCode = (selectedVendor?.vendor_code || form.vendor_code || '').toLowerCase()
-    if ((vCode.includes('bhabani') || vCode.includes('itd') || vCode.includes('flyswift')) && !form.receiver_email) {
-      const msg = `${selectedVendor?.name || 'Selected Vendor API'} requires a Receiver Email address. Please enter Receiver Email before pushing.`
-      setPushError(msg)
-      toast.error(msg, { duration: 8000 })
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      return
-    }
-
     setSubmitting(true)
     try {
       const result = await createBooking.mutateAsync(buildPayload())

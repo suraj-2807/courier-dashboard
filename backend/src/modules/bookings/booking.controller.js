@@ -1325,7 +1325,8 @@ export const pushBookingToApi = async (req, res) => {
     } else {
       return res.status(400).json({
         success: false,
-        message: `Vendor API Push Failed: ${vendorResult.error || 'Unknown error'}`,
+        message: vendorResult.error || 'Vendor API rejected the shipment',
+        error: vendorResult.error || 'Vendor API rejected the shipment',
         vendor_result: vendorResult
       })
     }
@@ -1718,7 +1719,9 @@ export const createBooking = async (req, res) => {
         }
         return res.status(400).json({
           success: false,
-          message: `Vendor API Push Failed: ${vendorResult.error || 'Unknown error'}`
+          message: vendorResult.error || 'Vendor API rejected the shipment',
+          error: vendorResult.error || 'Vendor API rejected the shipment',
+          vendor_result: vendorResult
         })
       }
     }
