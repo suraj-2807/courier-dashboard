@@ -670,7 +670,10 @@ export default function NewBookingPage() {
     prefillFields.forEach(field => {
       const val = searchParams.get(field)
       if (val) {
-        if (field === 'sender_gstin_type') {
+        if (fromRequestId && field === 'sender_phone') {
+          updates['sender_phone_2'] = val
+          updates['sender_phone'] = ''
+        } else if (field === 'sender_gstin_type') {
           updates[field] = normalizeDocType(val, true)
         } else if (field === 'receiver_gstin_type') {
           updates[field] = normalizeDocType(val, false)
@@ -702,8 +705,8 @@ export default function NewBookingPage() {
       sender_name: rd.sender_name || '',
       sender_company: rd.sender_company || '',
       sender_email: rd.sender_email || '',
-      sender_phone: rd.sender_phone || '',
-      sender_phone_2: rd.sender_phone_2 || '',
+      sender_phone: '', // Phone 1 will be entered by admin on pushing
+      sender_phone_2: rd.sender_phone || rd.sender_phone_2 || '', // Customer booking shipping phone taken as Phone 2
       sender_address: rd.sender_address || '',
       sender_address_2: rd.sender_address_2 || '',
       sender_city: rd.sender_city || '',
@@ -1700,22 +1703,22 @@ export default function NewBookingPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <CompactField label="Phone 1 (API & Bill)" required>
+                  <CompactField label="Phone 1 (API & Bill)" required highlight={!form.sender_phone}>
                     <input
                       type="tel"
-                      placeholder="+91 99999 99999"
+                      placeholder="Admin Dispatch Phone (e.g. +91 99999 99999)"
                       value={form.sender_phone}
                       onChange={e => updateForm('sender_phone', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-medium"
                     />
                   </CompactField>
-                  <CompactField label="Phone 2 (Shipping Bill)">
+                  <CompactField label="Phone 2 (Customer Phone)">
                     <input
                       type="tel"
-                      placeholder="Alt Phone / Mobile"
+                      placeholder="Customer Phone / Alt Mobile"
                       value={form.sender_phone_2}
                       onChange={e => updateForm('sender_phone_2', e.target.value)}
-                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800"
+                      className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-medium"
                     />
                   </CompactField>
                 </div>
