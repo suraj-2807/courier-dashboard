@@ -430,10 +430,9 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
         
         <!-- Status Tabs for Requests -->
         <div class="cp-status-tabs" style="display: flex; gap: 6px; background: rgba(0,0,0,0.03); padding: 4px; border-radius: 8px; border: 1px solid var(--cpbdr);">
-          <button class="cp-status-tab active" onclick="cpSetRequestStatusFilter('', this)" style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">All</button>
+          <button class="cp-status-tab active" onclick="cpSetRequestStatusFilter('', this)" style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">All Active</button>
           <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('pending', this)" style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">Pending</button>
           <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('processing', this)" style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">Processing</button>
-          <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('confirmed', this)" style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">Confirmed</button>
           <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('rejected', this)" style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">Rejected</button>
         </div>
       </div>
@@ -1139,12 +1138,15 @@ function cpLoadShipments(p) {
         }
         var r = d.data, h = '';
         h += '<div class="cp-tc"><div class="cp-th"><h3><i class="fa-solid fa-layer-group"></i> Your Shipments <span class="badge">' + r.total + '</span></h3></div>';
-        h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>AWB</th><th>Booking Date</th><th>Consignee</th><th>Destination</th><th>Weight</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
-        if (!r.rows.length) h += '<tr><td colspan="7" style="text-align:center;padding:50px;color:var(--cptext3)"><i class="fa-solid fa-inbox" style="font-size:28px;display:block;margin-bottom:10px;opacity:.2"></i>No shipments found</td></tr>';
+        h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>AWB</th><th>Carrier / Vendor</th><th>Booking Date</th><th>Consignee</th><th>Destination</th><th>Weight</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
+        if (!r.rows.length) h += '<tr><td colspan="8" style="text-align:center;padding:50px;color:var(--cptext3)"><i class="fa-solid fa-inbox" style="font-size:28px;display:block;margin-bottom:10px;opacity:.2"></i>No shipments found</td></tr>';
         r.rows.forEach(function(rw) {
             var stDot = cpGetStatusDot(rw.status);
+            var fwdHtml = (rw.forwarding_number ? '<div style="font-size:11px;font-family:Courier New,monospace;font-weight:700;color:#1e40af;"><i class="fa-solid fa-plane-departure" style="font-size:9px;margin-right:3px;"></i>' + rw.forwarding_number + (rw.forwarding_carrier ? ' (' + rw.forwarding_carrier + ')' : '') + '</div>' : (rw.vendor_awb1 ? '<div style="font-size:11px;font-family:Courier New,monospace;color:var(--cptext3);">' + rw.vendor_awb1 + '</div>' : ''));
+            var vendBadge = (rw.vendor ? '<span style="display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--cpblue);background:rgba(59,130,246,0.1);padding:1px 6px;border-radius:4px;margin-bottom:2px;">' + rw.vendor + '</span>' : '<span style="color:var(--cptext3);font-size:11px;">—</span>');
             h += '<tr onclick="cpShowDetail(\'' + rw.awb + '\')">';
             h += '<td class="awbc">' + rw.awb + '</td>';
+            h += '<td>' + vendBadge + fwdHtml + '</td>';
             h += '<td style="font-weight:600;color:var(--cptext2)">' + (rw.booking_date || '—') + '</td>';
             h += '<td class="nmc">' + rw.consignee + '</td>';
             h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + rw.destination + '</td>';
@@ -1175,16 +1177,32 @@ function cpShowDetail(awb) {
         h += '<div class="cp-db-body">';
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-circle-info"></i> Current Status</h4><div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0"><span class="cp-dot ' + stDot.dot + '" style="width:10px;height:10px"></span><span style="font-size:15px;font-weight:700;color:#0f172a">' + stDot.label + '</span></div></div>';
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-box"></i> Shipment Details</h4><div class="cp-dg">';
-        h += '<div class="cp-df"><div class="l">AWB Number</div><div class="v" style="font-family:Courier New,monospace">' + s.awb + '</div></div>';
+        h += '<div class="cp-df"><div class="l">AWB Number</div><div class="v" style="font-family:Courier New,monospace;font-weight:800;color:var(--cptext);">' + s.awb + '</div></div>';
+        if (s.vendor) {
+            h += '<div class="cp-df"><div class="l">Vendor / Carrier</div><div class="v" style="font-weight:800;color:var(--cpblue);text-transform:uppercase;">' + s.vendor + '</div></div>';
+        }
+        if (s.vendor_awb) {
+            h += '<div class="cp-df"><div class="l">Vendor AWB / Docket</div><div class="v" style="font-family:Courier New,monospace;font-weight:700;">' + s.vendor_awb + '</div></div>';
+        }
         if (s.forwarding_number) {
             var rawFwd = String(s.forwarding_number).trim().replace(/^FWD\s*:\s*/i, '');
             var blockMatches = rawFwd.match(/\b\d{4}\s+\d{4}\s+\d{4}\s+[0-9A-Za-z]+\b/g);
             var fwdDisplay = (blockMatches && blockMatches.length > 1) ? blockMatches.join('<br>') : rawFwd;
-            h += '<div class="cp-df"><div class="l">Forwarding Number</div><div class="v" style="font-family:Courier New,monospace;font-weight:700;color:#1e40af;line-height:1.4;">' + fwdDisplay + '</div></div>';
+            h += '<div class="cp-df"><div class="l">Forwarding Number' + (s.secondary_carrier ? ' (' + s.secondary_carrier + ')' : '') + '</div><div class="v" style="font-family:Courier New,monospace;font-weight:700;color:#1e40af;line-height:1.4;">' + fwdDisplay + '</div></div>';
         }
         h += '<div class="cp-df"><div class="l">Booking Date</div><div class="v">' + (s.date || '—') + '</div></div>';
-        h += '<div class="cp-df"><div class="l">Weight</div><div class="v">' + (s.weight || '—') + ' kg</div></div>';
-        h += '<div class="cp-df"><div class="l">Pieces</div><div class="v">' + (s.pieces || '1') + '</div></div>';
+        h += '<div class="cp-df"><div class="l">Weight (Actual)</div><div class="v">' + (s.weight || '—') + ' kg</div></div>';
+        if (s.chargeable_weight) {
+            h += '<div class="cp-df"><div class="l">Chargeable Weight</div><div class="v" style="font-weight:700;">' + s.chargeable_weight + ' kg</div></div>';
+        }
+        if (s.dimensions || (s.length && s.breadth && s.height)) {
+            var dims = s.dimensions || (s.length + ' × ' + s.breadth + ' × ' + s.height + ' cm');
+            h += '<div class="cp-df"><div class="l">Dimensions (L×B×H)</div><div class="v">' + dims + '</div></div>';
+        }
+        h += '<div class="cp-df"><div class="l">Pieces (Boxes)</div><div class="v">' + (s.pieces || '1') + '</div></div>';
+        if (s.content_description) {
+            h += '<div class="cp-df fl"><div class="l">Content Description</div><div class="v">' + s.content_description + '</div></div>';
+        }
         if (s.amount) {
             h += '<div class="cp-df"><div class="l">Total Amount</div><div class="v" style="font-weight:800;color:var(--cpgreen)">₹' + Number(s.amount).toLocaleString('en-IN') + '</div></div>';
             h += '<div class="cp-df"><div class="l">Balance Due</div><div class="v" style="font-weight:700;' + (s.balance > 0 ? 'color:var(--cpred)' : 'color:var(--cptext2)') + '">₹' + Number(s.balance || 0).toLocaleString('en-IN') + '</div></div>';

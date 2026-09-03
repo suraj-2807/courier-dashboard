@@ -400,7 +400,7 @@ export default function CustomersPage() {
                       {/* Shipments count */}
                       <td className="px-4 py-3.5 text-center">
                         <Link
-                          to={`/bookings?search=${encodeURIComponent(c.email || c.name)}`}
+                          to={`/bookings?search=${encodeURIComponent(c.name || c.email)}`}
                           className="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-alt hover:bg-surface-hover border border-border rounded-lg text-[12px] font-bold text-navy transition-colors"
                           title="View customer shipments in Bookings page"
                         >
@@ -1173,7 +1173,7 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
                   </h3>
                   {shipments.length > 0 && (
                     <Link
-                      to={`/bookings?search=${encodeURIComponent(customer.email || customer.name)}`}
+                      to={`/bookings?search=${encodeURIComponent(customer.name || customer.email)}`}
                       className="text-[11.5px] font-bold text-primary hover:underline flex items-center gap-1"
                     >
                       <span>View All In Bookings</span>

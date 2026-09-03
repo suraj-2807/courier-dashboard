@@ -314,6 +314,8 @@ export const getBookingRequests = async (req, res) => {
     if (status) {
       whereClauses.push('status = ?')
       params.push(status)
+    } else {
+      whereClauses.push("status != 'confirmed'")
     }
     if (search && search.trim()) {
       const term = `%${search.trim()}%`
@@ -354,10 +356,9 @@ export const getBookingRequests = async (req, res) => {
     )
     const total = countRows[0].total
 
-    // Status counts
+    // Status counts (excluding confirmed which are now in shipments)
     const countPending = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'pending'`))[0].c
     const countProcessing = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'processing'`))[0].c
-    const countConfirmed = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'confirmed'`))[0].c
     const countRejected = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'rejected'`))[0].c
 
     const rows = await query(
@@ -382,10 +383,9 @@ export const getBookingRequests = async (req, res) => {
       success: true,
       requests: rows,
       counts: {
-        all: total,
+        all: (countPending + countProcessing + countRejected),
         pending: countPending,
         processing: countProcessing,
-        confirmed: countConfirmed,
         rejected: countRejected
       },
       pagination: {

@@ -389,7 +389,7 @@ function pe_cp_ajax_shipments()
     $rows = $wpdb->get_results(
         "SELECT a.AWBID as c_id, a.AWBNO, a.CNEENAME as CONSIGNEE, a.DESTNAME as DESTINATION,
                 a.CHARGEWEIGHT as WEIGHT, a.AWBDATE as BOOKINGDATE, a.VENDNAME as vendor,
-                a.SNAME, a.VENDORAWB1, a.NETAMOUNT, a.TOTAL, a.CHARGES, a.RECEIPTAMOUNT
+                a.SNAME, a.VENDORAWB1, a.VENDORAWB2, a.NETAMOUNT, a.TOTAL, a.CHARGES, a.RECEIPTAMOUNT
          FROM AWBENTRY a
          WHERE $where
          ORDER BY a.AWBID DESC
@@ -408,6 +408,17 @@ function pe_cp_ajax_shipments()
         $amt = floatval($r->TOTAL ?: ($r->NETAMOUNT ?: $r->CHARGES));
         $rec = floatval($r->RECEIPTAMOUNT ?? 0);
 
+        // Lookup node shipment for live forwarding and vendor details if present
+        $shp = $wpdb->get_row($wpdb->prepare(
+            "SELECT vendor_code, vendor_awb_number, vendor_awb_number_2, forwarding_no, secondary_carrier, status FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
+            strval($r->AWBNO), strval($r->AWBNO)
+        ));
+
+        $vendor_name = trim(strval($shp->vendor_code ?? ($r->vendor ?? '')));
+        $vAwb = trim(strval($shp->vendor_awb_number ?? ($r->VENDORAWB1 ?? '')));
+        $fwd = trim(strval($shp->forwarding_no ?? ($shp->vendor_awb_number_2 ?? ($r->VENDORAWB2 ?? ''))));
+        $fwdCarrier = trim(strval($shp->secondary_carrier ?? ''));
+
         $data[] = [
             'awb' => $r->AWBNO,
             'consignee' => $r->CONSIGNEE,
@@ -417,10 +428,12 @@ function pe_cp_ajax_shipments()
             'amount' => $amt,
             'receipt_amount' => $rec,
             'balance' => max(0, $amt - $rec),
-            'vendor' => '',
+            'vendor' => $vendor_name,
             'status' => $status,
             'shipper' => $r->SNAME ?? '',
-            'vendor_awb1' => '',
+            'vendor_awb1' => $vAwb,
+            'forwarding_number' => $fwd,
+            'forwarding_carrier' => $fwdCarrier,
         ];
     }
 
@@ -507,10 +520,26 @@ function pe_cp_ajax_shipment_detail()
         $c_addr = trim(implode(', ', array_filter([$breq->receiver_address ?? '', $breq->receiver_address_2 ?? '', $breq->receiver_city ?? '', $breq->receiver_state ?? '', $breq->receiver_pincode ?? '', $breq->receiver_country ?? ''])));
     }
 
-    $forwarding_no = trim(strval($row->VENDORAWB2 ?? ''));
+    // Look up node shipments table for complete details
+    $shp = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
+        strval($row->AWBNO), strval($row->AWBNO)
+    ));
+
+    $vendor_name = trim(strval($shp->vendor_code ?? ($row->VENDNAME ?? '')));
+    $vendor_awb = trim(strval($shp->vendor_awb_number ?? ($row->VENDORAWB1 ?? '')));
+    $forwarding_no = trim(strval($shp->forwarding_no ?? ($shp->vendor_awb_number_2 ?? ($row->VENDORAWB2 ?? ''))));
+    $secondary_carrier = trim(strval($shp->secondary_carrier ?? ''));
     if (empty($forwarding_no) && $breq && !empty($breq->forwarding_no)) {
         $forwarding_no = trim(strval($breq->forwarding_no));
     }
+    $content_desc = trim(strval($shp->content_description ?? ($row->PRODNAME ?? ($breq->content_description ?? ''))));
+    $length = floatval($shp->length ?? ($breq->length ?? 0));
+    $breadth = floatval($shp->breadth ?? ($breq->breadth ?? 0));
+    $height = floatval($shp->height ?? ($breq->height ?? 0));
+    $chargeable_weight = floatval($shp->final_chargeable_weight ?? ($shp->chargeable_weight ?? ($row->CHARGEWEIGHT ?? 0)));
+    $actual_weight = floatval($shp->weight ?? ($row->ACTUALWEIGHT ?? 0));
+    $pieces = intval($shp->no_of_pieces ?? ($row->PIECES ?? 1));
 
     wp_send_json_success([
         'shipment' => [
@@ -525,13 +554,20 @@ function pe_cp_ajax_shipment_detail()
             'consignee_phone' => $row->CNEEPHONE1 ?? ($breq->receiver_phone ?? ''),
             'destination' => $row->DESTNAME,
             'origin' => $row->ORIGIN ?? '',
-            'weight' => $row->CHARGEWEIGHT ?: $row->ACTUALWEIGHT,
-            'pieces' => $row->PIECES ?? 1,
+            'weight' => $actual_weight ?: ($row->ACTUALWEIGHT ?: $row->CHARGEWEIGHT),
+            'chargeable_weight' => $chargeable_weight ?: $row->CHARGEWEIGHT,
+            'length' => $length,
+            'breadth' => $breadth,
+            'height' => $height,
+            'dimensions' => ($length && $breadth && $height) ? "{$length} × {$breadth} × {$height} cm" : '',
+            'pieces' => $pieces,
             'amount' => $totAmount,
             'balance' => $totAmount - $recAmount,
-            'vendor' => '', // Excluded by requirement
-            'vendor_awb' => '', // Excluded by requirement
-            'forwarding_number' => $forwarding_no, // Explicitly included
+            'vendor' => $vendor_name,
+            'vendor_awb' => $vendor_awb,
+            'forwarding_number' => $forwarding_no,
+            'secondary_carrier' => $secondary_carrier,
+            'content_description' => $content_desc,
             'product' => $row->PRODNAME ?? '',
         ],
         'tracking' => array_map(function ($h) {
@@ -668,6 +704,8 @@ function pe_cp_ajax_my_requests()
     }
 
     $where_base = count($where_conds) > 0 ? $wpdb->prepare("(" . implode(" OR ", $where_conds) . ")", ...$params) : "1=1";
+    // Confirmed requests automatically become shipments and must not show in requests
+    $where_base .= " AND status != 'confirmed'";
     $where = $where_base;
 
     if ($status && $status !== 'all') {
@@ -709,11 +747,10 @@ function pe_cp_ajax_my_requests()
         ];
     }
 
-    // Get accurate count breakdown for requests tab badges
+    // Get accurate count breakdown for requests tab badges (excluding confirmed which are in shipments)
     $count_all = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base"));
     $count_pending = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'pending'"));
     $count_processing = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'processing'"));
-    $count_confirmed = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'confirmed'"));
     $count_rejected = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'rejected'"));
 
     wp_send_json_success([
@@ -725,7 +762,7 @@ function pe_cp_ajax_my_requests()
             'all' => $count_all,
             'pending' => $count_pending,
             'processing' => $count_processing,
-            'confirmed' => $count_confirmed,
+            'confirmed' => 0,
             'rejected' => $count_rejected,
         ],
     ]);

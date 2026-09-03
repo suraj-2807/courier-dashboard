@@ -24,10 +24,9 @@ import api from '../api/axios'
 import toast, { Toaster } from 'react-hot-toast'
 
 const STATUS_TABS = [
-  { key: '', label: 'All', icon: ClipboardList },
+  { key: '', label: 'All Active', icon: ClipboardList },
   { key: 'pending', label: 'Pending', icon: Clock },
   { key: 'processing', label: 'Processing', icon: Loader2 },
-  { key: 'confirmed', label: 'Confirmed', icon: CheckCircle2 },
   { key: 'rejected', label: 'Rejected', icon: XCircle }
 ]
 
