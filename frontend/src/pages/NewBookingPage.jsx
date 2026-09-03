@@ -191,7 +191,7 @@ export default function NewBookingPage() {
 
   // Invoice items state
   const [invoiceItems, setInvoiceItems] = useState([
-    { sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }
+    { sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '00', cost: '', unit_rates: '', amount: '' }
   ])
 
   const addInvoiceItem = () => {
@@ -199,7 +199,7 @@ export default function NewBookingPage() {
       const lastBoxNo = prev.length > 0 ? prev[prev.length - 1].box_no : '1'
       return [
         ...prev,
-        { sr_no: prev.length + 1, box_no: lastBoxNo, description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '', cost: '', unit_rates: '', amount: '' }
+        { sr_no: prev.length + 1, box_no: lastBoxNo, description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '00', cost: '', unit_rates: '', amount: '' }
       ]
     })
   }
@@ -1137,7 +1137,12 @@ export default function NewBookingPage() {
         chargeable_weight: chg > 0 ? String(chg) : (p.chargeable_weight || '')
       }
     }),
-    invoice_items: invoiceItems.filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0),
+    invoice_items: invoiceItems
+      .filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0)
+      .map(item => ({
+        ...item,
+        unit_weight: (item.unit_weight !== undefined && item.unit_weight !== null && String(item.unit_weight).trim() !== '') ? String(item.unit_weight).trim() : '00'
+      })),
 
     eawb_no: form.eawb_no,
     eawb_date: form.eawb_date,
@@ -2743,7 +2748,7 @@ export default function NewBookingPage() {
                         className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy" />
                     </div>
                     <div className="px-1">
-                      <input type="number" step="0.01" placeholder="" value={item.unit_weight} onChange={e => updateInvoiceItem(idx, 'unit_weight', e.target.value)}
+                      <input type="text" placeholder="00" value={item.unit_weight} onChange={e => updateInvoiceItem(idx, 'unit_weight', e.target.value)}
                         className="w-full bg-transparent focus:outline-none text-xs text-right text-text-primary" />
                     </div>
                     <div className="px-1">

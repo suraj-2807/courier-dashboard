@@ -276,7 +276,8 @@ export default class FlySwiftAdapter extends BaseAdapter {
         const qty = String(parseFloat(item.quantity) || 1)
         const unitRate = parseFloat(item.unit_rates || item.cost || item.rate || 0) || 0
         const totalItemAmount = parseFloat(item.amount) || (parseFloat(qty) * unitRate) || 0
-        const itemWeight = String(parseFloat(item.unit_weight) || 0)
+        const rawUnitWeight = (item.unit_weight !== undefined && item.unit_weight !== null && String(item.unit_weight).trim() !== '') ? String(item.unit_weight).trim() : '00'
+        const itemWeight = (rawUnitWeight === '0' || rawUnitWeight === '0.0' || rawUnitWeight === '0.00' || rawUnitWeight === '0.000' || rawUnitWeight === '') ? '00' : rawUnitWeight
         const boxNoClean = String(item.box_no || (idx + 1)).replace(/^box-?/i, '')
 
         freeFormLineItems.push({
@@ -301,7 +302,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
           hscode: shipmentData.hs_code || '',
           description: contentDescription || 'Books',
           unit_of_measurement: 'Pc',
-          unit_weight: perPieceWeight,
+          unit_weight: '00',
           igst_amount: '0.00'
         })
       }

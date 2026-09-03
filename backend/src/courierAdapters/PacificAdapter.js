@@ -212,7 +212,8 @@ export default class PacificAdapter extends BaseAdapter {
         const qty = String(parseFloat(item.quantity) || 1)
         const unitRate = parseFloat(item.unit_rates || item.cost || item.rate || 0) || 0
         const totalItemAmount = parseFloat(item.amount) || (parseFloat(qty) * unitRate) || 0
-        const itemWeight = parseFloat(item.unit_weight) || 0
+        const rawUnitWeight = (item.unit_weight !== undefined && item.unit_weight !== null && String(item.unit_weight).trim() !== '') ? String(item.unit_weight).trim() : '00'
+        const itemWeight = parseFloat(rawUnitWeight) || 0
         const boxNoClean = String(item.box_no || (idx + 1)).replace(/^box-?/i, '')
 
         performa.push({
@@ -223,7 +224,7 @@ export default class PacificAdapter extends BaseAdapter {
           Unit: item.unit_type || item.unit || 'PCS',
           Rate: unitRate > 0 ? unitRate.toFixed(2) : '0.00',
           Amount: totalItemAmount > 0 ? totalItemAmount.toFixed(2) : '0.00',
-          Weight: itemWeight > 0 ? itemWeight.toFixed(3) : '0.000',
+          Weight: itemWeight > 0 ? itemWeight.toFixed(3) : '00',
           PerformaIGST: "0",
           PerformaIGSTAmount: "0"
         })

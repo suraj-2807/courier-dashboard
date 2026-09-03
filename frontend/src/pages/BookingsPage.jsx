@@ -380,28 +380,28 @@ export default function BookingsPage() {
     to_date: toDateFilter
   })
 
-  // Automatic live forwarding sync when shipments load on the page
+  // Automatic live forwarding and delivery status sync when shipments load on the page
   useEffect(() => {
     if (!data?.bookings?.length) return
 
-    const missingFwdIds = data.bookings
+    const pendingSyncIds = data.bookings
       .filter((b) => {
         if (b.status === 'delivered' || b.status === 'cancelled' || b.is_trashed) return false
         if (!b.vendor_awb_number && !b.tracking_number) return false
-        const fwd = getForwardingInfo(b)
-        return !fwd.forwardingNo
+        return true
       })
       .map((b) => b.id)
       .filter((id) => !autoSyncedIdsRef.current.has(id))
 
-    if (missingFwdIds.length > 0) {
-      missingFwdIds.forEach((id) => autoSyncedIdsRef.current.add(id))
-      setSyncingRowIds((prev) => new Set([...prev, ...missingFwdIds]))
+    if (pendingSyncIds.length > 0) {
+      pendingSyncIds.forEach((id) => autoSyncedIdsRef.current.add(id))
+      setSyncingRowIds((prev) => new Set([...prev, ...pendingSyncIds]))
 
       bookingsApi
-        .syncTracking(missingFwdIds)
+        .syncTracking(pendingSyncIds)
         .then((res) => {
-          if (res.data?.summary?.updatedForwarding > 0) {
+          const summary = res.data?.summary
+          if (summary?.updatedDelivered > 0 || summary?.updatedForwarding > 0) {
             refetch()
           }
         })
@@ -409,7 +409,7 @@ export default function BookingsPage() {
         .finally(() => {
           setSyncingRowIds((prev) => {
             const next = new Set(prev)
-            missingFwdIds.forEach((id) => next.delete(id))
+            pendingSyncIds.forEach((id) => next.delete(id))
             return next
           })
         })

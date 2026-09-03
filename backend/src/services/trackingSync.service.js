@@ -410,12 +410,27 @@ export async function syncShipmentTracking(shipmentOrId) {
       vals.push(trackResult.secondaryCarrier)
     }
 
+    let markedDelivered = false
     if (trackResult.currentStage === 'delivered' && shipment.status !== 'delivered') {
       updates.push('status = ?')
       vals.push('delivered')
-    } else if (trackResult.currentStage === 'in_transit' && shipment.status === 'draft') {
-      updates.push('status = ?')
-      vals.push('in_transit')
+      markedDelivered = true
+    } else if (trackResult.currentStage !== 'delivered' && shipment.status !== 'delivered') {
+      // Check secondary/forwarding AWB if primary did not report delivered
+      const secondaryToAttempt = shipment.vendor_awb_number_2 || shipment.forwarding_no || vAwb
+      if (secondaryToAttempt && secondaryToAttempt !== awbToTrack && config) {
+        try {
+          const tracker = resolveTracker(config)
+          const fwdResult = await tracker(secondaryToAttempt, config)
+          if (fwdResult && fwdResult.currentStage === 'delivered') {
+            updates.push('status = ?')
+            vals.push('delivered')
+            markedDelivered = true
+            trackResult.currentStage = 'delivered'
+            trackResult.currentStatus = fwdResult.currentStatus || 'Delivered'
+          }
+        } catch {}
+      }
     }
 
     if (updates.length > 0) {
@@ -479,7 +494,8 @@ export async function syncShipmentTracking(shipmentOrId) {
       shipmentId,
       vendorAwb2: vAwb,
       secondaryCarrier: trackResult.secondaryCarrier || '',
-      status: trackResult.currentStatus || shipment.status
+      status: markedDelivered ? 'delivered' : (shipment.status || trackResult.currentStatus),
+      markedDelivered
     }
   } catch (err) {
     console.error(`[TrackingSync] Error syncing shipment #${shipmentId}:`, err.message)
@@ -493,13 +509,13 @@ export async function syncShipmentTracking(shipmentOrId) {
  * Concurrently sync a batch of shipments (with limit to avoid overwhelming APIs).
  * @param {Array<number|Object>} shipmentIdsOrObjects 
  * @param {Object} options 
- * @returns {Promise<{total: number, synced: number, updatedForwarding: number, errors: number}>}
+ * @returns {Promise<{total: number, synced: number, updatedForwarding: number, updatedDelivered: number, errors: number}>}
  */
 export async function syncShipmentsBatch(shipmentIdsOrObjects, options = {}) {
   const { concurrency = 4, force = false } = options
   const list = Array.isArray(shipmentIdsOrObjects) ? shipmentIdsOrObjects : []
   if (list.length === 0) {
-    return { total: 0, synced: 0, updatedForwarding: 0, errors: 0 }
+    return { total: 0, synced: 0, updatedForwarding: 0, updatedDelivered: 0, errors: 0 }
   }
 
   // Filter items that were synced very recently unless force = true
@@ -515,6 +531,7 @@ export async function syncShipmentsBatch(shipmentIdsOrObjects, options = {}) {
 
   let synced = 0
   let updatedForwarding = 0
+  let updatedDelivered = 0
   let errors = 0
 
   // Process in chunks with concurrency limit
@@ -525,6 +542,7 @@ export async function syncShipmentsBatch(shipmentIdsOrObjects, options = {}) {
       if (res.status === 'fulfilled' && res.value?.success) {
         synced++
         if (res.value?.vendorAwb2) updatedForwarding++
+        if (res.value?.markedDelivered) updatedDelivered++
       } else {
         errors++
       }
@@ -535,13 +553,14 @@ export async function syncShipmentsBatch(shipmentIdsOrObjects, options = {}) {
     total: toProcess.length,
     synced,
     updatedForwarding,
+    updatedDelivered,
     errors
   }
 }
 
 /**
  * Periodic background tracking sync cron.
- * Runs every few minutes to update active shipments missing forwarding numbers.
+ * Runs every few minutes to update active shipments and sync delivery / forwarding.
  */
 let syncCronInterval = null
 
@@ -550,23 +569,22 @@ export function startBackgroundTrackingSyncCron(intervalMs = 300000) { // Defaul
 
   const runSync = async () => {
     try {
-      // Find active shipments from the last 14 days that have a vendor AWB or tracking number but missing vendor_awb_number_2/forwarding_no
+      // Find active non-delivered shipments from the last 14 days that have a vendor AWB or tracking number
       const pendingRows = await query(`
         SELECT s.id, s.tracking_number, s.vendor_awb_number, s.vendor_awb_number_2, s.forwarding_no, s.vendor_config_id, s.vendor_code
         FROM shipments s
         WHERE (s.is_trashed = 0 OR s.is_trashed IS NULL)
           AND s.status NOT IN ('delivered', 'cancelled')
           AND (s.vendor_awb_number != '' OR s.tracking_number != '')
-          AND (s.vendor_awb_number_2 = '' OR s.vendor_awb_number_2 IS NULL OR s.forwarding_no = '' OR s.forwarding_no IS NULL)
           AND s.created_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
         ORDER BY s.created_at DESC
-        LIMIT 25
+        LIMIT 30
       `)
 
       if (pendingRows.length > 0) {
-        console.log(`[AutoTrackingCron] Found ${pendingRows.length} active shipments missing forwarding numbers. Syncing...`)
+        console.log(`[AutoTrackingCron] Found ${pendingRows.length} active shipments to check. Syncing...`)
         const summary = await syncShipmentsBatch(pendingRows, { concurrency: 3 })
-        console.log(`[AutoTrackingCron] Sync finished: ${summary.synced} synced, ${summary.updatedForwarding} new forwarding nos found.`)
+        console.log(`[AutoTrackingCron] Sync finished: ${summary.synced} synced, ${summary.updatedDelivered} delivered, ${summary.updatedForwarding} new forwarding nos found.`)
       }
     } catch (err) {
       console.warn('[AutoTrackingCron] Scheduled sync error:', err.message)

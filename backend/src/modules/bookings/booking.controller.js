@@ -557,6 +557,10 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     } catch { }
   }
   if (!Array.isArray(invoiceItemsList)) invoiceItemsList = []
+  invoiceItemsList = invoiceItemsList.map(item => ({
+    ...item,
+    unit_weight: (item.unit_weight !== undefined && item.unit_weight !== null && String(item.unit_weight).trim() !== '') ? String(item.unit_weight).trim() : '00'
+  }))
 
   const itemDescriptions = invoiceItemsList.map(i => i.description).filter(Boolean)
   const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
@@ -2911,7 +2915,7 @@ export const syncTrackingController = async (req, res) => {
     const summary = await syncShipmentsBatch(itemsToSync, { force: true, concurrency: 4 })
     return res.json({
       success: true,
-      message: `Synced tracking for ${summary.synced} shipments (${summary.updatedForwarding} forwarding numbers updated)`,
+      message: `Synced tracking for ${summary.synced} shipments (${summary.updatedDelivered || 0} delivered, ${summary.updatedForwarding || 0} forwarding numbers updated)`,
       summary
     })
   } catch (error) {
