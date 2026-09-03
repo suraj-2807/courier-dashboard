@@ -405,14 +405,28 @@ function pe_cp_ajax_shipments()
         ));
         $status = $ph ?: 'SHIPMENT BOOKED';
 
-        $amt = floatval($r->TOTAL ?: ($r->NETAMOUNT ?: $r->CHARGES));
-        $rec = floatval($r->RECEIPTAMOUNT ?? 0);
-
-        // Lookup node shipment for live forwarding and vendor details if present
+        // Lookup node shipment for live forwarding, vendor details, and accurate billing amount
         $shp = $wpdb->get_row($wpdb->prepare(
-            "SELECT vendor_code, vendor_awb_number, vendor_awb_number_2, forwarding_no, secondary_carrier, status FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
+            "SELECT vendor_code, vendor_awb_number, vendor_awb_number_2, forwarding_no, secondary_carrier, status, total_amount, shipping_charge, grand_total, final_grand_total, net_amount FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
             strval($r->AWBNO), strval($r->AWBNO)
         ));
+
+        // Lookup booking request for amount if not found in AWBENTRY
+        $breq = $wpdb->get_row($wpdb->prepare(
+            "SELECT shipping_charge, total_amount FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
+            strval($r->AWBNO), strval($r->AWBNO)
+        ));
+
+        $amt = floatval($r->TOTAL ?: ($r->NETAMOUNT ?: $r->CHARGES));
+        $shp_amt = floatval($shp->final_grand_total ?? ($shp->grand_total ?? ($shp->total_amount ?? ($shp->net_amount ?? ($shp->shipping_charge ?? 0)))));
+        $breq_amt = floatval($breq->total_amount ?? ($breq->shipping_charge ?? 0));
+        if ($shp_amt > 0) {
+            $amt = $shp_amt;
+        } elseif ($breq_amt > 0 && ($amt <= 0)) {
+            $amt = $breq_amt;
+        }
+
+        $rec = floatval($r->RECEIPTAMOUNT ?? 0);
 
         $vendor_name = trim(strval($shp->vendor_code ?? ($r->vendor ?? '')));
         $vAwb = trim(strval($shp->vendor_awb_number ?? ($r->VENDORAWB1 ?? '')));
@@ -443,15 +457,10 @@ function pe_cp_ajax_shipments()
     $count_delivered = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND LOWER(COALESCE($_st_sub, '')) LIKE '%delivered%'"));
     $count_transit = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND (LOWER(COALESCE($_st_sub, '')) LIKE '%transit%' OR LOWER(COALESCE($_st_sub, '')) LIKE '%departed%')"));
 
-    // Fetch customer balance
-    $cust_balance = 0.00;
-    $cust_credit_limit = 0.00;
-    if (!empty($cust['customer_id'])) {
-        $cb = $wpdb->get_row($wpdb->prepare("SELECT current_balance, credit_limit FROM tbl_customers WHERE id = %d", intval($cust['customer_id'])));
-        if ($cb) {
-            $cust_balance = floatval($cb->current_balance);
-            $cust_credit_limit = floatval($cb->credit_limit);
-        }
+    // Calculate customer total billed amount across all shipments
+    $total_billed_amount = floatval($wpdb->get_var("SELECT SUM(COALESCE(NULLIF(s.total_amount, 0), NULLIF(s.shipping_charge, 0), NULLIF(a.TOTAL, 0), NULLIF(a.NETAMOUNT, 0), a.CHARGES, 0)) FROM AWBENTRY a LEFT JOIN shipments s ON (s.tracking_number = CAST(a.AWBNO AS CHAR) OR s.order_id = CAST(a.AWBNO AS CHAR)) WHERE $where"));
+    if ($total_billed_amount <= 0 && $cust_id > 0) {
+        $total_billed_amount = floatval($wpdb->get_var($wpdb->prepare("SELECT SUM(COALESCE(NULLIF(total_amount, 0), NULLIF(shipping_charge, 0), 0)) FROM shipments WHERE customer_id = %d AND (is_trashed = 0 OR is_trashed IS NULL)", $cust_id)));
     }
 
     wp_send_json_success([
@@ -459,8 +468,7 @@ function pe_cp_ajax_shipments()
         'total' => $total,
         'pages' => max(1, ceil($total / $per)),
         'page' => $page,
-        'balance' => $cust_balance,
-        'credit_limit' => $cust_credit_limit,
+        'total_amount' => $total_billed_amount,
         'counts' => [
             'all' => $count_all,
             'delivered' => $count_delivered,
@@ -525,6 +533,14 @@ function pe_cp_ajax_shipment_detail()
         "SELECT * FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
         strval($row->AWBNO), strval($row->AWBNO)
     ));
+
+    $shp_amt = floatval($shp->final_grand_total ?? ($shp->grand_total ?? ($shp->total_amount ?? ($shp->net_amount ?? ($shp->shipping_charge ?? 0)))));
+    $breq_amt = floatval($breq->total_amount ?? ($breq->shipping_charge ?? 0));
+    if ($shp_amt > 0) {
+        $totAmount = $shp_amt;
+    } elseif ($breq_amt > 0 && $totAmount <= 0) {
+        $totAmount = $breq_amt;
+    }
 
     $vendor_name = trim(strval($shp->vendor_code ?? ($row->VENDNAME ?? '')));
     $vendor_awb = trim(strval($shp->vendor_awb_number ?? ($row->VENDORAWB1 ?? '')));
@@ -2007,8 +2023,22 @@ function pe_cp_rest_sync_status($request)
     if (isset($d['tracking_number'])) {
         $update_data['tracking_number'] = sanitize_text_field($d['tracking_number']);
     }
+    if (isset($d['shipping_charge'])) {
+        $update_data['shipping_charge'] = floatval($d['shipping_charge']);
+    }
+    if (isset($d['total_amount'])) {
+        $update_data['total_amount'] = floatval($d['total_amount']);
+    }
 
     $wpdb->update('booking_requests', $update_data, ['id' => $local->id]);
+
+    $finalAmt = floatval($d['total_amount'] ?? ($d['shipping_charge'] ?? 0));
+    if ($finalAmt > 0) {
+        $wpdb->query($wpdb->prepare(
+            "UPDATE AWBENTRY SET TOTAL = %f, NETAMOUNT = %f, CHARGES = %f WHERE AWBNO = %s",
+            $finalAmt, $finalAmt, $finalAmt, $awb
+        ));
+    }
 
     // Sync to AWBENTRY & parcel_history (DISABLED BY USER DIRECTIVE)
     // No writes permitted to AWBENTRY or parcel_history.

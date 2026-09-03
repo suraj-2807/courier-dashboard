@@ -749,7 +749,7 @@ export async function syncToRemoteParcelHistory(shipment, activity = 'SHIPMENT B
  * Direct sync of booking request status update to remote Hostinger database (booking_requests table).
  * Ensures customer portal immediately reflects 'confirmed'/'processing'/'rejected' status & tracking number.
  */
-export async function syncBookingRequestStatusToRemoteDb({ requestAwb, requestId, status, shipmentId, trackingNumber, adminNotes }) {
+export async function syncBookingRequestStatusToRemoteDb({ requestAwb, requestId, status, shipmentId, trackingNumber, adminNotes, shippingCharge, totalAmount }) {
   try {
     const pool = getRemotePool()
     if (!pool) return false
@@ -772,6 +772,14 @@ export async function syncBookingRequestStatusToRemoteDb({ requestAwb, requestId
     if (adminNotes !== undefined) {
       updates.push('admin_notes = ?')
       params.push(adminNotes)
+    }
+    if (shippingCharge !== undefined && shippingCharge !== null) {
+      updates.push('shipping_charge = ?')
+      params.push(shippingCharge)
+    }
+    if (totalAmount !== undefined && totalAmount !== null) {
+      updates.push('total_amount = ?')
+      params.push(totalAmount)
     }
 
     if (updates.length === 0) return false

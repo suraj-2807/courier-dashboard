@@ -153,8 +153,8 @@ function extractBookingFields(body) {
  * Link and confirm a booking request when creating or saving a shipment.
  * Updates local DB, remote Hostinger DB, and syncs to WordPress.
  */
-async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentId, effectiveTracking) {
-  if (!fromRequestId && !requestAwb) return
+async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentId, effectiveTracking, billingData = {}) {
+  if (!fromRequestId && !requestAwb && !effectiveTracking) return
   try {
     let reqRow = null
     if (fromRequestId) {
@@ -165,18 +165,25 @@ async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentI
       const reqRows = await query('SELECT * FROM booking_requests WHERE request_awb = ?', [requestAwb])
       if (reqRows.length > 0) reqRow = reqRows[0]
     }
+    if (!reqRow && effectiveTracking) {
+      const reqRows = await query('SELECT * FROM booking_requests WHERE tracking_number = ? OR request_awb = ?', [effectiveTracking, effectiveTracking])
+      if (reqRows.length > 0) reqRow = reqRows[0]
+    }
 
     if (reqRow) {
+      const shippingCharge = parseFloat(billingData.shipping_charge) || parseFloat(reqRow.shipping_charge) || 0
+      const totalAmount = parseFloat(billingData.total_amount) || shippingCharge || parseFloat(reqRow.total_amount) || 0
+
       await execute(
-        `UPDATE booking_requests SET status = 'confirmed', shipment_id = ?, tracking_number = ? WHERE id = ?`,
-        [shipmentId, effectiveTracking, reqRow.id]
+        `UPDATE booking_requests SET status = 'confirmed', shipment_id = ?, tracking_number = ?, shipping_charge = ?, total_amount = ? WHERE id = ?`,
+        [shipmentId, effectiveTracking, shippingCharge, totalAmount, reqRow.id]
       )
 
-      const updateDesc = `Booking confirmed. Tracking Number: ${effectiveTracking}`
+      const updateDesc = `Booking confirmed. Tracking Number: ${effectiveTracking}${totalAmount > 0 ? ` · Total Bill: ₹${totalAmount.toFixed(2)}` : ''}`
 
       await execute(
         `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
-        [reqRow.id, 'shipment_created', 'Shipment Confirmed', updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking })]
+        [reqRow.id, 'shipment_created', 'Shipment Confirmed', updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking, total_amount: totalAmount, shipping_charge: shippingCharge })]
       )
 
       // Direct sync to remote Hostinger DB
@@ -185,7 +192,9 @@ async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentI
         requestId: reqRow.id,
         status: 'confirmed',
         shipmentId: shipmentId,
-        trackingNumber: effectiveTracking
+        trackingNumber: effectiveTracking,
+        shippingCharge: shippingCharge,
+        totalAmount: totalAmount
       }).catch((err) => console.warn('[Remote DB Request Sync Notice]:', err.message))
 
       // Sync to WordPress
@@ -194,6 +203,8 @@ async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentI
         status: 'confirmed',
         shipment_id: shipmentId,
         tracking_number: effectiveTracking,
+        shipping_charge: shippingCharge,
+        total_amount: totalAmount,
         updates: [{ type: 'shipment_created', title: 'Shipment Confirmed', description: updateDesc }]
       }).catch((err) => console.warn('[WP Sync Request Notice]:', err.message))
     }
@@ -1094,7 +1105,11 @@ export const saveBooking = async (req, res) => {
       fields.from_request || req.body.from_request || req.body.booking_request_id,
       fields.request_awb || req.body.request_awb,
       shipmentId,
-      tracking_number
+      tracking_number,
+      {
+        shipping_charge: parseFloat(fields.shipping_charge) || 0,
+        total_amount: parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0
+      }
     )
 
     // Generate invoice PDF
@@ -1318,6 +1333,24 @@ export const pushBookingToApi = async (req, res) => {
         )
       } catch (syncErr) {
         console.error('[Remote parcel_history Sync Error]:', syncErr.message)
+      }
+
+      // Sync confirmed status and updated bill to customer booking request & WordPress portal
+      try {
+        const fromReqId = updated.from_request || updated.booking_request_id || 0
+        const reqAwb = updated.request_awb || ''
+        const effectiveTrk = updated.tracking_number || updated.order_id || ''
+        const finalBillAmount = parseFloat(updated.total_amount) || parseFloat(updated.shipping_charge) || 0
+        const finalShippingCharge = parseFloat(updated.shipping_charge) || finalBillAmount
+
+        if (fromReqId || reqAwb || effectiveTrk) {
+          await linkAndConfirmBookingRequest(fromReqId, reqAwb, updated.id, effectiveTrk, {
+            shipping_charge: finalShippingCharge,
+            total_amount: finalBillAmount
+          })
+        }
+      } catch (linkErr) {
+        console.warn('[Push API booking_requests bill sync notice]:', linkErr.message)
       }
 
       return res.json({
@@ -1733,7 +1766,10 @@ export const createBooking = async (req, res) => {
     // Link booking request if applicable
     const fromRequestId = req.body.from_request || req.body.booking_request_id || fields.from_request
     const requestAwb = req.body.request_awb || fields.request_awb
-    await linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentId, tracking_number)
+    await linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentId, tracking_number, {
+      shipping_charge: parseFloat(fields.shipping_charge) || 0,
+      total_amount: parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0
+    })
 
 
     const shipmentRows = await query('SELECT * FROM shipments WHERE id = ?', [shipmentId])
@@ -2932,6 +2968,21 @@ export const updateBookingBilling = async (req, res) => {
       remoteSyncSuccess = syncResult?.success ?? true
     } catch (syncErr) {
       console.error('[Remote AWBENTRY Billing Sync Error]:', syncErr.message)
+    }
+
+    // Synchronize the updated billing to customer booking request & WordPress portal
+    try {
+      const fromReqId = updatedShipment.from_request || updatedShipment.booking_request_id || 0
+      const reqAwb = updatedShipment.request_awb || ''
+      const effectiveTrk = updatedShipment.tracking_number || updatedShipment.order_id || ''
+      if (fromReqId || reqAwb || effectiveTrk) {
+        await linkAndConfirmBookingRequest(fromReqId, reqAwb, updatedShipment.id, effectiveTrk, {
+          shipping_charge: shippingCharge,
+          total_amount: totalAmount
+        })
+      }
+    } catch (billingSyncErr) {
+      console.warn('[updateBookingBilling request sync notice]:', billingSyncErr.message)
     }
 
     return res.json({
