@@ -347,6 +347,17 @@ export default function BookingsPage() {
     return map
   }, [countryCodesData])
 
+  const { data, isLoading, isError, refetch } = useBookings({
+    page,
+    limit,
+    search,
+    status: statusFilter,
+    vendor: vendorFilter,
+    country: countryFilter,
+    from_date: fromDateFilter,
+    to_date: toDateFilter
+  })
+
   const availableCountries = useMemo(() => {
     // Use actual distinct countries from shipments data returned by the API
     const apiCountries = data?.distinctCountries || []
@@ -373,17 +384,6 @@ export default function BookingsPage() {
   useEffect(() => {
     setSearchInput(search)
   }, [search])
-
-  const { data, isLoading, isError, refetch } = useBookings({
-    page,
-    limit,
-    search,
-    status: statusFilter,
-    vendor: vendorFilter,
-    country: countryFilter,
-    from_date: fromDateFilter,
-    to_date: toDateFilter
-  })
 
   // Automatic live forwarding and delivery status sync when shipments load on the page
   useEffect(() => {
