@@ -411,6 +411,7 @@ export async function syncShipmentTracking(shipmentOrId) {
     }
 
     let markedDelivered = false
+    let markedInTransit = false
     if (trackResult.currentStage === 'delivered' && shipment.status !== 'delivered') {
       updates.push('status = ?')
       vals.push('delivered')
@@ -430,6 +431,15 @@ export async function syncShipmentTracking(shipmentOrId) {
             trackResult.currentStatus = fwdResult.currentStatus || 'Delivered'
           }
         } catch {}
+      }
+
+      // If not delivered, but has events / transit stage, update to in_transit
+      if (!markedDelivered && (trackResult.currentStage === 'in_transit' || trackResult.currentStage === 'picked_up' || trackResult.currentStage === 'out_for_delivery' || (trackResult.events && trackResult.events.length > 0))) {
+        if (shipment.status !== 'in_transit' && shipment.status !== 'delivered' && shipment.status !== 'cancelled') {
+          updates.push('status = ?')
+          vals.push('in_transit')
+          markedInTransit = true
+        }
       }
     }
 
@@ -494,8 +504,9 @@ export async function syncShipmentTracking(shipmentOrId) {
       shipmentId,
       vendorAwb2: vAwb,
       secondaryCarrier: trackResult.secondaryCarrier || '',
-      status: markedDelivered ? 'delivered' : (shipment.status || trackResult.currentStatus),
-      markedDelivered
+      status: markedDelivered ? 'delivered' : (markedInTransit ? 'in_transit' : (shipment.status || trackResult.currentStatus)),
+      markedDelivered,
+      markedInTransit
     }
   } catch (err) {
     console.error(`[TrackingSync] Error syncing shipment #${shipmentId}:`, err.message)
@@ -509,13 +520,13 @@ export async function syncShipmentTracking(shipmentOrId) {
  * Concurrently sync a batch of shipments (with limit to avoid overwhelming APIs).
  * @param {Array<number|Object>} shipmentIdsOrObjects 
  * @param {Object} options 
- * @returns {Promise<{total: number, synced: number, updatedForwarding: number, updatedDelivered: number, errors: number}>}
+ * @returns {Promise<{total: number, synced: number, updatedForwarding: number, updatedDelivered: number, updatedInTransit: number, errors: number}>}
  */
 export async function syncShipmentsBatch(shipmentIdsOrObjects, options = {}) {
   const { concurrency = 4, force = false } = options
   const list = Array.isArray(shipmentIdsOrObjects) ? shipmentIdsOrObjects : []
   if (list.length === 0) {
-    return { total: 0, synced: 0, updatedForwarding: 0, updatedDelivered: 0, errors: 0 }
+    return { total: 0, synced: 0, updatedForwarding: 0, updatedDelivered: 0, updatedInTransit: 0, errors: 0 }
   }
 
   // Filter items that were synced very recently unless force = true
@@ -532,6 +543,7 @@ export async function syncShipmentsBatch(shipmentIdsOrObjects, options = {}) {
   let synced = 0
   let updatedForwarding = 0
   let updatedDelivered = 0
+  let updatedInTransit = 0
   let errors = 0
 
   // Process in chunks with concurrency limit
@@ -543,6 +555,7 @@ export async function syncShipmentsBatch(shipmentIdsOrObjects, options = {}) {
         synced++
         if (res.value?.vendorAwb2) updatedForwarding++
         if (res.value?.markedDelivered) updatedDelivered++
+        if (res.value?.markedInTransit) updatedInTransit++
       } else {
         errors++
       }
@@ -554,6 +567,7 @@ export async function syncShipmentsBatch(shipmentIdsOrObjects, options = {}) {
     synced,
     updatedForwarding,
     updatedDelivered,
+    updatedInTransit,
     errors
   }
 }

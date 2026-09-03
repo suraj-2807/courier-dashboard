@@ -1833,14 +1833,26 @@ export const getBookings = async (req, res) => {
       } else {
         whereConditions.push('(s.is_trashed = 0 OR s.is_trashed IS NULL)')
         if (status) {
-          whereConditions.push('s.status = ?')
-          params.push(status)
+          if (status === 'booked') {
+            whereConditions.push('(s.status = "booked" OR s.status = "pending" OR s.status = "confirmed")')
+          } else if (status === 'in_transit') {
+            whereConditions.push('(s.status = "in_transit" OR s.status = "picked_up" OR s.status = "out_for_delivery")')
+          } else {
+            whereConditions.push('s.status = ?')
+            params.push(status)
+          }
         }
       }
     } else {
       if (status && status !== 'trashed') {
-        whereConditions.push('s.status = ?')
-        params.push(status)
+        if (status === 'booked') {
+          whereConditions.push('(s.status = "booked" OR s.status = "pending" OR s.status = "confirmed")')
+        } else if (status === 'in_transit') {
+          whereConditions.push('(s.status = "in_transit" OR s.status = "picked_up" OR s.status = "out_for_delivery")')
+        } else {
+          whereConditions.push('s.status = ?')
+          params.push(status)
+        }
       }
     }
 
@@ -2915,7 +2927,7 @@ export const syncTrackingController = async (req, res) => {
     const summary = await syncShipmentsBatch(itemsToSync, { force: true, concurrency: 4 })
     return res.json({
       success: true,
-      message: `Synced tracking for ${summary.synced} shipments (${summary.updatedDelivered || 0} delivered, ${summary.updatedForwarding || 0} forwarding numbers updated)`,
+      message: `Synced tracking for ${summary.synced} shipments (${summary.updatedDelivered || 0} delivered, ${summary.updatedInTransit || 0} in transit, ${summary.updatedForwarding || 0} forwarding numbers updated)`,
       summary
     })
   } catch (error) {

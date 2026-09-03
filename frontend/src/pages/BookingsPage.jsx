@@ -293,11 +293,10 @@ export function parseForwardingNumbers(raw) {
 
 const STATUS_TABS = [
   { value: '', label: 'All Shipments' },
-  { value: 'draft', label: 'Draft' },
-  { value: 'booked', label: 'Booked' },
-  { value: 'processing', label: 'Processing' },
+  { value: 'booked', label: 'Booking' },
   { value: 'in_transit', label: 'In Transit' },
   { value: 'delivered', label: 'Delivered' },
+  { value: 'draft', label: 'Draft' },
   { value: 'trashed', label: 'Trash', isTrash: true }
 ]
 
@@ -401,7 +400,7 @@ export default function BookingsPage() {
         .syncTracking(pendingSyncIds)
         .then((res) => {
           const summary = res.data?.summary
-          if (summary?.updatedDelivered > 0 || summary?.updatedForwarding > 0) {
+          if (summary?.updatedDelivered > 0 || summary?.updatedInTransit > 0 || summary?.updatedForwarding > 0) {
             refetch()
           }
         })

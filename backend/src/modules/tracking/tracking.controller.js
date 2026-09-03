@@ -595,6 +595,9 @@ export const liveTrack = async (req, res) => {
         if (trackResult.currentStage === 'delivered' && matchedShipment.status !== 'delivered') {
           updates.push('status = ?')
           vals.push('delivered')
+        } else if ((trackResult.currentStage === 'in_transit' || trackResult.currentStage === 'picked_up' || trackResult.currentStage === 'out_for_delivery' || (trackResult.events && trackResult.events.length > 0)) && matchedShipment.status !== 'in_transit' && matchedShipment.status !== 'delivered' && matchedShipment.status !== 'cancelled') {
+          updates.push('status = ?')
+          vals.push('in_transit')
         }
         if (updates.length > 0) {
           vals.push(matchedShipment.id)
