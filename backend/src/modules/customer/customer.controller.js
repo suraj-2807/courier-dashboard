@@ -2,6 +2,7 @@ import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
 import { query, execute } from '../../config/db.js'
+import { syncAddressToWP } from '../../utils/wpSync.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -162,6 +163,7 @@ export const saveCustomerAddress = async (req, res) => {
       )
 
       const updated = await query(`SELECT * FROM customer_addresses WHERE id = ?`, [parseInt(id)])
+      if (updated[0]) syncAddressToWP(updated[0]).catch(() => {})
       return res.json({ success: true, message: 'Address updated successfully', address: updated[0] })
     } else {
       // Check if exact duplicate exists for this customer
@@ -195,6 +197,7 @@ export const saveCustomerAddress = async (req, res) => {
           ]
         )
         const row = await query(`SELECT * FROM customer_addresses WHERE id = ?`, [existing[0].id])
+        if (row[0]) syncAddressToWP(row[0]).catch(() => {})
         return res.json({ success: true, message: 'Address updated', address: row[0] })
       }
 
@@ -229,6 +232,7 @@ export const saveCustomerAddress = async (req, res) => {
       )
 
       const created = await query(`SELECT * FROM customer_addresses WHERE id = ?`, [resHeader.insertId])
+      if (created[0]) syncAddressToWP(created[0]).catch(() => {})
       return res.status(201).json({ success: true, message: 'Address saved to address book', address: created[0] })
     }
   } catch (err) {

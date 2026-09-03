@@ -180,3 +180,27 @@ export async function deleteCustomerFromWP(id, email) {
     console.error('[WP Sync] Customer delete sync error:', err.message)
   }
 }
+
+/**
+ * Sync a customer address (create / update) to WordPress database
+ *
+ * @param {Object} addressData
+ */
+export async function syncAddressToWP(addressData) {
+  if (!WP_SYNC_URL || !WP_SYNC_KEY) return
+
+  try {
+    const url = `${WP_SYNC_URL}/wp-json/pe-cp/v1/sync-address`
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Sync-Key': WP_SYNC_KEY
+      },
+      body: JSON.stringify(addressData)
+    })
+  } catch (err) {
+    console.error('[WP Sync] Address sync error:', err.message)
+  }
+}
+

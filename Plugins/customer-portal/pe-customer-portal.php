@@ -973,7 +973,9 @@ function pe_cp_ajax_get_addresses()
 
     $table_exists = $wpdb->get_var("SHOW TABLES LIKE 'customer_addresses'");
     if (!$table_exists) {
-        wp_send_json_success(['addresses' => []]);
+        if (function_exists('pe_cp_create_tables')) {
+            pe_cp_create_tables();
+        }
     }
 
     $where = "1=1";
@@ -981,9 +983,56 @@ function pe_cp_ajax_get_addresses()
         $where .= $wpdb->prepare(" AND (customer_id = %d OR LOWER(customer_email) = LOWER(%s) OR customer_phone = %s)", $custId, $email, $phone);
     } elseif ($email) {
         $where .= $wpdb->prepare(" AND (LOWER(customer_email) = LOWER(%s) OR customer_phone = %s)", $email, $phone);
+    } elseif ($phone) {
+        $where .= $wpdb->prepare(" AND customer_phone = %s", $phone);
     }
 
     $rows = $wpdb->get_results("SELECT * FROM customer_addresses WHERE $where ORDER BY is_default DESC, updated_at DESC", ARRAY_A);
+
+    // Fallback & automatic sync: If empty or few addresses, query Node.js backend addresses
+    if (empty($rows) && ($custId > 0 || $email || $phone)) {
+        $apiUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/addresses?' . http_build_query([
+            'customer_id' => $custId,
+            'email' => $email,
+            'phone' => $phone
+        ]);
+        $response = wp_remote_get($apiUrl, ['timeout' => 8, 'sslverify' => false]);
+        if (!is_wp_error($response)) {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            if (!empty($body['success']) && !empty($body['addresses'])) {
+                foreach ($body['addresses'] as $addr) {
+                    $existing = $wpdb->get_var($wpdb->prepare(
+                        "SELECT id FROM customer_addresses WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s)) AND TRIM(phone) = TRIM(%s) AND LOWER(TRIM(address)) = LOWER(TRIM(%s)) LIMIT 1",
+                        $addr['name'] ?? '', $addr['phone'] ?? '', $addr['address'] ?? ''
+                    ));
+                    if (!$existing) {
+                        $wpdb->insert('customer_addresses', [
+                            'customer_id' => $custId ?: ($addr['customer_id'] ?? null),
+                            'customer_email' => $email ?: ($addr['customer_email'] ?? ''),
+                            'customer_phone' => $phone ?: ($addr['customer_phone'] ?? ''),
+                            'address_type' => $addr['address_type'] ?? 'both',
+                            'name' => $addr['name'] ?? '',
+                            'company' => $addr['company'] ?? '',
+                            'phone' => $addr['phone'] ?? '',
+                            'phone_2' => $addr['phone_2'] ?? '',
+                            'email' => $addr['email'] ?? '',
+                            'address' => $addr['address'] ?? '',
+                            'address_2' => $addr['address_2'] ?? '',
+                            'city' => $addr['city'] ?? '',
+                            'state' => $addr['state'] ?? '',
+                            'pincode' => $addr['pincode'] ?? '',
+                            'country' => $addr['country'] ?? 'INDIA',
+                            'gstin_type' => $addr['gstin_type'] ?? '',
+                            'gstin_no' => $addr['gstin_no'] ?? '',
+                            'is_default' => intval($addr['is_default'] ?? 0),
+                        ]);
+                    }
+                }
+                $rows = $wpdb->get_results("SELECT * FROM customer_addresses WHERE $where ORDER BY is_default DESC, updated_at DESC", ARRAY_A);
+            }
+        }
+    }
+
     wp_send_json_success(['addresses' => $rows ?: []]);
 }
 add_action('wp_ajax_pe_cp_get_addresses', 'pe_cp_ajax_get_addresses');
@@ -1667,7 +1716,71 @@ add_action('rest_api_init', function () {
         'callback' => 'pe_cp_rest_sync_customer_delete',
         'permission_callback' => 'pe_cp_rest_verify_sync_key',
     ]);
+
+    // Sync a customer address from Node.js backend
+    register_rest_route('pe-cp/v1', '/sync-address', [
+        'methods' => 'POST',
+        'callback' => 'pe_cp_rest_sync_address',
+        'permission_callback' => 'pe_cp_rest_verify_sync_key',
+    ]);
 });
+
+/**
+ * REST: Sync a customer address into WP customer_addresses table
+ */
+function pe_cp_rest_sync_address($request)
+{
+    global $wpdb;
+    $d = $request->get_json_params();
+
+    $name = sanitize_text_field($d['name'] ?? '');
+    $phone = sanitize_text_field($d['phone'] ?? '');
+    $address = sanitize_textarea_field($d['address'] ?? '');
+    if (!$name || !$phone || !$address) {
+        return new WP_REST_Response(['success' => false, 'message' => 'Name, phone and address are required'], 400);
+    }
+
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE 'customer_addresses'");
+    if (!$table_exists && function_exists('pe_cp_create_tables')) {
+        pe_cp_create_tables();
+    }
+
+    $existing = $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM customer_addresses WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s)) AND TRIM(phone) = TRIM(%s) AND LOWER(TRIM(address)) = LOWER(TRIM(%s)) LIMIT 1",
+        $name, $phone, $address
+    ));
+
+    $data = [
+        'customer_id'    => intval($d['customer_id'] ?? 0) ?: null,
+        'customer_email' => sanitize_email($d['customer_email'] ?? ''),
+        'customer_phone' => sanitize_text_field($d['customer_phone'] ?? ''),
+        'address_type'   => sanitize_text_field($d['address_type'] ?? 'both'),
+        'name'           => $name,
+        'company'        => sanitize_text_field($d['company'] ?? ''),
+        'phone'          => $phone,
+        'phone_2'        => sanitize_text_field($d['phone_2'] ?? ''),
+        'email'          => sanitize_email($d['email'] ?? ''),
+        'address'        => $address,
+        'address_2'      => sanitize_text_field($d['address_2'] ?? ''),
+        'city'           => sanitize_text_field($d['city'] ?? ''),
+        'state'          => sanitize_text_field($d['state'] ?? ''),
+        'pincode'        => sanitize_text_field($d['pincode'] ?? ''),
+        'country'        => sanitize_text_field($d['country'] ?? 'INDIA'),
+        'gstin_type'     => sanitize_text_field($d['gstin_type'] ?? ''),
+        'gstin_no'       => sanitize_text_field($d['gstin_no'] ?? ''),
+        'is_default'     => intval($d['is_default'] ?? 0),
+    ];
+
+    if ($existing) {
+        $wpdb->update('customer_addresses', $data, ['id' => $existing]);
+        $savedId = $existing;
+    } else {
+        $wpdb->insert('customer_addresses', $data);
+        $savedId = $wpdb->insert_id;
+    }
+
+    return new WP_REST_Response(['success' => true, 'id' => $savedId], 200);
+}
 
 /**
  * REST: Sync a customer account into the WP database.

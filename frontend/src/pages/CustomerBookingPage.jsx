@@ -101,13 +101,14 @@ export default function CustomerBookingPage() {
   const [savingSenderAddr, setSavingSenderAddr] = useState(false)
   const [savingReceiverAddr, setSavingReceiverAddr] = useState(false)
 
-  // Document upload & attached state
+  // Document upload & attached state (for Shipper & Receiver KYC)
   const [attachedDocs, setAttachedDocs] = useState([])
-  const [uploadingDoc, setUploadingDoc] = useState(false)
-  const [newDocType, setNewDocType] = useState('Aadhaar Card')
-  const [newDocNumber, setNewDocNumber] = useState('')
-  const [saveDocForFuture, setSaveDocForFuture] = useState(true)
-  const fileInputRef = useRef(null)
+  const [senderKycDoc, setSenderKycDoc] = useState(null)
+  const [receiverKycDoc, setReceiverKycDoc] = useState(null)
+  const [uploadingSenderDoc, setUploadingSenderDoc] = useState(false)
+  const [uploadingReceiverDoc, setUploadingReceiverDoc] = useState(false)
+  const senderFileInputRef = useRef(null)
+  const receiverFileInputRef = useRef(null)
 
   // Customer context from URL params
   const [customerContext, setCustomerContext] = useState({
@@ -566,73 +567,101 @@ export default function CustomerBookingPage() {
     }
   }
 
-  // ── Document Upload & Attachment ──
-  const handleFileUpload = async (e) => {
+  // ── Document Upload for Shipper & Receiver ──
+  const handleSenderDocUpload = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-
     if (file.size > 25 * 1024 * 1024) {
       toast.error('File size must be under 25MB')
       return
     }
-
     try {
-      setUploadingDoc(true)
+      setUploadingSenderDoc(true)
       const formData = new FormData()
       formData.append('file', file)
       formData.append('customer_id', customerContext.customerId || '')
       formData.append('customer_email', customerContext.customerEmail || form.sender_email || '')
       formData.append('customer_phone', customerContext.customerPhone || form.sender_phone || '')
-      formData.append('doc_type', newDocType || 'Other')
+      formData.append('doc_type', form.sender_gstin_type || 'Shipper KYC')
       formData.append('doc_name', file.name)
-      formData.append('doc_number', newDocNumber || '')
+      formData.append('doc_number', form.sender_gstin_no || '')
 
       const res = await customerApi.uploadDocument(formData)
       if (res.data?.success) {
         const uploadedDoc = {
           id: res.data.document?.id || Date.now(),
-          doc_type: newDocType || 'Other',
+          doc_type: form.sender_gstin_type || 'Shipper KYC',
           doc_name: file.name,
-          doc_number: newDocNumber || '',
+          doc_number: form.sender_gstin_no || '',
           file_url: res.data.fileUrl || res.data.document?.file_url,
           file_name: file.name,
           file_size: file.size,
-          file_type: file.type
+          file_type: file.type,
+          category: 'sender'
         }
-        setAttachedDocs(prev => [...prev, uploadedDoc])
-        toast.success(`Uploaded "${file.name}"!`)
-        setNewDocNumber('')
-        refetchDocuments()
+        setSenderKycDoc(uploadedDoc)
+        setAttachedDocs(prev => [...prev.filter(d => d.category !== 'sender'), uploadedDoc])
+        toast.success(`Shipper KYC "${file.name}" uploaded!`)
       }
     } catch (err) {
       toast.error(err?.response?.data?.message || 'Failed to upload document')
     } finally {
-      setUploadingDoc(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
+      setUploadingSenderDoc(false)
+      if (senderFileInputRef.current) senderFileInputRef.current.value = ''
     }
   }
 
-  const handleAttachExistingDoc = (doc) => {
-    if (!doc) return
-    if (attachedDocs.some(d => d.file_url === doc.file_url)) {
-      toast.error('Document is already attached')
+  const handleRemoveSenderDoc = () => {
+    setSenderKycDoc(null)
+    setAttachedDocs(prev => prev.filter(d => d.category !== 'sender'))
+  }
+
+  const handleReceiverDocUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 25 * 1024 * 1024) {
+      toast.error('File size must be under 25MB')
       return
     }
-    setAttachedDocs(prev => [...prev, {
-      id: doc.id,
-      doc_type: doc.doc_type,
-      doc_name: doc.doc_name || doc.file_name,
-      doc_number: doc.doc_number || '',
-      file_url: doc.file_url,
-      file_name: doc.file_name,
-      file_size: doc.file_size,
-      file_type: doc.file_type
-    }])
-    toast.success(`Attached "${doc.doc_name || doc.file_name}"`)
+    try {
+      setUploadingReceiverDoc(true)
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('customer_id', customerContext.customerId || '')
+      formData.append('customer_email', customerContext.customerEmail || form.sender_email || '')
+      formData.append('customer_phone', customerContext.customerPhone || form.sender_phone || '')
+      formData.append('doc_type', form.receiver_gstin_type || 'Receiver ID')
+      formData.append('doc_name', file.name)
+      formData.append('doc_number', form.receiver_gstin_no || '')
+
+      const res = await customerApi.uploadDocument(formData)
+      if (res.data?.success) {
+        const uploadedDoc = {
+          id: res.data.document?.id || Date.now(),
+          doc_type: form.receiver_gstin_type || 'Receiver ID',
+          doc_name: file.name,
+          doc_number: form.receiver_gstin_no || '',
+          file_url: res.data.fileUrl || res.data.document?.file_url,
+          file_name: file.name,
+          file_size: file.size,
+          file_type: file.type,
+          category: 'receiver'
+        }
+        setReceiverKycDoc(uploadedDoc)
+        setAttachedDocs(prev => [...prev.filter(d => d.category !== 'receiver'), uploadedDoc])
+        toast.success(`Receiver ID "${file.name}" uploaded!`)
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to upload document')
+    } finally {
+      setUploadingReceiverDoc(false)
+      if (receiverFileInputRef.current) receiverFileInputRef.current.value = ''
+    }
   }
 
-  const handleRemoveAttachedDoc = (index) => {
-    setAttachedDocs(prev => prev.filter((_, idx) => idx !== index))
+  const handleRemoveReceiverDoc = () => {
+    setReceiverKycDoc(null)
+    setAttachedDocs(prev => prev.filter(d => d.category !== 'receiver'))
   }
 
   // ── Form Submit ──
@@ -1106,6 +1135,81 @@ export default function CustomerBookingPage() {
                 </CompactField>
               </div>
 
+              {/* Optional Shipper KYC Document Upload */}
+              <div className="bg-surface-alt/60 border border-dashed border-border rounded-xl p-2.5">
+                <input
+                  ref={senderFileInputRef}
+                  type="file"
+                  onChange={handleSenderDocUpload}
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                  className="hidden"
+                  id="sender-kyc-input"
+                />
+                {senderKycDoc ? (
+                  <div className="flex items-center justify-between gap-2 p-1 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-6 h-6 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0">
+                        <Check className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-navy truncate" title={senderKycDoc.file_name}>
+                          {senderKycDoc.file_name}
+                        </div>
+                        <div className="text-[10px] text-emerald-600 font-semibold">
+                          Shipper KYC Attached {senderKycDoc.file_size ? `(${(senderKycDoc.file_size / 1024).toFixed(0)} KB)` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {senderKycDoc.file_url && (
+                        <a
+                          href={senderKycDoc.file_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-1 text-text-secondary hover:text-primary transition-colors"
+                          title="View Document"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleRemoveSenderDoc}
+                        className="p-1 text-danger/70 hover:text-danger transition-colors cursor-pointer"
+                        title="Remove Document"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                      <FileText className="w-3.5 h-3.5 text-primary" />
+                      <span className="font-semibold text-[11px]">Upload Shipper KYC Document (Optional)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => senderFileInputRef.current?.click()}
+                      disabled={uploadingSenderDoc}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-surface border border-border hover:border-primary hover:text-primary rounded-lg text-xs font-bold text-navy shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {uploadingSenderDoc ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                          <span>Uploading...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3 h-3 text-primary" />
+                          <span>Choose File</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Manual Save to Address Book */}
               <div className="pt-2 border-t border-border-light flex items-center justify-between gap-2 flex-wrap text-xs">
                 <span className="text-[11px] text-text-tertiary">
@@ -1324,6 +1428,81 @@ export default function CustomerBookingPage() {
                     className="w-full bg-transparent focus:outline-none text-[13px] text-text-primary"
                   />
                 </CompactField>
+              </div>
+
+              {/* Optional Receiver KYC / ID Document Upload */}
+              <div className="bg-surface-alt/60 border border-dashed border-border rounded-xl p-2.5">
+                <input
+                  ref={receiverFileInputRef}
+                  type="file"
+                  onChange={handleReceiverDocUpload}
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                  className="hidden"
+                  id="receiver-kyc-input"
+                />
+                {receiverKycDoc ? (
+                  <div className="flex items-center justify-between gap-2 p-1 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-6 h-6 rounded bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0">
+                        <Check className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-bold text-navy truncate" title={receiverKycDoc.file_name}>
+                          {receiverKycDoc.file_name}
+                        </div>
+                        <div className="text-[10px] text-emerald-600 font-semibold">
+                          Receiver ID Attached {receiverKycDoc.file_size ? `(${(receiverKycDoc.file_size / 1024).toFixed(0)} KB)` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {receiverKycDoc.file_url && (
+                        <a
+                          href={receiverKycDoc.file_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-1 text-text-secondary hover:text-primary transition-colors"
+                          title="View Document"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleRemoveReceiverDoc}
+                        className="p-1 text-danger/70 hover:text-danger transition-colors cursor-pointer"
+                        title="Remove Document"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                      <FileText className="w-3.5 h-3.5 text-primary" />
+                      <span className="font-semibold text-[11px]">Upload Receiver KYC / ID Document (Optional)</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => receiverFileInputRef.current?.click()}
+                      disabled={uploadingReceiverDoc}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 bg-surface border border-border hover:border-primary hover:text-primary rounded-lg text-xs font-bold text-navy shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {uploadingReceiverDoc ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                          <span>Uploading...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3 h-3 text-primary" />
+                          <span>Choose File</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Manual Save to Address Book */}
@@ -1559,176 +1738,7 @@ export default function CustomerBookingPage() {
           </p>
         </div>
 
-        {/* ── KYC & Documents Section ── */}
-        <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <RedBadge title="KYC & Shipment Documents" icon={Shield} />
-            <span className="text-[11px] text-text-secondary font-medium">
-              Attach ID proofs, invoices, packing lists or KYC documents
-            </span>
-          </div>
 
-          {/* Upload Control Row */}
-          <div className="bg-surface-alt/60 border border-border rounded-xl p-4 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block mb-1">
-                  Document Type
-                </label>
-                <select
-                  value={newDocType}
-                  onChange={e => setNewDocType(e.target.value)}
-                  className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs font-semibold text-navy focus:outline-none cursor-pointer"
-                >
-                  <option value="Aadhaar Card">Aadhaar Card</option>
-                  <option value="PAN Card">PAN Card</option>
-                  <option value="Passport">Passport</option>
-                  <option value="GST Certificate">GST Certificate</option>
-                  <option value="IEC Certificate">IEC Certificate</option>
-                  <option value="Commercial Invoice">Commercial Invoice</option>
-                  <option value="Packing List">Packing List</option>
-                  <option value="Other">Other Document</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block mb-1">
-                  Document Number (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Aadhaar / PAN / Invoice No"
-                  value={newDocNumber}
-                  onChange={e => setNewDocNumber(e.target.value)}
-                  className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-xs text-navy focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-text-secondary uppercase tracking-wider block mb-1">
-                  Choose File & Upload
-                </label>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  onChange={handleFileUpload}
-                  accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
-                  className="hidden"
-                  id="customer-doc-file-input"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingDoc}
-                  className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary-dark text-white font-bold text-xs py-2 px-3 rounded-lg shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  {uploadingDoc ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Uploading File...
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-3.5 h-3.5" />
-                      Upload Document
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Saved Documents Quick-Attach */}
-            {savedDocuments.length > 0 && (
-              <div className="pt-2 border-t border-border-light flex items-center gap-2 flex-wrap text-xs">
-                <span className="text-[11px] font-bold text-text-secondary flex items-center gap-1">
-                  <Bookmark className="w-3 h-3 text-primary" /> Attach from Saved Documents:
-                </span>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {savedDocuments.map(doc => {
-                    const isAttached = attachedDocs.some(d => d.file_url === doc.file_url)
-                    return (
-                      <button
-                        key={doc.id}
-                        type="button"
-                        onClick={() => handleAttachExistingDoc(doc)}
-                        disabled={isAttached}
-                        className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-lg border transition-colors flex items-center gap-1 ${
-                          isAttached
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 opacity-60 cursor-default'
-                            : 'bg-surface text-navy border-border hover:border-primary hover:text-primary cursor-pointer'
-                        }`}
-                      >
-                        {isAttached && <Check className="w-3 h-3 text-emerald-600" />}
-                        {doc.doc_name || doc.doc_type}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Attached Documents List */}
-          {attachedDocs.length > 0 ? (
-            <div className="space-y-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-text-secondary block">
-                Attached to this Booking ({attachedDocs.length})
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {attachedDocs.map((doc, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between p-3 bg-surface-alt border border-border rounded-xl text-xs gap-2"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="font-bold text-navy truncate" title={doc.doc_name || doc.file_name}>
-                          {doc.doc_name || doc.file_name}
-                        </div>
-                        <div className="text-[10px] text-text-secondary flex items-center gap-2">
-                          <span className="bg-surface px-1.5 py-0.2 rounded font-semibold text-text-primary">
-                            {doc.doc_type}
-                          </span>
-                          {doc.doc_number && <span>No: {doc.doc_number}</span>}
-                          {doc.file_size ? <span>{(doc.file_size / 1024).toFixed(0)} KB</span> : null}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      {doc.file_url && (
-                        <a
-                          href={doc.file_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="p-1 text-text-secondary hover:text-primary transition-colors"
-                          title="View Document"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveAttachedDoc(idx)}
-                        className="p-1 text-danger/70 hover:text-danger transition-colors cursor-pointer"
-                        title="Remove Document"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-4 border border-dashed border-border rounded-xl text-xs text-text-tertiary">
-              No documents attached yet. Upload KYC documents or select from saved documents above.
-            </div>
-          )}
-        </div>
 
         {/* ── Create Shipment Invoice Section ── */}
         <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs">
