@@ -44,9 +44,40 @@ export function exportShipmentsToExcel(shipments = [], fileName = '') {
         .join(' | ')
     }
 
+    // Robust forwarding & vendor AWB extraction
+    const ourAwb = String(s.tracking_number || '').trim()
+    let primaryVendorAwb = String(s.vendor_awb_number || '').trim()
+    let fwdNo = String(s.forwarding_no || s.vendor_awb_number_2 || '').trim()
+    let carrier = String(s.secondary_carrier || '').trim()
+
+    if (s.vendor_raw_response) {
+      try {
+        const raw = typeof s.vendor_raw_response === 'string' ? JSON.parse(s.vendor_raw_response) : s.vendor_raw_response
+        const rawData = raw?.response || raw?.data || raw
+        if (!primaryVendorAwb) {
+          primaryVendorAwb = String(rawData?.AwbNo || rawData?.awbNo || rawData?.AWBNo || rawData?.docket_no || rawData?.docketNo || '').trim()
+        }
+        if (!fwdNo) {
+          const rawFwd = String(rawData?.ForwardingNo || rawData?.ForwardingNo1 || rawData?.forwarding_no || rawData?.vendor_awb_2 || rawData?.vendorAwb2 || '').trim()
+          if (rawFwd && rawFwd !== primaryVendorAwb && rawFwd !== ourAwb) {
+            fwdNo = rawFwd
+          }
+        }
+        if (!carrier && (rawData?.ForwardingCarrier || rawData?.Carrier || rawData?.carrier || rawData?.secondary_carrier)) {
+          carrier = String(rawData?.ForwardingCarrier || rawData?.Carrier || rawData?.carrier || rawData?.secondary_carrier).trim()
+        }
+      } catch {}
+    }
+
+    if (fwdNo && (!carrier || carrier === 'Forwarded Vendor' || carrier === 'Carrier')) {
+      if (/^1Z/i.test(fwdNo)) carrier = 'UPS'
+      else if (/^[0-9]{12}$/.test(fwdNo)) carrier = 'FedEx'
+      else if (/^[0-9]{10}$/.test(fwdNo)) carrier = 'DHL'
+    }
+
     return {
       'Sr. No': index + 1,
-      'AWB / Tracking Number': s.tracking_number || s.order_id || '—',
+      'AWB / Tracking Number': ourAwb || s.order_id || '—',
       'Order Reference No': s.order_reference || '—',
       'Status': String(s.status || 'draft').toUpperCase(),
       'Vendor Push Status': s.vendor_push_status || '—',
@@ -55,7 +86,11 @@ export function exportShipmentsToExcel(shipments = [], fileName = '') {
       'Vendor Code': s.vendor_code || vendorConfig.vendor_code || '—',
       'Service Code': s.service_code || '—',
       'Product Code': s.product_code || '—',
-      'Forwarding / Vendor AWB': s.vendor_awb_number || s.vendor_result?.awbNumber || '—',
+      'Vendor AWB / Docket No': primaryVendorAwb || '—',
+      'Forwarding No': fwdNo || '—',
+      'Forwarding Carrier': carrier || '—',
+      'Vendor AWB 2': s.vendor_awb_number_2 || '—',
+      'Vendor Raw AWB': s.vendor_result?.awbNumber || '—',
 
       // Shipper Details
       'Shipper Name': sender.name || s.s_name || s.sender_name || s.sender_company || '—',
@@ -94,15 +129,26 @@ export function exportShipmentsToExcel(shipments = [], fileName = '') {
       'Height (CM)': parseFloat(s.height) || 0,
       'Volumetric Weight (KG)': parseFloat(s.volumetric_weight) || 0,
       'Chargeable Weight (KG)': parseFloat(s.chargeable_weight) || parseFloat(s.weight) || 0,
+      'Final Chargeable Weight': parseFloat(s.final_chargeable_weight) || 0,
       'Content Description': s.content_description || '—',
       'Declared Value': parseFloat(s.declared_value) || 0,
       'Is Fragile': s.is_fragile ? 'YES' : 'NO',
 
       // Financial & Charges
       'Payment Mode': String(s.payment_mode || 'prepaid').toUpperCase(),
+      'Rate Per KG (₹)': parseFloat(s.rate_per_kg) || 0,
+      'Extra Charge (₹)': parseFloat(s.extra_charge) || 0,
       'Shipping Charge (₹)': parseFloat(s.shipping_charge) || 0,
       'Total Amount (₹)': parseFloat(s.total_amount) || parseFloat(s.shipping_charge) || 0,
       'COD Amount (₹)': parseFloat(s.cod_amount) || 0,
+      'Additional Discount': parseFloat(s.additional_discount) || 0,
+      'Additional Freight': parseFloat(s.additional_freight) || 0,
+      'Additional Insurance': parseFloat(s.additional_insurance) || 0,
+
+      // eAWB
+      'eAWB No': s.eawb_no || '—',
+      'eAWB Date': s.eawb_date || '—',
+      'eAWB Exp Date': s.eawb_exp_date || '—',
 
       // Commercial Invoice & Export Details
       'Invoice Number': s.invoice_no || s.order_id || '—',
@@ -118,7 +164,8 @@ export function exportShipmentsToExcel(shipments = [], fileName = '') {
       // Timestamps
       'Booking Date': s.booking_date || (s.created_at ? s.created_at.split('T')[0] : '—'),
       'Booking Time': s.booking_time || '—',
-      'Created At': s.created_at ? new Date(s.created_at).toLocaleString() : '—'
+      'Created At': s.created_at ? new Date(s.created_at).toLocaleString() : '—',
+      'Updated At': s.updated_at ? new Date(s.updated_at).toLocaleString() : '—'
     }
   })
 

@@ -163,6 +163,71 @@ export default function CustomerBookingPage() {
   })
   const savedAddresses = addressesData?.addresses || []
 
+  // Extract and deduplicate senders and receivers for autocomplete
+  const allSenders = useMemo(() => {
+    const map = new Map()
+    for (const a of (savedAddresses || [])) {
+      if (a.address_type === 'sender' || a.address_type === 'both' || !a.address_type) {
+        const key = (a.name || '').trim().toLowerCase()
+        if (key && !map.has(key)) map.set(key, a)
+      }
+    }
+    return Array.from(map.values())
+  }, [savedAddresses])
+
+  const allReceivers = useMemo(() => {
+    const map = new Map()
+    for (const a of (savedAddresses || [])) {
+      if (a.address_type === 'receiver' || a.address_type === 'both' || !a.address_type) {
+        const key = (a.name || '').trim().toLowerCase()
+        if (key && !map.has(key)) map.set(key, a)
+      }
+    }
+    return Array.from(map.values())
+  }, [savedAddresses])
+
+  const [senderSuggestionsOpen, setSenderSuggestionsOpen] = useState(false)
+  const senderContainerRef = useRef(null)
+
+  const [receiverSuggestionsOpen, setReceiverSuggestionsOpen] = useState(false)
+  const receiverContainerRef = useRef(null)
+
+  const filteredSenders = useMemo(() => {
+    if (!form.sender_name || form.sender_name.trim().length < 1) return []
+    const q = form.sender_name.toLowerCase().trim()
+    return allSenders.filter(s =>
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.company || '').toLowerCase().includes(q) ||
+      (s.phone || '').includes(q) ||
+      (s.city || '').toLowerCase().includes(q)
+    ).slice(0, 8)
+  }, [allSenders, form.sender_name])
+
+  const filteredReceivers = useMemo(() => {
+    if (!form.receiver_name || form.receiver_name.trim().length < 1) return []
+    const q = form.receiver_name.toLowerCase().trim()
+    return allReceivers.filter(r =>
+      (r.name || '').toLowerCase().includes(q) ||
+      (r.company || '').toLowerCase().includes(q) ||
+      (r.phone || '').includes(q) ||
+      (r.city || '').toLowerCase().includes(q)
+    ).slice(0, 8)
+  }, [allReceivers, form.receiver_name])
+
+  // Click outside listener to close autocomplete dropdowns
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (senderContainerRef.current && !senderContainerRef.current.contains(e.target)) {
+        setSenderSuggestionsOpen(false)
+      }
+      if (receiverContainerRef.current && !receiverContainerRef.current.contains(e.target)) {
+        setReceiverSuggestionsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
   // Fetch customer saved documents
   const { data: documentsData, refetch: refetchDocuments } = useQuery({
     queryKey: ['customer-documents', customerContext.customerId, customerContext.customerEmail, customerContext.customerPhone],
@@ -405,7 +470,8 @@ export default function CustomerBookingPage() {
       sender_gstin_type: normalizeDocType(addr.gstin_type, true),
       sender_gstin_no: (addr.gstin_no || '').toUpperCase()
     }))
-    toast.success(`Autofilled Sender: "${addr.name}"`)
+    setSenderSuggestionsOpen(false)
+    toast.success(`Autofilled details for sender "${addr.name}"!`)
   }
 
   const handleSelectSavedReceiver = (addr) => {
@@ -426,7 +492,8 @@ export default function CustomerBookingPage() {
       receiver_gstin_type: normalizeDocType(addr.gstin_type, false),
       receiver_gstin_no: (addr.gstin_no || '').toUpperCase()
     }))
-    toast.success(`Autofilled Receiver: "${addr.name}"`)
+    setReceiverSuggestionsOpen(false)
+    toast.success(`Autofilled details for receiver "${addr.name}"!`)
   }
 
   const handleQuickSaveSender = async () => {
@@ -713,10 +780,10 @@ export default function CustomerBookingPage() {
             unit_weight: (item.unit_weight !== undefined && item.unit_weight !== null && String(item.unit_weight).trim() !== '') ? String(item.unit_weight).trim() : '00'
           })),
 
-        // Documents & Address Book Auto-Save flags
+        // Documents & Address Book flags (manual saving only)
         documents: attachedDocs,
-        save_sender_address: saveSenderAddress,
-        save_receiver_address: saveReceiverAddress,
+        save_sender_address: false,
+        save_receiver_address: false,
         save_documents: saveDocForFuture
       }
 
@@ -844,40 +911,73 @@ export default function CustomerBookingPage() {
           <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs">
             <div className="flex items-center justify-between gap-2 mb-3.5 flex-wrap">
               <RedBadge title="Shipper (Pickup Details)" icon={User} />
-
-              {/* Saved Senders Dropdown */}
-              {savedAddresses.filter(a => a.address_type === 'sender' || a.address_type === 'both').length > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <BookUser className="w-3.5 h-3.5 text-primary" />
-                  <select
-                    onChange={e => {
-                      const sel = savedAddresses.find(a => String(a.id) === e.target.value)
-                      if (sel) handleSelectSavedSender(sel)
-                    }}
-                    defaultValue=""
-                    className="text-[11px] font-bold text-navy bg-surface-alt border border-border rounded-lg px-2 py-1 cursor-pointer focus:outline-none"
-                  >
-                    <option value="" disabled>Saved Senders ({savedAddresses.filter(a => a.address_type === 'sender' || a.address_type === 'both').length})</option>
-                    {savedAddresses.filter(a => a.address_type === 'sender' || a.address_type === 'both').map(a => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} ({a.city || 'Pickup'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
 
             <div className="space-y-4">
-              <CompactField label="Sender Full Name" required>
-                <input
-                  type="text"
-                  placeholder="Sender Full Name"
-                  value={form.sender_name}
-                  onChange={e => updateForm('sender_name', e.target.value)}
-                  className="w-full bg-transparent focus:outline-none text-[13px] text-navy font-semibold"
-                />
-              </CompactField>
+              <div ref={senderContainerRef} className="relative">
+                <CompactField label="Sender Full Name" required>
+                  <input
+                    type="text"
+                    placeholder="Type name to autofill or enter new..."
+                    value={form.sender_name}
+                    onFocus={() => { if (filteredSenders.length > 0) setSenderSuggestionsOpen(true) }}
+                    onChange={e => {
+                      updateForm('sender_name', e.target.value)
+                      setSenderSuggestionsOpen(true)
+                    }}
+                    className="w-full bg-transparent focus:outline-none text-[13px] text-navy font-semibold"
+                  />
+                </CompactField>
+
+                {/* Sender Autocomplete Dropdown */}
+                {senderSuggestionsOpen && filteredSenders.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border rounded-xl shadow-2xl z-50 max-h-64 overflow-y-auto divide-y divide-border animate-fade-in">
+                    <div className="px-3 py-1.5 bg-red-50/70 text-[10px] font-extrabold text-primary uppercase tracking-wider flex items-center justify-between sticky top-0 backdrop-blur-xs">
+                      <span>Saved Senders (Click to Autofill)</span>
+                      <span className="text-[9px] text-text-tertiary">{filteredSenders.length} found</span>
+                    </div>
+                    {filteredSenders.map((s) => (
+                      <div
+                        key={s.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          handleSelectSavedSender(s)
+                        }}
+                        className="px-3 py-2.5 hover:bg-surface-alt cursor-pointer transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-extrabold text-[13px] text-navy truncate">
+                            {s.name}
+                          </div>
+                          {s.company && (
+                            <span className="text-[10px] uppercase font-bold text-text-tertiary px-1.5 py-0.5 bg-surface-alt rounded border border-border-light shrink-0">
+                              {s.company}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-[11px] text-text-secondary flex-wrap">
+                          {s.phone && <span className="font-mono text-emerald-700 font-bold">{s.phone}</span>}
+                          {s.phone && (s.city || s.state) && <span>•</span>}
+                          {(s.city || s.state) && <span>{[s.city, s.state].filter(Boolean).join(', ')}</span>}
+                          {s.gstin_no && (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono text-[10px] text-text-tertiary bg-gray-100 px-1 rounded">
+                                {s.gstin_type || 'Doc'}: {s.gstin_no}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        {s.address && (
+                          <div className="text-[10px] text-text-tertiary truncate mt-0.5">
+                            {s.address}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <CompactField label="Company Name">
                 <input
@@ -1006,26 +1106,20 @@ export default function CustomerBookingPage() {
                 </CompactField>
               </div>
 
-              {/* Save to Address Book Options */}
+              {/* Manual Save to Address Book */}
               <div className="pt-2 border-t border-border-light flex items-center justify-between gap-2 flex-wrap text-xs">
-                <label className="inline-flex items-center gap-2 cursor-pointer select-none text-text-secondary hover:text-navy">
-                  <input
-                    type="checkbox"
-                    checked={saveSenderAddress}
-                    onChange={e => setSaveSenderAddress(e.target.checked)}
-                    className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
-                  />
-                  <span className="font-semibold">Save sender to Address Book</span>
-                </label>
+                <span className="text-[11px] text-text-tertiary">
+                  Save this shipper for future bookings:
+                </span>
 
                 <button
                   type="button"
                   onClick={handleQuickSaveSender}
                   disabled={savingSenderAddr}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:text-primary-dark bg-primary/5 hover:bg-primary/10 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-primary hover:text-primary-dark bg-primary/5 hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors cursor-pointer border border-primary/20"
                 >
-                  {savingSenderAddr ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bookmark className="w-3 h-3" />}
-                  Save Now
+                  {savingSenderAddr ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bookmark className="w-3.5 h-3.5" />}
+                  Save to Address Book
                 </button>
               </div>
             </div>
@@ -1035,40 +1129,73 @@ export default function CustomerBookingPage() {
           <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs">
             <div className="flex items-center justify-between gap-2 mb-3.5 flex-wrap">
               <RedBadge title="Consignee (Delivery Details)" icon={MapPin} />
-
-              {/* Saved Receivers Dropdown */}
-              {savedAddresses.filter(a => a.address_type === 'receiver' || a.address_type === 'both').length > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <BookUser className="w-3.5 h-3.5 text-primary" />
-                  <select
-                    onChange={e => {
-                      const sel = savedAddresses.find(a => String(a.id) === e.target.value)
-                      if (sel) handleSelectSavedReceiver(sel)
-                    }}
-                    defaultValue=""
-                    className="text-[11px] font-bold text-navy bg-surface-alt border border-border rounded-lg px-2 py-1 cursor-pointer focus:outline-none"
-                  >
-                    <option value="" disabled>Saved Receivers ({savedAddresses.filter(a => a.address_type === 'receiver' || a.address_type === 'both').length})</option>
-                    {savedAddresses.filter(a => a.address_type === 'receiver' || a.address_type === 'both').map(a => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} ({a.city || a.country || 'Delivery'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
             </div>
 
             <div className="space-y-4">
-              <CompactField label="Receiver Full Name" required highlight={!form.receiver_name && !form.receiver_company}>
-                <input
-                  type="text"
-                  placeholder="Receiver Full Name"
-                  value={form.receiver_name}
-                  onChange={e => updateForm('receiver_name', e.target.value)}
-                  className="w-full bg-transparent focus:outline-none text-[13px] font-semibold text-navy"
-                />
-              </CompactField>
+              <div ref={receiverContainerRef} className="relative">
+                <CompactField label="Receiver Full Name" required highlight={!form.receiver_name && !form.receiver_company}>
+                  <input
+                    type="text"
+                    placeholder="Type name to autofill or enter new..."
+                    value={form.receiver_name}
+                    onFocus={() => { if (filteredReceivers.length > 0) setReceiverSuggestionsOpen(true) }}
+                    onChange={e => {
+                      updateForm('receiver_name', e.target.value)
+                      setReceiverSuggestionsOpen(true)
+                    }}
+                    className="w-full bg-transparent focus:outline-none text-[13px] font-semibold text-navy"
+                  />
+                </CompactField>
+
+                {/* Receiver Autocomplete Dropdown */}
+                {receiverSuggestionsOpen && filteredReceivers.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border rounded-xl shadow-2xl z-50 max-h-64 overflow-y-auto divide-y divide-border animate-fade-in">
+                    <div className="px-3 py-1.5 bg-red-50/70 text-[10px] font-extrabold text-primary uppercase tracking-wider flex items-center justify-between sticky top-0 backdrop-blur-xs">
+                      <span>Saved Receivers (Click to Autofill)</span>
+                      <span className="text-[9px] text-text-tertiary">{filteredReceivers.length} found</span>
+                    </div>
+                    {filteredReceivers.map((r) => (
+                      <div
+                        key={r.id}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          handleSelectSavedReceiver(r)
+                        }}
+                        className="px-3 py-2.5 hover:bg-surface-alt cursor-pointer transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="font-extrabold text-[13px] text-navy truncate">
+                            {r.name}
+                          </div>
+                          {r.company && (
+                            <span className="text-[10px] uppercase font-bold text-text-tertiary px-1.5 py-0.5 bg-surface-alt rounded border border-border-light shrink-0">
+                              {r.company}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-[11px] text-text-secondary flex-wrap">
+                          {r.phone && <span className="font-mono text-emerald-700 font-bold">{r.phone}</span>}
+                          {r.phone && (r.city || r.state || r.country) && <span>•</span>}
+                          {(r.city || r.state || r.country) && <span>{[r.city, r.state, r.country].filter(Boolean).join(', ')}</span>}
+                          {r.gstin_no && (
+                            <>
+                              <span>•</span>
+                              <span className="font-mono text-[10px] text-text-tertiary bg-gray-100 px-1 rounded">
+                                {r.gstin_type || 'Doc'}: {r.gstin_no}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        {r.address && (
+                          <div className="text-[10px] text-text-tertiary truncate mt-0.5">
+                            {r.address}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <CompactField label="Company Name">
                 <input
@@ -1199,26 +1326,20 @@ export default function CustomerBookingPage() {
                 </CompactField>
               </div>
 
-              {/* Save to Address Book Options */}
+              {/* Manual Save to Address Book */}
               <div className="pt-2 border-t border-border-light flex items-center justify-between gap-2 flex-wrap text-xs">
-                <label className="inline-flex items-center gap-2 cursor-pointer select-none text-text-secondary hover:text-navy">
-                  <input
-                    type="checkbox"
-                    checked={saveReceiverAddress}
-                    onChange={e => setSaveReceiverAddress(e.target.checked)}
-                    className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
-                  />
-                  <span className="font-semibold">Save receiver to Address Book</span>
-                </label>
+                <span className="text-[11px] text-text-tertiary">
+                  Save this consignee for future bookings:
+                </span>
 
                 <button
                   type="button"
                   onClick={handleQuickSaveReceiver}
                   disabled={savingReceiverAddr}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:text-primary-dark bg-primary/5 hover:bg-primary/10 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold text-primary hover:text-primary-dark bg-primary/5 hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors cursor-pointer border border-primary/20"
                 >
-                  {savingReceiverAddr ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bookmark className="w-3 h-3" />}
-                  Save Now
+                  {savingReceiverAddr ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bookmark className="w-3.5 h-3.5" />}
+                  Save to Address Book
                 </button>
               </div>
             </div>
