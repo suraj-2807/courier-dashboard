@@ -348,15 +348,21 @@ export default function BookingsPage() {
   }, [countryCodesData])
 
   const availableCountries = useMemo(() => {
-    const set = new Set()
-    const commons = ['UNITED STATES', 'UNITED KINGDOM', 'CANADA', 'AUSTRALIA', 'UNITED ARAB EMIRATES', 'GERMANY', 'FRANCE', 'NEW ZEALAND', 'SINGAPORE', 'SAUDI ARABIA']
-    commons.forEach(c => set.add(c))
-    const list = countryCodesData?.countryCodes || []
-    list.forEach(item => {
-      if (item.country_name) set.add(item.country_name.trim().toUpperCase())
-    })
-    return Array.from(set).sort()
-  }, [countryCodesData])
+    // Use actual distinct countries from shipments data returned by the API
+    const apiCountries = data?.distinctCountries || []
+    if (apiCountries.length > 0) {
+      const set = new Set()
+      apiCountries.forEach(c => {
+        if (c) {
+          // Resolve ISO codes to full names using the map
+          const resolved = countryCodeToNameMap[c.trim().toUpperCase()] || c.trim().toUpperCase()
+          set.add(resolved)
+        }
+      })
+      return Array.from(set).sort()
+    }
+    return []
+  }, [data?.distinctCountries, countryCodeToNameMap])
 
   const getFullCountryName = (codeOrName) => {
     if (!codeOrName || codeOrName === '—') return '—'

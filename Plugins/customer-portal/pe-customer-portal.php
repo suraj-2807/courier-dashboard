@@ -541,6 +541,27 @@ function pe_cp_ajax_shipment_detail()
     $actual_weight = floatval($shp->weight ?? ($row->ACTUALWEIGHT ?? 0));
     $pieces = intval($shp->no_of_pieces ?? ($row->PIECES ?? 1));
 
+    // Parse parcels and invoice items from the node shipments table
+    $parcels = [];
+    if (!empty($shp->parcels)) {
+        $parsed = json_decode($shp->parcels, true);
+        if (is_array($parsed)) $parcels = $parsed;
+    }
+    if (empty($parcels) && $breq && !empty($breq->parcels)) {
+        $parsed = json_decode($breq->parcels, true);
+        if (is_array($parsed)) $parcels = $parsed;
+    }
+
+    $invoice_items = [];
+    if (!empty($shp->invoice_items)) {
+        $parsed = json_decode($shp->invoice_items, true);
+        if (is_array($parsed)) $invoice_items = $parsed;
+    }
+    if (empty($invoice_items) && $breq && !empty($breq->invoice_items)) {
+        $parsed = json_decode($breq->invoice_items, true);
+        if (is_array($parsed)) $invoice_items = $parsed;
+    }
+
     wp_send_json_success([
         'shipment' => [
             'awb' => $row->AWBNO,
@@ -563,12 +584,12 @@ function pe_cp_ajax_shipment_detail()
             'pieces' => $pieces,
             'amount' => $totAmount,
             'balance' => $totAmount - $recAmount,
-            'vendor' => $vendor_name,
-            'vendor_awb' => $vendor_awb,
             'forwarding_number' => $forwarding_no,
             'secondary_carrier' => $secondary_carrier,
             'content_description' => $content_desc,
             'product' => $row->PRODNAME ?? '',
+            'parcels' => $parcels,
+            'invoice_items' => $invoice_items,
         ],
         'tracking' => array_map(function ($h) {
             return [

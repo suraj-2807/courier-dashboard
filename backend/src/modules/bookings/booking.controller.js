@@ -1875,14 +1875,42 @@ export const getBookings = async (req, res) => {
       }
     }
 
-    // Destination Country filter
+    // Destination Country filter — match against both rcv.country (join) and s.receiver_country (inline snapshot)
+    // Also resolve ISO code variants (e.g. "UNITED STATES" → also match "US", "USA")
     if (country && country.trim()) {
-      const cTerm = country.trim()
-      whereConditions.push(`(
-        CONVERT(rcv.country USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci OR
-        CONVERT(rcv.country USING utf8mb4) COLLATE utf8mb4_unicode_ci LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci
-      )`)
-      params.push(cTerm, `%${cTerm}%`)
+      const cTerm = country.trim().toUpperCase()
+      // Build list of all possible variants for this country name
+      const ISO_COUNTRY_MAP = {
+        IN: 'INDIA', IND: 'INDIA', US: 'UNITED STATES', USA: 'UNITED STATES',
+        GB: 'UNITED KINGDOM', GBR: 'UNITED KINGDOM', UK: 'UNITED KINGDOM',
+        CA: 'CANADA', CAN: 'CANADA', AU: 'AUSTRALIA', AUS: 'AUSTRALIA',
+        AE: 'UNITED ARAB EMIRATES', ARE: 'UNITED ARAB EMIRATES', UAE: 'UNITED ARAB EMIRATES',
+        MW: 'MALAWI', ZM: 'ZAMBIA', ZW: 'ZIMBABWE', MZ: 'MOZAMBIQUE',
+        TZ: 'TANZANIA', KE: 'KENYA', UG: 'UGANDA', RW: 'RWANDA',
+        ZA: 'SOUTH AFRICA', NG: 'NIGERIA', GH: 'GHANA',
+        NZ: 'NEW ZEALAND', SG: 'SINGAPORE', MY: 'MALAYSIA', TH: 'THAILAND',
+        CN: 'CHINA', HK: 'HONG KONG', JP: 'JAPAN', KR: 'SOUTH KOREA',
+        DE: 'GERMANY', FR: 'FRANCE', IT: 'ITALY', ES: 'SPAIN',
+        NL: 'NETHERLANDS', CH: 'SWITZERLAND', SE: 'SWEDEN', NO: 'NORWAY',
+        SA: 'SAUDI ARABIA', QA: 'QATAR', KW: 'KUWAIT', OM: 'OMAN', BH: 'BAHRAIN',
+        LK: 'SRI LANKA', BD: 'BANGLADESH', NP: 'NEPAL', MU: 'MAURITIUS',
+        BR: 'BRAZIL', MX: 'MEXICO', EG: 'EGYPT', ET: 'ETHIOPIA'
+      }
+      const variants = new Set([cTerm])
+      // Find all ISO codes that map to this country name
+      for (const [code, name] of Object.entries(ISO_COUNTRY_MAP)) {
+        if (name === cTerm) variants.add(code)
+        if (code === cTerm) variants.add(name)
+      }
+      const varArray = Array.from(variants)
+      const orClauses = []
+      for (const v of varArray) {
+        orClauses.push(`UPPER(TRIM(COALESCE(rcv.country, s.receiver_country, ''))) = CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
+        params.push(v)
+        orClauses.push(`UPPER(TRIM(COALESCE(s.receiver_country, rcv.country, ''))) = CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
+        params.push(v)
+      }
+      whereConditions.push(`(${orClauses.join(' OR ')})`)
     }
 
     // Date range filters
@@ -2109,9 +2137,26 @@ export const getBookings = async (req, res) => {
       }
     })
 
+    // Fetch distinct destination countries from actual shipments for the country filter dropdown
+    let distinctCountries = []
+    try {
+      const countryRows = await query(
+        `SELECT DISTINCT UPPER(TRIM(COALESCE(rcv.country, s.receiver_country, ''))) as country_name
+         FROM shipments s
+         LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+         WHERE COALESCE(rcv.country, s.receiver_country, '') != ''
+           AND (s.is_trashed = 0 OR s.is_trashed IS NULL)
+         ORDER BY country_name ASC`
+      )
+      distinctCountries = countryRows.map(r => r.country_name).filter(Boolean)
+    } catch (e) {
+      // Silently ignore — dropdown will remain empty
+    }
+
     return res.json({
       success: true,
       bookings,
+      distinctCountries,
       pagination: {
         page: pageNum,
         limit: limitNum,

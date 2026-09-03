@@ -1138,15 +1138,15 @@ function cpLoadShipments(p) {
         }
         var r = d.data, h = '';
         h += '<div class="cp-tc"><div class="cp-th"><h3><i class="fa-solid fa-layer-group"></i> Your Shipments <span class="badge">' + r.total + '</span></h3></div>';
-        h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>AWB</th><th>Carrier / Vendor</th><th>Booking Date</th><th>Consignee</th><th>Destination</th><th>Weight</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
+        h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>AWB</th><th>Forwarding</th><th>Booking Date</th><th>Consignee</th><th>Destination</th><th>Weight</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
         if (!r.rows.length) h += '<tr><td colspan="8" style="text-align:center;padding:50px;color:var(--cptext3)"><i class="fa-solid fa-inbox" style="font-size:28px;display:block;margin-bottom:10px;opacity:.2"></i>No shipments found</td></tr>';
         r.rows.forEach(function(rw) {
             var stDot = cpGetStatusDot(rw.status);
-            var fwdHtml = (rw.forwarding_number ? '<div style="font-size:11px;font-family:Courier New,monospace;font-weight:700;color:#1e40af;"><i class="fa-solid fa-plane-departure" style="font-size:9px;margin-right:3px;"></i>' + rw.forwarding_number + (rw.forwarding_carrier ? ' (' + rw.forwarding_carrier + ')' : '') + '</div>' : (rw.vendor_awb1 ? '<div style="font-size:11px;font-family:Courier New,monospace;color:var(--cptext3);">' + rw.vendor_awb1 + '</div>' : ''));
-            var vendBadge = (rw.vendor ? '<span style="display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--cpblue);background:rgba(59,130,246,0.1);padding:1px 6px;border-radius:4px;margin-bottom:2px;">' + rw.vendor + '</span>' : '<span style="color:var(--cptext3);font-size:11px;">—</span>');
+            var fwdCarrierBadge = rw.forwarding_carrier ? '<span style="display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--cpblue);background:rgba(59,130,246,0.1);padding:1px 6px;border-radius:4px;margin-bottom:2px;">' + rw.forwarding_carrier + '</span>' : '';
+            var fwdHtml = (rw.forwarding_number ? '<div style="font-size:11px;font-family:Courier New,monospace;font-weight:700;color:#1e40af;"><i class="fa-solid fa-plane-departure" style="font-size:9px;margin-right:3px;"></i>' + rw.forwarding_number + '</div>' : '<span style="color:var(--cptext3);font-size:11px;">—</span>');
             h += '<tr onclick="cpShowDetail(\'' + rw.awb + '\')">';
             h += '<td class="awbc">' + rw.awb + '</td>';
-            h += '<td>' + vendBadge + fwdHtml + '</td>';
+            h += '<td>' + (fwdCarrierBadge ? fwdCarrierBadge + '<br>' : '') + fwdHtml + '</td>';
             h += '<td style="font-weight:600;color:var(--cptext2)">' + (rw.booking_date || '—') + '</td>';
             h += '<td class="nmc">' + rw.consignee + '</td>';
             h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + rw.destination + '</td>';
@@ -1178,17 +1178,13 @@ function cpShowDetail(awb) {
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-circle-info"></i> Current Status</h4><div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0"><span class="cp-dot ' + stDot.dot + '" style="width:10px;height:10px"></span><span style="font-size:15px;font-weight:700;color:#0f172a">' + stDot.label + '</span></div></div>';
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-box"></i> Shipment Details</h4><div class="cp-dg">';
         h += '<div class="cp-df"><div class="l">AWB Number</div><div class="v" style="font-family:Courier New,monospace;font-weight:800;color:var(--cptext);">' + s.awb + '</div></div>';
-        if (s.vendor) {
-            h += '<div class="cp-df"><div class="l">Vendor / Carrier</div><div class="v" style="font-weight:800;color:var(--cpblue);text-transform:uppercase;">' + s.vendor + '</div></div>';
-        }
-        if (s.vendor_awb) {
-            h += '<div class="cp-df"><div class="l">Vendor AWB / Docket</div><div class="v" style="font-family:Courier New,monospace;font-weight:700;">' + s.vendor_awb + '</div></div>';
-        }
         if (s.forwarding_number) {
             var rawFwd = String(s.forwarding_number).trim().replace(/^FWD\s*:\s*/i, '');
             var blockMatches = rawFwd.match(/\b\d{4}\s+\d{4}\s+\d{4}\s+[0-9A-Za-z]+\b/g);
             var fwdDisplay = (blockMatches && blockMatches.length > 1) ? blockMatches.join('<br>') : rawFwd;
-            h += '<div class="cp-df"><div class="l">Forwarding Number' + (s.secondary_carrier ? ' (' + s.secondary_carrier + ')' : '') + '</div><div class="v" style="font-family:Courier New,monospace;font-weight:700;color:#1e40af;line-height:1.4;">' + fwdDisplay + '</div></div>';
+            var carrierName = s.secondary_carrier || 'Courier Partner';
+            h += '<div class="cp-df"><div class="l">Forwarding Carrier</div><div class="v" style="font-weight:800;color:var(--cpblue);text-transform:uppercase;">' + carrierName + '</div></div>';
+            h += '<div class="cp-df"><div class="l">Forwarding Number</div><div class="v" style="font-family:Courier New,monospace;font-weight:700;color:#1e40af;line-height:1.4;">' + fwdDisplay + '</div></div>';
         }
         h += '<div class="cp-df"><div class="l">Booking Date</div><div class="v">' + (s.date || '—') + '</div></div>';
         h += '<div class="cp-df"><div class="l">Weight (Actual)</div><div class="v">' + (s.weight || '—') + ' kg</div></div>';
@@ -1208,6 +1204,58 @@ function cpShowDetail(awb) {
             h += '<div class="cp-df"><div class="l">Balance Due</div><div class="v" style="font-weight:700;' + (s.balance > 0 ? 'color:var(--cpred)' : 'color:var(--cptext2)') + '">₹' + Number(s.balance || 0).toLocaleString('en-IN') + '</div></div>';
         }
         h += '</div></div>';
+
+        // Box / Parcels Details Table (multi-box)
+        if (s.parcels && Array.isArray(s.parcels) && s.parcels.length > 0) {
+            h += '<div class="cp-ds"><h4><i class="fa-solid fa-boxes-stacked"></i> Box Details (' + s.parcels.length + ' boxes)</h4>';
+            h += '<div style="overflow-x:auto; border:1px solid var(--cpbdr); border-radius:10px;">';
+            h += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
+            h += '<thead><tr style="background:var(--cpbg2); border-bottom:1px solid var(--cpbdr);">';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Box</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Weight (kg)</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">L × B × H (cm)</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Vol. Wt</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Chg. Wt</th>';
+            h += '</tr></thead><tbody>';
+            s.parcels.forEach(function(p, i) {
+                h += '<tr style="border-bottom:1px solid rgba(0,0,0,.05);">';
+                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">' + (p.box_no || (i+1)) + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (p.weight || '—') + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (p.length||0) + ' × ' + (p.breadth||p.width||0) + ' × ' + (p.height||0) + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (p.volumetric_weight || '—') + '</td>';
+                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">' + (p.chargeable_weight || '—') + '</td>';
+                h += '</tr>';
+            });
+            h += '</tbody></table></div></div>';
+        }
+
+        // Invoice / Items Details Table
+        if (s.invoice_items && Array.isArray(s.invoice_items) && s.invoice_items.length > 0) {
+            h += '<div class="cp-ds"><h4><i class="fa-solid fa-file-invoice"></i> Items Details (' + s.invoice_items.length + ')</h4>';
+            h += '<div style="overflow-x:auto; border:1px solid var(--cpbdr); border-radius:10px;">';
+            h += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
+            h += '<thead><tr style="background:var(--cpbg2); border-bottom:1px solid var(--cpbdr);">';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">#</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Box</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Description</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">HS Code</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Qty</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Rate</th>';
+            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Amount</th>';
+            h += '</tr></thead><tbody>';
+            s.invoice_items.forEach(function(item, i) {
+                h += '<tr style="border-bottom:1px solid rgba(0,0,0,.05);">';
+                h += '<td style="padding:8px 10px; color:var(--cptext3);">' + (item.sr_no || (i+1)) + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.box_no || '—') + '</td>';
+                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (item.description || '—') + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.hs_code || '—') + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.quantity || '—') + ' ' + (item.unit_type || '') + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.unit_rates || item.rate || '—') + '</td>';
+                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">₹' + (item.amount || item.cost || '—') + '</td>';
+                h += '</tr>';
+            });
+            h += '</tbody></table></div></div>';
+        }
 
         // Sender & Receiver Route and Address Details
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-location-dot"></i> Route & Address Information</h4><div class="cp-dg">';
