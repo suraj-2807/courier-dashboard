@@ -852,7 +852,7 @@ export default function CustomerBookingPage() {
         documents: attachedDocs,
         save_sender_address: false,
         save_receiver_address: false,
-        save_documents: saveDocForFuture
+        save_documents: false
       }
 
       const res = await customerApi.submitBookingRequest(apiPayload)
