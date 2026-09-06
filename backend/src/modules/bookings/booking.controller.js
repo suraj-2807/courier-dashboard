@@ -155,8 +155,16 @@ function extractBookingFields(body) {
  */
 async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentId, effectiveTracking, billingData = {}) {
   if (!fromRequestId && !requestAwb && !effectiveTracking) return
+  
+  const shippingCharge = parseFloat(billingData.shipping_charge) || 0
+  const totalAmount = parseFloat(billingData.total_amount) || shippingCharge || 0
+
+  // Resolve the best AWB identifier for remote sync
+  const resolvedAwb = requestAwb || effectiveTracking || null
+
+  // 1. Try to update local DB
+  let reqRow = null
   try {
-    let reqRow = null
     if (fromRequestId) {
       const reqRows = await query('SELECT * FROM booking_requests WHERE id = ?', [fromRequestId])
       if (reqRows.length > 0) reqRow = reqRows[0]
@@ -171,45 +179,53 @@ async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentI
     }
 
     if (reqRow) {
-      const shippingCharge = parseFloat(billingData.shipping_charge) || parseFloat(reqRow.shipping_charge) || 0
-      const totalAmount = parseFloat(billingData.total_amount) || shippingCharge || parseFloat(reqRow.total_amount) || 0
+      const finalShippingCharge = shippingCharge || parseFloat(reqRow.shipping_charge) || 0
+      const finalTotalAmount = totalAmount || finalShippingCharge || parseFloat(reqRow.total_amount) || 0
 
       await execute(
         `UPDATE booking_requests SET status = 'confirmed', shipment_id = ?, tracking_number = ?, shipping_charge = ?, total_amount = ? WHERE id = ?`,
-        [shipmentId, effectiveTracking, shippingCharge, totalAmount, reqRow.id]
+        [shipmentId, effectiveTracking, finalShippingCharge, finalTotalAmount, reqRow.id]
       )
 
-      const updateDesc = `Booking confirmed. Tracking Number: ${effectiveTracking}${totalAmount > 0 ? ` · Total Bill: ₹${totalAmount.toFixed(2)}` : ''}`
+      const updateDesc = `Booking confirmed. Tracking Number: ${effectiveTracking}${finalTotalAmount > 0 ? ` · Total Bill: ₹${finalTotalAmount.toFixed(2)}` : ''}`
 
       await execute(
         `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
-        [reqRow.id, 'shipment_created', 'Shipment Confirmed', updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking, total_amount: totalAmount, shipping_charge: shippingCharge })]
+        [reqRow.id, 'shipment_created', 'Shipment Confirmed', updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking, total_amount: finalTotalAmount, shipping_charge: finalShippingCharge })]
       )
-
-      // Direct sync to remote Hostinger DB
-      syncBookingRequestStatusToRemoteDb({
-        requestAwb: reqRow.request_awb,
-        requestId: reqRow.id,
-        status: 'confirmed',
-        shipmentId: shipmentId,
-        trackingNumber: effectiveTracking,
-        shippingCharge: shippingCharge,
-        totalAmount: totalAmount
-      }).catch((err) => console.warn('[Remote DB Request Sync Notice]:', err.message))
-
-      // Sync to WordPress
-      syncStatusToWP({
-        request_awb: reqRow.request_awb,
-        status: 'confirmed',
-        shipment_id: shipmentId,
-        tracking_number: effectiveTracking,
-        shipping_charge: shippingCharge,
-        total_amount: totalAmount,
-        updates: [{ type: 'shipment_created', title: 'Shipment Confirmed', description: updateDesc }]
-      }).catch((err) => console.warn('[WP Sync Request Notice]:', err.message))
     }
-  } catch (err) {
-    console.error('Failed to link and confirm booking request:', err.message)
+  } catch (localErr) {
+    console.error('[linkAndConfirmBookingRequest] Local DB update failed:', localErr.message)
+  }
+
+  // 2. ALWAYS sync to remote Hostinger DB — even if local row was not found
+  const syncAwb = reqRow?.request_awb || resolvedAwb
+  const syncId = reqRow?.id || fromRequestId
+  const finalShippingCharge = shippingCharge || parseFloat(reqRow?.shipping_charge) || 0
+  const finalTotalAmount = totalAmount || finalShippingCharge || parseFloat(reqRow?.total_amount) || 0
+  const updateDesc = `Booking confirmed. Tracking Number: ${effectiveTracking}${finalTotalAmount > 0 ? ` · Total Bill: ₹${finalTotalAmount.toFixed(2)}` : ''}`
+
+  if (syncAwb || syncId) {
+    syncBookingRequestStatusToRemoteDb({
+      requestAwb: syncAwb,
+      requestId: syncId,
+      status: 'confirmed',
+      shipmentId: shipmentId,
+      trackingNumber: effectiveTracking,
+      shippingCharge: finalShippingCharge,
+      totalAmount: finalTotalAmount
+    }).catch((err) => console.warn('[Remote DB Request Sync Notice]:', err.message))
+
+    // 3. ALWAYS sync to WordPress
+    syncStatusToWP({
+      request_awb: syncAwb,
+      status: 'confirmed',
+      shipment_id: shipmentId,
+      tracking_number: effectiveTracking,
+      shipping_charge: finalShippingCharge,
+      total_amount: finalTotalAmount,
+      updates: [{ type: 'shipment_created', title: 'Shipment Confirmed', description: updateDesc }]
+    }).catch((err) => console.warn('[WP Sync Request Notice]:', err.message))
   }
 }
 
@@ -745,7 +761,10 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     kyc_details: fields.kyc_details,
     multiple_invoice: fields.multiple_invoice,
     chargeable_weight: chargeableWeight,
-    final_chargeable_weight: chargeableWeight
+    final_chargeable_weight: chargeableWeight,
+    // Booking Request linkage
+    from_request: fields.from_request || fields.booking_request_id || null,
+    request_awb: fields.request_awb || null
   }
 }
 
