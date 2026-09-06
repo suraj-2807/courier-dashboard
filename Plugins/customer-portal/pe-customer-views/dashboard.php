@@ -16,6 +16,9 @@ if ($cust_id > 0) {
     $match_params[] = strval($cust_id);
     $match_params[] = 'CUST-' . $cust_id;
     $match_params[] = 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT);
+
+    $match_clauses[] = "a.AWBNO IN (SELECT CAST(tracking_number AS UNSIGNED) FROM shipments WHERE customer_id = %d AND tracking_number IS NOT NULL AND tracking_number != '')";
+    $match_params[] = $cust_id;
 }
 
 // 2. Exact match on shipments converted and pushed from THIS customer's booking requests
@@ -26,6 +29,11 @@ if ($cust_id > 0 || $cust_email !== '') {
 
     $match_clauses[] = "a.AWBNO IN (SELECT tracking_number FROM booking_requests WHERE tracking_number IS NOT NULL AND tracking_number != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = %s)))";
     $match_params[] = $cust_id;
+    $match_params[] = $cust_email;
+}
+
+if ($cust_email !== '') {
+    $match_clauses[] = "a.AWBNO IN (SELECT CAST(tracking_number AS UNSIGNED) FROM shipments WHERE sender_email != '' AND LOWER(sender_email) = %s AND tracking_number IS NOT NULL AND tracking_number != '')";
     $match_params[] = $cust_email;
 }
 
@@ -189,7 +197,7 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
 .cp-t tbody tr{border-bottom:1px solid #f1f5f9;cursor:pointer;transition:all .15s}
 .cp-t tbody tr:hover{background:rgba(187,0,19,.02)}
 .cp-t tbody td{padding:14px 16px;font-size:13px;font-weight:500;color:var(--cptext2)}
-.cp-t .awbc{font-weight:700;color:var(--cptext);font-family:monospace;font-size:14px}
+.cp-t .awbc{font-weight:700;color:var(--cptext);font-size:14px}
 .cp-t .nmc{font-weight:600;color:var(--cptext);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cp-st{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600}
 .cp-dot{width:7px;height:7px;border-radius:50%}
@@ -449,7 +457,7 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
           <div style="width:40px; height:40px; border-radius:10px; background:rgba(59,130,246,0.1); color:var(--cpblue); display:flex; align-items:center; justify-content:center; font-size:18px;"><i class="fa-solid fa-id-badge"></i></div>
           <div>
             <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--cptext3); letter-spacing:0.5px;">Customer ID</div>
-            <div style="font-size:16px; font-weight:800; color:var(--cptext); font-family:Courier New,monospace;"><?php echo !empty($cust['customer_id']) ? 'CUST-' . str_pad(intval($cust['customer_id']), 4, '0', STR_PAD_LEFT) : '—'; ?></div>
+            <div style="font-size:16px; font-weight:800; color:var(--cptext);"><?php echo !empty($cust['customer_id']) ? 'CUST-' . str_pad(intval($cust['customer_id']), 4, '0', STR_PAD_LEFT) : '—'; ?></div>
           </div>
         </div>
         <div style="background:var(--cpcard); border:1px solid var(--cpbdr); border-radius:12px; padding:14px 18px; display:flex; align-items:center; gap:12px; box-shadow:var(--cpsh);">
@@ -1102,11 +1110,14 @@ function cpLogout() {
 
 function cpGetStatusDot(st) {
     if (!st) return { dot: 'db', label: 'Booked' };
-    var s = st.toLowerCase();
-    if (s.indexOf('deliver') >= 0) return { dot: 'dd', label: 'Delivered' };
-    if (s.indexOf('transit') >= 0 || s.indexOf('depart') >= 0 || s.indexOf('dispatch') >= 0) return { dot: 'dt', label: 'In Transit' };
-    if (s.indexOf('customs') >= 0) return { dot: 'dbl', label: 'Customs' };
-    if (s.indexOf('book') >= 0 || s.indexOf('received') >= 0) return { dot: 'db', label: 'Booked' };
+    var s = st.toLowerCase().trim();
+    if (s.indexOf('deliver') >= 0 && s.indexOf('out for') === -1) return { dot: 'dd', label: 'Delivered' };
+    if (s.indexOf('out for') >= 0 || s.indexOf('ofd') >= 0) return { dot: 'dt', label: 'Out for Delivery' };
+    if (s.indexOf('transit') >= 0 || s.indexOf('depart') >= 0 || s.indexOf('dispatch') >= 0 || s.indexOf('manifest') >= 0 || s.indexOf('hub') >= 0 || s.indexOf('scan') >= 0 || s.indexOf('arrived') >= 0) return { dot: 'dt', label: 'In Transit' };
+    if (s.indexOf('custom') >= 0 || s.indexOf('clearance') >= 0) return { dot: 'dbl', label: 'Customs' };
+    if (s.indexOf('pick') >= 0 || s.indexOf('collect') >= 0) return { dot: 'dbl', label: 'Picked Up' };
+    if (s.indexOf('cancel') >= 0 || s.indexOf('reject') >= 0 || s.indexOf('fail') >= 0) return { dot: 'dr', label: 'Cancelled' };
+    if (s.indexOf('book') >= 0 || s.indexOf('order') >= 0 || s.indexOf('created') >= 0) return { dot: 'db', label: 'Booked' };
     return { dot: 'dt', label: st.length > 25 ? st.substring(0, 25) + '…' : st };
 }
 
@@ -1133,7 +1144,7 @@ function cpLoadShipments(p) {
         r.rows.forEach(function(rw) {
             var stDot = cpGetStatusDot(rw.status);
             var fwdCarrierBadge = rw.forwarding_carrier ? '<span style="display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--cpblue);background:rgba(59,130,246,0.1);padding:1px 6px;border-radius:4px;margin-bottom:2px;">' + rw.forwarding_carrier + '</span>' : '';
-            var fwdHtml = (rw.forwarding_number ? '<div style="font-size:11px;font-family:Courier New,monospace;font-weight:700;color:#1e40af;"><i class="fa-solid fa-plane-departure" style="font-size:9px;margin-right:3px;"></i>' + rw.forwarding_number + '</div>' : '<span style="color:var(--cptext3);font-size:11px;">—</span>');
+            var fwdHtml = (rw.forwarding_number ? '<div style="font-size:12px;font-weight:700;color:#1e40af;"><i class="fa-solid fa-plane-departure" style="font-size:9px;margin-right:3px;"></i>' + rw.forwarding_number + '</div>' : '<span style="color:var(--cptext3);font-size:11px;">—</span>');
             h += '<tr onclick="cpShowDetail(\'' + rw.awb + '\')">';
             h += '<td class="awbc">' + rw.awb + '</td>';
             h += '<td>' + (fwdCarrierBadge ? fwdCarrierBadge + '<br>' : '') + fwdHtml + '</td>';
@@ -1160,24 +1171,21 @@ function cpShowDetail(awb) {
     document.getElementById('cp-detail-overlay').classList.add('show');
     cpAjax('pe_cp_shipment_detail', { awb: awb }, function(d) {
         if (!d.success) { panel.innerHTML = '<div style="padding:40px;text-align:center;color:#dc2626">Failed to load details</div>'; return; }
-        var s = d.data.shipment, tr = d.data.tracking;
-        var stDot = cpGetStatusDot(tr.length ? tr[0].activity : '');
+        var s = d.data.shipment, tr = d.data.tracking || [];
+        var stDot = cpGetStatusDot(s.status || (tr.length ? tr[0].activity : ''));
         var h = '';
         h += '<div class="cp-dh"><h3><i class="fa-solid fa-box"></i> AWB ' + s.awb + '</h3><button class="cp-dc" onclick="cpCloseDetail()"><i class="fa-solid fa-xmark"></i></button></div>';
         h += '<div class="cp-db-body">';
-        h += '<div class="cp-ds"><h4><i class="fa-solid fa-circle-info"></i> Current Status</h4><div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0"><span class="cp-dot ' + stDot.dot + '" style="width:10px;height:10px"></span><span style="font-size:15px;font-weight:700;color:#0f172a">' + stDot.label + '</span></div></div>';
+        h += '<div class="cp-ds"><h4><i class="fa-solid fa-circle-info"></i> Current Status</h4><div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0"><span class="cp-dot ' + stDot.dot + '" style="width:10px;height:10px"></span><span style="font-size:15px;font-weight:700;color:#0f172a">' + (s.status || stDot.label) + '</span></div></div>';
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-box"></i> Shipment Details</h4><div class="cp-dg">';
-        h += '<div class="cp-df"><div class="l">AWB Number</div><div class="v" style="font-family:Courier New,monospace;font-weight:800;color:var(--cptext);">' + s.awb + '</div></div>';
+        h += '<div class="cp-df"><div class="l">AWB Number</div><div class="v" style="font-weight:800;color:var(--cptext);">' + s.awb + '</div></div>';
         if (s.forwarding_number) {
             var rawFwd = String(s.forwarding_number).trim().replace(/^FWD\s*:\s*/i, '');
             var blockMatches = rawFwd.match(/\b\d{4}\s+\d{4}\s+\d{4}\s+[0-9A-Za-z]+\b/g);
             var fwdDisplay = (blockMatches && blockMatches.length > 1) ? blockMatches.join('<br>') : rawFwd;
-            var carrierName = s.secondary_carrier || 'Courier Partner';
-            h += '<div class="cp-df"><div class="l">Forwarding Carrier</div><div class="v" style="font-weight:800;color:var(--cpblue);text-transform:uppercase;">' + carrierName + '</div></div>';
-            h += '<div class="cp-df"><div class="l">Forwarding Number</div><div class="v" style="font-family:Courier New,monospace;font-weight:700;color:#1e40af;line-height:1.4;">' + fwdDisplay + '</div></div>';
+            h += '<div class="cp-df"><div class="l">Forwarding Number</div><div class="v" style="font-weight:700;color:#1e40af;line-height:1.4;">' + fwdDisplay + '</div></div>';
         }
         h += '<div class="cp-df"><div class="l">Booking Date</div><div class="v">' + (s.date || '—') + '</div></div>';
-        h += '<div class="cp-df"><div class="l">Weight (Actual)</div><div class="v">' + (s.weight || '—') + ' kg</div></div>';
         if (s.chargeable_weight) {
             h += '<div class="cp-df"><div class="l">Chargeable Weight</div><div class="v" style="font-weight:700;">' + s.chargeable_weight + ' kg</div></div>';
         }
@@ -1194,33 +1202,9 @@ function cpShowDetail(awb) {
         }
         h += '</div></div>';
 
-        // Box / Parcels Details Table (multi-box)
-        if (s.parcels && Array.isArray(s.parcels) && s.parcels.length > 0) {
-            h += '<div class="cp-ds"><h4><i class="fa-solid fa-boxes-stacked"></i> Box Details (' + s.parcels.length + ' boxes)</h4>';
-            h += '<div style="overflow-x:auto; border:1px solid var(--cpbdr); border-radius:10px;">';
-            h += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
-            h += '<thead><tr style="background:var(--cpbg2); border-bottom:1px solid var(--cpbdr);">';
-            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Box</th>';
-            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Weight (kg)</th>';
-            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">L × B × H (cm)</th>';
-            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Vol. Wt</th>';
-            h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Chg. Wt</th>';
-            h += '</tr></thead><tbody>';
-            s.parcels.forEach(function(p, i) {
-                h += '<tr style="border-bottom:1px solid rgba(0,0,0,.05);">';
-                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">' + (p.box_no || (i+1)) + '</td>';
-                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (p.weight || '—') + '</td>';
-                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (p.length||0) + ' × ' + (p.breadth||p.width||0) + ' × ' + (p.height||0) + '</td>';
-                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (p.volumetric_weight || '—') + '</td>';
-                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">' + (p.chargeable_weight || '—') + '</td>';
-                h += '</tr>';
-            });
-            h += '</tbody></table></div></div>';
-        }
-
         // Invoice / Items Details Table
         if (s.invoice_items && Array.isArray(s.invoice_items) && s.invoice_items.length > 0) {
-            h += '<div class="cp-ds"><h4><i class="fa-solid fa-file-invoice"></i> Items Details (' + s.invoice_items.length + ')</h4>';
+            h += '<div class="cp-ds"><h4><i class="fa-solid fa-boxes-packing"></i> Items Details (' + s.invoice_items.length + ')</h4>';
             h += '<div style="overflow-x:auto; border:1px solid var(--cpbdr); border-radius:10px;">';
             h += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
             h += '<thead><tr style="background:var(--cpbg2); border-bottom:1px solid var(--cpbdr);">';
@@ -1236,11 +1220,11 @@ function cpShowDetail(awb) {
                 h += '<tr style="border-bottom:1px solid rgba(0,0,0,.05);">';
                 h += '<td style="padding:8px 10px; color:var(--cptext3);">' + (item.sr_no || (i+1)) + '</td>';
                 h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.box_no || '—') + '</td>';
-                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (item.description || '—') + '</td>';
-                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.hs_code || '—') + '</td>';
-                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.quantity || '—') + ' ' + (item.unit_type || '') + '</td>';
-                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.unit_rates || item.rate || '—') + '</td>';
-                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">₹' + (item.amount || item.cost || '—') + '</td>';
+                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (item.description || item.item_name || item.name || '—') + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.hs_code || item.hsn_code || '—') + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.quantity || item.qty || '—') + ' ' + (item.unit_type || item.unit || '') + '</td>';
+                h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.unit_rates || item.rate || item.unit_rate || item.price || '—') + '</td>';
+                h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">₹' + (item.amount || item.total || item.cost || '—') + '</td>';
                 h += '</tr>';
             });
             h += '</tbody></table></div></div>';

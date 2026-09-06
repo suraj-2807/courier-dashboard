@@ -354,6 +354,9 @@ function pe_cp_ajax_shipments()
         $match_params[] = strval($cust_id);
         $match_params[] = 'CUST-' . $cust_id;
         $match_params[] = 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT);
+
+        $match_clauses[] = "a.AWBNO IN (SELECT CAST(tracking_number AS UNSIGNED) FROM shipments WHERE customer_id = %d AND tracking_number IS NOT NULL AND tracking_number != '')";
+        $match_params[] = $cust_id;
     }
 
     // 2. Exact match on shipments converted and pushed from THIS customer's booking requests
@@ -364,6 +367,11 @@ function pe_cp_ajax_shipments()
 
         $match_clauses[] = "a.AWBNO IN (SELECT tracking_number FROM booking_requests WHERE tracking_number IS NOT NULL AND tracking_number != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = %s)))";
         $match_params[] = $cust_id;
+        $match_params[] = $cust_email;
+    }
+
+    if ($cust_email !== '') {
+        $match_clauses[] = "a.AWBNO IN (SELECT CAST(tracking_number AS UNSIGNED) FROM shipments WHERE sender_email != '' AND LOWER(sender_email) = %s AND tracking_number IS NOT NULL AND tracking_number != '')";
         $match_params[] = $cust_email;
     }
 
@@ -403,13 +411,27 @@ function pe_cp_ajax_shipments()
             "SELECT activity FROM parcel_history WHERE AWBNO = %d ORDER BY date DESC, time DESC LIMIT 1",
             intval($r->AWBNO)
         ));
-        $status = $ph ?: 'SHIPMENT BOOKED';
 
-        // Lookup node shipment for live forwarding, vendor details, and accurate billing amount
+        // Lookup node shipment for live forwarding, vendor details, status, and accurate billing amount
         $shp = $wpdb->get_row($wpdb->prepare(
             "SELECT vendor_code, vendor_awb_number, vendor_awb_number_2, forwarding_no, secondary_carrier, status, total_amount, shipping_charge, grand_total, final_grand_total, net_amount FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
             strval($r->AWBNO), strval($r->AWBNO)
         ));
+
+        if ($ph) {
+            $status = $ph;
+        } elseif (!empty($shp->status)) {
+            $stLower = strtolower(trim($shp->status));
+            if ($stLower === 'delivered') $status = 'Delivered';
+            elseif ($stLower === 'in_transit') $status = 'In Transit';
+            elseif ($stLower === 'out_for_delivery') $status = 'Out for Delivery';
+            elseif ($stLower === 'picked_up') $status = 'Picked Up';
+            elseif ($stLower === 'manifested' || $stLower === 'dispatched') $status = 'Manifested & Dispatched';
+            elseif ($stLower === 'cancelled') $status = 'Cancelled';
+            else $status = ucwords(str_replace('_', ' ', $stLower));
+        } else {
+            $status = 'Shipment Booked';
+        }
 
         // Lookup booking request for amount if not found in AWBENTRY
         $breq = $wpdb->get_row($wpdb->prepare(
@@ -503,8 +525,8 @@ function pe_cp_ajax_shipment_detail()
         wp_send_json_error(['message' => 'Shipment not found']);
     }
 
-    // Tracking history
-    $history = $wpdb->get_results($wpdb->prepare(
+    // Tracking history from database
+    $db_history = $wpdb->get_results($wpdb->prepare(
         "SELECT activity, date, time, location FROM parcel_history WHERE AWBNO = %d ORDER BY date DESC, time DESC",
         $awb
     ));
@@ -530,8 +552,8 @@ function pe_cp_ajax_shipment_detail()
 
     // Look up node shipments table for complete details
     $shp = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
-        strval($row->AWBNO), strval($row->AWBNO)
+        "SELECT * FROM shipments WHERE tracking_number = %s OR order_id = %s OR vendor_awb_number = %s LIMIT 1",
+        strval($row->AWBNO), strval($row->AWBNO), strval($row->AWBNO)
     ));
 
     $shp_amt = floatval($shp->final_grand_total ?? ($shp->grand_total ?? ($shp->total_amount ?? ($shp->net_amount ?? ($shp->shipping_charge ?? 0)))));
@@ -557,25 +579,87 @@ function pe_cp_ajax_shipment_detail()
     $actual_weight = floatval($shp->weight ?? ($row->ACTUALWEIGHT ?? 0));
     $pieces = intval($shp->no_of_pieces ?? ($row->PIECES ?? 1));
 
-    // Parse parcels and invoice items from the node shipments table
+    // Parse parcels and invoice items from the node shipments table or booking request
     $parcels = [];
     if (!empty($shp->parcels)) {
-        $parsed = json_decode($shp->parcels, true);
+        $parsed = is_string($shp->parcels) ? json_decode($shp->parcels, true) : (is_array($shp->parcels) ? $shp->parcels : []);
         if (is_array($parsed)) $parcels = $parsed;
     }
     if (empty($parcels) && $breq && !empty($breq->parcels)) {
-        $parsed = json_decode($breq->parcels, true);
+        $parsed = is_string($breq->parcels) ? json_decode($breq->parcels, true) : (is_array($breq->parcels) ? $breq->parcels : []);
         if (is_array($parsed)) $parcels = $parsed;
     }
 
     $invoice_items = [];
     if (!empty($shp->invoice_items)) {
-        $parsed = json_decode($shp->invoice_items, true);
+        $parsed = is_string($shp->invoice_items) ? json_decode($shp->invoice_items, true) : (is_array($shp->invoice_items) ? $shp->invoice_items : []);
         if (is_array($parsed)) $invoice_items = $parsed;
     }
     if (empty($invoice_items) && $breq && !empty($breq->invoice_items)) {
-        $parsed = json_decode($breq->invoice_items, true);
+        $parsed = is_string($breq->invoice_items) ? json_decode($breq->invoice_items, true) : (is_array($breq->invoice_items) ? $breq->invoice_items : []);
         if (is_array($parsed)) $invoice_items = $parsed;
+    }
+
+    // If invoice_items is still empty but parcels have nested items (e.g. from multi-box entry)
+    if (empty($invoice_items) && !empty($parcels)) {
+        foreach ($parcels as $pIndex => $parcel) {
+            if (!empty($parcel['items']) && is_array($parcel['items'])) {
+                foreach ($parcel['items'] as $pItem) {
+                    $pItem['box_no'] = $pItem['box_no'] ?? ($parcel['box_no'] ?? ($pIndex + 1));
+                    $invoice_items[] = $pItem;
+                }
+            }
+        }
+    }
+
+    // ── Live Tracking API Integration ──
+    $tracking_events = [];
+    $live_status = '';
+    $live_stage = '';
+
+    // Fetch real-time live tracking from the Admin Portal live tracking API
+    $live_api_url = 'https://purple-raccoon-753399.hostingersite.com/api/tracking/live?awb=' . urlencode(strval($awb));
+    $api_resp = wp_remote_get($live_api_url, ['timeout' => 5, 'sslverify' => false]);
+    if (!is_wp_error($api_resp)) {
+        $body = json_decode(wp_remote_retrieve_body($api_resp), true);
+        if (!empty($body['success']) && !empty($body['tracking'])) {
+            $trk = $body['tracking'];
+            $live_status = $trk['currentStatus'] ?? '';
+            $live_stage = $trk['currentStage'] ?? '';
+            if (!empty($trk['events']) && is_array($trk['events'])) {
+                foreach ($trk['events'] as $ev) {
+                    $tracking_events[] = [
+                        'activity' => $ev['status'] ?? ($ev['activity'] ?? ($ev['event_description'] ?? 'Status Update')),
+                        'date' => $ev['date'] ?? '',
+                        'time' => $ev['time'] ?? '',
+                        'location' => $ev['location'] ?? '',
+                    ];
+                }
+            }
+        }
+    }
+
+    // Fallback to database parcel_history if live API returned no events
+    if (empty($tracking_events) && !empty($db_history)) {
+        foreach ($db_history as $h) {
+            $tracking_events[] = [
+                'activity' => $h->activity,
+                'date' => $h->date,
+                'time' => $h->time,
+                'location' => $h->location ?? '',
+            ];
+        }
+    }
+
+    // Initial fallback if still completely empty
+    if (empty($tracking_events)) {
+        $bDate = !empty($row->AWBDATE) ? date('d/m/Y', strtotime($row->AWBDATE)) : date('d/m/Y');
+        $tracking_events[] = [
+            'activity' => 'Shipment Booked & Order Created',
+            'date' => $bDate,
+            'time' => '10:00 AM',
+            'location' => 'SURAT, INDIA (PRINCE EXPRESS)'
+        ];
     }
 
     wp_send_json_success([
@@ -604,17 +688,12 @@ function pe_cp_ajax_shipment_detail()
             'secondary_carrier' => $secondary_carrier,
             'content_description' => $content_desc,
             'product' => $row->PRODNAME ?? '',
+            'status' => $live_status ?: (!empty($tracking_events) ? $tracking_events[0]['activity'] : 'Shipment Booked'),
+            'stage' => $live_stage,
             'parcels' => $parcels,
             'invoice_items' => $invoice_items,
         ],
-        'tracking' => array_map(function ($h) {
-            return [
-                'activity' => $h->activity,
-                'date' => $h->date,
-                'time' => $h->time,
-                'location' => $h->location ?? '',
-            ];
-        }, $history),
+        'tracking' => $tracking_events,
     ]);
 }
 add_action('wp_ajax_pe_cp_shipment_detail', 'pe_cp_ajax_shipment_detail');
