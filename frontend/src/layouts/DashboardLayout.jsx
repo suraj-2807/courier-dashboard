@@ -27,7 +27,9 @@ import {
   UserCheck,
   Clock,
   ArrowRight,
-  CheckCircle2
+  CheckCircle2,
+  Check,
+  CheckCheck
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api from '../api/axios'
@@ -66,11 +68,19 @@ export default function DashboardLayout({ children }) {
   const [pendingRequests, setPendingRequests] = useState([])
   const [pendingCount, setPendingCount] = useState(0)
   const [globalSearch, setGlobalSearch] = useState('')
+  const [readRequestIds, setReadRequestIds] = useState(() => {
+    try {
+      const stored = localStorage.getItem('read_request_ids')
+      return stored ? JSON.parse(stored) : []
+    } catch {
+      return []
+    }
+  })
 
   // Poll for pending customer requests to power notifications and indicators
   const fetchPendingRequests = async () => {
     try {
-      const { data } = await api.get('/booking-requests', { params: { status: 'pending', limit: 5 } })
+      const { data } = await api.get('/booking-requests', { params: { status: 'pending', limit: 10 } })
       if (data && data.success) {
         setPendingRequests(data.requests || [])
         setPendingCount(data.counts?.pending ?? (data.pagination?.total || 0))
@@ -85,6 +95,33 @@ export default function DashboardLayout({ children }) {
     const interval = setInterval(fetchPendingRequests, 20000)
     return () => clearInterval(interval)
   }, [location.pathname])
+
+  const unreadRequests = pendingRequests.filter(req => !readRequestIds.includes(req.id))
+  const unreadCount = unreadRequests.length
+
+  const handleMarkAllAsRead = (e) => {
+    e?.stopPropagation()
+    const allIds = Array.from(new Set([...readRequestIds, ...pendingRequests.map(r => r.id)]))
+    setReadRequestIds(allIds)
+    try {
+      localStorage.setItem('read_request_ids', JSON.stringify(allIds))
+    } catch {}
+  }
+
+  const handleMarkOneAsRead = (id, e) => {
+    e?.stopPropagation()
+    const newIds = Array.from(new Set([...readRequestIds, id]))
+    setReadRequestIds(newIds)
+    try {
+      localStorage.setItem('read_request_ids', JSON.stringify(newIds))
+    } catch {}
+  }
+
+  const handleNotificationClick = (req) => {
+    handleMarkOneAsRead(req.id)
+    setNotificationsOpen(false)
+    navigate('/booking-requests')
+  }
 
   const toggleSidebarCollapse = () => {
     setSidebarCollapsed(prev => {
@@ -211,14 +248,14 @@ export default function DashboardLayout({ children }) {
                 <div className="relative">
                   <item.icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={active ? 2 : 1.5} />
                   {isRequestNav && pendingCount > 0 && sidebarCollapsed && (
-                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-navy animate-pulse" />
+                    <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-navy" />
                   )}
                 </div>
                 {!sidebarCollapsed && (
                   <span className="truncate flex-1">{item.label}</span>
                 )}
                 {!sidebarCollapsed && isRequestNav && pendingCount > 0 && (
-                  <span className="ml-auto px-2 py-0.5 text-[10.5px] font-black bg-red-500 text-white rounded-full shadow-sm animate-pulse">
+                  <span className="ml-auto px-2 py-0.5 text-[10.5px] font-black bg-red-500 text-white rounded-full shadow-sm">
                     {pendingCount}
                   </span>
                 )}
@@ -331,9 +368,9 @@ export default function DashboardLayout({ children }) {
                 title="Notifications"
               >
                 <Bell className="w-[18px] h-[18px]" />
-                {pendingCount > 0 && (
-                  <span className="absolute top-1 right-1 min-w-[17px] h-[17px] px-1 bg-red-500 text-white text-[9.5px] font-black rounded-full flex items-center justify-center ring-2 ring-surface animate-pulse">
-                    {pendingCount > 99 ? '99+' : pendingCount}
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 min-w-[17px] h-[17px] px-1 bg-red-500 text-white text-[9.5px] font-black rounded-full flex items-center justify-center ring-2 ring-surface">
+                    {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
                 )}
               </button>
@@ -345,54 +382,73 @@ export default function DashboardLayout({ children }) {
                     <div className="px-4 py-3 border-b border-border flex items-center justify-between bg-surface-alt/50">
                       <div className="flex items-center gap-2">
                         <p className="text-[13px] font-bold text-text-primary">Notifications</p>
-                        {pendingCount > 0 && (
+                        {unreadCount > 0 && (
                           <span className="px-2 py-0.5 text-[10px] font-extrabold bg-red-100 text-red-700 rounded-full border border-red-200">
-                            {pendingCount} Pending
+                            {unreadCount} New
                           </span>
                         )}
                       </div>
-                      <button
-                        onClick={fetchPendingRequests}
-                        className="text-[11px] font-semibold text-primary hover:underline cursor-pointer"
-                      >
-                        Refresh
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {unreadCount > 0 && (
+                          <button
+                            onClick={handleMarkAllAsRead}
+                            className="text-[11px] font-bold text-primary hover:underline cursor-pointer flex items-center gap-1"
+                            title="Mark all notifications as read"
+                          >
+                            <CheckCheck className="w-3.5 h-3.5" />
+                            Mark all read
+                          </button>
+                        )}
+                        <button
+                          onClick={fetchPendingRequests}
+                          className="text-[11px] font-semibold text-text-tertiary hover:text-text-secondary cursor-pointer"
+                        >
+                          Refresh
+                        </button>
+                      </div>
                     </div>
 
                     <div className="max-h-[340px] overflow-y-auto divide-y divide-border/60">
-                      {pendingRequests.length === 0 ? (
+                      {unreadRequests.length === 0 ? (
                         <div className="p-6 text-center text-text-tertiary">
                           <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
                           <p className="text-[13px] font-semibold text-text-secondary">All Caught Up!</p>
-                          <p className="text-[11px] text-text-tertiary mt-0.5">No pending customer requests right now.</p>
+                          <p className="text-[11px] text-text-tertiary mt-0.5">No unread notifications.</p>
                         </div>
                       ) : (
-                        pendingRequests.map((req) => (
+                        unreadRequests.map((req) => (
                           <div
                             key={req.id}
-                            onClick={() => {
-                              setNotificationsOpen(false)
-                              navigate('/booking-requests')
-                            }}
-                            className="p-3.5 hover:bg-surface-hover/80 transition-colors cursor-pointer group"
+                            onClick={() => handleNotificationClick(req)}
+                            className="p-3.5 hover:bg-surface-hover/80 transition-colors cursor-pointer group flex items-start justify-between gap-3"
                           >
-                            <div className="flex items-start justify-between gap-2 mb-1">
-                              <span className="text-[12px] font-bold text-text-primary group-hover:text-primary transition-colors">
-                                {req.request_awb || `REQ #${req.id}`}
-                              </span>
-                              <span className="text-[10px] text-text-tertiary whitespace-nowrap">
-                                {req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Recent'}
-                              </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <span className="text-[12px] font-bold text-text-primary group-hover:text-primary transition-colors">
+                                  {req.request_awb || `REQ #${req.id}`}
+                                </span>
+                                <span className="text-[10px] text-text-tertiary whitespace-nowrap">
+                                  {req.created_at ? new Date(req.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Recent'}
+                                </span>
+                              </div>
+                              <p className="text-[11.5px] font-semibold text-text-secondary truncate">
+                                From: {req.customer_name || req.sender_name || 'Customer'}
+                              </p>
+                              <div className="flex items-center justify-between text-[11px] text-text-tertiary mt-1">
+                                <span>To: {req.receiver_city || req.receiver_country || '—'} · {req.weight || 0} kg</span>
+                                <span className="text-primary font-bold inline-flex items-center gap-0.5 text-[10.5px]">
+                                  Review <ArrowRight className="w-2.5 h-2.5" />
+                                </span>
+                              </div>
                             </div>
-                            <p className="text-[11.5px] font-semibold text-text-secondary truncate">
-                              From: {req.customer_name || req.sender_name || 'Customer'}
-                            </p>
-                            <div className="flex items-center justify-between text-[11px] text-text-tertiary mt-1">
-                              <span>To: {req.receiver_city || req.receiver_country || '—'} · {req.weight || 0} kg</span>
-                              <span className="text-primary font-bold inline-flex items-center gap-0.5 text-[10.5px]">
-                                Review <ArrowRight className="w-2.5 h-2.5" />
-                              </span>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => handleMarkOneAsRead(req.id, e)}
+                              className="p-1.5 rounded-lg border border-border/70 hover:border-primary hover:bg-primary/5 text-text-tertiary hover:text-primary transition-colors cursor-pointer flex-shrink-0 mt-0.5"
+                              title="Mark as read"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         ))
                       )}
