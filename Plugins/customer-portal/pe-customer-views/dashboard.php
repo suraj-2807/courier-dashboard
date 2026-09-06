@@ -6,6 +6,9 @@ global $wpdb;
 // Build strict WHERE clause: only shipments belonging to this specific customer
 $cust_id = intval($cust['customer_id'] ?? ($cust['id'] ?? 0));
 $cust_email = strtolower(trim($cust['email'] ?? ''));
+$cust_name = trim($cust['name'] ?? '');
+$cust_company = trim($cust['company'] ?? '');
+$cust_phone = trim($cust['phone'] ?? '');
 
 $match_clauses = [];
 $match_params = [];
@@ -16,9 +19,6 @@ if ($cust_id > 0) {
     $match_params[] = strval($cust_id);
     $match_params[] = 'CUST-' . $cust_id;
     $match_params[] = 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT);
-
-    $match_clauses[] = "a.AWBNO IN (SELECT CAST(tracking_number AS UNSIGNED) FROM shipments WHERE customer_id = %d AND tracking_number IS NOT NULL AND tracking_number != '')";
-    $match_params[] = $cust_id;
 }
 
 // 2. Exact match on shipments converted and pushed from THIS customer's booking requests
@@ -32,9 +32,16 @@ if ($cust_id > 0 || $cust_email !== '') {
     $match_params[] = $cust_email;
 }
 
-if ($cust_email !== '') {
-    $match_clauses[] = "a.AWBNO IN (SELECT CAST(tracking_number AS UNSIGNED) FROM shipments WHERE sender_email != '' AND LOWER(sender_email) = %s AND tracking_number IS NOT NULL AND tracking_number != '')";
-    $match_params[] = $cust_email;
+// 3. Match by customer name or company
+if (!empty($cust_name) && strtolower($cust_name) !== 'walking customer' && strlen($cust_name) >= 3) {
+    $match_clauses[] = "(LOWER(TRIM(a.CUSTNAME)) = %s OR LOWER(TRIM(a.SNAME)) = %s)";
+    $match_params[] = strtolower($cust_name);
+    $match_params[] = strtolower($cust_name);
+}
+if (!empty($cust_company) && strtolower($cust_company) !== 'walking customer' && strtolower($cust_company) !== strtolower($cust_name) && strlen($cust_company) >= 3) {
+    $match_clauses[] = "(LOWER(TRIM(a.CUSTNAME)) = %s OR LOWER(TRIM(a.SNAME)) = %s)";
+    $match_params[] = strtolower($cust_company);
+    $match_params[] = strtolower($cust_company);
 }
 
 if (empty($match_clauses)) {
@@ -71,14 +78,12 @@ if ($cust_email !== '') {
     $req_params[] = $cust_email;
     $req_params[] = $cust_email;
 }
-if (!empty($customer_phones)) {
-    foreach ($customer_phones as $ph) {
-        $clean_p = preg_replace('/[^0-9]/', '', $ph);
-        if (strlen($clean_p) >= 10) {
-            $req_conds[] = "customer_phone LIKE %s OR sender_phone LIKE %s";
-            $req_params[] = '%' . $wpdb->esc_like(substr($clean_p, -10)) . '%';
-            $req_params[] = '%' . $wpdb->esc_like(substr($clean_p, -10)) . '%';
-        }
+if (!empty($cust_phone)) {
+    $clean_p = preg_replace('/[^0-9]/', '', $cust_phone);
+    if (strlen($clean_p) >= 10) {
+        $req_conds[] = "customer_phone LIKE %s OR sender_phone LIKE %s";
+        $req_params[] = '%' . $wpdb->esc_like(substr($clean_p, -10)) . '%';
+        $req_params[] = '%' . $wpdb->esc_like(substr($clean_p, -10)) . '%';
     }
 }
 if (strlen($cust_name) >= 3) {
@@ -92,10 +97,7 @@ $pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_re
 // Fetch customer total billed amount across all shipments
 $cust_total_amount = 0.00;
 if (!empty($where_cust) && $where_cust !== "1=0") {
-    $cust_total_amount = floatval($wpdb->get_var("SELECT SUM(COALESCE(NULLIF(s.total_amount, 0), NULLIF(s.shipping_charge, 0), NULLIF(a.TOTAL, 0), NULLIF(a.NETAMOUNT, 0), a.CHARGES, 0)) FROM AWBENTRY a LEFT JOIN shipments s ON (s.tracking_number = CAST(a.AWBNO AS CHAR) OR s.order_id = CAST(a.AWBNO AS CHAR)) WHERE $where_cust"));
-}
-if ($cust_total_amount <= 0 && $cust_id > 0) {
-    $cust_total_amount = floatval($wpdb->get_var($wpdb->prepare("SELECT SUM(COALESCE(NULLIF(total_amount, 0), NULLIF(shipping_charge, 0), 0)) FROM shipments WHERE customer_id = %d AND (is_trashed = 0 OR is_trashed IS NULL)", $cust_id)));
+    $cust_total_amount = floatval($wpdb->get_var("SELECT SUM(COALESCE(NULLIF(a.TOTAL, 0), NULLIF(a.NETAMOUNT, 0), a.CHARGES, 0)) FROM AWBENTRY a WHERE $where_cust"));
 }
 ?>
 <style>

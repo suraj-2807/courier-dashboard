@@ -344,6 +344,9 @@ function pe_cp_ajax_shipments()
     // Build strict WHERE clause: only shipments belonging to this specific customer
     $cust_id = intval($cust['customer_id'] ?? ($cust['id'] ?? 0));
     $cust_email = strtolower(trim($cust['email'] ?? ''));
+    $cust_name = trim($cust['name'] ?? '');
+    $cust_company = trim($cust['company'] ?? '');
+    $cust_phone = trim($cust['phone'] ?? '');
 
     $match_clauses = [];
     $match_params = [];
@@ -354,9 +357,6 @@ function pe_cp_ajax_shipments()
         $match_params[] = strval($cust_id);
         $match_params[] = 'CUST-' . $cust_id;
         $match_params[] = 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT);
-
-        $match_clauses[] = "a.AWBNO IN (SELECT CAST(tracking_number AS UNSIGNED) FROM shipments WHERE customer_id = %d AND tracking_number IS NOT NULL AND tracking_number != '')";
-        $match_params[] = $cust_id;
     }
 
     // 2. Exact match on shipments converted and pushed from THIS customer's booking requests
@@ -370,9 +370,16 @@ function pe_cp_ajax_shipments()
         $match_params[] = $cust_email;
     }
 
-    if ($cust_email !== '') {
-        $match_clauses[] = "a.AWBNO IN (SELECT CAST(tracking_number AS UNSIGNED) FROM shipments WHERE sender_email != '' AND LOWER(sender_email) = %s AND tracking_number IS NOT NULL AND tracking_number != '')";
-        $match_params[] = $cust_email;
+    // 3. Match by customer name or company
+    if (!empty($cust_name) && strtolower($cust_name) !== 'walking customer' && strlen($cust_name) >= 3) {
+        $match_clauses[] = "(LOWER(TRIM(a.CUSTNAME)) = %s OR LOWER(TRIM(a.SNAME)) = %s)";
+        $match_params[] = strtolower($cust_name);
+        $match_params[] = strtolower($cust_name);
+    }
+    if (!empty($cust_company) && strtolower($cust_company) !== 'walking customer' && strtolower($cust_company) !== strtolower($cust_name) && strlen($cust_company) >= 3) {
+        $match_clauses[] = "(LOWER(TRIM(a.CUSTNAME)) = %s OR LOWER(TRIM(a.SNAME)) = %s)";
+        $match_params[] = strtolower($cust_company);
+        $match_params[] = strtolower($cust_company);
     }
 
     if (empty($match_clauses)) {
@@ -404,6 +411,12 @@ function pe_cp_ajax_shipments()
          LIMIT " . intval($per) . " OFFSET " . intval($offset)
     );
 
+    // Check if shipments table exists in WP database
+    static $has_shipments_tbl = null;
+    if ($has_shipments_tbl === null) {
+        $has_shipments_tbl = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
+    }
+
     $data = [];
     foreach ($rows as $r) {
         $status = '';
@@ -412,11 +425,14 @@ function pe_cp_ajax_shipments()
             intval($r->AWBNO)
         ));
 
-        // Lookup node shipment for live forwarding, vendor details, status, and accurate billing amount
-        $shp = $wpdb->get_row($wpdb->prepare(
-            "SELECT vendor_code, vendor_awb_number, vendor_awb_number_2, forwarding_no, secondary_carrier, status, total_amount, shipping_charge, grand_total, final_grand_total, net_amount FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
-            strval($r->AWBNO), strval($r->AWBNO)
-        ));
+        // Lookup node shipment if table exists
+        $shp = null;
+        if ($has_shipments_tbl) {
+            $shp = $wpdb->get_row($wpdb->prepare(
+                "SELECT vendor_code, vendor_awb_number, vendor_awb_number_2, forwarding_no, secondary_carrier, status, total_amount, shipping_charge, grand_total, final_grand_total, net_amount FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
+                strval($r->AWBNO), strval($r->AWBNO)
+            ));
+        }
 
         if ($ph) {
             $status = $ph;
@@ -435,7 +451,7 @@ function pe_cp_ajax_shipments()
 
         // Lookup booking request for amount if not found in AWBENTRY
         $breq = $wpdb->get_row($wpdb->prepare(
-            "SELECT shipping_charge, total_amount FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
+            "SELECT shipping_charge, total_amount, forwarding_no FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
             strval($r->AWBNO), strval($r->AWBNO)
         ));
 
@@ -450,9 +466,9 @@ function pe_cp_ajax_shipments()
 
         $rec = floatval($r->RECEIPTAMOUNT ?? 0);
 
-        $vendor_name = trim(strval($shp->vendor_code ?? ($r->vendor ?? '')));
+        $vendor_name = trim(strval($shp->vendor_code ?? ($r->vendor ?? ($r->VENDNAME ?? ''))));
         $vAwb = trim(strval($shp->vendor_awb_number ?? ($r->VENDORAWB1 ?? '')));
-        $fwd = trim(strval($shp->forwarding_no ?? ($shp->vendor_awb_number_2 ?? ($r->VENDORAWB2 ?? ''))));
+        $fwd = trim(strval($shp->forwarding_no ?? ($shp->vendor_awb_number_2 ?? ($r->VENDORAWB2 ?? ($breq->forwarding_no ?? '')))));
         $fwdCarrier = trim(strval($shp->secondary_carrier ?? ''));
 
         $data[] = [
@@ -480,10 +496,7 @@ function pe_cp_ajax_shipments()
     $count_transit = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND (LOWER(COALESCE($_st_sub, '')) LIKE '%transit%' OR LOWER(COALESCE($_st_sub, '')) LIKE '%departed%')"));
 
     // Calculate customer total billed amount across all shipments
-    $total_billed_amount = floatval($wpdb->get_var("SELECT SUM(COALESCE(NULLIF(s.total_amount, 0), NULLIF(s.shipping_charge, 0), NULLIF(a.TOTAL, 0), NULLIF(a.NETAMOUNT, 0), a.CHARGES, 0)) FROM AWBENTRY a LEFT JOIN shipments s ON (s.tracking_number = CAST(a.AWBNO AS CHAR) OR s.order_id = CAST(a.AWBNO AS CHAR)) WHERE $where"));
-    if ($total_billed_amount <= 0 && $cust_id > 0) {
-        $total_billed_amount = floatval($wpdb->get_var($wpdb->prepare("SELECT SUM(COALESCE(NULLIF(total_amount, 0), NULLIF(shipping_charge, 0), 0)) FROM shipments WHERE customer_id = %d AND (is_trashed = 0 OR is_trashed IS NULL)", $cust_id)));
-    }
+    $total_billed_amount = floatval($wpdb->get_var("SELECT SUM(COALESCE(NULLIF(a.TOTAL, 0), NULLIF(a.NETAMOUNT, 0), a.CHARGES, 0)) FROM AWBENTRY a WHERE $where"));
 
     wp_send_json_success([
         'rows' => $data,
@@ -550,11 +563,14 @@ function pe_cp_ajax_shipment_detail()
         $c_addr = trim(implode(', ', array_filter([$breq->receiver_address ?? '', $breq->receiver_address_2 ?? '', $breq->receiver_city ?? '', $breq->receiver_state ?? '', $breq->receiver_pincode ?? '', $breq->receiver_country ?? ''])));
     }
 
-    // Look up node shipments table for complete details
-    $shp = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM shipments WHERE tracking_number = %s OR order_id = %s OR vendor_awb_number = %s LIMIT 1",
-        strval($row->AWBNO), strval($row->AWBNO), strval($row->AWBNO)
-    ));
+    // Look up node shipments table if exists
+    $shp = null;
+    if (!empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"))) {
+        $shp = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM shipments WHERE tracking_number = %s OR order_id = %s OR vendor_awb_number = %s LIMIT 1",
+            strval($row->AWBNO), strval($row->AWBNO), strval($row->AWBNO)
+        ));
+    }
 
     $shp_amt = floatval($shp->final_grand_total ?? ($shp->grand_total ?? ($shp->total_amount ?? ($shp->net_amount ?? ($shp->shipping_charge ?? 0)))));
     $breq_amt = floatval($breq->total_amount ?? ($breq->shipping_charge ?? 0));
