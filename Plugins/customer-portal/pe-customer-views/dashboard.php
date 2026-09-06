@@ -268,22 +268,43 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
 /* ── SKELETON ── */
 .cp-skeleton{background:linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%);background-size:800px 100%;animation:cp-shimmer 1.5s ease infinite;border-radius:6px;height:16px}
 
+/* ── MOBILE HAMBURGER BUTTON ── */
+.cp-mobile-header{display:none;align-items:center;gap:12px;padding:12px 16px;background:#0f172a;border-bottom:1px solid #1e293b;position:sticky;top:0;z-index:20}
+.cp-hamburger{width:38px;height:38px;border-radius:10px;border:1px solid #334155;background:transparent;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;transition:all .15s}
+.cp-hamburger:hover{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2)}
+.cp-mobile-brand{display:flex;align-items:center;gap:10px;flex:1}
+.cp-mobile-brand img{width:32px;height:32px;border-radius:8px;object-fit:contain}
+.cp-mobile-brand h3{font-size:14px;font-weight:900;color:#fff;margin:0;letter-spacing:.5px}
+.cp-mobile-brand p{font-size:9px;font-weight:700;color:#64748b;letter-spacing:1.5px;text-transform:uppercase;margin:1px 0 0}
+
+/* ── SIDEBAR OVERLAY ── */
+.cp-sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(3px);z-index:99998}
+.cp-sidebar-overlay.show{display:block}
+
 /* ── RESPONSIVE ── */
 @media(max-width:960px){
-  .cp-app{flex-direction:column}
-  .cp-sidebar{width:100%;height:auto;flex-direction:row;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid #1e293b}
-  .cp-sidebar-brand{padding:0;border-bottom:none}
-  .cp-sidebar-nav{flex-direction:row;padding:0;gap:4px;overflow-x:auto}
-  .cp-nav-item{padding:8px 12px;font-size:13px}
-  .cp-sidebar-footer{display:none}
+  .cp-mobile-header{display:flex}
+  .cp-sidebar{position:fixed;inset:0;right:auto;width:280px;z-index:99999;transform:translateX(-100%);transition:transform .3s cubic-bezier(.4,0,.2,1);overflow-y:auto}
+  .cp-sidebar.open{transform:translateX(0)}
+  .cp-sidebar-close{display:flex!important}
   .cp-main-content{padding:20px 16px}
   .cp-stats{grid-template-columns:repeat(2,1fr)}
   .cp-profile-grid{grid-template-columns:1fr}
+  .cp-cta-card{flex-direction:column;text-align:center;padding:20px}
 }
 @media(max-width:480px){
-  .cp-sidebar-brand h3{display:none}
   .cp-stats{grid-template-columns:1fr}
 }
+
+/* ── SIDEBAR CLOSE BUTTON ── */
+.cp-sidebar-close{display:none;position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:8px;border:1px solid #334155;background:transparent;color:#94a3b8;align-items:center;justify-content:center;cursor:pointer;font-size:16px;z-index:5;transition:all .15s}
+.cp-sidebar-close:hover{background:rgba(255,255,255,.08);color:#fff}
+
+/* ── ADDRESS FILTER TABS ── */
+.cp-addr-filters{display:flex;gap:6px;background:rgba(0,0,0,0.03);padding:4px;border-radius:10px;border:1px solid var(--cpbdr)}
+.cp-addr-filter{border:none;background:transparent;padding:7px 14px;border-radius:8px;font-size:12px;font-weight:700;color:var(--cptext2);cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px}
+.cp-addr-filter:hover{background:rgba(0,0,0,.04)}
+.cp-addr-filter.active{background:#fff;color:var(--cptext);box-shadow:0 1px 3px rgba(0,0,0,0.1)}
 
 /* ── REQUEST STATUS STYLES ── */
 .st-pending { color: var(--cpamber); font-weight: 700; }
@@ -330,8 +351,28 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
 
 <div class="cp-app" id="cp-app">
 
+  <!-- MOBILE HEADER -->
+  <div class="cp-mobile-header">
+    <button class="cp-hamburger" onclick="cpToggleMobileSidebar()" aria-label="Open menu">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <div class="cp-mobile-brand">
+      <img src="<?php echo esc_url(PE_CP_LOGO_URL); ?>" alt="PE">
+      <div>
+        <h3>Prince Express</h3>
+        <p>Customer Portal</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR OVERLAY -->
+  <div class="cp-sidebar-overlay" id="cp-sidebar-overlay" onclick="cpCloseMobileSidebar()"></div>
+
   <!-- SIDEBAR -->
-  <aside class="cp-sidebar">
+  <aside class="cp-sidebar" id="cp-sidebar">
+    <button class="cp-sidebar-close" onclick="cpCloseMobileSidebar()" aria-label="Close menu">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
     <div class="cp-sidebar-brand">
       <img src="<?php echo esc_url(PE_CP_LOGO_URL); ?>" alt="PE">
       <div>
@@ -341,25 +382,25 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
     </div>
 
     <nav class="cp-sidebar-nav">
-      <button class="cp-nav-item active" onclick="cpSwitchTab('shipments', this)">
+      <button class="cp-nav-item active" onclick="cpSwitchTab('shipments', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-boxes-stacked"></i> My Shipments
       </button>
-      <button class="cp-nav-item" onclick="cpSwitchTab('requests', this)">
+      <button class="cp-nav-item" onclick="cpSwitchTab('requests', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-clipboard-list"></i> My Requests
         <?php if ($pending_requests_count > 0): ?>
           <span class="cp-nav-badge" style="background:var(--cpamber);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:auto"><?php echo $pending_requests_count; ?></span>
         <?php endif; ?>
       </button>
-      <button class="cp-nav-item" onclick="cpSwitchTab('new-booking', this)">
+      <button class="cp-nav-item" onclick="cpSwitchTab('new-booking', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-plus"></i> Request Booking
       </button>
-      <button class="cp-nav-item" onclick="cpSwitchTab('addresses', this)">
+      <button class="cp-nav-item" onclick="cpSwitchTab('addresses', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-address-book"></i> Address Book
       </button>
-      <button class="cp-nav-item" onclick="cpSwitchTab('documents', this)">
+      <button class="cp-nav-item" onclick="cpSwitchTab('documents', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-file-shield"></i> My Documents
       </button>
-      <button class="cp-nav-item" onclick="cpSwitchTab('profile', this)">
+      <button class="cp-nav-item" onclick="cpSwitchTab('profile', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-user-gear"></i> My Profile
       </button>
     </nav>
@@ -534,14 +575,29 @@ table.cp-t{width:100%;border-collapse:collapse;min-width:750px}
 
     <!-- TAB 5: ADDRESS BOOK -->
     <div class="cp-main-content" id="tab-addresses">
-      <div class="cp-hdr-wrap" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <div class="cp-hdr-wrap" style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
         <div>
           <h1 class="cp-page-title">Address Book</h1>
           <p class="cp-page-sub">Save and manage your frequently used pickup and delivery addresses.</p>
         </div>
-        <button class="cp-cta-btn-link" onclick="cpOpenAddressModal()" style="border:none; cursor:pointer; padding:10px 18px; border-radius:10px; background:var(--cpred); color:#fff; font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:8px;">
-          <i class="fa-solid fa-plus"></i> Add New Address
-        </button>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button onclick="cpOpenAddressModal(null, 'sender')" style="border:none; cursor:pointer; padding:10px 18px; border-radius:10px; background:linear-gradient(135deg, #1e40af, #3b82f6); color:#fff; font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:8px; box-shadow:0 4px 12px rgba(59,130,246,.25); transition:all .2s;">
+            <i class="fa-solid fa-arrow-up-from-bracket"></i> Add Sender
+          </button>
+          <button onclick="cpOpenAddressModal(null, 'receiver')" style="border:none; cursor:pointer; padding:10px 18px; border-radius:10px; background:linear-gradient(135deg, #047857, #10b981); color:#fff; font-weight:700; font-size:13px; display:inline-flex; align-items:center; gap:8px; box-shadow:0 4px 12px rgba(16,185,129,.25); transition:all .2s;">
+            <i class="fa-solid fa-arrow-down-to-bracket"></i> Add Receiver
+          </button>
+        </div>
+      </div>
+
+      <!-- Address Filter Tabs -->
+      <div style="margin-bottom:16px;">
+        <div class="cp-addr-filters" style="display:inline-flex;">
+          <button class="cp-addr-filter active" onclick="cpSetAddrFilter('all', this)"><i class="fa-solid fa-layer-group" style="font-size:11px;"></i> All</button>
+          <button class="cp-addr-filter" onclick="cpSetAddrFilter('sender', this)"><i class="fa-solid fa-arrow-up-from-bracket" style="font-size:11px; color:#3b82f6;"></i> Sender</button>
+          <button class="cp-addr-filter" onclick="cpSetAddrFilter('receiver', this)"><i class="fa-solid fa-arrow-down-to-bracket" style="font-size:11px; color:#10b981;"></i> Receiver</button>
+          <button class="cp-addr-filter" onclick="cpSetAddrFilter('both', this)"><i class="fa-solid fa-arrows-left-right" style="font-size:11px; color:#f59e0b;"></i> Both</button>
+        </div>
       </div>
 
       <div id="cp-addresses-container">
@@ -1416,6 +1472,14 @@ cpSwitchTab = function(tabId, btn) {
 //  ADDRESS BOOK CONTROLLER
 // ══════════════════════════════════════
 var cpSavedAddresses = [];
+var cpAddrFilter = 'all';
+
+function cpSetAddrFilter(filter, btn) {
+    cpAddrFilter = filter;
+    document.querySelectorAll('.cp-addr-filter').forEach(function(b) { b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    cpRenderAddresses();
+}
 
 function cpLoadAddresses() {
     var c = document.getElementById('cp-addresses-container');
@@ -1433,27 +1497,44 @@ function cpLoadAddresses() {
 function cpRenderAddresses() {
     var c = document.getElementById('cp-addresses-container');
     if (!c) return;
-    if (!cpSavedAddresses.length) {
+
+    // Filter addresses
+    var filtered = cpSavedAddresses;
+    if (cpAddrFilter !== 'all') {
+        filtered = cpSavedAddresses.filter(function(a) {
+            return (a.address_type || 'both').toLowerCase() === cpAddrFilter;
+        });
+    }
+
+    if (!filtered.length) {
+        var emptyMsg = cpSavedAddresses.length ? 'No <strong>' + cpAddrFilter + '</strong> addresses found.' : 'Save your pickup and delivery contacts here to quickly autofill them when creating shipments.';
+        var emptyTitle = cpSavedAddresses.length ? 'No Matching Addresses' : 'No Saved Addresses';
         c.innerHTML = '<div style="background:var(--cpcard); border-radius:16px; border:1px dashed var(--cpbdr); padding:48px 24px; text-align:center;">' +
             '<div style="width:48px; height:48px; border-radius:12px; background:rgba(187,0,19,0.08); color:var(--cpred); display:flex; align-items:center; justify-content:center; margin:0 auto 12px; font-size:20px;"><i class="fa-solid fa-address-book"></i></div>' +
-            '<h3 style="font-size:16px; font-weight:800; color:var(--cptext); margin:0 0 6px;">No Saved Addresses</h3>' +
-            '<p style="font-size:13px; color:var(--cptext2); margin:0 0 16px;">Save your pickup and delivery contacts here to quickly autofill them when creating shipments.</p>' +
-            '<button onclick="cpOpenAddressModal()" style="border:none; cursor:pointer; padding:9px 18px; border-radius:10px; background:var(--cpred); color:#fff; font-weight:700; font-size:13px;"><i class="fa-solid fa-plus"></i> Add Address</button>' +
-            '</div>';
+            '<h3 style="font-size:16px; font-weight:800; color:var(--cptext); margin:0 0 6px;">' + emptyTitle + '</h3>' +
+            '<p style="font-size:13px; color:var(--cptext2); margin:0 0 16px;">' + emptyMsg + '</p>' +
+            '<div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">' +
+            '<button onclick="cpOpenAddressModal(null, \'sender\')" style="border:none; cursor:pointer; padding:9px 18px; border-radius:10px; background:linear-gradient(135deg,#1e40af,#3b82f6); color:#fff; font-weight:700; font-size:13px;"><i class="fa-solid fa-arrow-up-from-bracket"></i> Add Sender</button>' +
+            '<button onclick="cpOpenAddressModal(null, \'receiver\')" style="border:none; cursor:pointer; padding:9px 18px; border-radius:10px; background:linear-gradient(135deg,#047857,#10b981); color:#fff; font-weight:700; font-size:13px;"><i class="fa-solid fa-arrow-down-to-bracket"></i> Add Receiver</button>' +
+            '</div></div>';
         return;
     }
 
     var h = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px;">';
-    cpSavedAddresses.forEach(function(a) {
-        var typeBadge = '<span style="background:rgba(0,0,0,0.06); color:var(--cptext2); padding:3px 8px; border-radius:6px; font-size:10px; font-weight:800; text-transform:uppercase;">' + (a.address_type || 'BOTH') + '</span>';
+    filtered.forEach(function(a) {
+        var rawType = (a.address_type || 'both').toLowerCase();
+        var typeColors = { sender: { bg:'rgba(59,130,246,0.08)', color:'#1e40af', border:'rgba(59,130,246,0.2)' }, receiver: { bg:'rgba(16,185,129,0.08)', color:'#047857', border:'rgba(16,185,129,0.2)' }, both: { bg:'rgba(245,158,11,0.08)', color:'#92400e', border:'rgba(245,158,11,0.2)' } };
+        var tc = typeColors[rawType] || typeColors.both;
+        var typeIcon = rawType === 'sender' ? 'fa-arrow-up-from-bracket' : rawType === 'receiver' ? 'fa-arrow-down-to-bracket' : 'fa-arrows-left-right';
+        var typeBadge = '<span style="background:' + tc.bg + '; color:' + tc.color + '; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:800; text-transform:uppercase; display:inline-flex; align-items:center; gap:4px;"><i class="fa-solid ' + typeIcon + '" style="font-size:9px;"></i>' + (a.address_type || 'BOTH') + '</span>';
         if (a.is_default) {
             typeBadge += ' <span style="background:#ecfdf5; color:#059669; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:800; text-transform:uppercase;">DEFAULT</span>';
         }
-        h += '<div style="background:var(--cpcard); border-radius:16px; border:1px solid var(--cpbdr); padding:20px; box-shadow:var(--cpsh); display:flex; flex-direction:column; justify-content:space-between;">';
+        h += '<div style="background:var(--cpcard); border-radius:16px; border:1px solid var(--cpbdr); border-left:4px solid ' + tc.color + '; padding:20px; box-shadow:var(--cpsh); display:flex; flex-direction:column; justify-content:space-between; transition:all .2s;" onmouseenter="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'var(--cpsh2)\'" onmouseleave="this.style.transform=\'none\';this.style.boxShadow=\'var(--cpsh)\'">';
         h += '<div>';
         h += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' + typeBadge + '<div style="display:flex; gap:6px;">' +
-            '<button onclick="cpEditAddress(' + a.id + ')" title="Edit" style="border:none; background:rgba(0,0,0,0.04); width:28px; height:28px; border-radius:6px; color:var(--cptext2); cursor:pointer;"><i class="fa-solid fa-pen" style="font-size:11px;"></i></button>' +
-            '<button onclick="cpDeleteAddress(' + a.id + ')" title="Delete" style="border:none; background:rgba(220,38,38,0.08); width:28px; height:28px; border-radius:6px; color:#dc2626; cursor:pointer;"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button>' +
+            '<button onclick="cpEditAddress(' + a.id + ')" title="Edit" style="border:none; background:rgba(0,0,0,0.04); width:28px; height:28px; border-radius:6px; color:var(--cptext2); cursor:pointer; transition:all .15s;" onmouseenter="this.style.background=\'rgba(59,130,246,0.1)\';this.style.color=\'#1e40af\'" onmouseleave="this.style.background=\'rgba(0,0,0,0.04)\';this.style.color=\'var(--cptext2)\'"><i class="fa-solid fa-pen" style="font-size:11px;"></i></button>' +
+            '<button onclick="cpDeleteAddress(' + a.id + ')" title="Delete" style="border:none; background:rgba(220,38,38,0.08); width:28px; height:28px; border-radius:6px; color:#dc2626; cursor:pointer; transition:all .15s;" onmouseenter="this.style.background=\'rgba(220,38,38,0.15)\'" onmouseleave="this.style.background=\'rgba(220,38,38,0.08)\'"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button>' +
             '</div></div>';
         h += '<h4 style="font-size:15px; font-weight:800; color:var(--cptext); margin:0 0 2px;">' + (a.name || '—') + '</h4>';
         if (a.company) h += '<div style="font-size:12px; font-weight:600; color:var(--cpred); margin-bottom:8px; text-transform:uppercase;">' + a.company + '</div>';
@@ -1470,12 +1551,20 @@ function cpRenderAddresses() {
     c.innerHTML = h;
 }
 
-function cpOpenAddressModal(addr) {
+function cpOpenAddressModal(addr, presetType) {
     document.getElementById('cp-address-form').reset();
     document.getElementById('addr-id').value = addr ? addr.id : '';
-    document.getElementById('cp-addr-modal-title').innerHTML = addr
-        ? '<i class="fa-solid fa-pen" style="color:var(--cpred); margin-right:8px;"></i> Edit Address'
-        : '<i class="fa-solid fa-address-book" style="color:var(--cpred); margin-right:8px;"></i> Add New Address';
+    var titleIcon, titleText;
+    if (addr) {
+        titleIcon = 'fa-pen'; titleText = 'Edit Address';
+    } else if (presetType === 'sender') {
+        titleIcon = 'fa-arrow-up-from-bracket'; titleText = 'Add Sender Address';
+    } else if (presetType === 'receiver') {
+        titleIcon = 'fa-arrow-down-to-bracket'; titleText = 'Add Receiver Address';
+    } else {
+        titleIcon = 'fa-address-book'; titleText = 'Add New Address';
+    }
+    document.getElementById('cp-addr-modal-title').innerHTML = '<i class="fa-solid ' + titleIcon + '" style="color:var(--cpred); margin-right:8px;"></i> ' + titleText;
     if (addr) {
         document.getElementById('addr-type').value = addr.address_type || 'both';
         document.getElementById('addr-name').value = addr.name || '';
@@ -1490,6 +1579,8 @@ function cpOpenAddressModal(addr) {
         document.getElementById('addr-pincode').value = addr.pincode || '';
         document.getElementById('addr-country').value = addr.country || 'INDIA';
         document.getElementById('addr-gstin').value = addr.gstin_no || '';
+    } else if (presetType) {
+        document.getElementById('addr-type').value = presetType;
     }
     document.getElementById('cp-addr-modal-overlay').classList.add('show');
 }
@@ -1670,6 +1761,25 @@ document.addEventListener('visibilitychange', function() {
         }
     }
 });
+
+// ══════════════════════════════════════
+//  MOBILE SIDEBAR SLIDE MENU
+// ══════════════════════════════════════
+function cpToggleMobileSidebar() {
+    var sidebar = document.getElementById('cp-sidebar');
+    var overlay = document.getElementById('cp-sidebar-overlay');
+    sidebar.classList.add('open');
+    overlay.classList.add('show');
+    document.body.style.overflow = 'hidden';
+}
+
+function cpCloseMobileSidebar() {
+    var sidebar = document.getElementById('cp-sidebar');
+    var overlay = document.getElementById('cp-sidebar-overlay');
+    sidebar.classList.remove('open');
+    overlay.classList.remove('show');
+    document.body.style.overflow = '';
+}
 
 // Init
 cpLoadShipments(1);
