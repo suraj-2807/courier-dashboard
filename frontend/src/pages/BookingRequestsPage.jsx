@@ -307,12 +307,21 @@ export default function BookingRequestsPage() {
                             <Eye className="w-4 h-4 text-text-secondary" />
                           </button>
                           {req.status === 'pending' && (
-                            <button
-                              onClick={() => handleConfirmAndBook(req)}
-                              className="px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-bold hover:bg-primary-dark transition-colors cursor-pointer"
-                            >
-                              Process →
-                            </button>
+                            <>
+                              <button
+                                onClick={() => handleConfirmAndBook(req)}
+                                className="px-3 py-1.5 rounded-lg bg-primary text-white text-[11px] font-bold hover:bg-primary-dark transition-colors cursor-pointer"
+                              >
+                                Process →
+                              </button>
+                              <button
+                                onClick={() => setShowRejectModal(req.id)}
+                                className="px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-[11px] font-bold transition-colors cursor-pointer"
+                                title="Reject Request"
+                              >
+                                Reject
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>

@@ -391,6 +391,9 @@ function pe_cp_ajax_shipments()
         }
     }
 
+    // Filter out data before September 1, 2026 in customer dashboard
+    $where .= " AND a.AWBDATE >= '2026-09-01'";
+
     if ($search) {
         $like = '%' . $wpdb->esc_like($search) . '%';
         $where .= $wpdb->prepare(
@@ -434,9 +437,21 @@ function pe_cp_ajax_shipments()
             ));
         }
 
-        if ($ph) {
+        // Lookup booking request for amount/forwarding if not found in AWBENTRY
+        $breq = $wpdb->get_row($wpdb->prepare(
+            "SELECT shipping_charge, total_amount, forwarding_no FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
+            strval($r->AWBNO), strval($r->AWBNO)
+        ));
+
+        $vendor_name = trim(strval($shp->vendor_code ?? ($r->vendor ?? ($r->VENDNAME ?? ''))));
+        $vAwb = trim(strval($shp->vendor_awb_number ?? ($r->VENDORAWB1 ?? '')));
+        $fwd = trim(strval($shp->forwarding_no ?? ($shp->vendor_awb_number_2 ?? ($r->VENDORAWB2 ?? ($breq->forwarding_no ?? '')))));
+        $fwdCarrier = trim(strval($shp->secondary_carrier ?? ''));
+
+        // Determine accurate and consistent status
+        if ($ph && !preg_match('/information received|data received|order created|shipment booked/i', $ph)) {
             $status = $ph;
-        } elseif (!empty($shp->status)) {
+        } elseif (!empty($shp->status) && !in_array(strtolower($shp->status), ['booked', 'created', 'pending'])) {
             $stLower = strtolower(trim($shp->status));
             if ($stLower === 'delivered') $status = 'Delivered';
             elseif ($stLower === 'in_transit') $status = 'In Transit';
@@ -445,15 +460,13 @@ function pe_cp_ajax_shipments()
             elseif ($stLower === 'manifested' || $stLower === 'dispatched') $status = 'Manifested & Dispatched';
             elseif ($stLower === 'cancelled') $status = 'Cancelled';
             else $status = ucwords(str_replace('_', ' ', $stLower));
+        } elseif (!empty($fwd) || !empty($vAwb)) {
+            $status = 'In Transit';
+        } elseif ($ph) {
+            $status = $ph;
         } else {
             $status = 'Shipment Booked';
         }
-
-        // Lookup booking request for amount if not found in AWBENTRY
-        $breq = $wpdb->get_row($wpdb->prepare(
-            "SELECT shipping_charge, total_amount, forwarding_no FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
-            strval($r->AWBNO), strval($r->AWBNO)
-        ));
 
         $amt = floatval($r->TOTAL ?: ($r->NETAMOUNT ?: $r->CHARGES));
         $shp_amt = floatval($shp->final_grand_total ?? ($shp->grand_total ?? ($shp->total_amount ?? ($shp->net_amount ?? ($shp->shipping_charge ?? 0)))));
@@ -465,11 +478,6 @@ function pe_cp_ajax_shipments()
         }
 
         $rec = floatval($r->RECEIPTAMOUNT ?? 0);
-
-        $vendor_name = trim(strval($shp->vendor_code ?? ($r->vendor ?? ($r->VENDNAME ?? ''))));
-        $vAwb = trim(strval($shp->vendor_awb_number ?? ($r->VENDORAWB1 ?? '')));
-        $fwd = trim(strval($shp->forwarding_no ?? ($shp->vendor_awb_number_2 ?? ($r->VENDORAWB2 ?? ($breq->forwarding_no ?? '')))));
-        $fwdCarrier = trim(strval($shp->secondary_carrier ?? ''));
 
         $data[] = [
             'awb' => $r->AWBNO,
@@ -838,6 +846,8 @@ function pe_cp_ajax_my_requests()
     $where_base = count($where_conds) > 0 ? $wpdb->prepare("(" . implode(" OR ", $where_conds) . ")", ...$params) : "1=1";
     // Confirmed requests automatically become shipments and must not show in requests
     $where_base .= " AND status != 'confirmed'";
+    // Filter out requests created before September 1, 2026
+    $where_base .= " AND created_at >= '2026-09-01 00:00:00'";
     $where = $where_base;
 
     if ($status && $status !== 'all') {
@@ -874,6 +884,7 @@ function pe_cp_ajax_my_requests()
             'package_type' => $r->package_type,
             'weight' => $r->weight,
             'status' => $r->status,
+            'admin_notes' => $r->admin_notes ?? '',
             'shipment_id' => $r->shipment_id,
             'tracking_number' => $r->tracking_number,
         ];

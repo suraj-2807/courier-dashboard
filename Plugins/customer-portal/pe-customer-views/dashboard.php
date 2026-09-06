@@ -53,6 +53,9 @@ if (empty($match_clauses)) {
     }
 }
 
+// Filter out data before September 1, 2026 in customer dashboard
+$where_cust .= " AND a.AWBDATE >= '2026-09-01'";
+
 $_st = "(SELECT ph.activity FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO ORDER BY ph.date DESC, ph.time DESC LIMIT 1)";
 $ts = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust"));
 $dc = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust AND LOWER(COALESCE($_st, '')) LIKE '%delivered%'"));
@@ -92,7 +95,7 @@ if (strlen($cust_name) >= 3) {
     $req_params[] = strtolower($cust_name);
 }
 $where_requests = !empty($req_conds) ? $wpdb->prepare("(" . implode(" OR ", $req_conds) . ")", ...$req_params) : "1=0";
-$pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE status = 'pending' AND ($where_requests)"));
+$pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE status = 'pending' AND created_at >= '2026-09-01 00:00:00' AND ($where_requests)"));
 
 // Fetch customer total billed amount across all shipments
 $cust_total_amount = 0.00;
@@ -820,8 +823,16 @@ function cpLoadRequests(p, silent) {
             var formattedDate = rw.created_at ? new Date(rw.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
             
             var actionHtml = '';
-            if (rw.status !== 'confirmed' && rw.status !== 'cancelled') {
+            if (rw.status !== 'confirmed' && rw.status !== 'cancelled' && rw.status !== 'rejected') {
                 actionHtml = '<button onclick="event.stopPropagation(); cpCancelBookingRequest(\'' + rw.request_awb + '\')" title="Cancel this request" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;"><i class="fa-solid fa-trash-can"></i> Cancel</button>';
+            }
+
+            var statusHtml = '<div class="cp-st"><span class="cp-dot ' + dotClass + '"></span><span class="' + stClass + '">' + stLabel + '</span></div>';
+            if (rw.status === 'rejected') {
+                statusHtml = '<div class="cp-st"><span class="cp-dot bg-rejected"></span><span class="st-rejected" style="font-weight:800;">Rejected</span></div>';
+                if (rw.admin_notes) {
+                    statusHtml += '<div style="font-size:10.5px;color:var(--cpred);margin-top:2px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + rw.admin_notes.replace(/"/g, '&quot;') + '"><i class="fa-solid fa-circle-exclamation" style="font-size:9px;margin-right:2px;"></i>' + rw.admin_notes + '</div>';
+                }
             }
             
             h += '<tr onclick="cpShowRequestDetail(\'' + rw.request_awb + '\')">'; 
@@ -830,7 +841,7 @@ function cpLoadRequests(p, silent) {
             h += '<td class="nmc">' + (rw.receiver_name || '—') + '</td>';
             h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + (rw.receiver_city || '—') + '</td>';
             h += '<td style="font-weight:600">' + (rw.weight || '—') + ' kg (' + (rw.package_type || 'parcel') + ')</td>';
-            h += '<td><div class="cp-st"><span class="cp-dot ' + dotClass + '"></span><span class="' + stClass + '">' + stLabel + '</span></div></td>';
+            h += '<td>' + statusHtml + '</td>';
             h += '<td style="text-align:center;">' + actionHtml + '</td></tr>';
         });
         h += '</tbody></table></div>';
@@ -870,7 +881,7 @@ function cpRenderRequestDetail(awb, silent) {
         var h = '';
         h += '<div class="cp-dh"><h3><i class="fa-solid fa-clipboard-list"></i> Request ' + r.request_awb + ' <span class="cp-live-badge" style="font-size:9px"><span class="cp-live-dot"></span>Live</span></h3>';
         h += '<div style="display:flex;align-items:center;gap:8px;">';
-        if (r.status !== 'confirmed' && r.status !== 'cancelled') {
+        if (r.status !== 'confirmed' && r.status !== 'cancelled' && r.status !== 'rejected') {
             h += '<button onclick="cpCancelBookingRequest(\'' + r.request_awb + '\')" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="fa-solid fa-trash-can"></i> Cancel Request</button>';
         }
         h += '<button class="cp-dc" onclick="cpCloseDetail()"><i class="fa-solid fa-xmark"></i></button></div></div>';
@@ -889,7 +900,11 @@ function cpRenderRequestDetail(awb, silent) {
             h += '    <i class="fa-solid fa-truck-ramp-box" style="margin-right:4px;"></i> Track Shipment ' + r.tracking_number;
             h += '  </button>';
         }
-        h += '</div></div>';
+        h += '</div>';
+        if (r.status === 'rejected' && r.admin_notes) {
+            h += '<div style="margin-top:8px; padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; font-size:12px; color:#991b1b;"><strong style="display:block; margin-bottom:2px;"><i class="fa-solid fa-triangle-exclamation" style="margin-right:4px;"></i>Reason for Rejection:</strong>' + r.admin_notes + '</div>';
+        }
+        h += '</div>';
         
         // Sender/Receiver Details
         h += '<div class="cp-ds"><h4><i class="fa-solid fa-route"></i> Route Details</h4><div class="cp-dg">';
@@ -1111,15 +1126,15 @@ function cpLogout() {
 }
 
 function cpGetStatusDot(st) {
-    if (!st) return { dot: 'db', label: 'Booked' };
+    if (!st) return { dot: 'db', label: 'Shipment Booked' };
     var s = st.toLowerCase().trim();
     if (s.indexOf('deliver') >= 0 && s.indexOf('out for') === -1) return { dot: 'dd', label: 'Delivered' };
     if (s.indexOf('out for') >= 0 || s.indexOf('ofd') >= 0) return { dot: 'dt', label: 'Out for Delivery' };
-    if (s.indexOf('transit') >= 0 || s.indexOf('depart') >= 0 || s.indexOf('dispatch') >= 0 || s.indexOf('manifest') >= 0 || s.indexOf('hub') >= 0 || s.indexOf('scan') >= 0 || s.indexOf('arrived') >= 0) return { dot: 'dt', label: 'In Transit' };
-    if (s.indexOf('custom') >= 0 || s.indexOf('clearance') >= 0) return { dot: 'dbl', label: 'Customs' };
+    if (s.indexOf('transit') >= 0 || s.indexOf('depart') >= 0 || s.indexOf('dispatch') >= 0 || s.indexOf('manifest') >= 0 || s.indexOf('hub') >= 0 || s.indexOf('scan') >= 0 || s.indexOf('arrived') >= 0 || s.indexOf('forward') >= 0 || s.indexOf('uplift') >= 0 || s.indexOf('flight') >= 0) return { dot: 'dt', label: 'In Transit' };
+    if (s.indexOf('custom') >= 0 || s.indexOf('clearance') >= 0) return { dot: 'dbl', label: 'Customs Clearance' };
     if (s.indexOf('pick') >= 0 || s.indexOf('collect') >= 0) return { dot: 'dbl', label: 'Picked Up' };
     if (s.indexOf('cancel') >= 0 || s.indexOf('reject') >= 0 || s.indexOf('fail') >= 0) return { dot: 'dr', label: 'Cancelled' };
-    if (s.indexOf('book') >= 0 || s.indexOf('order') >= 0 || s.indexOf('created') >= 0) return { dot: 'db', label: 'Booked' };
+    if (s.indexOf('info') >= 0 || s.indexOf('received') >= 0 || s.indexOf('book') >= 0 || s.indexOf('order') >= 0 || s.indexOf('created') >= 0) return { dot: 'db', label: 'Shipment Booked' };
     return { dot: 'dt', label: st.length > 25 ? st.substring(0, 25) + '…' : st };
 }
 
