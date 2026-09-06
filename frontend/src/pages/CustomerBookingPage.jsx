@@ -152,7 +152,27 @@ export default function CustomerBookingPage() {
     }))
   }, [])
 
-  // Fetch customer saved addresses
+  // Addresses received from parent window (WP Customer Dashboard iframe bridge)
+  const [parentAddresses, setParentAddresses] = useState([])
+
+  useEffect(() => {
+    function handleMsg(e) {
+      if (e.data && e.data.type === 'PE_SAVED_ADDRESSES' && Array.isArray(e.data.addresses)) {
+        setParentAddresses(e.data.addresses)
+      } else if (e.data && e.data.type === 'PE_ADDRESS_SAVED' && e.data.address) {
+        setParentAddresses(prev => [e.data.address, ...prev.filter(a => a.id !== e.data.address.id)])
+      }
+    }
+    window.addEventListener('message', handleMsg)
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'PE_REQUEST_SAVED_ADDRESSES' }, '*')
+      }
+    } catch (_) {}
+    return () => window.removeEventListener('message', handleMsg)
+  }, [])
+
+  // Fetch customer saved addresses from Node API
   const { data: addressesData, refetch: refetchAddresses } = useQuery({
     queryKey: ['customer-addresses', customerContext.customerId, customerContext.customerEmail, customerContext.customerPhone],
     queryFn: () => customerApi.getAddresses({
@@ -162,14 +182,26 @@ export default function CustomerBookingPage() {
     }).then(res => res.data),
     enabled: true
   })
-  const savedAddresses = addressesData?.addresses || []
+
+  // Deduplicate and combine addresses from API and parent WP window
+  const savedAddresses = useMemo(() => {
+    const apiAddrs = addressesData?.addresses || []
+    const combined = [...apiAddrs, ...parentAddresses]
+    const map = new Map()
+    for (const a of combined) {
+      const key = `${(a.name || '').trim().toLowerCase()}_${(a.phone || '').trim()}_${(a.address || '').trim().toLowerCase()}`
+      if (key && !map.has(key)) map.set(key, a)
+    }
+    return Array.from(map.values())
+  }, [addressesData, parentAddresses])
 
   // Extract and deduplicate senders and receivers for autocomplete
   const allSenders = useMemo(() => {
     const map = new Map()
-    for (const a of (savedAddresses || [])) {
-      if (a.address_type === 'sender' || a.address_type === 'both' || !a.address_type) {
-        const key = (a.name || '').trim().toLowerCase()
+    for (const a of savedAddresses) {
+      const rawType = (a.address_type || 'both').toLowerCase()
+      if (rawType === 'sender' || rawType === 'both' || !a.address_type) {
+        const key = `${(a.name || '').trim().toLowerCase()}_${(a.phone || '').trim()}`
         if (key && !map.has(key)) map.set(key, a)
       }
     }
@@ -178,9 +210,10 @@ export default function CustomerBookingPage() {
 
   const allReceivers = useMemo(() => {
     const map = new Map()
-    for (const a of (savedAddresses || [])) {
-      if (a.address_type === 'receiver' || a.address_type === 'both' || !a.address_type) {
-        const key = (a.name || '').trim().toLowerCase()
+    for (const a of savedAddresses) {
+      const rawType = (a.address_type || 'both').toLowerCase()
+      if (rawType === 'receiver' || rawType === 'both' || !a.address_type) {
+        const key = `${(a.name || '').trim().toLowerCase()}_${(a.phone || '').trim()}`
         if (key && !map.has(key)) map.set(key, a)
       }
     }
@@ -194,25 +227,31 @@ export default function CustomerBookingPage() {
   const receiverContainerRef = useRef(null)
 
   const filteredSenders = useMemo(() => {
-    if (!form.sender_name || form.sender_name.trim().length < 1) return []
+    if (!form.sender_name || form.sender_name.trim().length < 1) {
+      return allSenders.slice(0, 10)
+    }
     const q = form.sender_name.toLowerCase().trim()
-    return allSenders.filter(s =>
+    const matches = allSenders.filter(s =>
       (s.name || '').toLowerCase().includes(q) ||
       (s.company || '').toLowerCase().includes(q) ||
       (s.phone || '').includes(q) ||
       (s.city || '').toLowerCase().includes(q)
-    ).slice(0, 8)
+    )
+    return matches.length > 0 ? matches.slice(0, 10) : allSenders.slice(0, 10)
   }, [allSenders, form.sender_name])
 
   const filteredReceivers = useMemo(() => {
-    if (!form.receiver_name || form.receiver_name.trim().length < 1) return []
+    if (!form.receiver_name || form.receiver_name.trim().length < 1) {
+      return allReceivers.slice(0, 10)
+    }
     const q = form.receiver_name.toLowerCase().trim()
-    return allReceivers.filter(r =>
+    const matches = allReceivers.filter(r =>
       (r.name || '').toLowerCase().includes(q) ||
       (r.company || '').toLowerCase().includes(q) ||
       (r.phone || '').includes(q) ||
       (r.city || '').toLowerCase().includes(q)
-    ).slice(0, 8)
+    )
+    return matches.length > 0 ? matches.slice(0, 10) : allReceivers.slice(0, 10)
   }, [allReceivers, form.receiver_name])
 
   // Click outside listener to close autocomplete dropdowns
@@ -940,6 +979,16 @@ export default function CustomerBookingPage() {
           <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs">
             <div className="flex items-center justify-between gap-2 mb-3.5 flex-wrap">
               <RedBadge title="Shipper (Pickup Details)" icon={User} />
+              {allSenders.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setSenderSuggestionsOpen(p => !p)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
+                >
+                  <Bookmark className="w-3.5 h-3.5 text-blue-600" />
+                  Saved Senders ({allSenders.length})
+                </button>
+              )}
             </div>
 
             <div className="space-y-4">
@@ -947,9 +996,10 @@ export default function CustomerBookingPage() {
                 <CompactField label="Sender Full Name" required>
                   <input
                     type="text"
-                    placeholder="Type name to autofill or enter new..."
+                    placeholder="Type name to autofill or select saved..."
                     value={form.sender_name}
-                    onFocus={() => { if (filteredSenders.length > 0) setSenderSuggestionsOpen(true) }}
+                    onFocus={() => { if (allSenders.length > 0) setSenderSuggestionsOpen(true) }}
+                    onClick={() => { if (allSenders.length > 0) setSenderSuggestionsOpen(true) }}
                     onChange={e => {
                       updateForm('sender_name', e.target.value)
                       setSenderSuggestionsOpen(true)
@@ -1233,6 +1283,16 @@ export default function CustomerBookingPage() {
           <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs">
             <div className="flex items-center justify-between gap-2 mb-3.5 flex-wrap">
               <RedBadge title="Consignee (Delivery Details)" icon={MapPin} />
+              {allReceivers.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setReceiverSuggestionsOpen(p => !p)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+                >
+                  <Bookmark className="w-3.5 h-3.5 text-emerald-600" />
+                  Saved Receivers ({allReceivers.length})
+                </button>
+              )}
             </div>
 
             <div className="space-y-4">
@@ -1240,9 +1300,10 @@ export default function CustomerBookingPage() {
                 <CompactField label="Receiver Full Name" required highlight={!form.receiver_name && !form.receiver_company}>
                   <input
                     type="text"
-                    placeholder="Type name to autofill or enter new..."
+                    placeholder="Type name to autofill or select saved..."
                     value={form.receiver_name}
-                    onFocus={() => { if (filteredReceivers.length > 0) setReceiverSuggestionsOpen(true) }}
+                    onFocus={() => { if (allReceivers.length > 0) setReceiverSuggestionsOpen(true) }}
+                    onClick={() => { if (allReceivers.length > 0) setReceiverSuggestionsOpen(true) }}
                     onChange={e => {
                       updateForm('receiver_name', e.target.value)
                       setReceiverSuggestionsOpen(true)

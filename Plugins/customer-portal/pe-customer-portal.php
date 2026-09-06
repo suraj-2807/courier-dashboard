@@ -1098,15 +1098,39 @@ function pe_cp_ajax_get_addresses()
         if (function_exists('pe_cp_create_tables')) {
             pe_cp_create_tables();
         }
+    } else {
+        // Ensure address_type column exists if table was created previously
+        $has_col = $wpdb->get_results("SHOW COLUMNS FROM customer_addresses LIKE 'address_type'");
+        if (empty($has_col)) {
+            $wpdb->query("ALTER TABLE customer_addresses ADD COLUMN address_type VARCHAR(20) DEFAULT 'both' AFTER customer_phone");
+        }
     }
 
-    $where = "1=1";
+    $clean_p = preg_replace('/[^0-9]/', '', $phone);
+    $last10 = (strlen($clean_p) >= 10) ? substr($clean_p, -10) : $clean_p;
+
+    $conds = [];
+    $params = [];
     if ($custId > 0) {
-        $where .= $wpdb->prepare(" AND (customer_id = %d OR LOWER(customer_email) = LOWER(%s) OR customer_phone = %s)", $custId, $email, $phone);
-    } elseif ($email) {
-        $where .= $wpdb->prepare(" AND (LOWER(customer_email) = LOWER(%s) OR customer_phone = %s)", $email, $phone);
-    } elseif ($phone) {
-        $where .= $wpdb->prepare(" AND customer_phone = %s", $phone);
+        $conds[] = "customer_id = %d";
+        $params[] = $custId;
+    }
+    if ($email) {
+        $conds[] = "LOWER(customer_email) = LOWER(%s)";
+        $params[] = $email;
+    }
+    if ($phone) {
+        $conds[] = "customer_phone = %s";
+        $params[] = $phone;
+        if (!empty($last10) && $last10 !== $phone) {
+            $conds[] = "customer_phone LIKE %s";
+            $params[] = '%' . $wpdb->esc_like($last10) . '%';
+        }
+    }
+
+    $where = !empty($conds) ? "(" . implode(" OR ", $conds) . ")" : "1=1";
+    if (!empty($params)) {
+        $where = $wpdb->prepare($where, ...$params);
     }
 
     $rows = $wpdb->get_results("SELECT * FROM customer_addresses WHERE $where ORDER BY is_default DESC, updated_at DESC", ARRAY_A);
@@ -1192,6 +1216,15 @@ function pe_cp_ajax_save_address()
         wp_send_json_error(['message' => 'Name, Phone, Address Line 1, and City are required']);
     }
 
+    if (!$wpdb->get_var("SHOW TABLES LIKE 'customer_addresses'")) {
+        if (function_exists('pe_cp_create_tables')) pe_cp_create_tables();
+    } else {
+        $has_col = $wpdb->get_results("SHOW COLUMNS FROM customer_addresses LIKE 'address_type'");
+        if (empty($has_col)) {
+            $wpdb->query("ALTER TABLE customer_addresses ADD COLUMN address_type VARCHAR(20) DEFAULT 'both' AFTER customer_phone");
+        }
+    }
+
     if ($is_default && $custId > 0) {
         $wpdb->query($wpdb->prepare("UPDATE customer_addresses SET is_default = 0 WHERE customer_id = %d", $custId));
     }
@@ -1226,6 +1259,17 @@ function pe_cp_ajax_save_address()
     }
 
     $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM customer_addresses WHERE id = %d", $savedId), ARRAY_A);
+
+    // Sync to Hostinger Node.js backend (non-blocking) so booking form can see it
+    $sync_payload = array_merge($data, ['wp_address_id' => $savedId]);
+    wp_remote_post('https://purple-raccoon-753399.hostingersite.com/api/customer/addresses', [
+        'timeout'   => 5,
+        'blocking'  => false,
+        'sslverify' => false,
+        'headers'   => ['Content-Type' => 'application/json'],
+        'body'      => json_encode($sync_payload),
+    ]);
+
     wp_send_json_success(['message' => 'Address saved successfully!', 'address' => $row]);
 }
 add_action('wp_ajax_pe_cp_save_address', 'pe_cp_ajax_save_address');
@@ -1241,6 +1285,18 @@ function pe_cp_ajax_delete_address()
     global $wpdb;
     $id = intval($_POST['id'] ?? 0);
     if ($id > 0) {
+        // Sync delete to Hostinger Node.js backend (non-blocking)
+        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM customer_addresses WHERE id = %d", $id), ARRAY_A);
+        if ($row) {
+            wp_remote_request('https://purple-raccoon-753399.hostingersite.com/api/customer/addresses/' . $id, [
+                'method'    => 'DELETE',
+                'timeout'   => 5,
+                'blocking'  => false,
+                'sslverify' => false,
+                'headers'   => ['Content-Type' => 'application/json'],
+                'body'      => json_encode(['name' => $row['name'], 'phone' => $row['phone'], 'address' => $row['address'], 'customer_id' => $row['customer_id']]),
+            ]);
+        }
         $wpdb->delete('customer_addresses', ['id' => $id]);
     }
     wp_send_json_success(['message' => 'Address deleted']);

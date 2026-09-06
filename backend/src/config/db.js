@@ -515,6 +515,12 @@ export async function initializeDb() {
         INDEX idx_addr_type (address_type)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
       console.log('customer_addresses table ready.')
+      try {
+        const hasAddrCol = await query(`SHOW COLUMNS FROM customer_addresses LIKE 'address_type'`)
+        if (!hasAddrCol || hasAddrCol.length === 0) {
+          await execute(`ALTER TABLE customer_addresses ADD COLUMN address_type ENUM('sender', 'receiver', 'both') DEFAULT 'both' AFTER customer_phone`)
+        }
+      } catch (colErr) {}
     } catch (caErr) {
       if (caErr.code !== 'ER_TABLE_EXISTS_ERROR') {
         console.error('customer_addresses table migration failed:', caErr.message)

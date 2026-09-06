@@ -1459,6 +1459,9 @@ cpSwitchTab = function(tabId, btn) {
     } else if (tabId === 'addresses') {
         cpStopReqPolling();
         cpLoadAddresses();
+    } else if (tabId === 'new-booking') {
+        cpStopReqPolling();
+        cpSyncAddressesToIframe();
     } else if (tabId === 'documents') {
         cpStopReqPolling();
         cpLoadDocuments();
@@ -1473,6 +1476,31 @@ cpSwitchTab = function(tabId, btn) {
 // ══════════════════════════════════════
 var cpSavedAddresses = [];
 var cpAddrFilter = 'all';
+
+function cpSyncAddressesToIframe() {
+    var iframe = document.getElementById('pe-booking-iframe');
+    if (iframe && iframe.contentWindow) {
+        if (cpSavedAddresses && cpSavedAddresses.length > 0) {
+            iframe.contentWindow.postMessage({ type: 'PE_SAVED_ADDRESSES', addresses: cpSavedAddresses }, '*');
+        } else {
+            cpAjax('pe_cp_get_addresses', {}, function(res) {
+                if (res.success && res.data?.addresses) {
+                    cpSavedAddresses = res.data.addresses;
+                    if (iframe && iframe.contentWindow) {
+                        iframe.contentWindow.postMessage({ type: 'PE_SAVED_ADDRESSES', addresses: cpSavedAddresses }, '*');
+                    }
+                }
+            });
+        }
+    }
+}
+
+// Listen for iframe requests for saved addresses
+window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'PE_REQUEST_SAVED_ADDRESSES') {
+        cpSyncAddressesToIframe();
+    }
+});
 
 function cpSetAddrFilter(filter, btn) {
     cpAddrFilter = filter;
@@ -1491,6 +1519,7 @@ function cpLoadAddresses() {
         }
         cpSavedAddresses = res.data.addresses || [];
         cpRenderAddresses();
+        cpSyncAddressesToIframe();
     });
 }
 
@@ -1498,11 +1527,21 @@ function cpRenderAddresses() {
     var c = document.getElementById('cp-addresses-container');
     if (!c) return;
 
-    // Filter addresses
+    // Filter addresses (Sender shows sender & both, Receiver shows receiver & both)
     var filtered = cpSavedAddresses;
     if (cpAddrFilter !== 'all') {
         filtered = cpSavedAddresses.filter(function(a) {
-            return (a.address_type || 'both').toLowerCase() === cpAddrFilter;
+            var rawType = (a.address_type || 'both').toLowerCase();
+            if (cpAddrFilter === 'sender') {
+                return rawType === 'sender' || rawType === 'both';
+            }
+            if (cpAddrFilter === 'receiver') {
+                return rawType === 'receiver' || rawType === 'both';
+            }
+            if (cpAddrFilter === 'both') {
+                return rawType === 'both';
+            }
+            return rawType === cpAddrFilter;
         });
     }
 
@@ -1619,8 +1658,13 @@ function cpHandleAddressSubmit(e) {
         if (res.success) {
             cpCloseAddressModal();
             cpLoadAddresses();
+            cpShowToast('success', 'Address Saved', res.data?.message || 'Address saved successfully!');
+            var iframe = document.getElementById('pe-booking-iframe');
+            if (iframe && iframe.contentWindow && res.data?.address) {
+                iframe.contentWindow.postMessage({ type: 'PE_ADDRESS_SAVED', address: res.data.address }, '*');
+            }
         } else {
-            alert(res.data?.message || 'Failed to save address');
+            cpShowToast('error', 'Save Failed', res.data?.message || 'Failed to save address');
         }
     });
 }
@@ -1630,8 +1674,9 @@ function cpDeleteAddress(id) {
     cpAjax('pe_cp_delete_address', { id: id }, function(res) {
         if (res.success) {
             cpLoadAddresses();
+            cpShowToast('success', 'Address Deleted', res.data?.message || 'Address deleted');
         } else {
-            alert(res.data?.message || 'Failed to delete address');
+            cpShowToast('error', 'Delete Failed', res.data?.message || 'Failed to delete address');
         }
     });
 }
