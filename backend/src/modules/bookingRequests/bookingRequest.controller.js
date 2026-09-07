@@ -224,26 +224,43 @@ export const createBookingRequest = async (req, res) => {
       )
     }
 
+    console.log('[createBookingRequest] 📦 Submitting booking request. AWB:', request_awb, '| customer:', resolvedCustomerId, customer_name)
+
     // ── Dual Sync to Remote DB and WordPress DB ──
     const bookingSyncPayload = {
+      id: insertResult.insertId,
       request_awb,
       customer_id: resolvedCustomerId,
       customer_name: customer_name || sender_name || '',
       customer_email: customer_email || sender_email || '',
       customer_phone: customer_phone || sender_phone || '',
       customer_company: customer_company || sender_company || '',
-      sender_name: sender_name || '', sender_company: sender_company || '',
-      sender_email: sender_email || '', sender_phone: sender_phone || '',
-      sender_address: sender_address || '', sender_address_2: sender_address_2 || '',
-      sender_city: sender_city || '', sender_pincode: sender_pincode || '',
-      sender_state: sender_state || '', sender_country: sender_country || 'INDIA',
-      sender_gstin_type: sender_gstin_type || '', sender_gstin_no: sender_gstin_no || '',
-      receiver_name: receiver_name || '', receiver_email: receiver_email || '',
+      sender_name: sender_name || '',
+      sender_company: sender_company || '',
+      sender_email: sender_email || '',
+      sender_phone: sender_phone || '',
+      sender_phone_2: sender_phone_2 || '',
+      sender_address: sender_address || '',
+      sender_address_2: sender_address_2 || '',
+      sender_city: sender_city || '',
+      sender_pincode: sender_pincode || '',
+      sender_state: sender_state || '',
+      sender_country: sender_country || 'INDIA',
+      sender_gstin_type: sender_gstin_type || '',
+      sender_gstin_no: sender_gstin_no || '',
+      receiver_name: receiver_name || '',
+      receiver_company: receiver_company || '',
+      receiver_email: receiver_email || '',
       receiver_phone: receiver_phone || '',
-      receiver_address: receiver_address || '', receiver_address_2: receiver_address_2 || '',
-      receiver_city: receiver_city || '', receiver_pincode: receiver_pincode || '',
-      receiver_state: receiver_state || '', receiver_country: receiver_country || '',
-      receiver_gstin_type: receiver_gstin_type || '', receiver_gstin_no: receiver_gstin_no || '',
+      receiver_phone_2: receiver_phone_2 || '',
+      receiver_address: receiver_address || '',
+      receiver_address_2: receiver_address_2 || '',
+      receiver_city: receiver_city || '',
+      receiver_pincode: receiver_pincode || '',
+      receiver_state: receiver_state || '',
+      receiver_country: receiver_country || '',
+      receiver_gstin_type: receiver_gstin_type || '',
+      receiver_gstin_no: receiver_gstin_no || '',
       package_type: package_type || 'parcel',
       weight: parseFloat(weight) || 0,
       length: parseFloat(length) || 0,
@@ -270,9 +287,15 @@ export const createBookingRequest = async (req, res) => {
       status: 'pending'
     }
 
-    syncBookingRequestToRemoteDb(bookingSyncPayload).catch(() => {})
-    syncInitialRequestToAwbEntry(bookingSyncPayload).catch(() => {})
-    syncBookingToWP(bookingSyncPayload).catch(() => {})
+    syncBookingRequestToRemoteDb(bookingSyncPayload)
+      .then(r => console.log('[createBookingRequest] syncBookingRequestToRemoteDb result:', r))
+      .catch(e => console.error('[createBookingRequest] syncBookingRequestToRemoteDb ERROR:', e.message))
+    syncInitialRequestToAwbEntry(bookingSyncPayload)
+      .then(r => console.log('[createBookingRequest] syncInitialRequestToAwbEntry result:', r))
+      .catch(e => console.error('[createBookingRequest] syncInitialRequestToAwbEntry ERROR:', e.message))
+    syncBookingToWP(bookingSyncPayload)
+      .then(r => console.log('[createBookingRequest] syncBookingToWP result:', r))
+      .catch(e => console.error('[createBookingRequest] syncBookingToWP ERROR:', e.message))
 
     return res.status(201).json({
       success: true,
@@ -299,6 +322,8 @@ export const getBookingRequests = async (req, res) => {
       sort_by = 'created_at',
       sort_order = 'desc'
     } = req.query
+
+    console.log('[getBookingRequests] 📥 Fetching requests. Query params:', JSON.stringify(req.query))
 
     const pageNum = parseInt(page)
     const limitNum = parseInt(limit)
@@ -379,6 +404,14 @@ export const getBookingRequests = async (req, res) => {
       })
     })
 
+    console.log(`[getBookingRequests] 📤 Returning ${rows.length} requests (total: ${total}) | counts:`, {
+      all: (countPending + countProcessing + countRejected),
+      pending: countPending,
+      processing: countProcessing,
+      rejected: countRejected
+    })
+    console.log(`[getBookingRequests] First few items:`, rows.slice(0, 3).map(r => ({ id: r.id, awb: r.request_awb, status: r.status, customer: r.customer_name })))
+
     return res.json({
       success: true,
       requests: rows,
@@ -396,6 +429,7 @@ export const getBookingRequests = async (req, res) => {
       }
     })
   } catch (error) {
+    console.error('[getBookingRequests] ❌ Error:', error.message)
     return res.status(500).json({ success: false, message: error.message })
   }
 }
@@ -453,6 +487,8 @@ export const updateBookingRequestStatus = async (req, res) => {
     }
     const oldRequest = existingRows[0]
 
+    console.log(`[updateBookingRequestStatus] 🔄 Updating request id: ${id} from "${oldRequest.status}" to "${status}" (shipment_id: ${shipment_id})`)
+
     const updates = ['status = ?']
     const params = [status]
 
@@ -478,7 +514,8 @@ export const updateBookingRequestStatus = async (req, res) => {
     }
 
     params.push(id)
-    await execute(`UPDATE booking_requests SET ${updates.join(', ')} WHERE id = ?`, params)
+    const updateResult = await execute(`UPDATE booking_requests SET ${updates.join(', ')} WHERE id = ?`, params)
+    console.log(`[updateBookingRequestStatus] ✅ UPDATE executed. affectedRows:`, updateResult?.affectedRows ?? 'N/A')
 
     const rows = await query('SELECT * FROM booking_requests WHERE id = ?', [id])
     const newRequest = rows[0]
@@ -526,7 +563,9 @@ export const updateBookingRequestStatus = async (req, res) => {
       shipmentId: newRequest.shipment_id,
       trackingNumber: newRequest.tracking_number,
       adminNotes: newRequest.admin_notes
-    }).catch(() => {})
+    })
+      .then(r => console.log(`[updateBookingRequestStatus] Remote DB sync result: ${r}`))
+      .catch((err) => console.error('[updateBookingRequestStatus] Remote DB sync ERROR:', err.message))
 
     // ── Fire-and-forget sync to WordPress DB ──
     syncStatusToWP({
@@ -536,10 +575,13 @@ export const updateBookingRequestStatus = async (req, res) => {
       shipment_id: newRequest.shipment_id,
       tracking_number: newRequest.tracking_number,
       updates: wpUpdates
-    }).catch(() => {}) // never throw
+    })
+      .then(r => console.log(`[updateBookingRequestStatus] WP sync triggered`))
+      .catch((err) => console.error('[updateBookingRequestStatus] WP sync ERROR:', err.message))
 
     return res.json({ success: true, request: newRequest })
   } catch (error) {
+    console.error('[updateBookingRequestStatus] ❌ Error:', error.message)
     return res.status(500).json({ success: false, message: error.message })
   }
 }
@@ -657,7 +699,7 @@ export const cancelBookingRequest = async (req, res) => {
     await execute('UPDATE booking_requests SET status = ? WHERE request_awb = ?', ['cancelled', request_awb])
 
     // Cancel in remote DB (AWBENTRY + booking_requests)
-    cancelBookingRequestInRemoteDb(request_awb, customer_id).catch(() => {})
+    cancelBookingRequestInRemoteDb(request_awb, customer_id).catch(() => { })
 
     // Sync status to WP
     syncStatusToWP({
@@ -668,7 +710,7 @@ export const cancelBookingRequest = async (req, res) => {
         title: 'Booking Cancelled',
         description: 'This booking request has been cancelled by the customer.'
       }]
-    }).catch(() => {})
+    }).catch(() => { })
 
     return res.json({ success: true, message: 'Booking request cancelled successfully' })
   } catch (error) {

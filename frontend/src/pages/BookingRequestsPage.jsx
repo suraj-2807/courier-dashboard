@@ -80,11 +80,15 @@ export default function BookingRequestsPage() {
       const params = { page, limit: 15 }
       if (activeTab) params.status = activeTab
       if (search) params.search = search
+      console.log('[BookingRequestsPage] 🔍 Fetching requests with params:', params)
       const { data } = await api.get('/booking-requests', { params })
+      console.log('[BookingRequestsPage] 📥 Received requests:', (data.requests || []).length, 'items. Counts:', data.counts)
+      console.log('[BookingRequestsPage] Requests list:', (data.requests || []).map(r => ({ id: r.id, awb: r.request_awb, status: r.status, customer: r.customer_name })))
       setRequests(data.requests || [])
       setCounts(data.counts || {})
       setPagination(data.pagination || { page: 1, totalPages: 1, total: 0 })
     } catch (err) {
+      console.error('[BookingRequestsPage] ❌ Error fetching requests:', err)
       toast.error('Failed to load requests')
     } finally {
       setLoading(false)
@@ -111,33 +115,36 @@ export default function BookingRequestsPage() {
 
   const handleUpdateStatus = async (id, status, notes = '') => {
     try {
+      console.log('[BookingRequestsPage] 🔄 Updating status for request id:', id, 'to:', status)
       await api.patch(`/booking-requests/${id}/status`, { status, admin_notes: notes })
       toast.success(`Request ${status}`)
       setSelectedRequest(null)
       setShowRejectModal(null)
       fetchRequests(pagination.page)
     } catch (err) {
+      console.error('[BookingRequestsPage] ❌ Failed to update status:', err)
       toast.error('Failed to update status')
     }
   }
 
   const handleConfirmAndBook = async (request) => {
+    console.log('[BookingRequestsPage] 🚀 handleConfirmAndBook clicked for request:', { id: request.id, awb: request.request_awb, status: request.status })
     // Fetch full request data (with parsed parcels/invoice_items) from API
     try {
       const { data } = await api.get(`/booking-requests/${request.id}`)
       const fullRequest = data.request || request
 
-      // Navigate to new booking page with full request data via state
-      // NOTE: We do NOT mark as 'processing' here. Status will be updated
-      // only when the booking is actually created in NewBookingPage.
       const params = new URLSearchParams({
         from_request: fullRequest.id,
         request_awb: fullRequest.request_awb
       })
-      navigate(`/bookings/new?${params.toString()}`, {
+      const targetUrl = `/bookings/new?${params.toString()}`
+      console.log('[BookingRequestsPage] ➡️ Navigating to:', targetUrl, 'with state:', { from_request: fullRequest.id, request_awb: fullRequest.request_awb })
+      navigate(targetUrl, {
         state: { requestData: fullRequest }
       })
     } catch (err) {
+      console.error('[BookingRequestsPage] ❌ Failed to load request data:', err)
       toast.error('Failed to load request data')
     }
   }
@@ -176,9 +183,8 @@ export default function BookingRequestsPage() {
             >
               <tab.icon className="w-4 h-4" />
               {tab.label}
-              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${
-                active ? 'bg-white/20 text-white' : 'bg-surface-alt text-text-tertiary'
-              }`}>
+              <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center ${active ? 'bg-white/20 text-white' : 'bg-surface-alt text-text-tertiary'
+                }`}>
                 {count}
               </span>
             </button>
@@ -355,11 +361,10 @@ export default function BookingRequestsPage() {
                   <button
                     key={pg}
                     onClick={() => fetchRequests(pg)}
-                    className={`w-8 h-8 rounded-lg border text-[12px] font-bold flex items-center justify-center transition-colors cursor-pointer ${
-                      pg === pagination.page
+                    className={`w-8 h-8 rounded-lg border text-[12px] font-bold flex items-center justify-center transition-colors cursor-pointer ${pg === pagination.page
                         ? 'bg-primary text-white border-primary'
                         : 'bg-surface text-text-secondary border-border hover:bg-surface-hover'
-                    }`}
+                      }`}
                   >
                     {pg}
                   </button>
@@ -660,7 +665,8 @@ export default function BookingRequestsPage() {
       )}
 
       {/* Slide-in animation */}
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
         .animate-slide-in-right { animation: slideInRight 0.3s ease-out; }
       `}} />

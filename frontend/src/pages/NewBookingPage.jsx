@@ -1203,6 +1203,18 @@ export default function NewBookingPage() {
     request_awb: requestAwb || form.request_awb || form.tracking_number || undefined,
     tracking_number: form.tracking_number || requestAwb || undefined
   }
+
+  // DEBUG: Log request linking values
+  console.log('[buildPayload] ====== REQUEST LINKING DEBUG ======')
+  console.log('[buildPayload] fromRequestId (from URL):', fromRequestId)
+  console.log('[buildPayload] requestAwb (from URL):', requestAwb)
+  console.log('[buildPayload] form.from_request:', form.from_request)
+  console.log('[buildPayload] form.request_awb:', form.request_awb)
+  console.log('[buildPayload] form.tracking_number:', form.tracking_number)
+  console.log('[buildPayload] FINAL payload.from_request:', payload.from_request)
+  console.log('[buildPayload] FINAL payload.request_awb:', payload.request_awb)
+
+  return payload
   }
 
   const validateForm = () => {
@@ -1261,11 +1273,21 @@ export default function NewBookingPage() {
 
     setSavingDraft(true)
     try {
-      const result = await saveBookingMutation.mutateAsync(buildPayload())
+      const payload = buildPayload()
+      console.log('[NewBookingPage] 💾 handleSaveBooking payload:', {
+        from_request: payload.from_request,
+        request_awb: payload.request_awb,
+        tracking_number: payload.tracking_number,
+        customer_name: payload.customer_name,
+        shipping_charge: payload.shipping_charge
+      })
+      const result = await saveBookingMutation.mutateAsync(payload)
+      console.log('[NewBookingPage] 💾 handleSaveBooking result:', result)
       const awb = result?.awb_number || result?.booking?.tracking_number || 'N/A'
       toast.success(`Booking saved as draft! AWB: ${awb}`)
       navigate('/bookings')
     } catch (err) {
+      console.error('[NewBookingPage] ❌ handleSaveBooking error:', err)
       toast.error(err?.response?.data?.message || err.message || 'Failed to save booking')
     } finally {
       setSavingDraft(false)
@@ -1313,7 +1335,21 @@ export default function NewBookingPage() {
 
     setSubmitting(true)
     try {
-      const result = await createBooking.mutateAsync(buildPayload())
+      const payload = buildPayload()
+      console.log('[NewBookingPage] 🚀 handleSubmit (Push to API) payload linking info:', {
+        from_request: payload.from_request,
+        request_awb: payload.request_awb,
+        tracking_number: payload.tracking_number,
+        vendor_config_id: payload.vendor_config_id,
+        vendor_code: payload.vendor_code
+      })
+      const result = await createBooking.mutateAsync(payload)
+      console.log('[NewBookingPage] 🚀 handleSubmit createBooking result:', {
+        success: result?.success,
+        shipment_id: result?.booking?.id,
+        tracking_number: result?.booking?.tracking_number,
+        vendor_result: result?.vendor_result
+      })
 
       const ourAwb = result?.booking?.tracking_number || 'N/A'
       const vendorAwb = result?.vendor_result?.awbNumber || ''
@@ -1334,6 +1370,7 @@ export default function NewBookingPage() {
         navigate('/bookings')
       }
     } catch (err) {
+      console.error('[NewBookingPage] ❌ handleSubmit error:', err)
       const errorMsg = err?.response?.data?.message || err?.response?.data?.error || err.message || 'Failed to create booking'
       setPushError(errorMsg)
       toast.error(errorMsg, { duration: 10000 })

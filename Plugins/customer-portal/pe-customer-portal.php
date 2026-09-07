@@ -48,20 +48,24 @@ function pe_cp_encrypt($data)
     $key = hash('sha256', PE_CP_SESSION_SECRET, true);
     $iv = openssl_random_pseudo_bytes(16);
     $encrypted = openssl_encrypt(serialize($data), 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
-    if ($encrypted === false) return null;
+    if ($encrypted === false)
+        return null;
     return base64_encode($iv . $encrypted);
 }
 
 function pe_cp_decrypt($payload)
 {
-    if (empty($payload)) return null;
+    if (empty($payload))
+        return null;
     $key = hash('sha256', PE_CP_SESSION_SECRET, true);
     $raw = base64_decode($payload, true);
-    if ($raw === false || strlen($raw) < 17) return null;
+    if ($raw === false || strlen($raw) < 17)
+        return null;
     $iv = substr($raw, 0, 16);
     $encrypted = substr($raw, 16);
     $decrypted = openssl_decrypt($encrypted, 'aes-256-cbc', $key, OPENSSL_RAW_DATA, $iv);
-    if ($decrypted === false) return null;
+    if ($decrypted === false)
+        return null;
     $data = @unserialize($decrypted);
     return $data !== false ? $data : null;
 }
@@ -69,18 +73,23 @@ function pe_cp_decrypt($payload)
 function pe_cp_session_get()
 {
     $token = $_COOKIE[PE_CP_COOKIE_NAME] ?? null;
-    if (!$token) return null;
+    if (!$token)
+        return null;
     $encrypted = get_transient('pe_cp_sess_' . $token);
-    if (!$encrypted) return null;
+    if (!$encrypted)
+        return null;
     return pe_cp_decrypt($encrypted);
 }
 
 function pe_cp_session_set($data, $token = null)
 {
-    if (!$token) $token = $_COOKIE[PE_CP_COOKIE_NAME] ?? null;
-    if (!$token) return false;
+    if (!$token)
+        $token = $_COOKIE[PE_CP_COOKIE_NAME] ?? null;
+    if (!$token)
+        return false;
     $encrypted = pe_cp_encrypt($data);
-    if (!$encrypted) return false;
+    if (!$encrypted)
+        return false;
     set_transient('pe_cp_sess_' . $token, $encrypted, 86400);
     return true;
 }
@@ -398,7 +407,14 @@ function pe_cp_ajax_shipments()
         $like = '%' . $wpdb->esc_like($search) . '%';
         $where .= $wpdb->prepare(
             " AND (CAST(a.AWBNO AS CHAR) LIKE %s OR a.CNEENAME LIKE %s OR a.DESTNAME LIKE %s OR a.SNAME LIKE %s OR a.VENDORAWB1 LIKE %s OR a.VENDORAWB2 LIKE %s OR a.VENDNAME LIKE %s OR CAST(a.AWBDATE AS CHAR) LIKE %s)",
-            $like, $like, $like, $like, $like, $like, $like, $like
+            $like,
+            $like,
+            $like,
+            $like,
+            $like,
+            $like,
+            $like,
+            $like
         );
     }
 
@@ -433,14 +449,16 @@ function pe_cp_ajax_shipments()
         if ($has_shipments_tbl) {
             $shp = $wpdb->get_row($wpdb->prepare(
                 "SELECT vendor_code, vendor_awb_number, vendor_awb_number_2, forwarding_no, secondary_carrier, status, total_amount, shipping_charge, grand_total, final_grand_total, net_amount FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
-                strval($r->AWBNO), strval($r->AWBNO)
+                strval($r->AWBNO),
+                strval($r->AWBNO)
             ));
         }
 
         // Lookup booking request for amount/forwarding if not found in AWBENTRY
         $breq = $wpdb->get_row($wpdb->prepare(
             "SELECT shipping_charge, total_amount, forwarding_no FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
-            strval($r->AWBNO), strval($r->AWBNO)
+            strval($r->AWBNO),
+            strval($r->AWBNO)
         ));
 
         $vendor_name = trim(strval($shp->vendor_code ?? ($r->vendor ?? ($r->VENDNAME ?? ''))));
@@ -453,13 +471,20 @@ function pe_cp_ajax_shipments()
             $status = $ph;
         } elseif (!empty($shp->status) && !in_array(strtolower($shp->status), ['booked', 'created', 'pending'])) {
             $stLower = strtolower(trim($shp->status));
-            if ($stLower === 'delivered') $status = 'Delivered';
-            elseif ($stLower === 'in_transit') $status = 'In Transit';
-            elseif ($stLower === 'out_for_delivery') $status = 'Out for Delivery';
-            elseif ($stLower === 'picked_up') $status = 'Picked Up';
-            elseif ($stLower === 'manifested' || $stLower === 'dispatched') $status = 'Manifested & Dispatched';
-            elseif ($stLower === 'cancelled') $status = 'Cancelled';
-            else $status = ucwords(str_replace('_', ' ', $stLower));
+            if ($stLower === 'delivered')
+                $status = 'Delivered';
+            elseif ($stLower === 'in_transit')
+                $status = 'In Transit';
+            elseif ($stLower === 'out_for_delivery')
+                $status = 'Out for Delivery';
+            elseif ($stLower === 'picked_up')
+                $status = 'Picked Up';
+            elseif ($stLower === 'manifested' || $stLower === 'dispatched')
+                $status = 'Manifested & Dispatched';
+            elseif ($stLower === 'cancelled')
+                $status = 'Cancelled';
+            else
+                $status = ucwords(str_replace('_', ' ', $stLower));
         } elseif (!empty($fwd) || !empty($vAwb)) {
             $status = 'In Transit';
         } elseif ($ph) {
@@ -558,7 +583,8 @@ function pe_cp_ajax_shipment_detail()
     // Look up booking_requests for detailed addresses if available
     $breq = $wpdb->get_row($wpdb->prepare(
         "SELECT * FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
-        strval($row->AWBNO), strval($row->AWBNO)
+        strval($row->AWBNO),
+        strval($row->AWBNO)
     ));
 
     $s_addr = trim(implode(', ', array_filter([$row->SADDRESS1 ?? '', $row->SADDRESS2 ?? '', $row->SADDRESS3 ?? '', $row->SCITY ?? '', $row->SPINCODE ?? ''])));
@@ -576,7 +602,9 @@ function pe_cp_ajax_shipment_detail()
     if (!empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"))) {
         $shp = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM shipments WHERE tracking_number = %s OR order_id = %s OR vendor_awb_number = %s LIMIT 1",
-            strval($row->AWBNO), strval($row->AWBNO), strval($row->AWBNO)
+            strval($row->AWBNO),
+            strval($row->AWBNO),
+            strval($row->AWBNO)
         ));
     }
 
@@ -607,21 +635,25 @@ function pe_cp_ajax_shipment_detail()
     $parcels = [];
     if (!empty($shp->parcels)) {
         $parsed = is_string($shp->parcels) ? json_decode($shp->parcels, true) : (is_array($shp->parcels) ? $shp->parcels : []);
-        if (is_array($parsed)) $parcels = $parsed;
+        if (is_array($parsed))
+            $parcels = $parsed;
     }
     if (empty($parcels) && $breq && !empty($breq->parcels)) {
         $parsed = is_string($breq->parcels) ? json_decode($breq->parcels, true) : (is_array($breq->parcels) ? $breq->parcels : []);
-        if (is_array($parsed)) $parcels = $parsed;
+        if (is_array($parsed))
+            $parcels = $parsed;
     }
 
     $invoice_items = [];
     if (!empty($shp->invoice_items)) {
         $parsed = is_string($shp->invoice_items) ? json_decode($shp->invoice_items, true) : (is_array($shp->invoice_items) ? $shp->invoice_items : []);
-        if (is_array($parsed)) $invoice_items = $parsed;
+        if (is_array($parsed))
+            $invoice_items = $parsed;
     }
     if (empty($invoice_items) && $breq && !empty($breq->invoice_items)) {
         $parsed = is_string($breq->invoice_items) ? json_decode($breq->invoice_items, true) : (is_array($breq->invoice_items) ? $breq->invoice_items : []);
-        if (is_array($parsed)) $invoice_items = $parsed;
+        if (is_array($parsed))
+            $invoice_items = $parsed;
     }
 
     // If invoice_items is still empty but parcels have nested items (e.g. from multi-box entry)
@@ -771,7 +803,10 @@ function pe_cp_ajax_cancel_request()
     // Delete or remove the pending booking entry from AWBENTRY
     $wpdb->query($wpdb->prepare(
         "DELETE FROM AWBENTRY WHERE AWBNO = %s AND (CUSTCODE = %s OR CUSTCODE = %s OR CUSTCODE = %s OR CUSTCODE = '')",
-        $request_awb, strval($cust_id), 'CUST-' . $cust_id, 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT)
+        $request_awb,
+        strval($cust_id),
+        'CUST-' . $cust_id,
+        'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT)
     ));
 
     // Record cancellation event in parcel_history
@@ -858,7 +893,16 @@ function pe_cp_ajax_my_requests()
         $like = '%' . $wpdb->esc_like($search) . '%';
         $where .= $wpdb->prepare(
             " AND (request_awb LIKE %s OR receiver_name LIKE %s OR sender_name LIKE %s OR sender_city LIKE %s OR receiver_city LIKE %s OR receiver_country LIKE %s OR customer_phone LIKE %s OR sender_phone LIKE %s OR receiver_phone LIKE %s OR order_reference LIKE %s)",
-            $like, $like, $like, $like, $like, $like, $like, $like, $like, $like
+            $like,
+            $like,
+            $like,
+            $like,
+            $like,
+            $like,
+            $like,
+            $like,
+            $like,
+            $like
         );
     }
 
@@ -1149,7 +1193,9 @@ function pe_cp_ajax_get_addresses()
                 foreach ($body['addresses'] as $addr) {
                     $existing = $wpdb->get_var($wpdb->prepare(
                         "SELECT id FROM customer_addresses WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s)) AND TRIM(phone) = TRIM(%s) AND LOWER(TRIM(address)) = LOWER(TRIM(%s)) LIMIT 1",
-                        $addr['name'] ?? '', $addr['phone'] ?? '', $addr['address'] ?? ''
+                        $addr['name'] ?? '',
+                        $addr['phone'] ?? '',
+                        $addr['address'] ?? ''
                     ));
                     if (!$existing) {
                         $wpdb->insert('customer_addresses', [
@@ -1217,7 +1263,8 @@ function pe_cp_ajax_save_address()
     }
 
     if (!$wpdb->get_var("SHOW TABLES LIKE 'customer_addresses'")) {
-        if (function_exists('pe_cp_create_tables')) pe_cp_create_tables();
+        if (function_exists('pe_cp_create_tables'))
+            pe_cp_create_tables();
     } else {
         $has_col = $wpdb->get_results("SHOW COLUMNS FROM customer_addresses LIKE 'address_type'");
         if (empty($has_col)) {
@@ -1230,24 +1277,24 @@ function pe_cp_ajax_save_address()
     }
 
     $data = [
-        'customer_id'    => $custId ?: null,
+        'customer_id' => $custId ?: null,
         'customer_email' => sanitize_email($cust['email'] ?? ''),
         'customer_phone' => sanitize_text_field($cust['phone'] ?? ''),
-        'address_type'   => $address_type,
-        'name'           => $name,
-        'company'        => $company,
-        'phone'          => $phone,
-        'phone_2'        => $phone_2,
-        'email'          => $email,
-        'address'        => $address,
-        'address_2'      => $address_2,
-        'city'           => $city,
-        'state'          => $state,
-        'pincode'        => $pincode,
-        'country'        => $country ?: 'INDIA',
-        'gstin_type'     => $gstin_type,
-        'gstin_no'       => $gstin_no,
-        'is_default'     => $is_default
+        'address_type' => $address_type,
+        'name' => $name,
+        'company' => $company,
+        'phone' => $phone,
+        'phone_2' => $phone_2,
+        'email' => $email,
+        'address' => $address,
+        'address_2' => $address_2,
+        'city' => $city,
+        'state' => $state,
+        'pincode' => $pincode,
+        'country' => $country ?: 'INDIA',
+        'gstin_type' => $gstin_type,
+        'gstin_no' => $gstin_no,
+        'is_default' => $is_default
     ];
 
     if ($id > 0) {
@@ -1263,11 +1310,11 @@ function pe_cp_ajax_save_address()
     // Sync to Hostinger Node.js backend (non-blocking) so booking form can see it
     $sync_payload = array_merge($data, ['wp_address_id' => $savedId]);
     wp_remote_post('https://purple-raccoon-753399.hostingersite.com/api/customer/addresses', [
-        'timeout'   => 5,
-        'blocking'  => false,
+        'timeout' => 5,
+        'blocking' => false,
         'sslverify' => false,
-        'headers'   => ['Content-Type' => 'application/json'],
-        'body'      => json_encode($sync_payload),
+        'headers' => ['Content-Type' => 'application/json'],
+        'body' => json_encode($sync_payload),
     ]);
 
     wp_send_json_success(['message' => 'Address saved successfully!', 'address' => $row]);
@@ -1289,12 +1336,12 @@ function pe_cp_ajax_delete_address()
         $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM customer_addresses WHERE id = %d", $id), ARRAY_A);
         if ($row) {
             wp_remote_request('https://purple-raccoon-753399.hostingersite.com/api/customer/addresses/' . $id, [
-                'method'    => 'DELETE',
-                'timeout'   => 5,
-                'blocking'  => false,
+                'method' => 'DELETE',
+                'timeout' => 5,
+                'blocking' => false,
                 'sslverify' => false,
-                'headers'   => ['Content-Type' => 'application/json'],
-                'body'      => json_encode(['name' => $row['name'], 'phone' => $row['phone'], 'address' => $row['address'], 'customer_id' => $row['customer_id']]),
+                'headers' => ['Content-Type' => 'application/json'],
+                'body' => json_encode(['name' => $row['name'], 'phone' => $row['phone'], 'address' => $row['address'], 'customer_id' => $row['customer_id']]),
             ]);
         }
         $wpdb->delete('customer_addresses', ['id' => $id]);
@@ -1362,17 +1409,17 @@ function pe_cp_ajax_upload_document()
         $notes = sanitize_textarea_field($_POST['notes'] ?? '');
 
         $wpdb->insert('customer_documents', [
-            'customer_id'    => $custId ?: null,
+            'customer_id' => $custId ?: null,
             'customer_email' => sanitize_email($cust['email'] ?? ''),
             'customer_phone' => sanitize_text_field($cust['phone'] ?? ''),
-            'doc_type'       => $doc_type,
-            'doc_name'       => $doc_name,
-            'doc_number'     => $doc_number,
-            'file_url'       => $movefile['url'],
-            'file_name'      => $file['name'],
-            'file_size'      => intval($file['size']),
-            'file_type'      => $file['type'],
-            'notes'          => $notes
+            'doc_type' => $doc_type,
+            'doc_name' => $doc_name,
+            'doc_number' => $doc_number,
+            'file_url' => $movefile['url'],
+            'file_name' => $file['name'],
+            'file_size' => intval($file['size']),
+            'file_type' => $file['type'],
+            'notes' => $notes
         ]);
 
         $docId = $wpdb->insert_id;
@@ -1587,7 +1634,8 @@ register_activation_hook(__FILE__, function () {
 add_action('init', function () {
     global $wpdb;
     // Only run once per day (use transient to avoid repeated checks)
-    if (get_transient('pe_cp_tables_checked')) return;
+    if (get_transient('pe_cp_tables_checked'))
+        return;
 
     $charset = $wpdb->get_charset_collate();
 
@@ -1752,31 +1800,31 @@ add_action('init', function () {
         $columns = $wpdb->get_col("DESCRIBE booking_requests");
         if ($columns) {
             $missing_columns = [
-                'sender_gstin_type'   => "VARCHAR(50) DEFAULT '' AFTER sender_country",
-                'sender_gstin_no'     => "VARCHAR(50) DEFAULT '' AFTER sender_gstin_type",
+                'sender_gstin_type' => "VARCHAR(50) DEFAULT '' AFTER sender_country",
+                'sender_gstin_no' => "VARCHAR(50) DEFAULT '' AFTER sender_gstin_type",
                 'receiver_gstin_type' => "VARCHAR(50) DEFAULT '' AFTER receiver_country",
-                'receiver_gstin_no'   => "VARCHAR(50) DEFAULT '' AFTER receiver_gstin_type",
-                'length_cm'           => "DECIMAL(10,2) DEFAULT 0 AFTER weight",
-                'breadth'             => "DECIMAL(10,2) DEFAULT 0 AFTER length_cm",
-                'height'              => "DECIMAL(10,2) DEFAULT 0 AFTER breadth",
-                'no_of_pieces'        => "INT DEFAULT 1 AFTER height",
-                'declared_value'      => "DECIMAL(10,2) DEFAULT 0 AFTER content_description",
-                'is_fragile'          => "TINYINT DEFAULT 0 AFTER declared_value",
-                'admin_notes'         => "TEXT AFTER status",
-                'shipment_id'         => "INT DEFAULT NULL AFTER admin_notes",
-                'tracking_number'     => "VARCHAR(50) DEFAULT NULL AFTER shipment_id",
-                'parcels'             => "LONGTEXT DEFAULT NULL AFTER remarks",
-                'invoice_items'       => "LONGTEXT DEFAULT NULL AFTER parcels",
-                'documents'           => "LONGTEXT DEFAULT NULL AFTER invoice_items",
-                'order_reference'     => "VARCHAR(100) DEFAULT '' AFTER documents",
-                'payment_mode'        => "VARCHAR(30) DEFAULT 'prepaid' AFTER order_reference",
-                'shipping_charge'     => "DECIMAL(10,2) DEFAULT 0 AFTER payment_mode",
-                'invoice_type'        => "VARCHAR(30) DEFAULT 'INVOICE' AFTER shipping_charge",
-                'invoice_currency'    => "VARCHAR(10) DEFAULT 'INR' AFTER invoice_type",
-                'hs_code'             => "VARCHAR(50) DEFAULT '' AFTER invoice_currency",
-                'export_reason'       => "VARCHAR(255) DEFAULT '' AFTER hs_code",
-                'terms_of_trade'      => "VARCHAR(20) DEFAULT 'CIF' AFTER export_reason",
-                'invoice_note'        => "TEXT DEFAULT NULL AFTER terms_of_trade",
+                'receiver_gstin_no' => "VARCHAR(50) DEFAULT '' AFTER receiver_gstin_type",
+                'length_cm' => "DECIMAL(10,2) DEFAULT 0 AFTER weight",
+                'breadth' => "DECIMAL(10,2) DEFAULT 0 AFTER length_cm",
+                'height' => "DECIMAL(10,2) DEFAULT 0 AFTER breadth",
+                'no_of_pieces' => "INT DEFAULT 1 AFTER height",
+                'declared_value' => "DECIMAL(10,2) DEFAULT 0 AFTER content_description",
+                'is_fragile' => "TINYINT DEFAULT 0 AFTER declared_value",
+                'admin_notes' => "TEXT AFTER status",
+                'shipment_id' => "INT DEFAULT NULL AFTER admin_notes",
+                'tracking_number' => "VARCHAR(50) DEFAULT NULL AFTER shipment_id",
+                'parcels' => "LONGTEXT DEFAULT NULL AFTER remarks",
+                'invoice_items' => "LONGTEXT DEFAULT NULL AFTER parcels",
+                'documents' => "LONGTEXT DEFAULT NULL AFTER invoice_items",
+                'order_reference' => "VARCHAR(100) DEFAULT '' AFTER documents",
+                'payment_mode' => "VARCHAR(30) DEFAULT 'prepaid' AFTER order_reference",
+                'shipping_charge' => "DECIMAL(10,2) DEFAULT 0 AFTER payment_mode",
+                'invoice_type' => "VARCHAR(30) DEFAULT 'INVOICE' AFTER shipping_charge",
+                'invoice_currency' => "VARCHAR(10) DEFAULT 'INR' AFTER invoice_type",
+                'hs_code' => "VARCHAR(50) DEFAULT '' AFTER invoice_currency",
+                'export_reason' => "VARCHAR(255) DEFAULT '' AFTER hs_code",
+                'terms_of_trade' => "VARCHAR(20) DEFAULT 'CIF' AFTER export_reason",
+                'invoice_note' => "TEXT DEFAULT NULL AFTER terms_of_trade",
             ];
 
             foreach ($missing_columns as $col => $definition) {
@@ -1925,28 +1973,30 @@ function pe_cp_rest_sync_address($request)
 
     $existing = $wpdb->get_var($wpdb->prepare(
         "SELECT id FROM customer_addresses WHERE LOWER(TRIM(name)) = LOWER(TRIM(%s)) AND TRIM(phone) = TRIM(%s) AND LOWER(TRIM(address)) = LOWER(TRIM(%s)) LIMIT 1",
-        $name, $phone, $address
+        $name,
+        $phone,
+        $address
     ));
 
     $data = [
-        'customer_id'    => intval($d['customer_id'] ?? 0) ?: null,
+        'customer_id' => intval($d['customer_id'] ?? 0) ?: null,
         'customer_email' => sanitize_email($d['customer_email'] ?? ''),
         'customer_phone' => sanitize_text_field($d['customer_phone'] ?? ''),
-        'address_type'   => sanitize_text_field($d['address_type'] ?? 'both'),
-        'name'           => $name,
-        'company'        => sanitize_text_field($d['company'] ?? ''),
-        'phone'          => $phone,
-        'phone_2'        => sanitize_text_field($d['phone_2'] ?? ''),
-        'email'          => sanitize_email($d['email'] ?? ''),
-        'address'        => $address,
-        'address_2'      => sanitize_text_field($d['address_2'] ?? ''),
-        'city'           => sanitize_text_field($d['city'] ?? ''),
-        'state'          => sanitize_text_field($d['state'] ?? ''),
-        'pincode'        => sanitize_text_field($d['pincode'] ?? ''),
-        'country'        => sanitize_text_field($d['country'] ?? 'INDIA'),
-        'gstin_type'     => sanitize_text_field($d['gstin_type'] ?? ''),
-        'gstin_no'       => sanitize_text_field($d['gstin_no'] ?? ''),
-        'is_default'     => intval($d['is_default'] ?? 0),
+        'address_type' => sanitize_text_field($d['address_type'] ?? 'both'),
+        'name' => $name,
+        'company' => sanitize_text_field($d['company'] ?? ''),
+        'phone' => $phone,
+        'phone_2' => sanitize_text_field($d['phone_2'] ?? ''),
+        'email' => sanitize_email($d['email'] ?? ''),
+        'address' => $address,
+        'address_2' => sanitize_text_field($d['address_2'] ?? ''),
+        'city' => sanitize_text_field($d['city'] ?? ''),
+        'state' => sanitize_text_field($d['state'] ?? ''),
+        'pincode' => sanitize_text_field($d['pincode'] ?? ''),
+        'country' => sanitize_text_field($d['country'] ?? 'INDIA'),
+        'gstin_type' => sanitize_text_field($d['gstin_type'] ?? ''),
+        'gstin_no' => sanitize_text_field($d['gstin_no'] ?? ''),
+        'is_default' => intval($d['is_default'] ?? 0),
     ];
 
     if ($existing) {
@@ -2055,7 +2105,8 @@ function pe_cp_rest_sync_customer_delete($request)
 function pe_cp_rest_verify_sync_key($request)
 {
     $key = $request->get_header('X-Sync-Key');
-    if (!$key || !defined('PE_CP_SYNC_KEY')) return false;
+    if (!$key || !defined('PE_CP_SYNC_KEY'))
+        return false;
     return hash_equals(PE_CP_SYNC_KEY, $key);
 }
 
@@ -2080,59 +2131,59 @@ function pe_cp_rest_sync_booking($request)
     }
 
     $wpdb->insert('booking_requests', [
-        'request_awb'         => $awb,
-        'customer_id'         => intval($d['customer_id'] ?? 0) ?: null,
-        'customer_name'       => sanitize_text_field($d['customer_name'] ?? ''),
-        'customer_email'      => sanitize_email($d['customer_email'] ?? ''),
-        'customer_phone'      => sanitize_text_field($d['customer_phone'] ?? ''),
-        'customer_company'    => sanitize_text_field($d['customer_company'] ?? ''),
-        'sender_name'         => sanitize_text_field($d['sender_name'] ?? ''),
-        'sender_company'      => sanitize_text_field($d['sender_company'] ?? ''),
-        'sender_email'        => sanitize_email($d['sender_email'] ?? ''),
-        'sender_phone'        => sanitize_text_field($d['sender_phone'] ?? ''),
-        'sender_address'      => sanitize_text_field($d['sender_address'] ?? ''),
-        'sender_address_2'    => sanitize_text_field($d['sender_address_2'] ?? ''),
-        'sender_city'         => sanitize_text_field($d['sender_city'] ?? ''),
-        'sender_pincode'      => sanitize_text_field($d['sender_pincode'] ?? ''),
-        'sender_state'        => sanitize_text_field($d['sender_state'] ?? ''),
-        'sender_country'      => sanitize_text_field($d['sender_country'] ?? 'INDIA'),
-        'sender_gstin_type'   => sanitize_text_field($d['sender_gstin_type'] ?? ''),
-        'sender_gstin_no'     => sanitize_text_field($d['sender_gstin_no'] ?? ''),
-        'receiver_name'       => sanitize_text_field($d['receiver_name'] ?? ''),
-        'receiver_email'      => sanitize_email($d['receiver_email'] ?? ''),
-        'receiver_phone'      => sanitize_text_field($d['receiver_phone'] ?? ''),
-        'receiver_address'    => sanitize_text_field($d['receiver_address'] ?? ''),
-        'receiver_address_2'  => sanitize_text_field($d['receiver_address_2'] ?? ''),
-        'receiver_city'       => sanitize_text_field($d['receiver_city'] ?? ''),
-        'receiver_pincode'    => sanitize_text_field($d['receiver_pincode'] ?? ''),
-        'receiver_state'      => sanitize_text_field($d['receiver_state'] ?? ''),
-        'receiver_country'    => sanitize_text_field($d['receiver_country'] ?? ''),
+        'request_awb' => $awb,
+        'customer_id' => intval($d['customer_id'] ?? 0) ?: null,
+        'customer_name' => sanitize_text_field($d['customer_name'] ?? ''),
+        'customer_email' => sanitize_email($d['customer_email'] ?? ''),
+        'customer_phone' => sanitize_text_field($d['customer_phone'] ?? ''),
+        'customer_company' => sanitize_text_field($d['customer_company'] ?? ''),
+        'sender_name' => sanitize_text_field($d['sender_name'] ?? ''),
+        'sender_company' => sanitize_text_field($d['sender_company'] ?? ''),
+        'sender_email' => sanitize_email($d['sender_email'] ?? ''),
+        'sender_phone' => sanitize_text_field($d['sender_phone'] ?? ''),
+        'sender_address' => sanitize_text_field($d['sender_address'] ?? ''),
+        'sender_address_2' => sanitize_text_field($d['sender_address_2'] ?? ''),
+        'sender_city' => sanitize_text_field($d['sender_city'] ?? ''),
+        'sender_pincode' => sanitize_text_field($d['sender_pincode'] ?? ''),
+        'sender_state' => sanitize_text_field($d['sender_state'] ?? ''),
+        'sender_country' => sanitize_text_field($d['sender_country'] ?? 'INDIA'),
+        'sender_gstin_type' => sanitize_text_field($d['sender_gstin_type'] ?? ''),
+        'sender_gstin_no' => sanitize_text_field($d['sender_gstin_no'] ?? ''),
+        'receiver_name' => sanitize_text_field($d['receiver_name'] ?? ''),
+        'receiver_email' => sanitize_email($d['receiver_email'] ?? ''),
+        'receiver_phone' => sanitize_text_field($d['receiver_phone'] ?? ''),
+        'receiver_address' => sanitize_text_field($d['receiver_address'] ?? ''),
+        'receiver_address_2' => sanitize_text_field($d['receiver_address_2'] ?? ''),
+        'receiver_city' => sanitize_text_field($d['receiver_city'] ?? ''),
+        'receiver_pincode' => sanitize_text_field($d['receiver_pincode'] ?? ''),
+        'receiver_state' => sanitize_text_field($d['receiver_state'] ?? ''),
+        'receiver_country' => sanitize_text_field($d['receiver_country'] ?? ''),
         'receiver_gstin_type' => sanitize_text_field($d['receiver_gstin_type'] ?? ''),
-        'receiver_gstin_no'   => sanitize_text_field($d['receiver_gstin_no'] ?? ''),
-        'package_type'        => sanitize_text_field($d['package_type'] ?? 'parcel'),
-        'weight'              => floatval($d['weight'] ?? 0),
-        'length'              => floatval($d['length'] ?? ($d['length_cm'] ?? 0)),
-        'length_cm'           => floatval($d['length_cm'] ?? ($d['length'] ?? 0)),
-        'breadth'             => floatval($d['breadth'] ?? 0),
-        'height'              => floatval($d['height'] ?? 0),
-        'no_of_pieces'        => intval($d['no_of_pieces'] ?? 1),
+        'receiver_gstin_no' => sanitize_text_field($d['receiver_gstin_no'] ?? ''),
+        'package_type' => sanitize_text_field($d['package_type'] ?? 'parcel'),
+        'weight' => floatval($d['weight'] ?? 0),
+        'length' => floatval($d['length'] ?? ($d['length_cm'] ?? 0)),
+        'length_cm' => floatval($d['length_cm'] ?? ($d['length'] ?? 0)),
+        'breadth' => floatval($d['breadth'] ?? 0),
+        'height' => floatval($d['height'] ?? 0),
+        'no_of_pieces' => intval($d['no_of_pieces'] ?? 1),
         'content_description' => sanitize_textarea_field($d['content_description'] ?? ''),
-        'declared_value'      => floatval($d['declared_value'] ?? 0),
-        'is_fragile'          => intval($d['is_fragile'] ?? 0),
-        'remarks'             => sanitize_textarea_field($d['remarks'] ?? ''),
-        'parcels'             => is_array($d['parcels'] ?? null) ? json_encode($d['parcels']) : (is_string($d['parcels'] ?? null) ? $d['parcels'] : null),
-        'invoice_items'       => is_array($d['invoice_items'] ?? null) ? json_encode($d['invoice_items']) : (is_string($d['invoice_items'] ?? null) ? $d['invoice_items'] : null),
-        'documents'           => is_array($d['documents'] ?? null) ? json_encode($d['documents']) : (is_string($d['documents'] ?? null) ? $d['documents'] : null),
-        'order_reference'     => sanitize_text_field($d['order_reference'] ?? ''),
-        'payment_mode'        => sanitize_text_field($d['payment_mode'] ?? 'prepaid'),
-        'shipping_charge'     => floatval($d['shipping_charge'] ?? 0),
-        'invoice_type'        => sanitize_text_field($d['invoice_type'] ?? 'INVOICE'),
-        'invoice_currency'    => sanitize_text_field($d['invoice_currency'] ?? 'INR'),
-        'hs_code'             => sanitize_text_field($d['hs_code'] ?? ''),
-        'export_reason'       => sanitize_text_field($d['export_reason'] ?? ''),
-        'terms_of_trade'      => sanitize_text_field($d['terms_of_trade'] ?? 'CIF'),
-        'invoice_note'        => sanitize_textarea_field($d['invoice_note'] ?? ''),
-        'status'              => sanitize_text_field($d['status'] ?? 'pending'),
+        'declared_value' => floatval($d['declared_value'] ?? 0),
+        'is_fragile' => intval($d['is_fragile'] ?? 0),
+        'remarks' => sanitize_textarea_field($d['remarks'] ?? ''),
+        'parcels' => is_array($d['parcels'] ?? null) ? json_encode($d['parcels']) : (is_string($d['parcels'] ?? null) ? $d['parcels'] : null),
+        'invoice_items' => is_array($d['invoice_items'] ?? null) ? json_encode($d['invoice_items']) : (is_string($d['invoice_items'] ?? null) ? $d['invoice_items'] : null),
+        'documents' => is_array($d['documents'] ?? null) ? json_encode($d['documents']) : (is_string($d['documents'] ?? null) ? $d['documents'] : null),
+        'order_reference' => sanitize_text_field($d['order_reference'] ?? ''),
+        'payment_mode' => sanitize_text_field($d['payment_mode'] ?? 'prepaid'),
+        'shipping_charge' => floatval($d['shipping_charge'] ?? 0),
+        'invoice_type' => sanitize_text_field($d['invoice_type'] ?? 'INVOICE'),
+        'invoice_currency' => sanitize_text_field($d['invoice_currency'] ?? 'INR'),
+        'hs_code' => sanitize_text_field($d['hs_code'] ?? ''),
+        'export_reason' => sanitize_text_field($d['export_reason'] ?? ''),
+        'terms_of_trade' => sanitize_text_field($d['terms_of_trade'] ?? 'CIF'),
+        'invoice_note' => sanitize_textarea_field($d['invoice_note'] ?? ''),
+        'status' => sanitize_text_field($d['status'] ?? 'pending'),
     ]);
 
     $local_id = $wpdb->insert_id;
@@ -2140,9 +2191,9 @@ function pe_cp_rest_sync_booking($request)
     // Insert initial timeline entry
     if ($local_id) {
         $wpdb->insert('request_updates', [
-            'request_id'  => $local_id,
+            'request_id' => $local_id,
             'update_type' => 'info',
-            'title'       => 'Request Submitted',
+            'title' => 'Request Submitted',
             'description' => 'Your booking request has been submitted successfully and is awaiting review.',
         ]);
     }
@@ -2166,7 +2217,8 @@ function pe_cp_rest_sync_status($request)
 
     // Find local booking request by AWB
     $local = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM booking_requests WHERE request_awb = %s", $awb
+        "SELECT * FROM booking_requests WHERE request_awb = %s",
+        $awb
     ));
 
     if (!$local) {
@@ -2198,7 +2250,10 @@ function pe_cp_rest_sync_status($request)
     if ($finalAmt > 0) {
         $wpdb->query($wpdb->prepare(
             "UPDATE AWBENTRY SET TOTAL = %f, NETAMOUNT = %f, CHARGES = %f WHERE AWBNO = %s",
-            $finalAmt, $finalAmt, $finalAmt, $awb
+            $finalAmt,
+            $finalAmt,
+            $finalAmt,
+            $awb
         ));
     }
 
@@ -2209,11 +2264,11 @@ function pe_cp_rest_sync_status($request)
     $updates = $d['updates'] ?? [];
     foreach ($updates as $upd) {
         $wpdb->insert('request_updates', [
-            'request_id'  => $local->id,
+            'request_id' => $local->id,
             'update_type' => sanitize_text_field($upd['type'] ?? 'info'),
-            'title'       => sanitize_text_field($upd['title'] ?? ''),
+            'title' => sanitize_text_field($upd['title'] ?? ''),
             'description' => sanitize_textarea_field($upd['description'] ?? ''),
-            'metadata'    => isset($upd['metadata']) ? wp_json_encode($upd['metadata']) : null,
+            'metadata' => isset($upd['metadata']) ? wp_json_encode($upd['metadata']) : null,
         ]);
     }
 

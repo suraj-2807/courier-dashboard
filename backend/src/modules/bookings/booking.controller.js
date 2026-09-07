@@ -154,7 +154,16 @@ function extractBookingFields(body) {
  * Updates local DB, remote Hostinger DB, and syncs to WordPress.
  */
 async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentId, effectiveTracking, billingData = {}) {
-  if (!fromRequestId && !requestAwb && !effectiveTracking) return
+  console.log('[linkAndConfirmBookingRequest] ====== CALLED ======')
+  console.log('[linkAndConfirmBookingRequest] fromRequestId:', fromRequestId, '| type:', typeof fromRequestId)
+  console.log('[linkAndConfirmBookingRequest] requestAwb:', requestAwb, '| type:', typeof requestAwb)
+  console.log('[linkAndConfirmBookingRequest] shipmentId:', shipmentId)
+  console.log('[linkAndConfirmBookingRequest] effectiveTracking:', effectiveTracking)
+  console.log('[linkAndConfirmBookingRequest] billingData:', JSON.stringify(billingData))
+  if (!fromRequestId && !requestAwb && !effectiveTracking) {
+    console.log('[linkAndConfirmBookingRequest] ⚠️ EARLY RETURN — all identifiers are falsy! No status update will happen.')
+    return
+  }
   
   const shippingCharge = parseFloat(billingData.shipping_charge) || 0
   const totalAmount = parseFloat(billingData.total_amount) || shippingCharge || 0
@@ -179,13 +188,30 @@ async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentI
     }
 
     if (reqRow) {
+      console.log('[linkAndConfirmBookingRequest] ✅ Found booking_request row! id:', reqRow.id, '| current status:', reqRow.status, '| request_awb:', reqRow.request_awb)
       const finalShippingCharge = shippingCharge || parseFloat(reqRow.shipping_charge) || 0
       const finalTotalAmount = totalAmount || finalShippingCharge || parseFloat(reqRow.total_amount) || 0
 
-      await execute(
+      const updateResult = await execute(
         `UPDATE booking_requests SET status = 'confirmed', shipment_id = ?, tracking_number = ?, shipping_charge = ?, total_amount = ? WHERE id = ?`,
         [shipmentId, effectiveTracking, finalShippingCharge, finalTotalAmount, reqRow.id]
       )
+      console.log('[linkAndConfirmBookingRequest] ✅ UPDATE executed for request id:', reqRow.id, '| affectedRows:', updateResult?.affectedRows ?? updateResult?.changedRows ?? 'N/A')
+
+      // Verify the update actually persisted in DB
+      try {
+        const verifyRows = await query('SELECT id, status, shipment_id, tracking_number FROM booking_requests WHERE id = ?', [reqRow.id])
+        if (verifyRows.length > 0) {
+          console.log('[linkAndConfirmBookingRequest] ✅ VERIFIED — row after UPDATE:', JSON.stringify({ id: verifyRows[0].id, status: verifyRows[0].status, shipment_id: verifyRows[0].shipment_id, tracking_number: verifyRows[0].tracking_number }))
+          if (verifyRows[0].status !== 'confirmed') {
+            console.error('[linkAndConfirmBookingRequest] ❌ CRITICAL: status is NOT confirmed after UPDATE! Actual status:', verifyRows[0].status)
+          }
+        } else {
+          console.error('[linkAndConfirmBookingRequest] ❌ VERIFICATION FAILED — row not found after UPDATE for id:', reqRow.id)
+        }
+      } catch (verifyErr) {
+        console.error('[linkAndConfirmBookingRequest] ❌ Verification query error:', verifyErr.message)
+      }
 
       const updateDesc = `Booking confirmed. Tracking Number: ${effectiveTracking}${finalTotalAmount > 0 ? ` · Total Bill: ₹${finalTotalAmount.toFixed(2)}` : ''}`
 
@@ -193,9 +219,11 @@ async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentI
         `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
         [reqRow.id, 'shipment_created', 'Shipment Confirmed', updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking, total_amount: finalTotalAmount, shipping_charge: finalShippingCharge })]
       )
+    } else {
+      console.log('[linkAndConfirmBookingRequest] ❌ NO booking_request row found in local DB for fromRequestId:', fromRequestId, '| requestAwb:', requestAwb, '| effectiveTracking:', effectiveTracking)
     }
   } catch (localErr) {
-    console.error('[linkAndConfirmBookingRequest] Local DB update failed:', localErr.message)
+    console.error('[linkAndConfirmBookingRequest] ❌ Local DB update EXCEPTION:', localErr.message)
   }
 
   // 2. ALWAYS sync to remote Hostinger DB — even if local row was not found
@@ -1120,9 +1148,15 @@ export const saveBooking = async (req, res) => {
     }
 
     // Link booking request if created from a customer request
+    const resolvedFromRequest = fields.from_request || req.body.from_request || req.body.booking_request_id
+    const resolvedRequestAwb = fields.request_awb || req.body.request_awb
+    console.log('[createBooking] ====== LINKING REQUEST ======')
+    console.log('[createBooking] fields.from_request:', fields.from_request, '| req.body.from_request:', req.body.from_request, '| req.body.booking_request_id:', req.body.booking_request_id)
+    console.log('[createBooking] fields.request_awb:', fields.request_awb, '| req.body.request_awb:', req.body.request_awb)
+    console.log('[createBooking] resolved => fromRequest:', resolvedFromRequest, '| requestAwb:', resolvedRequestAwb)
     await linkAndConfirmBookingRequest(
-      fields.from_request || req.body.from_request || req.body.booking_request_id,
-      fields.request_awb || req.body.request_awb,
+      resolvedFromRequest,
+      resolvedRequestAwb,
       shipmentId,
       tracking_number,
       {
@@ -1362,14 +1396,22 @@ export const pushBookingToApi = async (req, res) => {
         const finalBillAmount = parseFloat(updated.total_amount) || parseFloat(updated.shipping_charge) || 0
         const finalShippingCharge = parseFloat(updated.shipping_charge) || finalBillAmount
 
+        console.log('[pushBookingToApi] ====== BOOKING REQUEST LINKING ======')
+        console.log('[pushBookingToApi] fromReqId:', fromReqId, '(from updated.from_request:', updated.from_request, '| updated.booking_request_id:', updated.booking_request_id, ')')
+        console.log('[pushBookingToApi] reqAwb:', reqAwb, '(from updated.request_awb:', updated.request_awb, ')')
+        console.log('[pushBookingToApi] effectiveTrk:', effectiveTrk)
+
         if (fromReqId || reqAwb || effectiveTrk) {
           await linkAndConfirmBookingRequest(fromReqId, reqAwb, updated.id, effectiveTrk, {
             shipping_charge: finalShippingCharge,
             total_amount: finalBillAmount
           })
+          console.log('[pushBookingToApi] ====== linkAndConfirmBookingRequest COMPLETED ======')
+        } else {
+          console.warn('[pushBookingToApi] ⚠️ SKIPPED linkAndConfirmBookingRequest — all identifiers are falsy! from_request and request_awb are NOT stored in shipments table.')
         }
       } catch (linkErr) {
-        console.warn('[Push API booking_requests bill sync notice]:', linkErr.message)
+        console.error('[pushBookingToApi] ❌ linkAndConfirmBookingRequest ERROR:', linkErr.message, linkErr.stack)
       }
 
       return res.json({
@@ -1785,10 +1827,22 @@ export const createBooking = async (req, res) => {
     // Link booking request if applicable
     const fromRequestId = req.body.from_request || req.body.booking_request_id || fields.from_request
     const requestAwb = req.body.request_awb || fields.request_awb
-    await linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentId, tracking_number, {
-      shipping_charge: parseFloat(fields.shipping_charge) || 0,
-      total_amount: parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0
-    })
+    console.log('[createBooking] ====== ABOUT TO CALL linkAndConfirmBookingRequest ======')
+    console.log('[createBooking] fromRequestId:', fromRequestId, '| type:', typeof fromRequestId)
+    console.log('[createBooking] requestAwb:', requestAwb, '| type:', typeof requestAwb)
+    console.log('[createBooking] shipmentId:', shipmentId, '| tracking_number:', tracking_number)
+    console.log('[createBooking] req.body.from_request:', req.body.from_request, '| req.body.booking_request_id:', req.body.booking_request_id, '| fields.from_request:', fields.from_request)
+    console.log('[createBooking] req.body.request_awb:', req.body.request_awb, '| fields.request_awb:', fields.request_awb)
+    try {
+      await linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentId, tracking_number, {
+        shipping_charge: parseFloat(fields.shipping_charge) || 0,
+        total_amount: parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0
+      })
+      console.log('[createBooking] ====== linkAndConfirmBookingRequest COMPLETED SUCCESSFULLY ======')
+    } catch (linkErr) {
+      console.error('[createBooking] ❌❌❌ linkAndConfirmBookingRequest THREW AN ERROR:', linkErr.message)
+      console.error('[createBooking] Stack:', linkErr.stack)
+    }
 
 
     const shipmentRows = await query('SELECT * FROM shipments WHERE id = ?', [shipmentId])
