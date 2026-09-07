@@ -378,6 +378,7 @@ export async function initializeDb() {
         { name: 'order_reference', type: "VARCHAR(255) DEFAULT ''" },
         { name: 'payment_mode', type: "VARCHAR(50) DEFAULT 'prepaid'" },
         { name: 'shipping_charge', type: "DECIMAL(10,2) DEFAULT 0" },
+        { name: 'total_amount', type: "DECIMAL(10,2) DEFAULT 0" },
         { name: 'invoice_type', type: "VARCHAR(50) DEFAULT 'INVOICE'" },
         { name: 'invoice_currency', type: "VARCHAR(10) DEFAULT 'INR'" },
         { name: 'hs_code', type: "VARCHAR(50) DEFAULT ''" },

@@ -1356,6 +1356,21 @@ export default function NewBookingPage() {
       const vendorPushed = result?.vendor_result?.success
       const vendorErr = result?.vendor_result?.error || result?.vendor_result?.errorMessage
 
+      // If booked from a customer request, explicitly ensure the request status is marked confirmed
+      if (payload.from_request) {
+        try {
+          console.log('[NewBookingPage] 🔄 Sending explicit PATCH /booking-requests/' + payload.from_request + '/status to confirmed')
+          await api.patch(`/booking-requests/${payload.from_request}/status`, {
+            status: 'confirmed',
+            shipment_id: result?.booking?.id,
+            tracking_number: ourAwb
+          })
+          console.log('[NewBookingPage] ✅ Explicit PATCH status confirmed SUCCESS for request:', payload.from_request)
+        } catch (reqStatusErr) {
+          console.warn('[NewBookingPage] Explicit request status patch notice:', reqStatusErr.message)
+        }
+      }
+
       if (vendorPushed) {
         setPushError(null)
         toast.success(`Booking created & pushed! Our AWB: ${ourAwb} | Vendor AWB: ${vendorAwb}`)

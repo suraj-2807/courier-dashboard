@@ -192,11 +192,37 @@ async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentI
       const finalShippingCharge = shippingCharge || parseFloat(reqRow.shipping_charge) || 0
       const finalTotalAmount = totalAmount || finalShippingCharge || parseFloat(reqRow.total_amount) || 0
 
-      const updateResult = await execute(
-        `UPDATE booking_requests SET status = 'confirmed', shipment_id = ?, tracking_number = ?, shipping_charge = ?, total_amount = ? WHERE id = ?`,
-        [shipmentId, effectiveTracking, finalShippingCharge, finalTotalAmount, reqRow.id]
-      )
-      console.log('[linkAndConfirmBookingRequest] ✅ UPDATE executed for request id:', reqRow.id, '| affectedRows:', updateResult?.affectedRows ?? updateResult?.changedRows ?? 'N/A')
+      // Core status update — cannot fail due to missing billing columns
+      let updateResult = null
+      try {
+        updateResult = await execute(
+          `UPDATE booking_requests SET status = 'confirmed', shipment_id = ?, tracking_number = ? WHERE id = ?`,
+          [shipmentId, effectiveTracking, reqRow.id]
+        )
+        console.log('[linkAndConfirmBookingRequest] ✅ Status updated to confirmed for request id:', reqRow.id)
+      } catch (coreErr) {
+        console.error('[linkAndConfirmBookingRequest] Core update failed, attempting minimal status update:', coreErr.message)
+        updateResult = await execute(`UPDATE booking_requests SET status = 'confirmed' WHERE id = ?`, [reqRow.id])
+      }
+
+      // Update optional billing charges if columns exist
+      try {
+        await execute(
+          `UPDATE booking_requests SET shipping_charge = ? WHERE id = ?`,
+          [finalShippingCharge, reqRow.id]
+        )
+      } catch (scErr) {
+        console.warn('[linkAndConfirmBookingRequest] shipping_charge update notice:', scErr.message)
+      }
+
+      try {
+        await execute(
+          `UPDATE booking_requests SET total_amount = ? WHERE id = ?`,
+          [finalTotalAmount, reqRow.id]
+        )
+      } catch (taErr) {
+        console.warn('[linkAndConfirmBookingRequest] total_amount update notice:', taErr.message)
+      }
 
       // Verify the update actually persisted in DB
       try {
@@ -215,10 +241,14 @@ async function linkAndConfirmBookingRequest(fromRequestId, requestAwb, shipmentI
 
       const updateDesc = `Booking confirmed. Tracking Number: ${effectiveTracking}${finalTotalAmount > 0 ? ` · Total Bill: ₹${finalTotalAmount.toFixed(2)}` : ''}`
 
-      await execute(
-        `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
-        [reqRow.id, 'shipment_created', 'Shipment Confirmed', updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking, total_amount: finalTotalAmount, shipping_charge: finalShippingCharge })]
-      )
+      try {
+        await execute(
+          `INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)`,
+          [reqRow.id, 'shipment_created', 'Shipment Confirmed', updateDesc, JSON.stringify({ shipment_id: shipmentId, tracking_number: effectiveTracking, total_amount: finalTotalAmount, shipping_charge: finalShippingCharge })]
+        )
+      } catch (ruErr) {
+        console.warn('[linkAndConfirmBookingRequest] request_updates insert notice:', ruErr.message)
+      }
     } else {
       console.log('[linkAndConfirmBookingRequest] ❌ NO booking_request row found in local DB for fromRequestId:', fromRequestId, '| requestAwb:', requestAwb, '| effectiveTracking:', effectiveTracking)
     }
