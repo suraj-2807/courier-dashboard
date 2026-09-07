@@ -369,17 +369,49 @@ function pe_cp_ajax_shipments()
     }
 
     // 2. Exact match on shipments converted and pushed from THIS customer's booking requests
-    if ($cust_id > 0 || $cust_email !== '') {
-        $match_clauses[] = "a.AWBNO IN (SELECT request_awb FROM booking_requests WHERE request_awb != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = %s)))";
-        $match_params[] = $cust_id;
-        $match_params[] = $cust_email;
-
-        $match_clauses[] = "a.AWBNO IN (SELECT tracking_number FROM booking_requests WHERE tracking_number IS NOT NULL AND tracking_number != '' AND (customer_id = %d OR (customer_email != '' AND LOWER(customer_email) = %s)))";
-        $match_params[] = $cust_id;
-        $match_params[] = $cust_email;
+    $breq_sub_conds = [];
+    $breq_sub_params = [];
+    if ($cust_id > 0) {
+        $breq_sub_conds[] = "customer_id = %d";
+        $breq_sub_params[] = $cust_id;
+    }
+    if ($cust_email !== '') {
+        $breq_sub_conds[] = "LOWER(TRIM(customer_email)) = %s OR LOWER(TRIM(sender_email)) = %s";
+        $breq_sub_params[] = $cust_email;
+        $breq_sub_params[] = $cust_email;
+    }
+    $clean_cust_phone = preg_replace('/[^0-9]/', '', $cust_phone);
+    $cust_phone_last10 = strlen($clean_cust_phone) >= 10 ? substr($clean_cust_phone, -10) : $clean_cust_phone;
+    if ($cust_phone_last10) {
+        $breq_sub_conds[] = "customer_phone LIKE %s OR sender_phone LIKE %s";
+        $like_p = '%' . $wpdb->esc_like($cust_phone_last10) . '%';
+        $breq_sub_params[] = $like_p;
+        $breq_sub_params[] = $like_p;
+    }
+    if (strlen($cust_name) >= 3) {
+        $breq_sub_conds[] = "LOWER(TRIM(customer_name)) = %s OR LOWER(TRIM(sender_name)) = %s";
+        $breq_sub_params[] = strtolower($cust_name);
+        $breq_sub_params[] = strtolower($cust_name);
+    }
+    if (!empty($cust_company) && strlen($cust_company) >= 3) {
+        $breq_sub_conds[] = "LOWER(TRIM(customer_company)) = %s OR LOWER(TRIM(sender_company)) = %s";
+        $breq_sub_params[] = strtolower($cust_company);
+        $breq_sub_params[] = strtolower($cust_company);
     }
 
-    // 3. Match by customer name or company
+    if (!empty($breq_sub_conds)) {
+        $breq_where = $wpdb->prepare("(" . implode(" OR ", $breq_sub_conds) . ")", ...$breq_sub_params);
+        $match_clauses[] = "a.AWBNO IN (SELECT request_awb FROM booking_requests WHERE request_awb != '' AND $breq_where)";
+        $match_clauses[] = "a.AWBNO IN (SELECT tracking_number FROM booking_requests WHERE tracking_number IS NOT NULL AND tracking_number != '' AND $breq_where)";
+    }
+
+    // 3. Direct match by sender phone in AWBENTRY
+    if ($cust_phone_last10) {
+        $match_clauses[] = "(a.SPHONE1 LIKE %s)";
+        $match_params[] = '%' . $wpdb->esc_like($cust_phone_last10) . '%';
+    }
+
+    // 4. Match by customer name or company
     if (!empty($cust_name) && strtolower($cust_name) !== 'walking customer' && strlen($cust_name) >= 3) {
         $match_clauses[] = "(LOWER(TRIM(a.CUSTNAME)) = %s OR LOWER(TRIM(a.SNAME)) = %s)";
         $match_params[] = strtolower($cust_name);
@@ -400,8 +432,8 @@ function pe_cp_ajax_shipments()
         }
     }
 
-    // Filter out data before September 1, 2026 in customer dashboard
-    $where .= " AND a.AWBDATE >= '2026-09-01'";
+    // Filter out data before September 1, 2026 in customer dashboard (include current/unassigned dates)
+    $where .= " AND (a.AWBDATE >= '2026-09-01' OR a.AWBDATE = '0000-00-00' OR a.AWBDATE IS NULL)";
 
     if ($search) {
         $like = '%' . $wpdb->esc_like($search) . '%';

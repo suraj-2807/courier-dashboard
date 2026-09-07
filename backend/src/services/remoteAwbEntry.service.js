@@ -107,6 +107,26 @@ function resolveCountryName(country) {
   return COUNTRY_MAP[c] || c
 }
 
+/**
+ * Safe date formatter ensuring YYYY-MM-DD string for MySQL DATE columns.
+ */
+function formatToYMD(val) {
+  if (!val) return new Date().toISOString().split('T')[0]
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return new Date().toISOString().split('T')[0]
+    return val.toISOString().split('T')[0]
+  }
+  const s = String(val).trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return s.slice(0, 10)
+  }
+  const parsed = new Date(s)
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0]
+  }
+  return new Date().toISOString().split('T')[0]
+}
+
 import { query } from '../config/db.js'
 
 /**
@@ -345,7 +365,7 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
     const paymentType = paymentMode === 'cod' ? 1 : (paymentMode === 'credit' ? 2 : 0)
     const receiptAmount = paymentMode === 'prepaid' ? totalAmount : 0
 
-    const bookingDate = shipment.booking_date || shipment.invoice_date || (shipment.created_at ? String(shipment.created_at).split('T')[0] : new Date().toISOString().split('T')[0])
+    const bookingDate = formatToYMD(shipment.booking_date || shipment.invoice_date || shipment.created_at)
     const pieces = parseInt(shipment.no_of_pieces) || 1
 
     // ── Resolve Vendor & Service Details ──
@@ -447,9 +467,20 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
            LIMIT 1`,
           [fromReq, reqAwb || String(awbNo), String(awbNo)]
         )
-        if (reqRows && reqRows.length > 0 && reqRows[0].customer_id) {
-          custCode = String(reqRows[0].customer_id)
-          custName = (reqRows[0].customer_name || 'CUSTOMER').toUpperCase()
+        if (reqRows && reqRows.length > 0) {
+          if (reqRows[0].customer_id) {
+            custCode = String(reqRows[0].customer_id)
+            custName = (reqRows[0].customer_name || 'CUSTOMER').toUpperCase()
+          } else if (reqRows[0].customer_email || reqRows[0].customer_phone) {
+            const [custMatch] = await pool.query(
+              'SELECT id, name FROM tbl_customers WHERE (email != "" AND email IS NOT NULL AND LOWER(TRIM(email)) = ?) OR (phone != "" AND phone IS NOT NULL AND TRIM(phone) = ?) LIMIT 1',
+              [(reqRows[0].customer_email || '').trim().toLowerCase(), (reqRows[0].customer_phone || '').trim()]
+            )
+            if (custMatch && custMatch.length > 0) {
+              custCode = String(custMatch[0].id)
+              custName = (custMatch[0].name || reqRows[0].customer_name || 'CUSTOMER').toUpperCase()
+            }
+          }
         }
       } catch (reqLookupErr) {
         console.warn('[Remote AWBENTRY] Booking request customer lookup notice:', reqLookupErr.message)
@@ -713,7 +744,7 @@ export async function syncToRemoteParcelHistory(shipment, activity = 'SHIPMENT B
       return { success: false, message: 'Invalid AWBNO' }
     }
 
-    const bookingDate = shipment.booking_date || shipment.invoice_date || (shipment.created_at ? String(shipment.created_at).split('T')[0] : new Date().toISOString().split('T')[0])
+    const bookingDate = formatToYMD(shipment.booking_date || shipment.invoice_date || shipment.created_at)
     const now = new Date()
     const currentTime = now.toTimeString().split(' ')[0] // HH:MM:SS
     const loc = (location || shipment.s_city || shipment.sender_city || 'SURAT').toUpperCase().slice(0, 30)
