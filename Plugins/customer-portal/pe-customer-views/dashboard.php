@@ -2121,17 +2121,52 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     'TM': 'TURKMENISTAN', 'TC': 'TURKS AND CAICOS ISLANDS', 'TV': 'TUVALU', 'UG': 'UGANDA', 'UA': 'UKRAINE',
     'AE': 'UNITED ARAB EMIRATES', 'GB': 'UNITED KINGDOM', 'US': 'UNITED STATES', 'UY': 'URUGUAY',
     'UZ': 'UZBEKISTAN', 'VU': 'VANUATU', 'VE': 'VENEZUELA', 'VN': 'VIETNAM', 'YE': 'YEMEN',
-    'ZM': 'ZAMBIA', 'ZW': 'ZIMBABWE', 'USA': 'UNITED STATES', 'UK': 'UNITED KINGDOM', 'UAE': 'UNITED ARAB EMIRATES'
+    'ZM': 'ZAMBIA', 'ZW': 'ZIMBABWE', 'USA': 'UNITED STATES', 'UK': 'UNITED KINGDOM', 'UAE': 'UNITED ARAB EMIRATES',
+    // 3-letter ISO and common legacy aliases
+    'FRA': 'FRANCE', 'DUBAI': 'UNITED ARAB EMIRATES', 'DXB': 'UNITED ARAB EMIRATES',
+    'SHARJAH': 'UNITED ARAB EMIRATES', 'ABU DHABI': 'UNITED ARAB EMIRATES', 'AJMAN': 'UNITED ARAB EMIRATES',
+    'DEU': 'GERMANY', 'GER': 'GERMANY', 'CAN': 'CANADA', 'SGP': 'SINGAPORE', 'SIN': 'SINGAPORE',
+    'IND': 'INDIA', 'AUS': 'AUSTRALIA', 'GBR': 'UNITED KINGDOM', 'NZL': 'NEW ZEALAND', 'NLD': 'NETHERLANDS',
+    'ITA': 'ITALY', 'ESP': 'SPAIN', 'CHE': 'SWITZERLAND', 'CHN': 'CHINA', 'JPN': 'JAPAN',
+    'KOR': 'SOUTH KOREA', 'MYS': 'MALAYSIA', 'THA': 'THAILAND', 'IDN': 'INDONESIA', 'PHL': 'PHILIPPINES',
+    'VNM': 'VIETNAM', 'SAU': 'SAUDI ARABIA', 'QAT': 'QATAR', 'KWT': 'KUWAIT', 'BHR': 'BAHRAIN',
+    'OMN': 'OMAN', 'TUR': 'TURKEY', 'EGY': 'EGYPT', 'ZAF': 'SOUTH AFRICA', 'RUS': 'RUSSIA',
+    'BRA': 'BRAZIL', 'MEX': 'MEXICO', 'ARG': 'ARGENTINA', 'COL': 'COLOMBIA', 'CHL': 'CHILE',
+    'POL': 'POLAND', 'SWE': 'SWEDEN', 'NOR': 'NORWAY', 'DNK': 'DENMARK', 'FIN': 'FINLAND',
+    'IRL': 'IRELAND', 'BEL': 'BELGIUM', 'AUT': 'AUSTRIA', 'PRT': 'PORTUGAL', 'GRC': 'GREECE',
+    'CZE': 'CZECH REPUBLIC', 'HUN': 'HUNGARY', 'ROU': 'ROMANIA', 'ISR': 'ISRAEL', 'LKA': 'SRI LANKA',
+    'BGD': 'BANGLADESH', 'NPL': 'NEPAL', 'PAK': 'PAKISTAN', 'HKG': 'HONG KONG', 'TWN': 'TAIWAN'
   };
 
   function cpGetFullCountryName(val) {
     if (!val || typeof val !== 'string') return '';
-    var clean = val.trim().toUpperCase();
+    var clean = val.trim();
+    // Strip leading/trailing dashes and hyphens
+    clean = clean.replace(/^[\s\-—]+|[\s\-—]+$/g, '').trim().toUpperCase();
+    if (!clean || clean === '-' || clean === '—' || clean === 'NULL' || clean === 'UNDEFINED' || clean === 'N/A' || clean === 'NONE') return '';
+    
+    // Strip trailing ISO code pattern like " - AE" or " (AE)"
+    var simplified = clean.replace(/\s*[-–—]\s*[A-Z]{2,3}$/, '').replace(/\s*\([A-Z]{2,3}\)$/, '').trim();
+    if (simplified && cpCountryDictionary[simplified]) return cpCountryDictionary[simplified];
+
+    // Check direct dictionary
     if (cpCountryDictionary[clean]) return cpCountryDictionary[clean];
+
+    // Check if clean matches any value directly
     for (var k in cpCountryDictionary) {
-      if (cpCountryDictionary[k] === clean) return clean;
+      if (cpCountryDictionary[k] === clean || cpCountryDictionary[k] === simplified) return cpCountryDictionary[k];
     }
-    return clean;
+
+    // Check if city/country combined like "DUBAI, UAE"
+    if (clean.indexOf(',') >= 0) {
+      var parts = clean.split(',');
+      for (var i = parts.length - 1; i >= 0; i--) {
+        var part = parts[i].trim();
+        if (cpCountryDictionary[part]) return cpCountryDictionary[part];
+      }
+    }
+
+    return simplified || clean;
   }
 
   function cpDebounceShipmentsSearch() {

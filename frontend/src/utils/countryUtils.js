@@ -194,8 +194,25 @@ export const ISO_COUNTRY_MAP = {
   PER: 'PERU',
   EC: 'ECUADOR',
   ECU: 'ECUADOR',
-  VE: 'VENEZUELA',
-  VEN: 'VENEZUELA'
+  // Extra 3-letter, aliases, and common city destinations
+  DUBAI: 'UNITED ARAB EMIRATES',
+  DXB: 'UNITED ARAB EMIRATES',
+  SHARJAH: 'UNITED ARAB EMIRATES',
+  SHJ: 'UNITED ARAB EMIRATES',
+  'ABU DHABI': 'UNITED ARAB EMIRATES',
+  ABUDHABI: 'UNITED ARAB EMIRATES',
+  AUH: 'UNITED ARAB EMIRATES',
+  AJMAN: 'UNITED ARAB EMIRATES',
+  FUJAIRAH: 'UNITED ARAB EMIRATES',
+  'RAS AL KHAIMAH': 'UNITED ARAB EMIRATES',
+  'UMM AL QUWAIN': 'UNITED ARAB EMIRATES',
+  GER: 'GERMANY',
+  SIN: 'SINGAPORE',
+  MAS: 'MALAYSIA',
+  RSA: 'SOUTH AFRICA',
+  HOL: 'NETHERLANDS',
+  SUI: 'SWITZERLAND',
+  POR: 'PORTUGAL'
 }
 
 // Inverted Map: Name -> Code
@@ -211,34 +228,59 @@ COUNTRY_NAME_TO_CODE['AMERICA'] = 'US'
 COUNTRY_NAME_TO_CODE['GREAT BRITAIN'] = 'GB'
 COUNTRY_NAME_TO_CODE['ENGLAND'] = 'GB'
 COUNTRY_NAME_TO_CODE['DUBAI'] = 'AE'
+COUNTRY_NAME_TO_CODE['DXB'] = 'AE'
 COUNTRY_NAME_TO_CODE['ABU DHABI'] = 'AE'
+COUNTRY_NAME_TO_CODE['ABUDHABI'] = 'AE'
 COUNTRY_NAME_TO_CODE['SHARJAH'] = 'AE'
+COUNTRY_NAME_TO_CODE['AJMAN'] = 'AE'
+COUNTRY_NAME_TO_CODE['FRA'] = 'FR'
+COUNTRY_NAME_TO_CODE['DEU'] = 'DE'
+COUNTRY_NAME_TO_CODE['GER'] = 'DE'
+COUNTRY_NAME_TO_CODE['CAN'] = 'CA'
+COUNTRY_NAME_TO_CODE['SGP'] = 'SG'
+COUNTRY_NAME_TO_CODE['SIN'] = 'SG'
 
 /**
  * Returns the full country name for any 2-letter, 3-letter, or name input.
- * E.g. "US" -> "UNITED STATES", "IN" -> "INDIA", "GB" -> "UNITED KINGDOM"
+ * E.g. "US" -> "UNITED STATES", "FRA" -> "FRANCE", "DUBAI" -> "UNITED ARAB EMIRATES", "DEU" -> "GERMANY"
  */
 export function getFullCountryName(codeOrName, customCountryList = []) {
-  if (!codeOrName || codeOrName === '—' || codeOrName === '-') return codeOrName || '—'
-  const clean = String(codeOrName).trim().toUpperCase()
+  if (!codeOrName) return ''
+  let clean = String(codeOrName).trim().toUpperCase()
+  if (clean === '—' || clean === '-' || clean === 'NULL' || clean === 'UNDEFINED') return ''
 
-  // 1. Check custom DB country list if passed
+  // Strip trailing - XX (e.g. "INDIA - IN" -> "INDIA") and surrounding hyphens
+  clean = clean.replace(/\s*[-—]\s*[A-Z]{2,3}$/i, '').replace(/^[-—\s]+|[-—\s]+$/g, '').trim()
+  if (!clean || clean === '-' || clean === '—') return ''
+
+  // 1. Direct Static ISO Map check (prioritized to guarantee standard codes like FRA, DEU, CAN, SGP, DUBAI resolve)
+  if (ISO_COUNTRY_MAP[clean]) {
+    return ISO_COUNTRY_MAP[clean]
+  }
+
+  // 2. Check custom DB country list if passed
   if (Array.isArray(customCountryList) && customCountryList.length > 0) {
     const found = customCountryList.find(c => 
       (c.country_code && c.country_code.trim().toUpperCase() === clean) ||
       (c.country_name && c.country_name.trim().toUpperCase() === clean)
     )
     if (found && found.country_name) {
-      return found.country_name.trim().toUpperCase()
+      const cName = found.country_name.trim().toUpperCase().replace(/\s*[-—]\s*[A-Z]{2,3}$/i, '').replace(/^[-—\s]+|[-—\s]+$/g, '').trim()
+      if (ISO_COUNTRY_MAP[cName]) return ISO_COUNTRY_MAP[cName]
+      if (cName.length > 3) return cName
     }
   }
 
-  // 2. Check Static ISO Map
-  if (ISO_COUNTRY_MAP[clean]) {
-    return ISO_COUNTRY_MAP[clean]
+  // 3. Handle combined formats e.g. "DUBAI, UAE" or "PARIS, FRANCE" or "FRANKFURT - DEU"
+  if (clean.includes(',') || clean.includes(' - ') || clean.includes('/')) {
+    const parts = clean.split(/[,/-]+/).map(p => p.trim()).filter(Boolean)
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i]
+      if (ISO_COUNTRY_MAP[p]) return ISO_COUNTRY_MAP[p]
+    }
   }
 
-  // 3. If it's already a full name in our values
+  // 4. If it's already a full name in our values
   for (const name of Object.values(ISO_COUNTRY_MAP)) {
     if (name.toUpperCase() === clean) {
       return name
@@ -250,15 +292,30 @@ export function getFullCountryName(codeOrName, customCountryList = []) {
 
 /**
  * Returns the 2-letter ISO country code for any full name or code input.
- * E.g. "UNITED STATES" -> "US", "INDIA" -> "IN", "US" -> "US"
+ * E.g. "UNITED STATES" -> "US", "INDIA" -> "IN", "DUBAI" -> "AE", "FRA" -> "FR", "DEU" -> "DE"
  */
 export function getCountryCode(codeOrName, customCountryList = []) {
   if (!codeOrName) return ''
-  const clean = String(codeOrName).trim().toUpperCase()
+  let clean = String(codeOrName).trim().toUpperCase()
+  if (clean === '—' || clean === '-' || clean === 'NULL' || clean === 'UNDEFINED') return ''
+
+  clean = clean.replace(/\s*[-—]\s*[A-Z]{2,3}$/i, '').replace(/^[-—\s]+|[-—\s]+$/g, '').trim()
+  if (!clean) return ''
 
   // If already a 2-letter code in our map
   if (clean.length === 2 && ISO_COUNTRY_MAP[clean]) {
     return clean
+  }
+
+  // Check mapped name / alias
+  if (COUNTRY_NAME_TO_CODE[clean]) {
+    return COUNTRY_NAME_TO_CODE[clean]
+  }
+
+  // Check 3-letter or alias in ISO_COUNTRY_MAP
+  if (ISO_COUNTRY_MAP[clean]) {
+    const full = ISO_COUNTRY_MAP[clean]
+    if (COUNTRY_NAME_TO_CODE[full]) return COUNTRY_NAME_TO_CODE[full]
   }
 
   // Check custom DB country list
@@ -272,18 +329,16 @@ export function getCountryCode(codeOrName, customCountryList = []) {
     }
   }
 
-  // Check mapped name
-  if (COUNTRY_NAME_TO_CODE[clean]) {
-    return COUNTRY_NAME_TO_CODE[clean]
-  }
-
-  // Fallback 3-letter codes to 2-letter
+  // Common fallbacks
   if (clean === 'IND') return 'IN'
   if (clean === 'USA') return 'US'
   if (clean === 'GBR' || clean === 'UK') return 'GB'
-  if (clean === 'ARE' || clean === 'UAE') return 'AE'
+  if (clean === 'ARE' || clean === 'UAE' || clean === 'DUBAI' || clean === 'DXB' || clean === 'SHARJAH' || clean === 'ABU DHABI') return 'AE'
   if (clean === 'CAN') return 'CA'
   if (clean === 'AUS') return 'AU'
+  if (clean === 'FRA') return 'FR'
+  if (clean === 'DEU' || clean === 'GER') return 'DE'
+  if (clean === 'SGP' || clean === 'SIN') return 'SG'
 
   return clean.length === 2 ? clean : ''
 }
