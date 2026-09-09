@@ -2030,7 +2030,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
 
         <div class="cp-form-group">
           <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Country *</label>
-          <input type="text" id="addr-country" class="cp-form-input" value="INDIA" placeholder="Enter country name or code (e.g. INDIA, UNITED STATES, UAE)" oninput="this.value=this.value.toUpperCase()" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-weight:800; color:var(--cpred); text-transform:uppercase;">
+          <input type="text" id="addr-country" class="cp-form-input" value="INDIA" placeholder="Enter country name (e.g. INDIA, UNITED STATES, UNITED ARAB EMIRATES)" oninput="this.value=this.value.replace(/[-–—]/g,'').toUpperCase()" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-weight:800; color:var(--cpred); text-transform:uppercase;">
         </div>
       </div>
 
@@ -2142,8 +2142,8 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     if (!val || typeof val !== 'string') return '';
     var clean = val.trim();
     // Strip leading/trailing dashes and hyphens
-    clean = clean.replace(/^[\s\-—]+|[\s\-—]+$/g, '').trim().toUpperCase();
-    if (!clean || clean === '-' || clean === '—' || clean === 'NULL' || clean === 'UNDEFINED' || clean === 'N/A' || clean === 'NONE') return '';
+    clean = clean.replace(/^[\s\-–—]+|[\s\-–—]+$/g, '').trim().toUpperCase();
+    if (!clean || clean === '-' || clean === '–' || clean === '—' || clean === 'NULL' || clean === 'UNDEFINED' || clean === 'N/A' || clean === 'NONE') return '';
     
     // Strip trailing ISO code pattern like " - AE" or " (AE)"
     var simplified = clean.replace(/\s*[-–—]\s*[A-Z]{2,3}$/, '').replace(/\s*\([A-Z]{2,3}\)$/, '').trim();
@@ -2166,7 +2166,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       }
     }
 
-    return simplified || clean;
+    return (simplified || clean).replace(/^[\s\-–—]+|[\s\-–—]+$/g, '');
   }
 
   function cpDebounceShipmentsSearch() {
@@ -3030,7 +3030,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       document.getElementById('addr-city').value = addr.city || '';
       document.getElementById('addr-state').value = addr.state || '';
       document.getElementById('addr-pincode').value = addr.pincode || '';
-      document.getElementById('addr-country').value = addr.country || 'INDIA';
+      document.getElementById('addr-country').value = cpGetFullCountryName(addr.country) || 'INDIA';
       document.getElementById('addr-gstin').value = addr.gstin_no || '';
     } else if (presetType) {
       document.getElementById('addr-type').value = presetType;
@@ -3064,7 +3064,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       city: document.getElementById('addr-city').value,
       state: document.getElementById('addr-state').value,
       pincode: document.getElementById('addr-pincode').value,
-      country: document.getElementById('addr-country').value,
+      country: cpGetFullCountryName(document.getElementById('addr-country').value) || document.getElementById('addr-country').value.replace(/[-–—]/g, '').trim() || 'INDIA',
       gstin_no: document.getElementById('addr-gstin').value
     };
     cpAjax('pe_cp_save_address', payload, function (res) {

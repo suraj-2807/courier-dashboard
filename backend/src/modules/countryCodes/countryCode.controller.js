@@ -7,17 +7,55 @@ export const getCountryCodes = async (req, res) => {
   try {
     const rows = await query('SELECT * FROM country_codes ORDER BY country_name ASC')
     const lookupMap = {}
-    
+
+    const ALIAS_MAP = {
+      'FRA': 'FRANCE', 'DUBAI': 'UNITED ARAB EMIRATES', 'DXB': 'UNITED ARAB EMIRATES',
+      'SHARJAH': 'UNITED ARAB EMIRATES', 'ABU DHABI': 'UNITED ARAB EMIRATES', 'AJMAN': 'UNITED ARAB EMIRATES',
+      'DEU': 'GERMANY', 'GER': 'GERMANY', 'CAN': 'CANADA', 'SGP': 'SINGAPORE', 'SIN': 'SINGAPORE',
+      'USA': 'UNITED STATES', 'US': 'UNITED STATES', 'UK': 'UNITED KINGDOM', 'GBR': 'UNITED KINGDOM',
+      'IND': 'INDIA', 'IN': 'INDIA', 'AUS': 'AUSTRALIA', 'JPN': 'JAPAN', 'NLD': 'NETHERLANDS', 'NZL': 'NEW ZEALAND'
+    }
+
+    const CODE_MAP = {
+      'FRA': 'FR', 'DUBAI': 'AE', 'DXB': 'AE', 'SHARJAH': 'AE', 'ABU DHABI': 'AE', 'AJMAN': 'AE',
+      'DEU': 'DE', 'GER': 'DE', 'CAN': 'CA', 'SGP': 'SG', 'SIN': 'SG',
+      'USA': 'US', 'UK': 'GB', 'GBR': 'GB', 'IND': 'IN', 'AUS': 'AU', 'JPN': 'JP', 'NLD': 'NL', 'NZL': 'NZ'
+    }
+
     const rowsList = Array.isArray(rows) ? rows : []
+    const cleanedList = []
+    const seenNames = new Set()
+
     rowsList.forEach(row => {
-      if (row && row.country_name && row.country_code) {
-        lookupMap[String(row.country_name).trim().toUpperCase()] = String(row.country_code).trim().toUpperCase()
+      if (row && row.country_name) {
+        let name = String(row.country_name).replace(/^[\s\-–—]+|[\s\-–—]+$/g, '').trim().toUpperCase()
+        name = name.replace(/\s*[-–—]\s*[A-Z]{2,3}$/i, '').trim()
+        if (!name || name === '-' || name === '—') return
+
+        let code = String(row.country_code || '').trim().toUpperCase()
+        if (ALIAS_MAP[name]) name = ALIAS_MAP[name]
+        if (CODE_MAP[code]) code = CODE_MAP[code]
+        if (!code && CODE_MAP[name]) code = CODE_MAP[name]
+
+        lookupMap[name] = code || row.country_code
+        if (row.country_name) {
+          lookupMap[String(row.country_name).trim().toUpperCase()] = code || row.country_code
+        }
+
+        if (!seenNames.has(name)) {
+          seenNames.add(name)
+          cleanedList.push({
+            ...row,
+            country_name: name,
+            country_code: code || row.country_code
+          })
+        }
       }
     })
 
     return res.json({
       success: true,
-      countryCodes: rowsList,
+      countryCodes: cleanedList,
       lookupMap
     })
   } catch (error) {

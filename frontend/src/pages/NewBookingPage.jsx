@@ -434,7 +434,7 @@ export default function NewBookingPage() {
       sender_city: (sender.city || '').toUpperCase(),
       sender_pincode: (sender.pincode || '').toUpperCase(),
       sender_state: (sender.state || '').toUpperCase(),
-      sender_country: (sender.country || 'INDIA').toUpperCase(),
+      sender_country: (getFullCountryName(sender.country) || 'INDIA').toUpperCase(),
       sender_gstin_type: normalizeDocType(sender.gstin_type, true),
       sender_gstin_no: (sender.gstin_no || '').toUpperCase()
     }))
@@ -457,7 +457,7 @@ export default function NewBookingPage() {
       receiver_city: (receiver.city || '').toUpperCase(),
       receiver_pincode: (receiver.pincode || '').toUpperCase(),
       receiver_state: (receiver.state || '').toUpperCase(),
-      receiver_country: (receiver.country || '').toUpperCase(),
+      receiver_country: (getFullCountryName(receiver.country) || '').toUpperCase(),
       receiver_gstin_type: normalizeDocType(receiver.gstin_type, false),
       receiver_gstin_no: (receiver.gstin_no || '').toUpperCase()
     }))
@@ -544,7 +544,7 @@ export default function NewBookingPage() {
       sender_city: sender.city || b.sender_city || '',
       sender_pincode: sender.pincode || b.sender_pincode || '',
       sender_state: sender.state || b.sender_state || '',
-      sender_country: sender.country || b.sender_country || 'INDIA',
+      sender_country: (getFullCountryName(sender.country || b.sender_country) || 'INDIA').toUpperCase(),
       sender_gstin_type: normalizeDocType(b.sender_gstin_type || sender.gstin_type, true),
       sender_gstin_no: b.sender_gstin_no || sender.gstin_no || '',
 
@@ -558,7 +558,7 @@ export default function NewBookingPage() {
       receiver_city: receiver.city || b.receiver_city || '',
       receiver_pincode: receiver.pincode || b.receiver_pincode || '',
       receiver_state: receiver.state || b.receiver_state || '',
-      receiver_country: receiver.country || b.receiver_country || '',
+      receiver_country: (getFullCountryName(receiver.country || b.receiver_country) || '').toUpperCase(),
       receiver_gstin_type: normalizeDocType(b.receiver_gstin_type || receiver.gstin_type, false),
       receiver_gstin_no: b.receiver_gstin_no || receiver.gstin_no || '',
 
@@ -702,7 +702,7 @@ export default function NewBookingPage() {
       sender_city: rd.sender_city || '',
       sender_pincode: rd.sender_pincode || '',
       sender_state: rd.sender_state || '',
-      sender_country: rd.sender_country || 'INDIA',
+      sender_country: (getFullCountryName(rd.sender_country) || 'INDIA').toUpperCase(),
       sender_gstin_type: normalizeDocType(rd.sender_gstin_type, true),
       sender_gstin_no: rd.sender_gstin_no || '',
       receiver_name: rd.receiver_name || '',
@@ -715,7 +715,7 @@ export default function NewBookingPage() {
       receiver_city: rd.receiver_city || '',
       receiver_pincode: rd.receiver_pincode || '',
       receiver_state: rd.receiver_state || '',
-      receiver_country: rd.receiver_country || '',
+      receiver_country: (getFullCountryName(rd.receiver_country) || '').toUpperCase(),
       receiver_gstin_type: normalizeDocType(rd.receiver_gstin_type, false),
       receiver_gstin_no: rd.receiver_gstin_no || '',
       package_type: rd.package_type || 'parcel',

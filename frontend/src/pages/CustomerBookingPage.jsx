@@ -507,7 +507,7 @@ export default function CustomerBookingPage() {
       sender_city: (addr.city || '').toUpperCase(),
       sender_pincode: (addr.pincode || '').toUpperCase(),
       sender_state: (addr.state || '').toUpperCase(),
-      sender_country: (addr.country || 'INDIA').toUpperCase(),
+      sender_country: (getFullCountryName(addr.country) || 'INDIA').toUpperCase(),
       sender_gstin_type: normalizeDocType(addr.gstin_type, true),
       sender_gstin_no: (addr.gstin_no || '').toUpperCase()
     }))
@@ -529,7 +529,7 @@ export default function CustomerBookingPage() {
       receiver_city: (addr.city || '').toUpperCase(),
       receiver_pincode: (addr.pincode || '').toUpperCase(),
       receiver_state: (addr.state || '').toUpperCase(),
-      receiver_country: (addr.country || '').toUpperCase(),
+      receiver_country: (getFullCountryName(addr.country) || '').toUpperCase(),
       receiver_gstin_type: normalizeDocType(addr.gstin_type, false),
       receiver_gstin_no: (addr.gstin_no || '').toUpperCase()
     }))

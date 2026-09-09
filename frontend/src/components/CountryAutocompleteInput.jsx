@@ -18,29 +18,45 @@ export default function CountryAutocompleteInput({
   const listRef = useRef(null)
   const itemRefs = useRef([])
 
+  // Helper: strip all hyphens/dashes from a value, return '' if only hyphens
+  const stripHyphen = (val) => {
+    if (!val) return ''
+    const s = String(val).replace(/^[\s\-–—]+|[\s\-–—]+$/g, '').trim()
+    if (!s || s === '-' || s === '–' || s === '—' || s.toLowerCase() === 'null' || s.toLowerCase() === 'undefined' || s.toLowerCase() === 'n/a' || s.toLowerCase() === 'none') return ''
+    return s
+  }
+
   // Combined country list (Custom DB list + ISO Map default items)
   const combinedList = useMemo(() => {
     const list = []
     const seenCodes = new Set()
+    const seenNames = new Set()
 
-    // 1. Add DB items first
+    // 1. Add DB items first — resolve short codes/aliases to full names
     if (Array.isArray(countryList)) {
       countryList.forEach(item => {
-        const code = (item.country_code || '').trim().toUpperCase()
-        let name = (item.country_name || '').trim().toUpperCase()
-        // Strip trailing "- XX" or leading/trailing hyphens from country name
-        name = name.replace(/\s*[-—]\s*[A-Z]{2,3}$/i, '').replace(/^[-—\s]+|[-—\s]+$/g, '').trim()
-        if (code && name && name !== '-' && name !== '—' && !seenCodes.has(code)) {
-          seenCodes.add(code)
-          list.push({ country_name: name, country_code: code })
+        let code = (item.country_code || '').trim().toUpperCase()
+        let rawName = stripHyphen(item.country_name).toUpperCase()
+        if (!rawName) return
+        // Strip trailing "- XX" from country name
+        rawName = rawName.replace(/\s*[-—–]\s*[A-Z]{2,3}$/i, '').trim()
+        if (!rawName || rawName === '-' || rawName === '–' || rawName === '—') return
+        // Resolve short codes (FRA→FRANCE, DEU→GERMANY, CAN→CANADA, SGP→SINGAPORE, DUBAI→UNITED ARAB EMIRATES, etc.)
+        const resolvedName = getFullCountryName(rawName) || getFullCountryName(code) || rawName
+        const resolvedCode = getCountryCode(code) || getCountryCode(resolvedName) || (code.length === 2 ? code : '')
+        if (resolvedCode && resolvedName && !seenCodes.has(resolvedCode) && !seenNames.has(resolvedName)) {
+          seenCodes.add(resolvedCode)
+          seenNames.add(resolvedName)
+          list.push({ country_name: resolvedName, country_code: resolvedCode })
         }
       })
     }
 
     // 2. Add fallback items from ISO_COUNTRY_MAP for any missing common 2-letter codes
     Object.entries(ISO_COUNTRY_MAP).forEach(([code, name]) => {
-      if (code.length === 2 && !seenCodes.has(code)) {
+      if (code.length === 2 && !seenCodes.has(code) && !seenNames.has(name)) {
         seenCodes.add(code)
+        seenNames.add(name)
         list.push({ country_name: name, country_code: code })
       }
     })
@@ -51,34 +67,22 @@ export default function CountryAutocompleteInput({
 
   // Compute current resolved code and display name
   const currentCode = useMemo(() => {
-    if (!value) return ''
-    const cleanVal = String(value).replace(/^[\s\-—]+|[\s\-—]+$/g, '').trim()
-    if (!cleanVal || cleanVal === '-' || cleanVal === '—' || cleanVal.toLowerCase() === 'null') return ''
+    const cleanVal = stripHyphen(value)
+    if (!cleanVal) return ''
     return getCountryCode(cleanVal, combinedList) || (cleanVal.length === 2 ? cleanVal.toUpperCase() : '')
   }, [value, combinedList])
 
   const currentFullName = useMemo(() => {
-    if (!value) return ''
-    const cleanVal = String(value).replace(/^[\s\-—]+|[\s\-—]+$/g, '').trim()
-    if (!cleanVal || cleanVal === '-' || cleanVal === '—' || cleanVal.toLowerCase() === 'null') return ''
-    const full = getFullCountryName(cleanVal, combinedList)
-    if (!full || full === '-' || full === '—') return ''
-    return full
+    const cleanVal = stripHyphen(value)
+    if (!cleanVal) return ''
+    const full = stripHyphen(getFullCountryName(cleanVal, combinedList))
+    return full || ''
   }, [value, combinedList])
 
-  // Sync internal search with value prop (show clean full name or empty string if -)
+  // Sync internal search with value prop (show clean full name or empty string)
   useEffect(() => {
     if (!isOpen) {
-      if (!value) {
-        setSearch('')
-      } else {
-        const cleanVal = String(value).replace(/^[\s\-—]+|[\s\-—]+$/g, '').trim()
-        if (!cleanVal || cleanVal === '-' || cleanVal === '—') {
-          setSearch('')
-        } else {
-          setSearch(currentFullName === '-' || currentFullName === '—' ? '' : currentFullName)
-        }
-      }
+      setSearch(currentFullName || '')
     }
   }, [value, currentFullName, isOpen])
 
@@ -88,16 +92,7 @@ export default function CountryAutocompleteInput({
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setIsOpen(false)
         setHighlightedIndex(-1)
-        if (!value) {
-          setSearch('')
-        } else {
-          const cleanVal = String(value).replace(/^[\s\-—]+|[\s\-—]+$/g, '').trim()
-          if (!cleanVal || cleanVal === '-' || cleanVal === '—') {
-            setSearch('')
-          } else {
-            setSearch(currentFullName === '-' || currentFullName === '—' ? '' : currentFullName)
-          }
-        }
+        setSearch(currentFullName || '')
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -106,10 +101,11 @@ export default function CountryAutocompleteInput({
 
   // Filter country list by search term
   const filtered = useMemo(() => {
-    if (!search || search.trim() === '' || search.trim() === '-' || search.trim() === '—' || search.toUpperCase() === currentFullName.toUpperCase()) {
+    const cleanSearch = stripHyphen(search)
+    if (!cleanSearch || cleanSearch.toUpperCase() === currentFullName.toUpperCase()) {
       return combinedList.slice(0, 100)
     }
-    const term = search.trim().toLowerCase()
+    const term = cleanSearch.toLowerCase()
     return combinedList.filter(item => {
       const nameMatch = item.country_name?.toLowerCase().includes(term)
       const codeMatch = item.country_code?.toLowerCase().includes(term)
@@ -124,9 +120,8 @@ export default function CountryAutocompleteInput({
 
   const handleSelect = (item) => {
     if (disabled) return
-    const code = item.country_code?.toUpperCase()
-    let name = item.country_name?.toUpperCase() || ''
-    name = name.replace(/\s*[-—]\s*[A-Z]{2,3}$/i, '').replace(/^[-—\s]+|[-—\s]+$/g, '').trim()
+    const code = (getCountryCode(item.country_code) || item.country_code || '').toUpperCase()
+    const name = stripHyphen(item.country_name) || ''
     setSearch(name)
     setIsOpen(false)
     setHighlightedIndex(-1)
@@ -138,10 +133,8 @@ export default function CountryAutocompleteInput({
   const handleInputChange = (e) => {
     if (disabled) return
     let val = e.target.value
-    // If user input is just a hyphen, clear it
-    if (val === '-' || val === '—') {
-      val = ''
-    }
+    // Strip hyphens completely
+    val = val.replace(/[-–—]/g, '')
     setSearch(val)
     if (!isOpen) setIsOpen(true)
 
@@ -151,14 +144,16 @@ export default function CountryAutocompleteInput({
     }
 
     // Check if directly matching an exact country code or name
+    const upper = val.trim().toUpperCase()
     const exactMatch = combinedList.find(c => 
-      c.country_code?.toUpperCase() === val.trim().toUpperCase() ||
-      c.country_name?.toUpperCase() === val.trim().toUpperCase()
+      c.country_code?.toUpperCase() === upper ||
+      c.country_name?.toUpperCase() === upper
     )
     if (exactMatch && onChange) {
       onChange(exactMatch.country_code, exactMatch)
     } else if (onChange) {
-      onChange(val.trim().toUpperCase())
+      const resolved = getCountryCode(upper) || upper
+      onChange(resolved)
     }
   }
 

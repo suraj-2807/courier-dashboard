@@ -247,11 +247,11 @@ COUNTRY_NAME_TO_CODE['SIN'] = 'SG'
 export function getFullCountryName(codeOrName, customCountryList = []) {
   if (!codeOrName) return ''
   let clean = String(codeOrName).trim().toUpperCase()
-  if (clean === '—' || clean === '-' || clean === 'NULL' || clean === 'UNDEFINED') return ''
+  if (clean === '—' || clean === '–' || clean === '-' || clean === 'NULL' || clean === 'UNDEFINED' || clean === 'N/A' || clean === 'NONE') return ''
 
-  // Strip trailing - XX (e.g. "INDIA - IN" -> "INDIA") and surrounding hyphens
-  clean = clean.replace(/\s*[-—]\s*[A-Z]{2,3}$/i, '').replace(/^[-—\s]+|[-—\s]+$/g, '').trim()
-  if (!clean || clean === '-' || clean === '—') return ''
+  // Strip trailing "- XX" (e.g. "INDIA - IN" -> "INDIA") and surrounding hyphens/dashes
+  clean = clean.replace(/\s*[-–—]\s*[A-Z]{2,3}$/i, '').replace(/^[\s\-–—]+|[\s\-–—]+$/g, '').trim()
+  if (!clean || clean === '-' || clean === '–' || clean === '—') return ''
 
   // 1. Direct Static ISO Map check (prioritized to guarantee standard codes like FRA, DEU, CAN, SGP, DUBAI resolve)
   if (ISO_COUNTRY_MAP[clean]) {
@@ -265,15 +265,15 @@ export function getFullCountryName(codeOrName, customCountryList = []) {
       (c.country_name && c.country_name.trim().toUpperCase() === clean)
     )
     if (found && found.country_name) {
-      const cName = found.country_name.trim().toUpperCase().replace(/\s*[-—]\s*[A-Z]{2,3}$/i, '').replace(/^[-—\s]+|[-—\s]+$/g, '').trim()
+      const cName = found.country_name.trim().toUpperCase().replace(/\s*[-–—]\s*[A-Z]{2,3}$/i, '').replace(/^[\s\-–—]+|[\s\-–—]+$/g, '').trim()
       if (ISO_COUNTRY_MAP[cName]) return ISO_COUNTRY_MAP[cName]
       if (cName.length > 3) return cName
     }
   }
 
   // 3. Handle combined formats e.g. "DUBAI, UAE" or "PARIS, FRANCE" or "FRANKFURT - DEU"
-  if (clean.includes(',') || clean.includes(' - ') || clean.includes('/')) {
-    const parts = clean.split(/[,/-]+/).map(p => p.trim()).filter(Boolean)
+  if (clean.includes(',') || clean.includes(' - ') || clean.includes(' – ') || clean.includes(' — ') || clean.includes('/')) {
+    const parts = clean.split(/[,/–—\-]+/).map(p => p.trim()).filter(Boolean)
     for (let i = parts.length - 1; i >= 0; i--) {
       const p = parts[i]
       if (ISO_COUNTRY_MAP[p]) return ISO_COUNTRY_MAP[p]
@@ -287,7 +287,7 @@ export function getFullCountryName(codeOrName, customCountryList = []) {
     }
   }
 
-  return clean
+  return clean.replace(/^[\s\-–—]+|[\s\-–—]+$/g, '')
 }
 
 /**
@@ -297,10 +297,10 @@ export function getFullCountryName(codeOrName, customCountryList = []) {
 export function getCountryCode(codeOrName, customCountryList = []) {
   if (!codeOrName) return ''
   let clean = String(codeOrName).trim().toUpperCase()
-  if (clean === '—' || clean === '-' || clean === 'NULL' || clean === 'UNDEFINED') return ''
+  if (clean === '—' || clean === '–' || clean === '-' || clean === 'NULL' || clean === 'UNDEFINED' || clean === 'N/A' || clean === 'NONE') return ''
 
-  clean = clean.replace(/\s*[-—]\s*[A-Z]{2,3}$/i, '').replace(/^[-—\s]+|[-—\s]+$/g, '').trim()
-  if (!clean) return ''
+  clean = clean.replace(/\s*[-–—]\s*[A-Z]{2,3}$/i, '').replace(/^[\s\-–—]+|[\s\-–—]+$/g, '').trim()
+  if (!clean || clean === '-' || clean === '–' || clean === '—') return ''
 
   // If already a 2-letter code in our map
   if (clean.length === 2 && ISO_COUNTRY_MAP[clean]) {
