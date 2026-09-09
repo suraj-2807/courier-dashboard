@@ -4,6 +4,7 @@ import { useBookingById, usePushBookingToApi } from '../hooks/useBookings'
 import { useLiveTracking } from '../hooks/useTracking'
 import { bookingsApi } from '../api/bookings.api'
 import { parseForwardingNumbers } from './BookingsPage'
+import { getFullCountryName } from '../utils/countryUtils'
 import {
   ArrowLeft,
   Package,
@@ -1143,7 +1144,7 @@ function PersonCard({ title, icon: Icon, person, fallbackName, fallbackCity, fal
           </h3>
           {country && (
             <span className="text-[11px] font-bold text-navy bg-surface-alt px-2.5 py-0.5 rounded-md border border-border/60">
-              {country}
+              {getFullCountryName(country)}
             </span>
           )}
         </div>

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLiveTracking } from '../hooks/useTracking'
 import { getActiveVendors } from '../api/apiSettings.api'
+import { getFullCountryName } from '../utils/countryUtils'
 import toast from 'react-hot-toast'
 import {
   Search,
@@ -527,7 +528,7 @@ export default function TrackingPage() {
                       <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px]">Origin</span>
                     </div>
                     <p className="text-[14px] font-bold text-text-primary">{tracking.shipmentInfo.origin || '—'}</p>
-                    <p className="text-[12px] text-text-secondary">{tracking.shipmentInfo.originCountry}</p>
+                    <p className="text-[12px] text-text-secondary">{getFullCountryName(tracking.shipmentInfo.originCountry)}</p>
                     {tracking.shipmentInfo.shipperName && (
                       <p className="text-[11px] text-text-tertiary mt-1.5 flex items-center gap-1">
                         <User className="w-3 h-3" /> {tracking.shipmentInfo.shipperName}
@@ -554,7 +555,7 @@ export default function TrackingPage() {
                       <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px]">Destination</span>
                     </div>
                     <p className="text-[14px] font-bold text-text-primary">{tracking.shipmentInfo.destination || '—'}</p>
-                    <p className="text-[12px] text-text-secondary">{tracking.shipmentInfo.destinationCountry}</p>
+                    <p className="text-[12px] text-text-secondary">{getFullCountryName(tracking.shipmentInfo.destinationCountry)}</p>
                     {tracking.shipmentInfo.consignee && (
                       <p className="text-[11px] text-text-tertiary mt-1.5 flex items-center gap-1">
                         <User className="w-3 h-3" /> {tracking.shipmentInfo.consignee}

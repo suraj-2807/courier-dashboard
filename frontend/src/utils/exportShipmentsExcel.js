@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx'
+import { getFullCountryName } from './countryUtils'
 
 /**
  * Export a list of shipments to an Excel (.xlsx) file with all booking form fields.
@@ -102,7 +103,7 @@ export function exportShipmentsToExcel(shipments = [], fileName = '') {
       'Shipper City': sender.city || s.s_city || s.sender_city || '—',
       'Shipper State': sender.state || s.s_state || s.sender_state || '—',
       'Shipper Pincode': sender.pincode || s.s_pincode || s.sender_pincode || '—',
-      'Shipper Country': sender.country || s.s_country || s.sender_country || 'INDIA',
+      'Shipper Country': getFullCountryName(sender.country || s.s_country || s.sender_country || 'INDIA'),
       'Shipper ID/GST Type': s.sender_gstin_type || sender.gstin_type || '—',
       'Shipper ID/GST Number': s.sender_gstin_no || sender.gstin_no || '—',
 
@@ -116,7 +117,7 @@ export function exportShipmentsToExcel(shipments = [], fileName = '') {
       'Consignee City': receiver.city || s.r_city || s.receiver_city || '—',
       'Consignee State': receiver.state || s.r_state || s.receiver_state || '—',
       'Consignee Pincode': receiver.pincode || s.r_pincode || s.receiver_pincode || '—',
-      'Consignee Country': receiver.country || s.r_country || s.receiver_country || '—',
+      'Consignee Country': getFullCountryName(receiver.country || s.r_country || s.receiver_country || '—'),
       'Consignee ID/GST Type': s.receiver_gstin_type || receiver.gstin_type || '—',
       'Consignee ID/GST Number': s.receiver_gstin_no || receiver.gstin_no || '—',
 

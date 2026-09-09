@@ -12,6 +12,7 @@ import { systemSettingsApi } from '../api/systemSettings.api'
 import { customersApi } from '../api/customers.api'
 import api from '../api/axios'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
+import { getFullCountryName, getCountryCode } from '../utils/countryUtils'
 import {
   ArrowLeft,
   User,
@@ -465,18 +466,7 @@ export default function NewBookingPage() {
   }
   const resolveCountryCode = (val) => {
     if (!val) return ''
-    const clean = val.trim().toUpperCase()
-    if (countryLookupMap && countryLookupMap[clean]) {
-      return countryLookupMap[clean]
-    }
-    // Standard fallbacks
-    if (clean === 'USA' || clean === 'UNITED STATES' || clean === 'UNITED STATES OF AMERICA') return 'US'
-    if (clean === 'INDIA' || clean === 'IND') return 'IN'
-    if (clean === 'UK' || clean === 'UNITED KINGDOM' || clean === 'GREAT BRITAIN') return 'GB'
-    if (clean === 'CANADA' || clean === 'CAN') return 'CA'
-    if (clean === 'AUSTRALIA' || clean === 'AUS') return 'AU'
-    if (clean === 'UAE' || clean === 'UNITED ARAB EMIRATES' || clean === 'DUBAI') return 'AE'
-    return val
+    return getCountryCode(val, countryList) || countryLookupMap[val.trim().toUpperCase()] || val.trim().toUpperCase()
   }
 
   // Edit Mode or Pre-fill from URL params

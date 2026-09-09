@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { productsApi } from '../api/products.api'
 import { countryCodesApi } from '../api/countryCodes.api'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
+import { getFullCountryName } from '../utils/countryUtils'
 import {
   Tag,
   Search,
@@ -17,7 +18,8 @@ import {
   FileSpreadsheet,
   Check,
   Building,
-  HelpCircle
+  HelpCircle,
+  Sparkles
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -386,11 +388,12 @@ export default function ProductsPage() {
                     {/* Country Scope */}
                     <td className="py-3.5 px-4">
                       {item.country && item.country !== 'ALL' ? (
-                        <span className="inline-flex items-center gap-1 font-bold text-navy text-[11px] bg-surface-alt border border-border px-2 py-0.5 rounded-md uppercase">
-                          {item.country}
+                        <span className="inline-flex items-center gap-1.5 font-bold text-navy text-[11px] bg-surface-alt border border-border px-2.5 py-1 rounded-lg uppercase">
+                          <span className="text-primary font-black">{getFullCountryName(item.country)}</span>
+                          <span className="text-text-tertiary font-mono text-[10px]">({item.country})</span>
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 text-[11px] bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                        <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-700 text-[11px] bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
                           <Globe className="w-3 h-3 text-emerald-600" />
                           Global (All Countries)
                         </span>
@@ -426,72 +429,128 @@ export default function ProductsPage() {
 
       {/* ── Add / Edit Modal ── */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px] animate-fade-in">
-          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-lg overflow-hidden flex flex-col transition-all">
+            {/* Top subtle gradient highlight bar */}
+            <div className="h-1.5 bg-gradient-to-r from-primary via-red-500 to-rose-500 w-full" />
+
             {/* Header */}
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface-alt/60">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                  <Tag className="w-4 h-4" />
+            <div className="px-6 py-4.5 border-b border-border flex items-center justify-between bg-surface-alt/40">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
+                  <Tag className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-[16px] font-extrabold text-navy">
-                    {editingItem ? 'Edit Item & HSN Code' : 'Add Item & HSN Code'}
-                  </h2>
-                  <p className="text-[11px] text-text-tertiary">
-                    This exact description and HSN code will auto-fill in invoice items.
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-[17px] font-black text-navy tracking-tight">
+                      {editingItem ? 'Edit Product & HSN Code' : 'Add Product & HSN Code'}
+                    </h2>
+                    <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                      Invoice Item
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-text-tertiary mt-0.5">
+                    Standardized tariff entry for automated invoice generation & customs clearance.
                   </p>
                 </div>
               </div>
               <button
                 onClick={closeModal}
-                className="p-1.5 rounded-xl hover:bg-surface-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+                className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-surface-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+                title="Close"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Body */}
-            <form onSubmit={handleFormSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleFormSubmit} className="p-6 space-y-4.5">
+              {/* Product Description */}
               <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                  Item Description <span className="text-primary">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider">
+                    Item Description <span className="text-primary">*</span>
+                  </label>
+                  <span className="text-[10px] text-text-tertiary">Exact name on invoice</span>
+                </div>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Cotton T-Shirt, Leather Shoes, Ayurvedic Soap"
+                  placeholder="e.g. COTTON T-SHIRT, LEATHER HANDBAG, AYURVEDIC SOAP"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value.toUpperCase() })}
-                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-semibold focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 uppercase"
+                  className="w-full px-3.5 py-2.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 uppercase transition-all shadow-2xs"
                 />
               </div>
 
+              {/* HSN / Tariff Code */}
               <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                  HSN / Tariff Code (6 to 8 Digits) <span className="text-primary">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider">
+                    HSN / Tariff Code (6 to 8 Digits) <span className="text-primary">*</span>
+                  </label>
+                  <span className="text-[10px] text-text-tertiary font-mono">ITC-HS Standard</span>
+                </div>
                 <input
                   type="text"
                   required
                   placeholder="e.g. 61091000"
                   value={formData.hs_code}
                   onChange={(e) => setFormData({ ...formData, hs_code: e.target.value.replace(/\s+/g, '').toUpperCase() })}
-                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono font-bold focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 uppercase"
+                  className="w-full px-3.5 py-2.5 bg-surface-alt border border-border rounded-xl text-[13px] text-navy font-mono font-extrabold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 uppercase tracking-wide transition-all shadow-2xs"
                 />
               </div>
 
+              {/* Country Scope */}
               <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                  Country Scope (Leave blank or select Global for all destinations)
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider">
+                    Country Scope
+                  </label>
+                  <span className="text-[10px] text-text-tertiary">Leave empty for all countries</span>
+                </div>
                 <CountryAutocompleteInput
                   value={formData.country}
                   onChange={(val) => setFormData({ ...formData, country: (val || '').toUpperCase() })}
                   placeholder="Global / All Countries (or search e.g. USA, UK, UAE)"
-                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-primary font-bold uppercase focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                  className="w-full px-3.5 py-2.5 bg-surface-alt border border-border rounded-xl text-[13px] text-primary font-bold uppercase focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
                   countryList={countryList}
                 />
+              </div>
+
+              {/* Live Preview Card */}
+              <div className="bg-surface-alt/70 border border-border/80 rounded-2xl p-4 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-text-tertiary flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-primary" /> Live Invoice Autofill Preview
+                  </span>
+                  <span className="text-[10px] font-bold text-text-tertiary">Auto-fills in booking</span>
+                </div>
+                <div className="bg-surface rounded-xl p-3 border border-border flex items-center justify-between gap-3 shadow-2xs">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-extrabold text-navy truncate">
+                      {formData.name.trim() || <span className="text-text-tertiary italic font-normal">Enter item description...</span>}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="font-mono font-bold text-[11px] text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-md">
+                        HSN: {formData.hs_code.trim() || '—'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    {formData.country && formData.country !== 'ALL' ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-navy bg-surface-alt border border-border px-2.5 py-1 rounded-lg">
+                        <Globe className="w-3 h-3 text-primary" />
+                        {getFullCountryName(formData.country)}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
+                        <Globe className="w-3 h-3 text-emerald-600" />
+                        Global
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Footer */}
@@ -499,17 +558,17 @@ export default function ProductsPage() {
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 rounded-xl text-[13px] font-bold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl text-[13px] font-bold text-text-secondary hover:bg-surface-hover border border-border/80 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saveMutation.isPending}
-                  className="px-5 py-2 rounded-xl text-[13px] font-bold text-white bg-primary hover:bg-primary-dark transition-all duration-200 shadow-sm hover:shadow-primary/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl text-[13px] font-bold text-white bg-primary hover:bg-primary-dark transition-all duration-200 shadow-sm hover:shadow-primary/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Save Item
+                  {editingItem ? 'Update Product' : 'Save Product'}
                 </button>
               </div>
             </form>

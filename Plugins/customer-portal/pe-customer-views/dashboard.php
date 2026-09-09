@@ -1918,114 +1918,149 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
 <!-- ADDRESS MODAL -->
 <div class="cp-do" id="cp-addr-modal-overlay" onclick="if(event.target===this)cpCloseAddressModal()">
   <div class="cp-dp"
-    style="max-width:560px; padding:28px; border-radius:20px; background:#fff; margin:auto; box-shadow:var(--cpsh2);">
-    <div
-      style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:1px solid var(--cpbdr); padding-bottom:14px;">
-      <h3 style="font-size:18px; font-weight:900; color:var(--cptext); margin:0;" id="cp-addr-modal-title">
-        <i class="fa-solid fa-address-book" style="color:var(--cpred); margin-right:8px;"></i> Add New Address
-      </h3>
+    style="max-width:620px; padding:0; border-radius:24px; background:#fff; margin:auto; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); overflow:hidden; border:1px solid var(--cpbdr); max-height:92vh; display:flex; flex-direction:column;">
+    
+    <!-- Top Gradient Accent -->
+    <div style="height:5px; background:linear-gradient(90deg, #bb0013, #ef4444, #f97316); width:100%;"></div>
+
+    <!-- Modal Header -->
+    <div style="padding:22px 28px 18px; border-bottom:1px solid var(--cpbdr); display:flex; justify-content:space-between; align-items:center; background:linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div style="width:40px; height:40px; border-radius:12px; background:rgba(187,0,19,0.08); border:1px solid rgba(187,0,19,0.15); display:flex; align-items:center; justify-content:center; color:var(--cpred); font-size:17px;">
+          <i class="fa-solid fa-address-book"></i>
+        </div>
+        <div>
+          <h3 style="font-size:17px; font-weight:900; color:var(--cptext); margin:0; letter-spacing:-0.2px;" id="cp-addr-modal-title">
+            Add New Address
+          </h3>
+          <p style="font-size:11.5px; color:var(--cptext2); margin:2px 0 0;">
+            Manage pickup and delivery contacts for fast, error-free courier bookings.
+          </p>
+        </div>
+      </div>
       <button onclick="cpCloseAddressModal()"
-        style="border:none; background:transparent; font-size:18px; color:var(--cptext3); cursor:pointer;"><i
-          class="fa-solid fa-xmark"></i></button>
+        style="width:34px; height:34px; border-radius:10px; border:none; background:rgba(0,0,0,0.04); font-size:15px; color:var(--cptext3); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s;"
+        onmouseenter="this.style.background='rgba(0,0,0,0.08)';this.style.color='var(--cptext)'"
+        onmouseleave="this.style.background='rgba(0,0,0,0.04)';this.style.color='var(--cptext3)'"
+        title="Close">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
     </div>
-    <form id="cp-address-form" onsubmit="cpHandleAddressSubmit(event)">
+
+    <!-- Modal Form Body (Scrollable) -->
+    <form id="cp-address-form" onsubmit="cpHandleAddressSubmit(event)" style="padding:24px 28px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:20px;">
       <input type="hidden" id="addr-id" value="">
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
-        <div class="cp-form-group">
-          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Address Type
-            *</label>
-          <select id="addr-type" class="cp-form-input"
-            style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
-            <option value="both">Both (Sender & Receiver)</option>
-            <option value="sender">Sender (Pickup Address)</option>
-            <option value="receiver">Receiver (Delivery Address)</option>
-          </select>
+
+      <!-- Section 1: Contact Information -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; padding:16px 18px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #e2e8f0;">
+          <i class="fa-solid fa-user-check" style="font-size:12px; color:var(--cpred);"></i>
+          <span style="font-size:11.5px; font-weight:800; color:var(--cptext); text-transform:uppercase; letter-spacing:0.5px;">1. Contact Details</span>
         </div>
-        <div class="cp-form-group">
-          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Contact Person
-            / Name *</label>
-          <input type="text" id="addr-name" class="cp-form-input" required placeholder="Full Name"
-            style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+          <div class="cp-form-group">
+            <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Address Type *</label>
+            <select id="addr-type" class="cp-form-input" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-weight:600; color:var(--cptext);">
+              <option value="both">Both (Sender & Receiver)</option>
+              <option value="sender">Sender (Pickup Address)</option>
+              <option value="receiver">Receiver (Delivery Address)</option>
+            </select>
+          </div>
+          <div class="cp-form-group">
+            <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Contact Person / Name *</label>
+            <input type="text" id="addr-name" class="cp-form-input" required placeholder="Full Name" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-weight:600; color:var(--cptext);">
+          </div>
         </div>
-      </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
-        <div class="cp-form-group">
-          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Company
-            Name</label>
-          <input type="text" id="addr-company" class="cp-form-input" placeholder="Company Name"
-            style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+          <div class="cp-form-group">
+            <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Company Name</label>
+            <input type="text" id="addr-company" class="cp-form-input" placeholder="Company Name" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-weight:600; color:var(--cptext); text-transform:uppercase;">
+          </div>
+          <div class="cp-form-group">
+            <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Phone Number *</label>
+            <input type="tel" id="addr-phone" class="cp-form-input" required placeholder="+91 99999 99999" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-family:monospace; font-weight:700; color:var(--cptext);">
+          </div>
         </div>
-        <div class="cp-form-group">
-          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Phone Number
-            *</label>
-          <input type="tel" id="addr-phone" class="cp-form-input" required placeholder="+91 99999 99999"
-            style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
-        </div>
-      </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
-        <div class="cp-form-group">
-          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Email
-            Address</label>
-          <input type="email" id="addr-email" class="cp-form-input" placeholder="email@example.com"
-            style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
-        </div>
-        <div class="cp-form-group">
-          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Alternate
-            Phone</label>
-          <input type="tel" id="addr-phone2" class="cp-form-input" placeholder="Alt phone"
-            style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
-        </div>
-      </div>
-      <div class="cp-form-group" style="margin-bottom:12px;">
-        <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Address Line 1
-          *</label>
-        <input type="text" id="addr-line1" class="cp-form-input" required placeholder="Flat / Building / Street"
-          style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
-      </div>
-      <div class="cp-form-group" style="margin-bottom:12px;">
-        <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Address Line
-          2</label>
-        <input type="text" id="addr-line2" class="cp-form-input" placeholder="Area / Landmark"
-          style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
-      </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:12px;">
-        <div class="cp-form-group">
-          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">City *</label>
-          <input type="text" id="addr-city" class="cp-form-input" required placeholder="City"
-            style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
-        </div>
-        <div class="cp-form-group">
-          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">State</label>
-          <input type="text" id="addr-state" class="cp-form-input" placeholder="State"
-            style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
-        </div>
-        <div class="cp-form-group">
-          <label
-            style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Pincode</label>
-          <input type="text" id="addr-pincode" class="cp-form-input" placeholder="Pincode"
-            style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="cp-form-group">
+            <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Alternate Phone</label>
+            <input type="tel" id="addr-phone2" class="cp-form-input" placeholder="Secondary Phone" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-family:monospace; color:var(--cptext);">
+          </div>
+          <div class="cp-form-group">
+            <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Email Address</label>
+            <input type="email" id="addr-email" class="cp-form-input" placeholder="email@example.com" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; color:var(--cptext);">
+          </div>
         </div>
       </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
-        <div class="cp-form-group">
-          <label
-            style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">Country</label>
-          <input type="text" id="addr-country" class="cp-form-input" value="INDIA" placeholder="Country"
-            style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+
+      <!-- Section 2: Address Information -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; padding:16px 18px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #e2e8f0;">
+          <i class="fa-solid fa-location-dot" style="font-size:12px; color:var(--cpred);"></i>
+          <span style="font-size:11.5px; font-weight:800; color:var(--cptext); text-transform:uppercase; letter-spacing:0.5px;">2. Address Location</span>
         </div>
+
+        <div class="cp-form-group" style="margin-bottom:12px;">
+          <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Address Line 1 *</label>
+          <input type="text" id="addr-line1" class="cp-form-input" required placeholder="Flat / Building / Street address" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; color:var(--cptext);">
+        </div>
+
+        <div class="cp-form-group" style="margin-bottom:12px;">
+          <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Address Line 2</label>
+          <input type="text" id="addr-line2" class="cp-form-input" placeholder="Area / Landmark / Suite" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; color:var(--cptext);">
+        </div>
+
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:12px;">
+          <div class="cp-form-group">
+            <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">City *</label>
+            <input type="text" id="addr-city" class="cp-form-input" required placeholder="City" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-weight:600; color:var(--cptext);">
+          </div>
+          <div class="cp-form-group">
+            <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">State</label>
+            <input type="text" id="addr-state" class="cp-form-input" placeholder="State" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; text-transform:uppercase; font-weight:600; color:var(--cptext);">
+          </div>
+          <div class="cp-form-group">
+            <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Pincode / Postal *</label>
+            <input type="text" id="addr-pincode" class="cp-form-input" required placeholder="Pincode" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-family:monospace; font-weight:700; color:var(--cptext);">
+          </div>
+        </div>
+
         <div class="cp-form-group">
-          <label style="font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase;">GST / Tax
-            ID</label>
-          <input type="text" id="addr-gstin" class="cp-form-input" placeholder="GSTIN / ID No"
-            style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr);">
+          <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Country *</label>
+          <input type="text" id="addr-country" class="cp-form-input" value="INDIA" placeholder="Enter country name or code (e.g. INDIA, UNITED STATES, UAE)" oninput="this.value=this.value.toUpperCase()" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-weight:800; color:var(--cpred); text-transform:uppercase;">
         </div>
       </div>
-      <div style="display:flex; justify-content:flex-end; gap:10px;">
+
+      <!-- Section 3: Tax & Identification -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:16px; padding:16px 18px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px; padding-bottom:8px; border-bottom:1px solid #e2e8f0;">
+          <i class="fa-solid fa-file-invoice" style="font-size:12px; color:var(--cpred);"></i>
+          <span style="font-size:11.5px; font-weight:800; color:var(--cptext); text-transform:uppercase; letter-spacing:0.5px;">3. Tax & Identification</span>
+        </div>
+
+        <div class="cp-form-group">
+          <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">GST / Tax ID / Passport / Aadhaar Number</label>
+          <input type="text" id="addr-gstin" class="cp-form-input" placeholder="e.g. GSTIN, PAN, EIN, Tax ID" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-family:monospace; font-weight:600; color:var(--cptext);">
+        </div>
+      </div>
+
+      <!-- Footer Buttons -->
+      <div style="display:flex; justify-content:flex-end; align-items:center; gap:12px; padding-top:10px; border-top:1px solid var(--cpbdr);">
         <button type="button" onclick="cpCloseAddressModal()"
-          style="padding:8px 16px; border-radius:8px; border:1px solid var(--cpbdr); background:transparent; font-size:13px; font-weight:600; cursor:pointer;">Cancel</button>
+          style="padding:10px 20px; border-radius:12px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-weight:700; color:var(--cptext2); cursor:pointer; transition:all .15s;"
+          onmouseenter="this.style.background='#f1f5f9'"
+          onmouseleave="this.style.background='#fff'">
+          Cancel
+        </button>
         <button type="submit" id="addr-submit-btn"
-          style="padding:8px 20px; border-radius:8px; border:none; background:var(--cpred); color:#fff; font-size:13px; font-weight:700; cursor:pointer;">Save
-          Address</button>
+          style="padding:10px 24px; border-radius:12px; border:none; background:linear-gradient(135deg, #bb0013, #dc2626); color:#fff; font-size:13px; font-weight:800; cursor:pointer; box-shadow:0 4px 12px rgba(187,0,19,0.25); transition:all .15s;"
+          onmouseenter="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 16px rgba(187,0,19,0.35)'"
+          onmouseleave="this.style.transform='none';this.style.boxShadow='0 4px 12px rgba(187,0,19,0.25)'">
+          Save Address
+        </button>
       </div>
     </form>
   </div>
@@ -2042,6 +2077,62 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
 <script>
   var cpPage = 1, cpSearch = '', cpShipSearchTimer = null;
   var cpReqPage = 1, cpReqSearch = '', cpReqStatus = '', cpReqSearchTimer = null;
+
+  // Universal ISO Country Dictionary
+  var cpCountryDictionary = {
+    'AF': 'AFGHANISTAN', 'AL': 'ALBANIA', 'DZ': 'ALGERIA', 'AS': 'AMERICAN SAMOA', 'AD': 'ANDORRA',
+    'AO': 'ANGOLA', 'AI': 'ANGUILLA', 'AQ': 'ANTARCTICA', 'AG': 'ANTIGUA AND BARBUDA', 'AR': 'ARGENTINA',
+    'AM': 'ARMENIA', 'AW': 'ARUBA', 'AU': 'AUSTRALIA', 'AT': 'AUSTRIA', 'AZ': 'AZERBAIJAN',
+    'BS': 'BAHAMAS', 'BH': 'BAHRAIN', 'BD': 'BANGLADESH', 'BB': 'BARBADOS', 'BY': 'BELARUS',
+    'BE': 'BELGIUM', 'BZ': 'BELIZE', 'BJ': 'BENIN', 'BM': 'BERMUDA', 'BT': 'BHUTAN',
+    'BO': 'BOLIVIA', 'BA': 'BOSNIA AND HERZEGOVINA', 'BW': 'BOTSWANA', 'BR': 'BRAZIL', 'BN': 'BRUNEI',
+    'BG': 'BULGARIA', 'BF': 'BURKINA FASO', 'BI': 'BURUNDI', 'KH': 'CAMBODIA', 'CM': 'CAMEROON',
+    'CA': 'CANADA', 'CV': 'CAPE VERDE', 'KY': 'CAYMAN ISLANDS', 'CF': 'CENTRAL AFRICAN REPUBLIC',
+    'TD': 'CHAD', 'CL': 'CHILE', 'CN': 'CHINA', 'CO': 'COLOMBIA', 'KM': 'COMOROS', 'CG': 'CONGO',
+    'CD': 'CONGO (DRC)', 'CK': 'COOK ISLANDS', 'CR': 'COSTA RICA', 'CI': 'IVORY COAST', 'HR': 'CROATIA',
+    'CU': 'CUBA', 'CY': 'CYPRUS', 'CZ': 'CZECH REPUBLIC', 'DK': 'DENMARK', 'DJ': 'DJIBOUTI',
+    'DM': 'DOMINICA', 'DO': 'DOMINICAN REPUBLIC', 'EC': 'ECUADOR', 'EG': 'EGYPT', 'SV': 'EL SALVADOR',
+    'GQ': 'EQUATORIAL GUINEA', 'ER': 'ERITREA', 'EE': 'ESTONIA', 'ET': 'ETHIOPIA', 'FJ': 'FIJI',
+    'FI': 'FINLAND', 'FR': 'FRANCE', 'GF': 'FRENCH GUIANA', 'PF': 'FRENCH POLYNESIA', 'GA': 'GABON',
+    'GM': 'GAMBIA', 'GE': 'GEORGIA', 'DE': 'GERMANY', 'GH': 'GHANA', 'GI': 'GIBRALTAR',
+    'GR': 'GREECE', 'GL': 'GREENLAND', 'GD': 'GRENADA', 'GP': 'GUADELOUPE', 'GU': 'GUAM',
+    'GT': 'GUATEMALA', 'GN': 'GUINEA', 'GW': 'GUINEA-BISSAU', 'GY': 'GUYANA', 'HT': 'HAITI',
+    'HN': 'HONDURAS', 'HK': 'HONG KONG', 'HU': 'HUNGARY', 'IS': 'ICELAND', 'IN': 'INDIA',
+    'ID': 'INDONESIA', 'IR': 'IRAN', 'IQ': 'IRAQ', 'IE': 'IRELAND', 'IL': 'ISRAEL', 'IT': 'ITALY',
+    'JM': 'JAMAICA', 'JP': 'JAPAN', 'JO': 'JORDAN', 'KZ': 'KAZAKHSTAN', 'KE': 'KENYA',
+    'KI': 'KIRIBATI', 'KW': 'KUWAIT', 'KG': 'KYRGYZSTAN', 'LA': 'LAOS', 'LV': 'LATVIA',
+    'LB': 'LEBANON', 'LS': 'LESOTHO', 'LR': 'LIBERIA', 'LY': 'LIBYA', 'LI': 'LIECHTENSTEIN',
+    'LT': 'LITHUANIA', 'LU': 'LUXEMBOURG', 'MO': 'MACAU', 'MK': 'NORTH MACEDONIA', 'MG': 'MADAGASCAR',
+    'MW': 'MALAWI', 'MY': 'MALAYSIA', 'MV': 'MALDIVES', 'ML': 'MALI', 'MT': 'MALTA',
+    'MH': 'MARSHALL ISLANDS', 'MQ': 'MARTINIQUE', 'MR': 'MAURITANIA', 'MU': 'MAURITIUS', 'MX': 'MEXICO',
+    'FM': 'MICRONESIA', 'MD': 'MOLDOVA', 'MC': 'MONACO', 'MN': 'MONGOLIA', 'ME': 'MONTENEGRO',
+    'MS': 'MONTSERRAT', 'MA': 'MOROCCO', 'MZ': 'MOZAMBIQUE', 'MM': 'MYANMAR', 'NA': 'NAMIBIA',
+    'NR': 'NAURU', 'NP': 'NEPAL', 'NL': 'NETHERLANDS', 'NC': 'NEW CALEDONIA', 'NZ': 'NEW ZEALAND',
+    'NI': 'NICARAGUA', 'NE': 'NIGER', 'NG': 'NIGERIA', 'NO': 'NORWAY', 'OM': 'OMAN',
+    'PK': 'PAKISTAN', 'PW': 'PALAU', 'PS': 'PALESTINE', 'PA': 'PANAMA', 'PG': 'PAPUA NEW GUINEA',
+    'PY': 'PARAGUAY', 'PE': 'PERU', 'PH': 'PHILIPPINES', 'PL': 'POLAND', 'PT': 'PORTUGAL',
+    'PR': 'PUERTO RICO', 'QA': 'QATAR', 'RE': 'REUNION', 'RO': 'ROMANIA', 'RU': 'RUSSIA',
+    'RW': 'RWANDA', 'SA': 'SAUDI ARABIA', 'SN': 'SENEGAL', 'RS': 'SERBIA', 'SC': 'SEYCHELLES',
+    'SL': 'SIERRA LEONE', 'SG': 'SINGAPORE', 'SK': 'SLOVAKIA', 'SI': 'SLOVENIA', 'SB': 'SOLOMON ISLANDS',
+    'SO': 'SOMALIA', 'ZA': 'SOUTH AFRICA', 'KR': 'SOUTH KOREA', 'SS': 'SOUTH SUDAN', 'ES': 'SPAIN',
+    'LK': 'SRI LANKA', 'SD': 'SUDAN', 'SR': 'SURINAME', 'SE': 'SWEDEN', 'CH': 'SWITZERLAND',
+    'SY': 'SYRIA', 'TW': 'TAIWAN', 'TJ': 'TAJIKISTAN', 'TZ': 'TANZANIA', 'TH': 'THAILAND',
+    'TG': 'TOGO', 'TO': 'TONGA', 'TT': 'TRINIDAD AND TOBAGO', 'TN': 'TUNISIA', 'TR': 'TURKEY',
+    'TM': 'TURKMENISTAN', 'TC': 'TURKS AND CAICOS ISLANDS', 'TV': 'TUVALU', 'UG': 'UGANDA', 'UA': 'UKRAINE',
+    'AE': 'UNITED ARAB EMIRATES', 'GB': 'UNITED KINGDOM', 'US': 'UNITED STATES', 'UY': 'URUGUAY',
+    'UZ': 'UZBEKISTAN', 'VU': 'VANUATU', 'VE': 'VENEZUELA', 'VN': 'VIETNAM', 'YE': 'YEMEN',
+    'ZM': 'ZAMBIA', 'ZW': 'ZIMBABWE', 'USA': 'UNITED STATES', 'UK': 'UNITED KINGDOM', 'UAE': 'UNITED ARAB EMIRATES'
+  };
+
+  function cpGetFullCountryName(val) {
+    if (!val || typeof val !== 'string') return '';
+    var clean = val.trim().toUpperCase();
+    if (cpCountryDictionary[clean]) return cpCountryDictionary[clean];
+    for (var k in cpCountryDictionary) {
+      if (cpCountryDictionary[k] === clean) return clean;
+    }
+    return clean;
+  }
 
   function cpDebounceShipmentsSearch() {
     var val = (document.getElementById('cp-search')?.value || '').trim();
@@ -2183,7 +2274,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         h += '<td class="awbc">' + rw.request_awb + '</td>';
         h += '<td style="font-weight:600;color:var(--cptext2)">' + formattedDate + '</td>';
         h += '<td class="nmc">' + (rw.receiver_name || '—') + '</td>';
-        h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + (rw.receiver_city || '—') + '</td>';
+        h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + (rw.receiver_city || '—') + (rw.receiver_country ? ' (' + cpGetFullCountryName(rw.receiver_country) + ')' : '') + '</td>';
         h += '<td style="font-weight:600">' + (rw.weight || '—') + ' kg (' + (rw.package_type || 'parcel') + ')</td>';
         h += '<td>' + statusHtml + '</td>';
         h += '<td style="text-align:center;">' + actionHtml + '</td></tr>';
@@ -2256,8 +2347,8 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       h += '<div class="cp-df"><div class="l">Receiver Name</div><div class="v">' + (r.receiver_name || '—') + '</div></div>';
       h += '<div class="cp-df"><div class="l">Sender City</div><div class="v">' + (r.sender_city || '—') + '</div></div>';
       h += '<div class="cp-df"><div class="l">Receiver City</div><div class="v">' + (r.receiver_city || '—') + '</div></div>';
-      h += '<div class="cp-df fl"><div class="l">Sender Address</div><div class="v">' + [r.sender_address, r.sender_address_2, r.sender_city, r.sender_pincode, r.sender_state].filter(Boolean).join(', ') + '</div></div>';
-      h += '<div class="cp-df fl"><div class="l">Receiver Address</div><div class="v">' + [r.receiver_address, r.receiver_address_2, r.receiver_city, r.receiver_pincode, r.receiver_state, r.receiver_country].filter(Boolean).join(', ') + '</div></div>';
+      h += '<div class="cp-df fl"><div class="l">Sender Address</div><div class="v">' + [r.sender_address, r.sender_address_2, r.sender_city, r.sender_pincode, r.sender_state, cpGetFullCountryName(r.sender_country || 'INDIA')].filter(Boolean).join(', ') + '</div></div>';
+      h += '<div class="cp-df fl"><div class="l">Receiver Address</div><div class="v">' + [r.receiver_address, r.receiver_address_2, r.receiver_city, r.receiver_pincode, r.receiver_state, cpGetFullCountryName(r.receiver_country)].filter(Boolean).join(', ') + '</div></div>';
       h += '</div></div>';
 
       // Package Details
@@ -2511,7 +2602,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         h += '<td>' + (fwdCarrierBadge ? fwdCarrierBadge + '<br>' : '') + fwdHtml + '</td>';
         h += '<td style="font-weight:600;color:var(--cptext2)">' + (rw.booking_date || '—') + '</td>';
         h += '<td class="nmc">' + rw.consignee + '</td>';
-        h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + rw.destination + '</td>';
+        h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + cpGetFullCountryName(rw.destination) + '</td>';
         h += '<td style="font-weight:600">' + (rw.weight || '—') + ' kg</td>';
         h += '<td style="font-weight:700;color:var(--cptext)">' + (rw.amount ? '₹' + Number(rw.amount).toLocaleString('en-IN') : '—') + '</td>';
         h += '<td><div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span>' + stDot.label + '</div></td></tr>';
@@ -2593,8 +2684,8 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
 
       // Sender & Receiver Route and Address Details
       h += '<div class="cp-ds"><h4><i class="fa-solid fa-location-dot"></i> Route & Address Information</h4><div class="cp-dg">';
-      h += '<div class="cp-df fl"><div class="l">Shipper (Sender)</div><div class="v" style="font-weight:700;">' + (s.shipper || '—') + (s.shipper_phone ? ' (' + s.shipper_phone + ')' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (s.shipper_address || s.origin || '—') + '</div></div></div>';
-      h += '<div class="cp-df fl"><div class="l">Consignee (Receiver)</div><div class="v" style="font-weight:700;">' + (s.consignee || '—') + (s.consignee_phone ? ' (' + s.consignee_phone + ')' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (s.consignee_address || s.destination || '—') + '</div></div></div>';
+      h += '<div class="cp-df fl"><div class="l">Shipper (Sender)</div><div class="v" style="font-weight:700;">' + (s.shipper || '—') + (s.shipper_phone ? ' (' + s.shipper_phone + ')' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (s.shipper_address || cpGetFullCountryName(s.origin || '') || '—') + '</div></div></div>';
+      h += '<div class="cp-df fl"><div class="l">Consignee (Receiver)</div><div class="v" style="font-weight:700;">' + (s.consignee || '—') + (s.consignee_phone ? ' (' + s.consignee_phone + ')' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (s.consignee_address || cpGetFullCountryName(s.destination || '') || '—') + '</div></div></div>';
       h += '</div></div>';
 
       // Official Box Labels & Shipping Documents
@@ -2865,7 +2956,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         '</div></div>';
       h += '<h4 style="font-size:15px; font-weight:800; color:var(--cptext); margin:0 0 2px;">' + (a.name || '—') + '</h4>';
       if (a.company) h += '<div style="font-size:12px; font-weight:600; color:var(--cpred); margin-bottom:8px; text-transform:uppercase;">' + a.company + '</div>';
-      h += '<div style="font-size:13px; color:var(--cptext2); line-height:1.4; margin-bottom:12px;">' + (a.address || '') + (a.address_2 ? ', ' + a.address_2 : '') + '<br><strong>' + (a.city || '') + '</strong>' + (a.state ? ', ' + a.state : '') + (a.pincode ? ' - ' + a.pincode : '') + '<br><span style="font-weight:700; color:var(--cptext);">' + (a.country || 'INDIA') + '</span></div>';
+      h += '<div style="font-size:13px; color:var(--cptext2); line-height:1.4; margin-bottom:12px;">' + (a.address || '') + (a.address_2 ? ', ' + a.address_2 : '') + '<br><strong>' + (a.city || '') + '</strong>' + (a.state ? ', ' + a.state : '') + (a.pincode ? ' - ' + a.pincode : '') + '<br><span style="font-weight:700; color:var(--cptext);">' + cpGetFullCountryName(a.country || 'INDIA') + '</span></div>';
       h += '</div>';
       h += '<div style="border-top:1px solid var(--cpbdr); padding-top:10px; font-size:12px; color:var(--cptext2); display:flex; flex-direction:column; gap:4px;">';
       if (a.phone) h += '<div><i class="fa-solid fa-phone" style="width:14px; margin-right:6px; color:var(--cptext3);"></i>' + a.phone + (a.phone_2 ? ' / ' + a.phone_2 : '') + '</div>';

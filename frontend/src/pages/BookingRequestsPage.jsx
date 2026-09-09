@@ -21,6 +21,7 @@ import {
   Paperclip
 } from 'lucide-react'
 import api from '../api/axios'
+import { getFullCountryName } from '../utils/countryUtils'
 import toast, { Toaster } from 'react-hot-toast'
 
 const STATUS_TABS = [
@@ -283,7 +284,7 @@ export default function BookingRequestsPage() {
                         <div className="flex items-center gap-1.5 text-[12px] text-text-secondary">
                           <span className="font-semibold">{req.sender_city || '—'}</span>
                           <ArrowRight className="w-3 h-3 text-text-tertiary" />
-                          <span className="font-semibold">{req.receiver_city || '—'}, {req.receiver_country || ''}</span>
+                          <span className="font-semibold">{req.receiver_city || '—'}, {getFullCountryName(req.receiver_country)}</span>
                         </div>
                       </td>
                       <td className="px-5 py-4">
@@ -444,7 +445,7 @@ export default function BookingRequestsPage() {
                   <DetailField label="City" value={selectedRequest.sender_city} />
                   <DetailField label="Pincode" value={selectedRequest.sender_pincode} />
                   <DetailField label="State" value={selectedRequest.sender_state} />
-                  <DetailField label="Country" value={selectedRequest.sender_country} />
+                  <DetailField label="Country" value={getFullCountryName(selectedRequest.sender_country)} />
                   {selectedRequest.sender_gstin_type && (
                     <DetailField label={selectedRequest.sender_gstin_type} value={selectedRequest.sender_gstin_no} full />
                   )}
@@ -461,7 +462,7 @@ export default function BookingRequestsPage() {
                   <DetailField label="City" value={selectedRequest.receiver_city} />
                   <DetailField label="Pincode" value={selectedRequest.receiver_pincode} />
                   <DetailField label="State" value={selectedRequest.receiver_state} />
-                  <DetailField label="Country" value={selectedRequest.receiver_country} />
+                  <DetailField label="Country" value={getFullCountryName(selectedRequest.receiver_country)} />
                   {selectedRequest.receiver_gstin_type && (
                     <DetailField label={selectedRequest.receiver_gstin_type} value={selectedRequest.receiver_gstin_no} full />
                   )}

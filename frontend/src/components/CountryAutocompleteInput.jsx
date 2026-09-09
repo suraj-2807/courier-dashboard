@@ -1,13 +1,15 @@
-import { useState, useRef, useEffect } from 'react'
-import { ChevronDown, Globe, Check } from 'lucide-react'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { ChevronDown, Globe, Check, X } from 'lucide-react'
+import { getFullCountryName, getCountryCode, ISO_COUNTRY_MAP } from '../utils/countryUtils'
 
 export default function CountryAutocompleteInput({
   value = '',
   onChange,
-  placeholder = 'Search Country...',
+  placeholder = 'Search Country (e.g. India, USA)...',
   className = '',
   countryList = [],
-  disabled = false
+  disabled = false,
+  showCodeBadge = true
 }) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -16,10 +18,50 @@ export default function CountryAutocompleteInput({
   const listRef = useRef(null)
   const itemRefs = useRef([])
 
-  // Sync internal search with value prop
+  // Combined country list (Custom DB list + ISO Map default items)
+  const combinedList = useMemo(() => {
+    const list = []
+    const seenCodes = new Set()
+
+    // 1. Add DB items first
+    if (Array.isArray(countryList)) {
+      countryList.forEach(item => {
+        const code = (item.country_code || '').trim().toUpperCase()
+        const name = (item.country_name || '').trim().toUpperCase()
+        if (code && name && !seenCodes.has(code)) {
+          seenCodes.add(code)
+          list.push({ country_name: name, country_code: code })
+        }
+      })
+    }
+
+    // 2. Add fallback items from ISO_COUNTRY_MAP for any missing common 2-letter codes
+    Object.entries(ISO_COUNTRY_MAP).forEach(([code, name]) => {
+      if (code.length === 2 && !seenCodes.has(code)) {
+        seenCodes.add(code)
+        list.push({ country_name: name, country_code: code })
+      }
+    })
+
+    // Sort alphabetically by country name
+    return list.sort((a, b) => a.country_name.localeCompare(b.country_name))
+  }, [countryList])
+
+  // Compute current resolved code and display name
+  const currentCode = useMemo(() => {
+    return getCountryCode(value, combinedList) || (value && value.length === 2 ? value.toUpperCase() : '')
+  }, [value, combinedList])
+
+  const currentFullName = useMemo(() => {
+    return getFullCountryName(value, combinedList) || value || ''
+  }, [value, combinedList])
+
+  // Sync internal search with value prop (show full name in text field when closed)
   useEffect(() => {
-    setSearch(value)
-  }, [value])
+    if (!isOpen) {
+      setSearch(currentFullName)
+    }
+  }, [value, currentFullName, isOpen])
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -27,20 +69,25 @@ export default function CountryAutocompleteInput({
       if (containerRef.current && !containerRef.current.contains(e.target)) {
         setIsOpen(false)
         setHighlightedIndex(-1)
+        setSearch(currentFullName)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [currentFullName])
 
   // Filter country list by search term
-  const filtered = (countryList || []).filter(item => {
-    if (!search) return true
+  const filtered = useMemo(() => {
+    if (!search || search.trim() === '' || search.toUpperCase() === currentFullName.toUpperCase()) {
+      return combinedList.slice(0, 100)
+    }
     const term = search.trim().toLowerCase()
-    const nameMatch = item.country_name?.toLowerCase().includes(term)
-    const codeMatch = item.country_code?.toLowerCase().includes(term)
-    return nameMatch || codeMatch
-  }).slice(0, 60)
+    return combinedList.filter(item => {
+      const nameMatch = item.country_name?.toLowerCase().includes(term)
+      const codeMatch = item.country_code?.toLowerCase().includes(term)
+      return nameMatch || codeMatch
+    }).slice(0, 100)
+  }, [search, combinedList, currentFullName])
 
   // Reset highlight when filtered list changes
   useEffect(() => {
@@ -49,19 +96,32 @@ export default function CountryAutocompleteInput({
 
   const handleSelect = (item) => {
     if (disabled) return
-    // Automatically set the 2-letter ISO country code
-    onChange(item.country_code)
-    setSearch(item.country_code)
+    const code = item.country_code?.toUpperCase()
+    const name = item.country_name?.toUpperCase()
+    setSearch(name)
     setIsOpen(false)
     setHighlightedIndex(-1)
+    if (onChange) {
+      onChange(code, item)
+    }
   }
 
   const handleInputChange = (e) => {
     if (disabled) return
     const val = e.target.value
     setSearch(val)
-    onChange(val)
     if (!isOpen) setIsOpen(true)
+
+    // Check if directly matching an exact country code or name
+    const exactMatch = combinedList.find(c => 
+      c.country_code?.toUpperCase() === val.trim().toUpperCase() ||
+      c.country_name?.toUpperCase() === val.trim().toUpperCase()
+    )
+    if (exactMatch && onChange) {
+      onChange(exactMatch.country_code, exactMatch)
+    } else if (onChange) {
+      onChange(val.trim().toUpperCase())
+    }
   }
 
   const handleKeyDown = (e) => {
@@ -97,12 +157,15 @@ export default function CountryAutocompleteInput({
         e.preventDefault()
         if (highlightedIndex >= 0 && highlightedIndex < filtered.length) {
           handleSelect(filtered[highlightedIndex])
+        } else if (filtered.length === 1) {
+          handleSelect(filtered[0])
         }
         break
       case 'Escape':
         e.preventDefault()
         setIsOpen(false)
         setHighlightedIndex(-1)
+        setSearch(currentFullName)
         break
     }
   }
@@ -115,6 +178,13 @@ export default function CountryAutocompleteInput({
     }, 0)
   }
 
+  const handleClear = (e) => {
+    e.stopPropagation()
+    setSearch('')
+    if (onChange) onChange('')
+    setIsOpen(false)
+  }
+
   return (
     <div ref={containerRef} className="relative w-full">
       <div className="relative flex items-center w-full">
@@ -123,15 +193,38 @@ export default function CountryAutocompleteInput({
           placeholder={placeholder}
           value={search}
           disabled={disabled}
-          onFocus={() => { if (!disabled) setIsOpen(true) }}
+          onFocus={() => {
+            if (!disabled) {
+              setIsOpen(true)
+            }
+          }}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          className={`${className} ${disabled ? 'cursor-not-allowed text-gray-500 opacity-75' : ''}`}
+          className={`${className} ${disabled ? 'cursor-not-allowed text-gray-500 opacity-75' : ''} ${currentCode && showCodeBadge ? 'pr-20' : 'pr-7'}`}
         />
-        <ChevronDown
-          className="w-3.5 h-3.5 text-gray-400 absolute right-2 pointer-events-none transition-transform"
-          style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }}
-        />
+
+        {/* Right Adornment: Code Badge + Clear / Chevron */}
+        <div className="absolute right-2 flex items-center gap-1.5 pointer-events-none">
+          {currentCode && showCodeBadge && (
+            <span className="px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded font-mono font-extrabold text-[10px] tracking-wider uppercase">
+              {currentCode}
+            </span>
+          )}
+          {search && !disabled && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="pointer-events-auto text-gray-400 hover:text-gray-600 cursor-pointer p-0.5"
+              title="Clear Country"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <ChevronDown
+            className="w-3.5 h-3.5 text-gray-400 transition-transform duration-200"
+            style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }}
+          />
+        </div>
       </div>
 
       {isOpen && (
@@ -146,12 +239,12 @@ export default function CountryAutocompleteInput({
           ) : (
             filtered.map((item, idx) => {
               const isSelected =
-                value?.toUpperCase() === item.country_code?.toUpperCase() ||
-                value?.toUpperCase() === item.country_name?.toUpperCase()
+                currentCode?.toUpperCase() === item.country_code?.toUpperCase() ||
+                currentFullName?.toUpperCase() === item.country_name?.toUpperCase()
               const isHighlighted = idx === highlightedIndex
               return (
                 <div
-                  key={idx}
+                  key={`${item.country_code}-${idx}`}
                   ref={el => itemRefs.current[idx] = el}
                   onMouseDown={(e) => {
                     e.preventDefault()
@@ -159,17 +252,20 @@ export default function CountryAutocompleteInput({
                   }}
                   onMouseEnter={() => setHighlightedIndex(idx)}
                   className={`px-3 py-2 text-xs flex items-center justify-between cursor-pointer transition-colors ${
-                    isSelected ? 'bg-red-50 text-red-700 font-bold' :
+                    isSelected ? 'bg-primary/10 text-primary font-bold' :
                     isHighlighted ? 'bg-gray-100 text-gray-900' :
                     'hover:bg-gray-50 text-gray-800'
                   }`}
                 >
-                  <span className="truncate pr-2 font-medium">{item.country_name}</span>
+                  <div className="flex items-center gap-2 truncate pr-2">
+                    <Globe className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-primary' : 'text-gray-400'}`} />
+                    <span className="truncate font-medium">{item.country_name}</span>
+                  </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 font-mono font-bold rounded text-[10px] uppercase">
+                    <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 font-mono font-bold rounded text-[10px] uppercase border border-gray-200">
                       {item.country_code}
                     </span>
-                    {isSelected && <Check className="w-3.5 h-3.5 text-red-600" />}
+                    {isSelected && <Check className="w-3.5 h-3.5 text-primary" />}
                   </div>
                 </div>
               )

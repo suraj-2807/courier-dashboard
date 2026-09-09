@@ -4,6 +4,7 @@ import { sendersApi } from '../api/senders.api'
 import { receiversApi } from '../api/receivers.api'
 import { countryCodesApi } from '../api/countryCodes.api'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
+import { getFullCountryName } from '../utils/countryUtils'
 import {
   Users,
   Truck,
@@ -23,7 +24,11 @@ import {
   AlertCircle,
   Loader2,
   ArrowUpDown,
-  FileSpreadsheet
+  FileSpreadsheet,
+  UserCheck,
+  Globe,
+  Hash,
+  ShieldCheck
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -490,7 +495,7 @@ export default function UsersPage() {
                       <div className="text-[11px] text-text-tertiary flex items-center gap-1.5 mt-0.5">
                         {item.pincode && <span className="font-mono font-bold text-text-secondary">{item.pincode}</span>}
                         {item.pincode && item.country && <span>•</span>}
-                        {item.country && <span className="font-bold uppercase text-primary text-[10px]">{item.country}</span>}
+                        {item.country && <span className="font-bold uppercase text-primary text-[10px]">{getFullCountryName(item.country)}</span>}
                       </div>
                     </td>
 
@@ -539,210 +544,268 @@ export default function UsersPage() {
 
       {/* ── Add / Edit Modal ── */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px] animate-fade-in">
-          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
+          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-2xl overflow-hidden max-h-[92vh] flex flex-col transition-all">
+            {/* Top subtle gradient highlight bar */}
+            <div className={`h-1.5 w-full ${activeTab === 'senders' ? 'bg-gradient-to-r from-blue-600 to-indigo-600' : 'bg-gradient-to-r from-emerald-600 to-teal-600'}`} />
+
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface-alt/60">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
-                  {activeTab === 'senders' ? <Truck className="w-4 h-4" /> : <MapPin className="w-4 h-4" />}
+            <div className="px-6 py-4.5 border-b border-border flex items-center justify-between bg-surface-alt/40">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-xs ${
+                  activeTab === 'senders' 
+                    ? 'bg-blue-50 border border-blue-200 text-blue-600' 
+                    : 'bg-emerald-50 border border-emerald-200 text-emerald-600'
+                }`}>
+                  {activeTab === 'senders' ? <Truck className="w-5 h-5" /> : <MapPin className="w-5 h-5" />}
                 </div>
                 <div>
-                  <h2 className="text-[16px] font-extrabold text-navy">
-                    {editingItem ? `Edit ${activeTab === 'senders' ? 'Sender' : 'Receiver'}` : `Add New ${activeTab === 'senders' ? 'Sender' : 'Receiver'}`}
-                  </h2>
-                  <p className="text-[11px] text-text-tertiary">
-                    Enter contact and address info. This will be available for quick autofill in the booking screen.
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-[17px] font-black text-navy tracking-tight">
+                      {editingItem ? `Edit ${activeTab === 'senders' ? 'Sender' : 'Receiver'}` : `Add New ${activeTab === 'senders' ? 'Sender' : 'Receiver'}`}
+                    </h2>
+                    <span className={`text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${
+                      activeTab === 'senders'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    }`}>
+                      {activeTab === 'senders' ? 'Pickup Address' : 'Delivery Address'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-text-tertiary mt-0.5">
+                    Saved details will auto-fill in booking invoices and dispatch manifests.
                   </p>
                 </div>
               </div>
               <button
                 onClick={closeModal}
-                className="p-1.5 rounded-xl hover:bg-surface-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+                className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-surface-hover text-text-tertiary hover:text-text-primary transition-colors cursor-pointer"
+                title="Close"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             {/* Modal Body */}
-            <form onSubmit={handleFormSubmit} className="p-6 overflow-y-auto space-y-4 flex-1">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <form onSubmit={handleFormSubmit} className="p-6 overflow-y-auto space-y-5 flex-1">
+              
+              {/* SECTION 1: Contact Information */}
+              <div className="bg-surface-alt/40 border border-border/80 rounded-2xl p-4.5 space-y-3.5">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/60">
+                  <UserCheck className="w-4 h-4 text-primary" />
+                  <span className="text-[12px] font-black text-navy uppercase tracking-wide">
+                    1. Contact Information
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                      Contact / Full Name <span className="text-primary">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. John Doe"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                      Company Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. ACME EXPORTS PVT LTD"
+                      value={formData.company}
+                      onChange={(e) => setFormData({ ...formData, company: e.target.value.toUpperCase() })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary uppercase font-semibold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                      Phone Number <span className="text-primary">*</span>
+                    </label>
+                    <div className="relative">
+                      <Phone className="w-3.5 h-3.5 text-text-tertiary absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="tel"
+                        required
+                        placeholder="+91 98765 43210"
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        className="w-full pl-9 pr-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-mono font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                      Email Address
+                    </label>
+                    <div className="relative">
+                      <Mail className="w-3.5 h-3.5 text-text-tertiary absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="email"
+                        placeholder="contact@company.com"
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        className="w-full pl-9 pr-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-medium focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: Address Details */}
+              <div className="bg-surface-alt/40 border border-border/80 rounded-2xl p-4.5 space-y-3.5">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/60">
+                  <MapPin className="w-4 h-4 text-primary" />
+                  <span className="text-[12px] font-black text-navy uppercase tracking-wide">
+                    2. Address Information
+                  </span>
+                </div>
+
                 <div>
-                  <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                    Full Name <span className="text-primary">*</span>
+                  <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                    Address Line 1 <span className="text-primary">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. John Doe"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-semibold focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                    placeholder="Flat / Building / Suite / Street address"
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-medium focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                    Company Name
+                  <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                    Address Line 2 (Area, Landmark)
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. Acme Corp"
-                    value={formData.company}
-                    onChange={(e) => setFormData({ ...formData, company: e.target.value.toUpperCase() })}
-                    className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary uppercase focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                    placeholder="Industrial Area, Near Landmark, Floor / Suite"
+                    value={formData.address_2}
+                    onChange={(e) => setFormData({ ...formData, address_2: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-medium focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
                   />
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                      City <span className="text-primary">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="City"
+                      value={formData.city}
+                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                      State / Province
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="State"
+                      value={formData.state}
+                      onChange={(e) => setFormData({ ...formData, state: e.target.value.toUpperCase() })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary uppercase font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                      Postal Code <span className="text-primary">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Postal Code"
+                      value={formData.pincode}
+                      onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-mono font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                      Country <span className="text-primary">*</span>
+                    </label>
+                    <CountryAutocompleteInput
+                      value={formData.country}
+                      onChange={(val) => setFormData({ ...formData, country: val })}
+                      placeholder="Country"
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-primary font-extrabold uppercase focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                      countryList={countryList}
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    placeholder="+91 98765 43210"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                  />
+              {/* SECTION 3: Tax & Identity */}
+              <div className="bg-surface-alt/40 border border-border/80 rounded-2xl p-4.5 space-y-3.5">
+                <div className="flex items-center gap-2 pb-2 border-b border-border/60">
+                  <FileText className="w-4 h-4 text-primary" />
+                  <span className="text-[12px] font-black text-navy uppercase tracking-wide">
+                    3. Identity & Tax Documentation
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    placeholder="contact@example.com"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                  />
-                </div>
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                      Document / ID Type
+                    </label>
+                    <select
+                      value={formData.gstin_type}
+                      onChange={(e) => setFormData({ ...formData, gstin_type: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 cursor-pointer shadow-2xs"
+                    >
+                      <option value="">Select Document Type</option>
+                      <option value="Aadhaar Number">Aadhaar (12 digits)</option>
+                      <option value="PAN">PAN Card</option>
+                      <option value="GSTIN">GSTIN</option>
+                      <option value="Passport">Passport</option>
+                      <option value="Tax ID">Tax ID / EIN</option>
+                      <option value="VAT">VAT Number</option>
+                      <option value="Voter ID">Voter ID</option>
+                      <option value="Driving License">Driving License</option>
+                    </select>
+                  </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                  Address Line 1
-                </label>
-                <input
-                  type="text"
-                  placeholder="Flat / Building / Street"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                  Address Line 2
-                </label>
-                <input
-                  type="text"
-                  placeholder="Area / Landmark"
-                  value={formData.address_2}
-                  onChange={(e) => setFormData({ ...formData, address_2: e.target.value })}
-                  className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                    City
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="City"
-                    value={formData.city}
-                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                    State
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="State"
-                    value={formData.state}
-                    onChange={(e) => setFormData({ ...formData, state: e.target.value.toUpperCase() })}
-                    className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary uppercase focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                    Pincode
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Pincode"
-                    value={formData.pincode}
-                    onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                    Country
-                  </label>
-                  <CountryAutocompleteInput
-                    value={formData.country}
-                    onChange={(val) => setFormData({ ...formData, country: val })}
-                    placeholder="Country"
-                    className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-primary font-bold uppercase focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                    countryList={countryList}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-border-light">
-                <div>
-                  <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                    Identity / Tax Doc Type
-                  </label>
-                  <select
-                    value={formData.gstin_type}
-                    onChange={(e) => setFormData({ ...formData, gstin_type: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 cursor-pointer"
-                  >
-                    <option value="">Select Document Type</option>
-                    <option value="Aadhaar Number">Aadhaar (12 digits)</option>
-                    <option value="PAN">PAN Card</option>
-                    <option value="GSTIN">GSTIN</option>
-                    <option value="Passport">Passport</option>
-                    <option value="Tax ID">Tax ID / EIN</option>
-                    <option value="VAT">VAT Number</option>
-                    <option value="Voter ID">Voter ID</option>
-                    <option value="Driving License">Driving License</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-text-tertiary uppercase tracking-wider mb-1">
-                    {/aadhaar|aadhar/i.test(formData.gstin_type) ? 'Aadhaar Number (12 digits)' : 'Document / ID Number'}
-                  </label>
-                  <input
-                    type="text"
-                    placeholder={/aadhaar|aadhar/i.test(formData.gstin_type) ? '12-digit Aadhaar' : 'ID / Registration Number'}
-                    value={formData.gstin_no}
-                    maxLength={/aadhaar|aadhar/i.test(formData.gstin_type) ? 12 : undefined}
-                    onChange={(e) => {
-                      let val = e.target.value
-                      if (/aadhaar|aadhar/i.test(formData.gstin_type)) {
-                        val = val.replace(/\D/g, '').slice(0, 12)
-                      }
-                      setFormData({ ...formData, gstin_no: val })
-                    }}
-                    className="w-full px-3.5 py-2 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary font-mono focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                  />
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                      {/aadhaar|aadhar/i.test(formData.gstin_type) ? 'Aadhaar Number (12 digits)' : 'Document / ID Number'}
+                    </label>
+                    <input
+                      type="text"
+                      placeholder={/aadhaar|aadhar/i.test(formData.gstin_type) ? '12-digit Aadhaar Number' : 'Document / Registration Number'}
+                      value={formData.gstin_no}
+                      maxLength={/aadhaar|aadhar/i.test(formData.gstin_type) ? 12 : undefined}
+                      onChange={(e) => {
+                        let val = e.target.value
+                        if (/aadhaar|aadhar/i.test(formData.gstin_type)) {
+                          val = val.replace(/\D/g, '').slice(0, 12)
+                        }
+                        setFormData({ ...formData, gstin_no: val })
+                      }}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-navy font-mono font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 shadow-2xs"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -751,14 +814,14 @@ export default function UsersPage() {
                 <button
                   type="button"
                   onClick={closeModal}
-                  className="px-4 py-2 rounded-xl text-[13px] font-bold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
+                  className="px-4 py-2.5 rounded-xl text-[13px] font-bold text-text-secondary hover:bg-surface-hover border border-border/80 transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={saveMutation.isPending}
-                  className="px-5 py-2 rounded-xl text-[13px] font-bold text-white bg-primary hover:bg-primary-dark transition-all duration-200 shadow-sm hover:shadow-primary/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl text-[13px] font-bold text-white bg-primary hover:bg-primary-dark transition-all duration-200 shadow-sm hover:shadow-primary/30 flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {saveMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
                   Save {activeTab === 'senders' ? 'Sender' : 'Receiver'}

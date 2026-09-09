@@ -26,6 +26,7 @@ import toast, { Toaster } from 'react-hot-toast'
 import { countryCodesApi } from '../api/countryCodes.api'
 import { customerApi } from '../api/customer.api'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
+import { getCountryCode, getFullCountryName } from '../utils/countryUtils'
 
 const INITIAL_FORM = {
   // Sender
@@ -773,7 +774,7 @@ export default function CustomerBookingPage() {
         sender_city: form.sender_city,
         sender_pincode: form.sender_pincode,
         sender_state: form.sender_state,
-        sender_country: form.sender_country || 'INDIA',
+        sender_country: getCountryCode(form.sender_country, countryList) || 'IN',
         sender_gstin_type: form.sender_gstin_type,
         sender_gstin_no: form.sender_gstin_no,
 
@@ -787,7 +788,7 @@ export default function CustomerBookingPage() {
         receiver_city: form.receiver_city,
         receiver_pincode: form.receiver_pincode,
         receiver_state: form.receiver_state,
-        receiver_country: form.receiver_country,
+        receiver_country: getCountryCode(form.receiver_country, countryList) || form.receiver_country,
         receiver_gstin_type: form.receiver_gstin_type,
         receiver_gstin_no: form.receiver_gstin_no,
 
