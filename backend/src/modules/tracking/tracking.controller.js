@@ -636,7 +636,6 @@ function attachCompanyOriginEvents(result, matchedShipment) {
 
   const originCity = (matchedShipment?.s_city || matchedShipment?.sender_city || matchedShipment?.origin || result.shipmentInfo?.origin || 'SURAT').toUpperCase()
   const originCountry = (matchedShipment?.s_country || matchedShipment?.sender_country || result.shipmentInfo?.originCountry || 'INDIA').toUpperCase()
-  const vendorName = result.vendor || result.shipmentInfo?.vendorName || matchedShipment?.vendor_name || 'Connecting Carrier'
 
   let dateStr = ''
   let timeStr = ''
@@ -655,37 +654,70 @@ function attachCompanyOriginEvents(result, matchedShipment) {
     timeStr = '10:00 AM'
   }
 
-  // Company events in chronological order (Booking -> Manifest)
-  // Attached at bottom of timeline (since timeline displays newest -> oldest)
-  const companyEvents = [
-    {
-      date: dateStr,
-      time: timeStr,
-      location: `${originCity}, ${originCountry} (PRINCE EXPRESS HUB)`,
-      status: 'Shipment Manifested & Dispatched from Origin Hub',
-      rawDate: dateStr,
-      rawTime: timeStr
-    },
-    {
-      date: dateStr,
-      time: timeStr,
-      location: `${originCity}, ${originCountry} (PRINCE EXPRESS)`,
-      status: 'Shipment Booked & Order Created',
-      rawDate: dateStr,
-      rawTime: timeStr
-    }
-  ]
+  // Check if shipment is pushed to vendor API or still in draft
+  const isApiPushed = Boolean(
+    matchedShipment?.vendor_push_status === 'success' ||
+    matchedShipment?.is_locked == 1 ||
+    matchedShipment?.is_locked === true ||
+    (matchedShipment?.vendor_awb_number && String(matchedShipment.vendor_awb_number).trim() !== '' && matchedShipment.vendor_awb_number !== matchedShipment.tracking_number) ||
+    (result.vendor && result.vendor !== 'Prince Express' && result.vendorCode !== 'prince')
+  )
 
   const currentEvents = Array.isArray(result.events) ? result.events.slice() : []
-  const existingSet = new Set(currentEvents.map(e => (e.status || '').toLowerCase().trim()))
 
-  for (const cEv of companyEvents) {
-    if (!existingSet.has(cEv.status.toLowerCase().trim())) {
-      currentEvents.push(cEv)
+  // If in draft, ensure manifest event is NOT present
+  let filteredEvents = currentEvents
+  if (!isApiPushed) {
+    filteredEvents = currentEvents.filter(e => {
+      const st = (e.status || '').toLowerCase()
+      return !st.includes('manifested') && !st.includes('dispatched from origin')
+    })
+  }
+
+  const existingSet = new Set(filteredEvents.map(e => (e.status || '').toLowerCase().trim()))
+
+  const companyEvents = []
+
+  // If API pushed: Second entry is "Shipment Manifested & Dispatched from Origin Hub" (placed just before API's tracking entries)
+  if (isApiPushed) {
+    const manifestStatus = 'Shipment Manifested & Dispatched from Origin Hub'
+    if (!existingSet.has(manifestStatus.toLowerCase())) {
+      companyEvents.push({
+        date: dateStr,
+        time: timeStr,
+        location: `${originCity}, ${originCountry} (PRINCE EXPRESS HUB)`,
+        status: manifestStatus,
+        rawDate: dateStr,
+        rawTime: timeStr
+      })
     }
   }
 
-  result.events = currentEvents
+  // First entry: "Shipment Booked & Order Created"
+  const bookedStatus = 'Shipment Booked & Order Created'
+  if (!existingSet.has(bookedStatus.toLowerCase()) && !existingSet.has('shipment created') && !existingSet.has('shipment booked')) {
+    companyEvents.push({
+      date: dateStr,
+      time: timeStr,
+      location: `${originCity}, ${originCountry} (PRINCE EXPRESS)`,
+      status: bookedStatus,
+      rawDate: dateStr,
+      rawTime: timeStr
+    })
+  }
+
+  result.events = [...filteredEvents, ...companyEvents]
+
+  // If no external events exist, adjust current status and stage based on draft vs api pushed
+  if (!filteredEvents.length || filteredEvents.every(e => companyEvents.some(ce => ce.status === e.status))) {
+    if (isApiPushed) {
+      result.currentStatus = 'Shipment Manifested & Dispatched from Origin Hub'
+      result.currentStage = 'in_transit'
+    } else {
+      result.currentStatus = 'Shipment Booked & Order Created'
+      result.currentStage = 'booked'
+    }
+  }
 }
 
     // ── 4. Try tracking with matched config ──
@@ -780,8 +812,12 @@ function attachCompanyOriginEvents(result, matchedShipment) {
         events: [],
         dimensions: [],
         performa: [],
-        currentStatus: matchedShipment.vendor_awb_number ? 'Manifested & Dispatched' : 'Shipment Booked',
-        currentStage: matchedShipment.vendor_awb_number ? 'in_transit' : 'booked',
+        currentStatus: (matchedShipment.vendor_push_status === 'success' || matchedShipment.is_locked == 1 || (matchedShipment.vendor_awb_number && matchedShipment.vendor_awb_number !== matchedShipment.tracking_number))
+          ? 'Shipment Manifested & Dispatched from Origin Hub'
+          : 'Shipment Booked & Order Created',
+        currentStage: (matchedShipment.vendor_push_status === 'success' || matchedShipment.is_locked == 1 || (matchedShipment.vendor_awb_number && matchedShipment.vendor_awb_number !== matchedShipment.tracking_number))
+          ? 'in_transit'
+          : 'booked',
         internalShipment: {
           id: matchedShipment.id,
           ourAwb: matchedShipment.tracking_number,

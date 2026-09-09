@@ -175,8 +175,8 @@ export async function generateWaybillPdf(params) {
         }
       }
 
-      doc.fillColor(NAVY).fontSize(9.5).font('Helvetica-Bold')
-        .text('PRINCE INTERNATIONAL COURIER SER', textLeft, curY + 6, { width: col1Width - (textLeft - startX) - 4 })
+      doc.fillColor(NAVY).fontSize(8.8).font('Helvetica-Bold')
+        .text('PRINCE INTERNATIONAL COURIER SERVICES', textLeft, curY + 6, { width: col1Width - (textLeft - startX) - 4 })
 
       doc.fillColor(TEXT_DARK).fontSize(6.3).font('Helvetica')
         .text('SHOP NO. 4, AL MARHABA APT OPP. SAI BABA EYE HOSPITAL,', textLeft, curY + 19, { width: col1Width - (textLeft - startX) - 4, lineGap: 1 })
@@ -202,19 +202,15 @@ export async function generateWaybillPdf(params) {
         .text(':', col2X + labelCol2W, curY + 38)
         .text(String(shipment.no_of_pieces || parcels.length || 1), col2X + labelCol2W + 6, curY + 38)
 
-      // Header Col 3: Date & Pay Status
+      // Header Col 3: Date
       const col3X = startX + col1Width + col2Width + 6
       const bookingDate = shipment.created_at
         ? new Date(shipment.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
         : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
-      const payStatus = shipment.payment_status || 'Fully UnPaid'
 
       doc.fillColor(TEXT_DARK).fontSize(7.5).font('Helvetica-Bold')
         .text('Date :', col3X, curY + 6)
         .font('Helvetica').text(bookingDate, col3X + 30, curY + 6)
-
-        .font('Helvetica-Bold').text('Pay  :', col3X, curY + 24)
-        .font('Helvetica').text(payStatus, col3X + 30, curY + 24)
 
       curY += totalHeaderHeight
 
@@ -363,13 +359,15 @@ export async function generateWaybillPdf(params) {
         { label: 'Credit :', val: creditVal, isBold: true }
       ]
 
-      const totRowH = (row3Height - 4) / totalsRows.length
-      let totY = curY + 2
+      const totRowH = (row3Height - 12) / totalsRows.length
+      let totY = curY + 3
 
       totalsRows.forEach((tr, tIdx) => {
         if (tIdx === 5) {
-          // Solid line before Grand Total
-          doc.moveTo(totX, totY - 1).lineTo(totX + totalsWidth, totY - 1).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
+          // Space above the line and Grand Total
+          totY += 3.5
+          doc.moveTo(totX, totY).lineTo(totX + totalsWidth, totY).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
+          totY += 4
         }
 
         const fontName = tr.isBold ? 'Helvetica-Bold' : 'Helvetica'

@@ -931,7 +931,7 @@ export default function BookingsPage() {
                         className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
                       />
                     </th>
-                    {['Our AWB', 'Vendor AWB', 'Forwarding No.', 'Shipper', 'Consignee', 'Status', 'Actions'].map((h) => (
+                    {['Our AWB', 'Vendor AWB', 'Forwarding No.', 'Consignee', 'Shipper', 'Status', 'Actions'].map((h) => (
                       <th
                         key={h}
                         className={`px-4 py-3 text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] whitespace-nowrap ${
@@ -1031,6 +1031,18 @@ export default function BookingsPage() {
                         )}
                       </td>
 
+                      {/* Consignee (Full name wrap) */}
+                      <td className="px-4 py-3.5 min-w-[130px] max-w-[180px] align-middle">
+                        <div>
+                          <p className="text-[12px] text-text-primary font-bold break-words whitespace-normal leading-snug">
+                            {b.receivers?.name || b.receiver_name || '—'}
+                          </p>
+                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5">
+                            {getFullCountryName(b.receivers?.country || b.receiver_country || b.receivers?.city || '—')}
+                          </p>
+                        </div>
+                      </td>
+
                       {/* Shipper (Full name wrap) */}
                       <td className="px-4 py-3.5 min-w-[130px] max-w-[180px] align-middle">
                         <div>
@@ -1056,18 +1068,6 @@ export default function BookingsPage() {
                               </span>
                             </div>
                           )}
-                        </div>
-                      </td>
-
-                      {/* Consignee (Full name wrap) */}
-                      <td className="px-4 py-3.5 min-w-[130px] max-w-[180px] align-middle">
-                        <div>
-                          <p className="text-[12px] text-text-primary font-bold break-words whitespace-normal leading-snug">
-                            {b.receivers?.name || b.receiver_name || '—'}
-                          </p>
-                          <p className="text-[10px] text-text-tertiary font-medium uppercase mt-0.5">
-                            {getFullCountryName(b.receivers?.country || b.receiver_country || b.receivers?.city || '—')}
-                          </p>
                         </div>
                       </td>
 

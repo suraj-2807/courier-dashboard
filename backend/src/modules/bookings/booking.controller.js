@@ -1377,7 +1377,7 @@ export const pushBookingToApi = async (req, res) => {
       await execute(
         `INSERT INTO tracking_events (shipment_id, status, description, location)
          VALUES (?, ?, ?, ?)`,
-        [id, 'AWB Assigned', `Pushed to vendor API. Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Vendor API']
+        [id, 'Shipment Manifested & Dispatched from Origin Hub', `Pushed to vendor API. Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Origin Hub']
       )
 
       // Refetch with sender/receiver & vendor details
@@ -1768,7 +1768,7 @@ export const createBooking = async (req, res) => {
       await execute(
         `INSERT INTO tracking_events (shipment_id, status, description, location)
          VALUES (?, ?, ?, ?)`,
-        [shipmentId, 'Shipment Created', 'Shipment booked successfully', 'System']
+        [shipmentId, 'Shipment Booked & Order Created', 'Shipment booked & order created successfully', 'Origin Hub']
       )
     }
 
@@ -1789,7 +1789,7 @@ export const createBooking = async (req, res) => {
         await execute(
           `INSERT INTO tracking_events (shipment_id, status, description, location)
            VALUES (?, ?, ?, ?)`,
-          [shipmentId, 'AWB Assigned', `Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Vendor API']
+          [shipmentId, 'Shipment Manifested & Dispatched from Origin Hub', `Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Origin Hub']
         )
 
         // Sync to Remote Operations AWBENTRY and parcel_history table (Hostinger DB)
