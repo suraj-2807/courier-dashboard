@@ -1553,12 +1553,7 @@ export default function NewBookingPage() {
                           ...prev,
                           customer_id: cust.id,
                           customer_name: cust.name,
-                          customer_type: 'registered',
-                          sender_name: prev.sender_name || cust.name || '',
-                          sender_company: prev.sender_company || cust.company || '',
-                          sender_email: prev.sender_email || cust.email || '',
-                          sender_phone: prev.sender_phone || cust.phone || '',
-                          sender_gstin_no: prev.sender_gstin_no || cust.gst_number || ''
+                          customer_type: 'registered'
                         }))
                       } else {
                         setForm(prev => ({ ...prev, customer_id: null, customer_name: '' }))
