@@ -360,12 +360,24 @@ function pe_cp_ajax_shipments()
     $match_clauses = [];
     $match_params = [];
 
+    // Check if shipments table exists in WP database
+    static $has_shipments_tbl = null;
+    if ($has_shipments_tbl === null) {
+        $has_shipments_tbl = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
+    }
+
     // 1. Direct match by registered customer ID / code (strictly excluding walk-in 'W001')
     if ($cust_id > 0) {
         $match_clauses[] = "(a.CUSTCODE IN (%s, %s, %s) AND a.CUSTCODE != 'W001' AND LOWER(COALESCE(a.CUSTNAME, '')) != 'walking customer')";
         $match_params[] = strval($cust_id);
         $match_params[] = 'CUST-' . $cust_id;
         $match_params[] = 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT);
+
+        if ($has_shipments_tbl) {
+            $match_clauses[] = "(a.AWBNO IN (SELECT tracking_number FROM shipments WHERE customer_id = %d) OR CAST(a.AWBNO AS CHAR) IN (SELECT tracking_number FROM shipments WHERE customer_id = %d))";
+            $match_params[] = $cust_id;
+            $match_params[] = $cust_id;
+        }
     }
 
     // 2. Exact match on shipments converted and pushed from THIS customer's booking requests
@@ -471,10 +483,11 @@ function pe_cp_ajax_shipments()
     $data = [];
     foreach ($rows as $r) {
         $status = '';
-        $ph = $wpdb->get_var($wpdb->prepare(
-            "SELECT activity FROM parcel_history WHERE AWBNO = %d ORDER BY date DESC, time DESC LIMIT 1",
+        $latest_ph = $wpdb->get_row($wpdb->prepare(
+            "SELECT activity, date, time, location FROM parcel_history WHERE AWBNO = %d ORDER BY date DESC, time DESC LIMIT 1",
             intval($r->AWBNO)
         ));
+        $ph = $latest_ph ? trim($latest_ph->activity) : '';
 
         // Lookup node shipment if table exists
         $shp = null;
@@ -498,14 +511,30 @@ function pe_cp_ajax_shipments()
         $fwd = trim(strval($shp->forwarding_no ?? ($shp->vendor_awb_number_2 ?? ($r->VENDORAWB2 ?? ($breq->forwarding_no ?? '')))));
         $fwdCarrier = trim(strval($shp->secondary_carrier ?? ''));
 
-        // Determine accurate and consistent status
-        if ($ph && !preg_match('/information received|data received|order created|shipment booked/i', $ph)) {
+        // 1. Check if delivered in node shipment, latest activity, or ANY historical activity
+        $is_delivered = false;
+        if (!empty($shp->status) && (strtolower(trim($shp->status)) === 'delivered' || preg_match('/^delivered$/i', trim($shp->status)))) {
+            $is_delivered = true;
+        } elseif (!empty($ph) && preg_match('/deliver/i', $ph) && !preg_match('/out for|undeliver/i', $ph)) {
+            $is_delivered = true;
+        } else {
+            $has_del_history = $wpdb->get_var($wpdb->prepare(
+                "SELECT activity FROM parcel_history WHERE AWBNO = %d AND LOWER(activity) LIKE '%deliver%' AND LOWER(activity) NOT LIKE '%out for%' AND LOWER(activity) NOT LIKE '%undeliver%' LIMIT 1",
+                intval($r->AWBNO)
+            ));
+            if (!empty($has_del_history)) {
+                $is_delivered = true;
+            }
+        }
+
+        // Determine accurate and consistent status (Delivered takes absolute priority)
+        if ($is_delivered) {
+            $status = 'Delivered';
+        } elseif ($ph && !preg_match('/information received|data received|order created|shipment booked/i', $ph)) {
             $status = $ph;
         } elseif (!empty($shp->status) && !in_array(strtolower($shp->status), ['booked', 'created', 'pending'])) {
             $stLower = strtolower(trim($shp->status));
-            if ($stLower === 'delivered')
-                $status = 'Delivered';
-            elseif ($stLower === 'in_transit')
+            if ($stLower === 'in_transit')
                 $status = 'In Transit';
             elseif ($stLower === 'out_for_delivery')
                 $status = 'Out for Delivery';
@@ -523,6 +552,24 @@ function pe_cp_ajax_shipments()
             $status = $ph;
         } else {
             $status = 'Shipment Booked';
+        }
+
+        // Format last update from tracking
+        $last_update = '';
+        if ($latest_ph && !empty($latest_ph->activity)) {
+            $actText = trim($latest_ph->activity);
+            $dtText = !empty($latest_ph->date) ? date('d M Y', strtotime($latest_ph->date)) : '';
+            $tmText = !empty($latest_ph->time) && $latest_ph->time !== '00:00:00' ? date('h:i A', strtotime($latest_ph->time)) : '';
+            $locText = trim($latest_ph->location ?? '');
+
+            $parts = [$actText];
+            if (!empty($locText)) $parts[] = $locText;
+            if (!empty($dtText)) $parts[] = $dtText . ($tmText ? ' ' . $tmText : '');
+            $last_update = implode(' · ', $parts);
+        } elseif ($is_delivered) {
+            $last_update = 'Delivered to Recipient';
+        } elseif (!empty($r->BOOKINGDATE)) {
+            $last_update = 'Shipment Booked · ' . date('d M Y', strtotime($r->BOOKINGDATE));
         }
 
         $amt = floatval($r->TOTAL ?: ($r->NETAMOUNT ?: $r->CHARGES));
@@ -547,6 +594,7 @@ function pe_cp_ajax_shipments()
             'balance' => max(0, $amt - $rec),
             'vendor' => $vendor_name,
             'status' => $status,
+            'last_update' => $last_update,
             'shipper' => $r->SNAME ?? '',
             'vendor_awb1' => $vAwb,
             'forwarding_number' => $fwd,
@@ -554,11 +602,13 @@ function pe_cp_ajax_shipments()
         ];
     }
 
-    // Get counts
+    // Get accurate counts
     $count_all = $total;
     $_st_sub = "(SELECT ph.activity FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO ORDER BY ph.date DESC, ph.time DESC LIMIT 1)";
-    $count_delivered = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND LOWER(COALESCE($_st_sub, '')) LIKE '%delivered%'"));
-    $count_transit = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND (LOWER(COALESCE($_st_sub, '')) LIKE '%transit%' OR LOWER(COALESCE($_st_sub, '')) LIKE '%departed%')"));
+    $_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND LOWER(ph.activity) LIKE '%deliver%' AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%')" .
+        ($has_shipments_tbl ? " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND LOWER(sh.status) = 'delivered')" : "") . ")";
+    $count_delivered = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND $_del_clause"));
+    $count_transit = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND NOT $_del_clause AND (LOWER(COALESCE($_st_sub, '')) LIKE '%transit%' OR LOWER(COALESCE($_st_sub, '')) LIKE '%departed%' OR (a.VENDORAWB1 != '' AND a.VENDORAWB1 IS NOT NULL))"));
 
     // Calculate customer total billed amount across all shipments
     $total_billed_amount = floatval($wpdb->get_var("SELECT SUM(COALESCE(NULLIF(a.TOTAL, 0), NULLIF(a.NETAMOUNT, 0), a.CHARGES, 0)) FROM AWBENTRY a WHERE $where"));

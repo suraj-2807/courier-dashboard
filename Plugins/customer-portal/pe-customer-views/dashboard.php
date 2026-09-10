@@ -14,12 +14,21 @@ $cust_phone = trim($cust['phone'] ?? '');
 $match_clauses = [];
 $match_params = [];
 
+// Check if shipments table exists in WP database
+$has_shipments_tbl = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
+
 // 1. Direct match by registered customer ID / code (strictly excluding walk-in 'W001')
 if ($cust_id > 0) {
   $match_clauses[] = "(a.CUSTCODE IN (%s, %s, %s) AND a.CUSTCODE != 'W001' AND LOWER(COALESCE(a.CUSTNAME, '')) != 'walking customer')";
   $match_params[] = strval($cust_id);
   $match_params[] = 'CUST-' . $cust_id;
   $match_params[] = 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT);
+
+  if ($has_shipments_tbl) {
+    $match_clauses[] = "(a.AWBNO IN (SELECT tracking_number FROM shipments WHERE customer_id = %d) OR CAST(a.AWBNO AS CHAR) IN (SELECT tracking_number FROM shipments WHERE customer_id = %d))";
+    $match_params[] = $cust_id;
+    $match_params[] = $cust_id;
+  }
 }
 
 // 2. Exact match on shipments converted and pushed from THIS customer's booking requests
@@ -91,8 +100,15 @@ $where_cust .= " AND (a.AWBDATE >= '2026-09-01' OR a.AWBDATE = '0000-00-00' OR a
 
 $_st = "(SELECT ph.activity FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO ORDER BY ph.date DESC, ph.time DESC LIMIT 1)";
 $ts = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust"));
-$dc = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust AND LOWER(COALESCE($_st, '')) LIKE '%delivered%'"));
-$tc = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust AND (LOWER(COALESCE($_st, '')) LIKE '%transit%' OR LOWER(COALESCE($_st, '')) LIKE '%departed%')"));
+
+// Delivered: ANY historical activity contains 'deliver' (excluding 'out for'/'undeliver'), OR shipments.status = 'delivered'
+$_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND LOWER(ph.activity) LIKE '%deliver%' AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%')";
+if ($has_shipments_tbl) {
+  $_del_clause .= " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND LOWER(sh.status) = 'delivered')";
+}
+$_del_clause .= ")";
+$dc = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust AND $_del_clause"));
+$tc = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust AND NOT $_del_clause AND (LOWER(COALESCE($_st, '')) LIKE '%transit%' OR LOWER(COALESCE($_st, '')) LIKE '%departed%' OR (a.VENDORAWB1 != '' AND a.VENDORAWB1 IS NOT NULL))"));
 
 $iframe_booking_url = esc_url(add_query_arg([
   'cust_name' => $cust['name'],
@@ -397,8 +413,145 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     transition: all .15s
   }
 
+  /* ── DESKTOP SIDEBAR COLLAPSE ── */
+  .cp-sidebar-toggle {
+    display: none;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    border: 1px solid #334155;
+    background: transparent;
+    color: #64748b;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all .15s;
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 0
+  }
+
+  .cp-sidebar-toggle:hover {
+    background: rgba(255, 255, 255, .08);
+    color: #fff
+  }
+
+  @media(min-width:961px) {
+    .cp-sidebar-toggle {
+      display: flex
+    }
+
+    .cp-sidebar {
+      transition: width .25s cubic-bezier(.4, 0, .2, 1)
+    }
+
+    .cp-sidebar.collapsed {
+      width: 74px
+    }
+
+    .cp-sidebar.collapsed .cp-sidebar-brand > div {
+      display: none
+    }
+
+    .cp-sidebar.collapsed .cp-sidebar-brand {
+      justify-content: center;
+      padding: 20px 12px
+    }
+
+    .cp-sidebar.collapsed .cp-sidebar-toggle {
+      margin-left: 0;
+      position: absolute;
+      right: 8px;
+      top: 24px
+    }
+
+    .cp-sidebar.collapsed .cp-sidebar-nav {
+      padding: 16px 8px;
+      gap: 4px
+    }
+
+    .cp-sidebar.collapsed .cp-nav-item {
+      justify-content: center;
+      padding: 12px 0;
+      gap: 0
+    }
+
+    .cp-sidebar.collapsed .cp-nav-text {
+      display: none
+    }
+
+    .cp-sidebar.collapsed .cp-nav-badge {
+      position: absolute;
+      top: 4px;
+      right: 8px;
+      margin-left: 0
+    }
+
+    .cp-sidebar.collapsed .cp-nav-item {
+      position: relative
+    }
+
+    .cp-sidebar.collapsed .cp-nav-item i {
+      font-size: 18px;
+      width: auto
+    }
+
+    .cp-sidebar.collapsed .cp-sidebar-footer {
+      padding: 14px 8px;
+      align-items: center
+    }
+
+    .cp-sidebar.collapsed .cp-user-details {
+      display: none
+    }
+
+    .cp-sidebar.collapsed .cp-user-info {
+      justify-content: center
+    }
+
+    .cp-sidebar.collapsed .cp-logout-text {
+      display: none
+    }
+
+    .cp-sidebar.collapsed .cp-logout-btn {
+      justify-content: center;
+      padding: 8px
+    }
+  }
+
+  /* ── SIDEBAR COLLAPSE TOOLTIP ── */
+  @media(min-width:961px) {
+    .cp-sidebar.collapsed .cp-nav-item {
+      position: relative
+    }
+
+    .cp-sidebar.collapsed .cp-nav-item::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: calc(100% + 10px);
+      top: 50%;
+      transform: translateY(-50%);
+      background: #1e293b;
+      color: #fff;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .15s;
+      z-index: 100;
+      box-shadow: 0 4px 12px rgba(0,0,0,.3)
+    }
+
+    .cp-sidebar.collapsed .cp-nav-item:hover::after {
+      opacity: 1
+    }
+  }
+
   .cp-logout-btn:hover {
-    border-color: var(--cpred);
     color: #fff;
     background: var(--cpred)
   }
@@ -1537,30 +1690,33 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         <h3>Prince Express</h3>
         <p>Customer Portal</p>
       </div>
+      <button class="cp-sidebar-toggle" onclick="cpToggleSidebarCollapse()" title="Collapse menu">
+        <i class="fa-solid fa-angles-left" id="cp-collapse-icon"></i>
+      </button>
     </div>
 
     <nav class="cp-sidebar-nav">
-      <button class="cp-nav-item active" onclick="cpSwitchTab('shipments', this); cpCloseMobileSidebar();">
-        <i class="fa-solid fa-boxes-stacked"></i> My Shipments
+      <button class="cp-nav-item active" data-tooltip="My Shipments" onclick="cpSwitchTab('shipments', this); cpCloseMobileSidebar();">
+        <i class="fa-solid fa-boxes-stacked"></i> <span class="cp-nav-text">My Shipments</span>
       </button>
-      <button class="cp-nav-item" onclick="cpSwitchTab('requests', this); cpCloseMobileSidebar();">
-        <i class="fa-solid fa-clipboard-list"></i> My Requests
+      <button class="cp-nav-item" data-tooltip="My Requests" onclick="cpSwitchTab('requests', this); cpCloseMobileSidebar();">
+        <i class="fa-solid fa-clipboard-list"></i> <span class="cp-nav-text">My Requests</span>
         <?php if ($pending_requests_count > 0): ?>
           <span class="cp-nav-badge"
             style="background:var(--cpamber);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:auto"><?php echo $pending_requests_count; ?></span>
         <?php endif; ?>
       </button>
-      <button class="cp-nav-item" onclick="cpSwitchTab('new-booking', this); cpCloseMobileSidebar();">
-        <i class="fa-solid fa-plus"></i> Request Booking
+      <button class="cp-nav-item" data-tooltip="Request Booking" onclick="cpSwitchTab('new-booking', this); cpCloseMobileSidebar();">
+        <i class="fa-solid fa-plus"></i> <span class="cp-nav-text">Request Booking</span>
       </button>
-      <button class="cp-nav-item" onclick="cpSwitchTab('addresses', this); cpCloseMobileSidebar();">
-        <i class="fa-solid fa-address-book"></i> Address Book
+      <button class="cp-nav-item" data-tooltip="Address Book" onclick="cpSwitchTab('addresses', this); cpCloseMobileSidebar();">
+        <i class="fa-solid fa-address-book"></i> <span class="cp-nav-text">Address Book</span>
       </button>
-      <button class="cp-nav-item" onclick="cpSwitchTab('documents', this); cpCloseMobileSidebar();">
-        <i class="fa-solid fa-file-shield"></i> My Documents
+      <button class="cp-nav-item" data-tooltip="My Documents" onclick="cpSwitchTab('documents', this); cpCloseMobileSidebar();">
+        <i class="fa-solid fa-file-shield"></i> <span class="cp-nav-text">My Documents</span>
       </button>
-      <button class="cp-nav-item" onclick="cpSwitchTab('profile', this); cpCloseMobileSidebar();">
-        <i class="fa-solid fa-user-gear"></i> My Profile
+      <button class="cp-nav-item" data-tooltip="My Profile" onclick="cpSwitchTab('profile', this); cpCloseMobileSidebar();">
+        <i class="fa-solid fa-user-gear"></i> <span class="cp-nav-text">My Profile</span>
       </button>
     </nav>
 
@@ -1579,7 +1735,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         </div>
       </div>
       <button class="cp-logout-btn" onclick="cpLogout()">
-        <i class="fa-solid fa-right-from-bracket"></i> Sign Out
+        <i class="fa-solid fa-right-from-bracket"></i> <span class="cp-logout-text">Sign Out</span>
       </button>
     </div>
   </aside>
@@ -2640,7 +2796,8 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + cpGetFullCountryName(rw.destination) + '</td>';
         h += '<td style="font-weight:600">' + (rw.weight || '—') + ' kg</td>';
         h += '<td style="font-weight:700;color:var(--cptext)">' + (rw.amount ? '₹' + Number(rw.amount).toLocaleString('en-IN') : '—') + '</td>';
-        h += '<td><div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span>' + stDot.label + '</div></td></tr>';
+        var lastTrackHtml = rw.last_update ? '<div style="font-size:11px;color:var(--cptext3);margin-top:4px;display:flex;align-items:center;gap:4px;line-height:1.2;" title="' + rw.last_update.replace(/"/g, '&quot;') + '"><i class="fa-solid fa-clock-rotate-left" style="font-size:9px;color:var(--cptext3);flex-shrink:0;"></i><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;">' + rw.last_update + '</span></div>' : '';
+        h += '<td><div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span>' + stDot.label + '</div>' + lastTrackHtml + '</td></tr>';
       });
       h += '</tbody></table></div>';
       h += '<div class="cp-pg"><div class="cp-pi">Showing <strong>' + r.rows.length + '</strong> of <strong>' + r.total + '</strong> · Page ' + r.page + '/' + r.pages + '</div><div class="cp-pbs">';
@@ -3239,6 +3396,31 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     overlay.classList.remove('show');
     document.body.style.overflow = '';
   }
+
+  // ══════════════════════════════════════
+  //  DESKTOP SIDEBAR COLLAPSE
+  // ══════════════════════════════════════
+  function cpToggleSidebarCollapse() {
+    var sidebar = document.getElementById('cp-sidebar');
+    var icon = document.getElementById('cp-collapse-icon');
+    var isCollapsed = sidebar.classList.toggle('collapsed');
+    if (icon) {
+      icon.className = isCollapsed ? 'fa-solid fa-angles-right' : 'fa-solid fa-angles-left';
+    }
+    try { localStorage.setItem('pe_cp_sidebar_collapsed', isCollapsed ? '1' : '0'); } catch(e) {}
+  }
+
+  // Auto-restore collapsed state on desktop
+  (function() {
+    try {
+      if (window.innerWidth > 960 && localStorage.getItem('pe_cp_sidebar_collapsed') === '1') {
+        var sidebar = document.getElementById('cp-sidebar');
+        var icon = document.getElementById('cp-collapse-icon');
+        if (sidebar) sidebar.classList.add('collapsed');
+        if (icon) icon.className = 'fa-solid fa-angles-right';
+      }
+    } catch(e) {}
+  })();
 
   // Init
   cpLoadShipments(1);

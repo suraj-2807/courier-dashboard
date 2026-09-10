@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { sendersApi } from '../api/senders.api'
 import { receiversApi } from '../api/receivers.api'
@@ -543,14 +544,22 @@ export default function UsersPage() {
       </div>
 
       {/* ── Add / Edit Modal ── */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-2xl overflow-hidden max-h-[92vh] flex flex-col transition-all">
+      {isModalOpen && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fade-in">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs"
+            onClick={closeModal}
+          />
+          <div
+            className="relative bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-2xl overflow-hidden max-h-[92vh] flex flex-col my-auto z-10 transition-all"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Top subtle gradient highlight bar */}
             <div className={`h-1.5 w-full ${activeTab === 'senders' ? 'bg-gradient-to-r from-blue-600 to-indigo-600' : 'bg-gradient-to-r from-emerald-600 to-teal-600'}`} />
 
             {/* Modal Header */}
-            <div className="px-6 py-4.5 border-b border-border flex items-center justify-between bg-surface-alt/40">
+            <div className="px-6 py-4.5 border-b border-border flex items-center justify-between bg-surface-alt/40 flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-xs ${
                   activeTab === 'senders' 
@@ -619,46 +628,51 @@ export default function UsersPage() {
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. ACME EXPORTS PVT LTD"
+                      placeholder="e.g. Acme Global Logistics"
                       value={formData.company}
-                      onChange={(e) => setFormData({ ...formData, company: e.target.value.toUpperCase() })}
-                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary uppercase font-semibold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                      onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
                     />
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
                     <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
-                      Phone Number <span className="text-primary">*</span>
+                      Primary Phone <span className="text-primary">*</span>
                     </label>
-                    <div className="relative">
-                      <Phone className="w-3.5 h-3.5 text-text-tertiary absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="tel"
-                        required
-                        placeholder="+91 98765 43210"
-                        value={formData.phone}
-                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        className="w-full pl-9 pr-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-mono font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. 9876543210"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-mono focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                    />
                   </div>
 
                   <div>
+                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                      Secondary Phone
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Landline / Alternate Mobile"
+                      value={formData.phone_2}
+                      onChange={(e) => setFormData({ ...formData, phone_2: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-mono focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2">
                     <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
                       Email Address
                     </label>
-                    <div className="relative">
-                      <Mail className="w-3.5 h-3.5 text-text-tertiary absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="email"
-                        placeholder="contact@company.com"
-                        value={formData.email}
-                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                        className="w-full pl-9 pr-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-medium focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
-                      />
-                    </div>
+                    <input
+                      type="email"
+                      placeholder="e.g. contact@domain.com"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                    />
                   </div>
                 </div>
               </div>
@@ -668,77 +682,79 @@ export default function UsersPage() {
                 <div className="flex items-center gap-2 pb-2 border-b border-border/60">
                   <MapPin className="w-4 h-4 text-primary" />
                   <span className="text-[12px] font-black text-navy uppercase tracking-wide">
-                    2. Address Information
+                    2. Address Location
                   </span>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
-                    Address Line 1 <span className="text-primary">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Flat / Building / Suite / Street address"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-medium focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
-                    Address Line 2 (Area, Landmark)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Industrial Area, Near Landmark, Floor / Suite"
-                    value={formData.address_2}
-                    onChange={(e) => setFormData({ ...formData, address_2: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-medium focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="space-y-3">
                   <div>
                     <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
-                      City <span className="text-primary">*</span>
+                      Address Line 1 <span className="text-primary">*</span>
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder="City"
-                      value={formData.city}
-                      onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                      placeholder="Building No, Flat / Office No, Street Name"
+                      value={formData.address}
+                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
                     />
                   </div>
 
                   <div>
                     <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
-                      State / Province
+                      Address Line 2
                     </label>
                     <input
                       type="text"
-                      placeholder="State"
-                      value={formData.state}
-                      onChange={(e) => setFormData({ ...formData, state: e.target.value.toUpperCase() })}
-                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary uppercase font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                      placeholder="Landmark, Area, Sector, Industrial Estate"
+                      value={formData.address_2}
+                      onChange={(e) => setFormData({ ...formData, address_2: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
-                      Postal Code <span className="text-primary">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Postal Code"
-                      value={formData.pincode}
-                      onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-mono font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                        City <span className="text-primary">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Surat"
+                        value={formData.city}
+                        onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                        State
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Gujarat"
+                        value={formData.state}
+                        onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
+                        Pincode / Postal <span className="text-primary">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. 395007"
+                        value={formData.pincode}
+                        onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-navy font-mono font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -747,70 +763,62 @@ export default function UsersPage() {
                     </label>
                     <CountryAutocompleteInput
                       value={formData.country}
-                      onChange={(val) => setFormData({ ...formData, country: val })}
-                      placeholder="Country"
-                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-primary font-extrabold uppercase focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
+                      onChange={(val) => setFormData({ ...formData, country: (val || '').toUpperCase() })}
+                      placeholder="Select Country (e.g. INDIA, UNITED STATES, UNITED ARAB EMIRATES)"
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-primary font-bold uppercase focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
                       countryList={countryList}
                     />
                   </div>
                 </div>
               </div>
 
-              {/* SECTION 3: Tax & Identity */}
+              {/* SECTION 3: Tax Identification & Customs */}
               <div className="bg-surface-alt/40 border border-border/80 rounded-2xl p-4.5 space-y-3.5">
                 <div className="flex items-center gap-2 pb-2 border-b border-border/60">
-                  <FileText className="w-4 h-4 text-primary" />
+                  <Hash className="w-4 h-4 text-primary" />
                   <span className="text-[12px] font-black text-navy uppercase tracking-wide">
-                    3. Identity & Tax Documentation
+                    3. Tax / Identity Document (For Customs Dispatch)
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
                     <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
-                      Document / ID Type
+                      Document Type
                     </label>
                     <select
                       value={formData.gstin_type}
                       onChange={(e) => setFormData({ ...formData, gstin_type: e.target.value })}
-                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 cursor-pointer shadow-2xs"
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-text-primary font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs cursor-pointer"
                     >
-                      <option value="">Select Document Type</option>
-                      <option value="Aadhaar Number">Aadhaar (12 digits)</option>
-                      <option value="PAN">PAN Card</option>
-                      <option value="GSTIN">GSTIN</option>
-                      <option value="Passport">Passport</option>
-                      <option value="Tax ID">Tax ID / EIN</option>
-                      <option value="VAT">VAT Number</option>
-                      <option value="Voter ID">Voter ID</option>
-                      <option value="Driving License">Driving License</option>
+                      <option value="GSTIN">GSTIN (India)</option>
+                      <option value="PAN">PAN Card (India)</option>
+                      <option value="Aadhaar">Aadhaar (India)</option>
+                      <option value="Passport">Passport Number</option>
+                      <option value="VAT">VAT / Tax ID (International)</option>
+                      <option value="EIN">EIN / SSN (USA)</option>
+                      <option value="EORI">EORI (Europe / UK)</option>
+                      <option value="OTHER">Other Identification</option>
                     </select>
                   </div>
 
                   <div>
                     <label className="block text-[11px] font-bold text-text-secondary uppercase tracking-wider mb-1.5">
-                      {/aadhaar|aadhar/i.test(formData.gstin_type) ? 'Aadhaar Number (12 digits)' : 'Document / ID Number'}
+                      Document / Identification Number
                     </label>
                     <input
                       type="text"
-                      placeholder={/aadhaar|aadhar/i.test(formData.gstin_type) ? '12-digit Aadhaar Number' : 'Document / Registration Number'}
+                      placeholder="e.g. 24AAAAA0000A1Z5 / ABXPK1234F"
                       value={formData.gstin_no}
-                      maxLength={/aadhaar|aadhar/i.test(formData.gstin_type) ? 12 : undefined}
-                      onChange={(e) => {
-                        let val = e.target.value
-                        if (/aadhaar|aadhar/i.test(formData.gstin_type)) {
-                          val = val.replace(/\D/g, '').slice(0, 12)
-                        }
-                        setFormData({ ...formData, gstin_no: val })
-                      }}
-                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-navy font-mono font-bold focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 shadow-2xs"
+                      onChange={(e) => setFormData({ ...formData, gstin_no: e.target.value.toUpperCase() })}
+                      className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-[13px] text-navy font-mono font-bold uppercase focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/15 transition-all shadow-2xs"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Footer */}
-              <div className="pt-4 border-t border-border flex items-center justify-end gap-3">
+              {/* Modal Footer */}
+              <div className="pt-3 border-t border-border flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={closeModal}
@@ -829,15 +837,24 @@ export default function UsersPage() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Bulk Import Modal ── */}
-      {isImportOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px] animate-fade-in">
-          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-3xl overflow-hidden max-h-[90vh] flex flex-col">
+      {isImportOpen && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs"
+            onClick={() => setIsImportOpen(false)}
+          />
+          <div
+            className="relative bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-3xl overflow-hidden max-h-[90vh] flex flex-col my-auto z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header */}
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface-alt/60">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface-alt/60 flex-shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                   <FileSpreadsheet className="w-4 h-4" />
@@ -866,7 +883,7 @@ export default function UsersPage() {
                 <div>
                   <h4 className="text-[13px] font-bold text-navy">Need a template?</h4>
                   <p className="text-[11px] text-text-tertiary">
-                    Download our formatted CSV template with required columns.
+                    Download our formatted CSV template with required contact and address headers.
                   </p>
                 </div>
                 <button
@@ -919,21 +936,21 @@ export default function UsersPage() {
                         <tr className="font-extrabold text-text-tertiary uppercase tracking-wider">
                           <th className="py-2 px-3">#</th>
                           <th className="py-2 px-3">Name</th>
+                          <th className="py-2 px-3">Company</th>
                           <th className="py-2 px-3">Phone</th>
-                          <th className="py-2 px-3">Address</th>
-                          <th className="py-2 px-3">City / State</th>
-                          <th className="py-2 px-3">Doc No</th>
+                          <th className="py-2 px-3">City</th>
+                          <th className="py-2 px-3">Country</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
                         {importData.map((row, idx) => (
                           <tr key={idx} className="hover:bg-surface-alt/50">
                             <td className="py-2 px-3 font-mono text-text-tertiary">{idx + 1}</td>
-                            <td className="py-2 px-3 font-bold text-navy">{row.name || '—'}</td>
-                            <td className="py-2 px-3 font-mono">{row.phone || '—'}</td>
-                            <td className="py-2 px-3 text-text-secondary truncate max-w-[150px]">{row.address || '—'}</td>
-                            <td className="py-2 px-3">{[row.city, row.state].filter(Boolean).join(', ') || '—'}</td>
-                            <td className="py-2 px-3 font-mono">{row.gstin_no || '—'}</td>
+                            <td className="py-2 px-3 font-bold text-navy">{row.name}</td>
+                            <td className="py-2 px-3 text-text-secondary">{row.company || '—'}</td>
+                            <td className="py-2 px-3 font-mono text-text-secondary">{row.phone}</td>
+                            <td className="py-2 px-3">{row.city}</td>
+                            <td className="py-2 px-3 uppercase">{row.country || 'INDIA'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -944,7 +961,7 @@ export default function UsersPage() {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3 bg-surface-alt/60">
+            <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3 bg-surface-alt/60 flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setIsImportOpen(false)}
@@ -963,7 +980,8 @@ export default function UsersPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

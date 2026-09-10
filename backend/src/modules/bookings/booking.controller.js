@@ -926,19 +926,39 @@ export const saveBooking = async (req, res) => {
       }
       if (existing[0].is_locked) {
         const allowed = await isSettingEnabled('allow_post_push_billing_edit', true)
-        if (!allowed) {
+        const hasCustomerUpdate = fields.customer_id !== undefined || fields.customer_type !== undefined || fields.customer_name !== undefined
+
+        if (!allowed && !hasCustomerUpdate) {
           return res.status(400).json({ success: false, message: 'This shipment is locked and cannot be edited.' })
         }
 
-        // Post-push billing edit mode: Update only the billing fields & remote AWBENTRY
-        const finalChgWt = parseFloat(fields.final_chargeable_weight) || parseFloat(fields.chargeable_weight) || 0
-        const ratePerKg = parseFloat(fields.rate_per_kg) || 0
-        const shippingCharge = parseFloat(fields.shipping_charge) || 0
-        const extraCharge = parseFloat(fields.extra_charge) || 0
+        // Post-push billing & customer assignment edit mode
+        const finalChgWt = parseFloat(fields.final_chargeable_weight) || parseFloat(fields.chargeable_weight) || parseFloat(existing[0].final_chargeable_weight) || parseFloat(existing[0].chargeable_weight) || 0
+        const ratePerKg = parseFloat(fields.rate_per_kg) || parseFloat(existing[0].rate_per_kg) || 0
+        const shippingCharge = parseFloat(fields.shipping_charge) || parseFloat(existing[0].shipping_charge) || 0
+        const extraCharge = parseFloat(fields.extra_charge) || parseFloat(existing[0].extra_charge) || 0
         const totalAmount = parseFloat(fields.total_amount) || (shippingCharge + extraCharge)
+
+        // Resolve customer fields
+        let newCustomerId = existing[0].customer_id
+        let newCustomerName = existing[0].customer_name
+        let newCustomerType = existing[0].customer_type || (newCustomerId ? 'registered' : 'walkin')
+
+        if (fields.customer_type === 'walkin') {
+          newCustomerId = null
+          newCustomerName = 'Walk-in Customer'
+          newCustomerType = 'walkin'
+        } else if (fields.customer_id !== undefined) {
+          newCustomerId = fields.customer_id ? parseInt(fields.customer_id) : null
+          newCustomerName = fields.customer_name || existing[0].customer_name || 'Walk-in Customer'
+          newCustomerType = fields.customer_type || (newCustomerId ? 'registered' : 'walkin')
+        }
 
         await execute(
           `UPDATE shipments SET
+            customer_id = ?,
+            customer_name = ?,
+            customer_type = ?,
             final_chargeable_weight = ?,
             chargeable_weight = ?,
             rate_per_kg = ?,
@@ -947,6 +967,9 @@ export const saveBooking = async (req, res) => {
             total_amount = ?
            WHERE id = ?`,
           [
+            newCustomerId,
+            newCustomerName,
+            newCustomerType,
             finalChgWt,
             finalChgWt > 0 ? Math.ceil(finalChgWt) : 0,
             ratePerKg,
@@ -3081,12 +3104,28 @@ export const updateBookingBilling = async (req, res) => {
     // If shipment is locked, verify if post-push billing edit feature is turned on in settings
     if (current.is_locked) {
       const allowed = await isSettingEnabled('allow_post_push_billing_edit', true)
-      if (!allowed) {
+      const hasCustomerUpdate = body.customer_id !== undefined || body.customer_type !== undefined || body.customer_name !== undefined
+      if (!allowed && !hasCustomerUpdate) {
         return res.status(403).json({
           success: false,
           message: 'Post-push billing editing is currently disabled in Settings. Turn on "Allow Post-Push Billing Edit" in Settings to modify locked shipments.'
         })
       }
+    }
+
+    // Extract customer updates if provided
+    let newCustomerId = current.customer_id
+    let newCustomerName = current.customer_name
+    let newCustomerType = current.customer_type || (newCustomerId ? 'registered' : 'walkin')
+
+    if (body.customer_type === 'walkin') {
+      newCustomerId = null
+      newCustomerName = 'Walk-in Customer'
+      newCustomerType = 'walkin'
+    } else if (body.customer_id !== undefined) {
+      newCustomerId = body.customer_id ? parseInt(body.customer_id) : null
+      newCustomerName = body.customer_name || current.customer_name || 'Walk-in Customer'
+      newCustomerType = body.customer_type || (newCustomerId ? 'registered' : 'walkin')
     }
 
     // Extract updated billing parameters
@@ -3113,6 +3152,9 @@ export const updateBookingBilling = async (req, res) => {
     // Update the local shipments table
     await execute(
       `UPDATE shipments SET
+        customer_id = ?,
+        customer_name = ?,
+        customer_type = ?,
         final_chargeable_weight = ?,
         chargeable_weight = ?,
         rate_per_kg = ?,
@@ -3121,6 +3163,9 @@ export const updateBookingBilling = async (req, res) => {
         total_amount = ?
        WHERE id = ?`,
       [
+        newCustomerId,
+        newCustomerName,
+        newCustomerType,
         finalChgWt,
         finalChgWt > 0 ? Math.ceil(finalChgWt) : 0,
         ratePerKg,

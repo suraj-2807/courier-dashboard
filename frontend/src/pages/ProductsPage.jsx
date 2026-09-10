@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { productsApi } from '../api/products.api'
 import { countryCodesApi } from '../api/countryCodes.api'
@@ -428,14 +429,22 @@ export default function ProductsPage() {
       </div>
 
       {/* ── Add / Edit Modal ── */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
-          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-lg overflow-hidden flex flex-col transition-all">
+      {isModalOpen && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs"
+            onClick={closeModal}
+          />
+          <div
+            className="relative bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col my-auto z-10 transition-all"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Top subtle gradient highlight bar */}
             <div className="h-1.5 bg-gradient-to-r from-primary via-red-500 to-rose-500 w-full" />
 
             {/* Header */}
-            <div className="px-6 py-4.5 border-b border-border flex items-center justify-between bg-surface-alt/40">
+            <div className="px-6 py-4.5 border-b border-border flex items-center justify-between bg-surface-alt/40 flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-xs">
                   <Tag className="w-5 h-5" />
@@ -464,7 +473,7 @@ export default function ProductsPage() {
             </div>
 
             {/* Body */}
-            <form onSubmit={handleFormSubmit} className="p-6 space-y-4.5">
+            <form onSubmit={handleFormSubmit} className="p-6 space-y-4.5 overflow-y-auto flex-1">
               {/* Product Description */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
@@ -573,15 +582,24 @@ export default function ProductsPage() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Bulk Import Modal ── */}
-      {isImportOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-[2px] animate-fade-in">
-          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
+      {isImportOpen && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fade-in">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs"
+            onClick={() => setIsImportOpen(false)}
+          />
+          <div
+            className="relative bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col my-auto z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
             {/* Header */}
-            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface-alt/60">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface-alt/60 flex-shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
                   <FileSpreadsheet className="w-4 h-4" />
@@ -684,7 +702,7 @@ export default function ProductsPage() {
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3 bg-surface-alt/60">
+            <div className="px-6 py-4 border-t border-border flex items-center justify-end gap-3 bg-surface-alt/60 flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setIsImportOpen(false)}
@@ -703,7 +721,8 @@ export default function ProductsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

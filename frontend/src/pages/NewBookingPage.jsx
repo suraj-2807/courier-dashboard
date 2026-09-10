@@ -1257,6 +1257,19 @@ export default function NewBookingPage() {
     return true
   }
 
+  // Smart Back Handler
+  const handleBack = () => {
+    if (location.state?.fromDetail && editId) {
+      navigate(`/bookings/${editId}`)
+    } else if (editId) {
+      navigate(`/bookings/${editId}`)
+    } else if (window.history.length > 1) {
+      navigate(-1)
+    } else {
+      navigate('/bookings')
+    }
+  }
+
   // SAVE BOOKING — draft, no vendor API push
   const handleSaveBooking = async () => {
     if (!validateForm()) return
@@ -1268,14 +1281,15 @@ export default function NewBookingPage() {
         from_request: payload.from_request,
         request_awb: payload.request_awb,
         tracking_number: payload.tracking_number,
+        customer_id: payload.customer_id,
         customer_name: payload.customer_name,
         shipping_charge: payload.shipping_charge
       })
       const result = await saveBookingMutation.mutateAsync(payload)
       console.log('[NewBookingPage] 💾 handleSaveBooking result:', result)
       const awb = result?.awb_number || result?.booking?.tracking_number || 'N/A'
-      toast.success(`Booking saved as draft! AWB: ${awb}`)
-      navigate('/bookings')
+      toast.success(editId ? `Booking updated! AWB: ${awb}` : `Booking saved as draft! AWB: ${awb}`)
+      navigate(editId ? `/bookings/${editId}` : '/bookings')
     } catch (err) {
       console.error('[NewBookingPage] ❌ handleSaveBooking error:', err)
       toast.error(err?.response?.data?.message || err.message || 'Failed to save booking')
@@ -1284,7 +1298,7 @@ export default function NewBookingPage() {
     }
   }
 
-  // SAVE BILLING CHARGES ONLY (For locked/dispatched shipments)
+  // SAVE BILLING CHARGES & CUSTOMER DETAILS (For locked/dispatched shipments)
   const handleSaveBillingLocked = async () => {
     const finalChg = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
     const rate = parseFloat(form.rate_per_kg) || 0
@@ -1299,12 +1313,15 @@ export default function NewBookingPage() {
         rate_per_kg: rate,
         shipping_charge: ship,
         extra_charge: extra,
-        total_amount: total
+        total_amount: total,
+        customer_id: form.customer_type === 'registered' ? (form.customer_id || null) : null,
+        customer_name: form.customer_type === 'registered' ? (form.customer_name || 'Registered Customer') : 'Walk-in Customer',
+        customer_type: form.customer_type || 'walkin'
       })
-      toast.success('Billing charges updated & synced to remote AWBENTRY!')
-      navigate('/bookings')
+      toast.success('Shipment customer & billing updated & synced to remote AWBENTRY!')
+      navigate(editId ? `/bookings/${editId}` : '/bookings')
     } catch (err) {
-      toast.error(err?.response?.data?.message || err.message || 'Failed to update billing details')
+      toast.error(err?.response?.data?.message || err.message || 'Failed to update details')
     } finally {
       setSavingDraft(false)
     }
@@ -1390,12 +1407,14 @@ export default function NewBookingPage() {
       {/* ── Page Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-surface p-5 rounded-2xl border border-border shadow-xs">
         <div className="flex items-center gap-3.5">
-          <Link
-            to="/bookings"
-            className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-xl transition-colors"
+          <button
+            type="button"
+            onClick={handleBack}
+            className="p-2 text-text-secondary hover:text-primary hover:bg-primary/5 rounded-xl transition-colors cursor-pointer"
+            title="Go Back"
           >
             <ArrowLeft className="w-5 h-5" />
-          </Link>
+          </button>
           <div>
             <h1 className="text-xl sm:text-[22px] font-extrabold text-navy tracking-tight flex items-center gap-2 flex-wrap">
               {isLocked ? (
@@ -1493,8 +1512,8 @@ export default function NewBookingPage() {
           </div>
         )}
 
-        {/* ── Customer Account Type ── */}
-        <fieldset disabled={isGeneralLocked}>
+        {/* ── Customer Account Type (Unlocked even in locked mode for reassignment) ── */}
+        <div>
           <div className="bg-surface rounded-2xl border border-border p-4 shadow-xs">
             <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
               <div className="flex items-center gap-2.5 flex-shrink-0">
@@ -1585,7 +1604,7 @@ export default function NewBookingPage() {
               )}
             </div>
           </div>
-        </fieldset>
+        </div>
 
         {/* ── Main 3 Columns Layout ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -2871,35 +2890,42 @@ export default function NewBookingPage() {
         <div className="bg-surface rounded-2xl border border-border p-4 shadow-xs flex items-center justify-between flex-wrap gap-3">
           <button
             type="button"
-            onClick={() => navigate('/bookings')}
+            onClick={handleBack}
             className="px-4 py-2.5 rounded-xl border border-border bg-surface text-xs font-semibold text-text-secondary hover:bg-surface-hover transition-colors cursor-pointer"
           >
-            {isLocked ? 'Back' : 'Cancel'}
+            {isLocked ? 'Back to Details' : 'Cancel'}
           </button>
 
           <div className="flex items-center gap-3">
             {isLocked ? (
               <div className="flex items-center gap-3 flex-wrap">
-                {allowPostPushEdit && (
-                  <button
-                    type="button"
-                    onClick={handleSaveBillingLocked}
-                    disabled={savingDraft || submitting}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
-                  >
-                    {savingDraft ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Saving & Syncing...
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4" />
-                        Save Billing Changes
-                      </>
-                    )}
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={handleSaveBillingLocked}
+                  disabled={savingDraft || submitting}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  title="Save customer assignment & billing details to local and remote database"
+                >
+                  {savingDraft ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Saving & Syncing...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      {allowPostPushEdit ? 'Save Customer & Billing' : 'Save Customer Changes'}
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBack}
+                  className="px-4 py-2.5 rounded-xl border border-border bg-surface hover:bg-surface-hover text-navy text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  Back to Details
+                </button>
                 <Link
                   to={`/bookings/${editId}`}
                   className="px-4 py-2.5 rounded-xl border border-border bg-surface hover:bg-surface-hover text-navy text-xs font-bold transition-colors flex items-center gap-2"
@@ -2909,10 +2935,9 @@ export default function NewBookingPage() {
                 </Link>
                 <Link
                   to="/bookings"
-                  className="px-5 py-2.5 rounded-xl bg-navy hover:bg-navy-light text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl bg-navy hover:bg-navy-light text-white text-xs font-bold shadow-xs transition-colors flex items-center gap-2"
                 >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back to Bookings
+                  All Bookings
                 </Link>
               </div>
             ) : (
