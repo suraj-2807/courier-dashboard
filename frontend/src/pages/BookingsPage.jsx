@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-do
 import { useQuery } from '@tanstack/react-query'
 import { useBookings, usePushBookingToApi } from '../hooks/useBookings'
 import { countryCodesApi } from '../api/countryCodes.api'
+import { customersApi } from '../api/customers.api'
 import {
   Search,
   Download,
@@ -28,6 +29,7 @@ import {
   Calendar,
   Globe,
   Truck,
+  User,
   Filter,
   SlidersHorizontal
 } from 'lucide-react'
@@ -169,6 +171,7 @@ export default function BookingsPage() {
   const statusFilter = searchParams.get('status') || ''
   const vendorFilter = searchParams.get('vendor') || ''
   const countryFilter = searchParams.get('country') || ''
+  const customerFilter = searchParams.get('customer') || ''
   const fromDateFilter = searchParams.get('from_date') || ''
   const toDateFilter = searchParams.get('to_date') || ''
 
@@ -196,6 +199,14 @@ export default function BookingsPage() {
   })
   const activeVendors = activeVendorsData?.vendors || []
 
+  // Fetch registered customers for customer filter dropdown
+  const { data: customersData } = useQuery({
+    queryKey: ['customers-list-filter'],
+    queryFn: () => customersApi.getAll({ limit: 500 }).then(res => res.data?.customers || []),
+    staleTime: 1000 * 60 * 10
+  })
+  const registeredCustomers = customersData || []
+
   const countryCodeToNameMap = useMemo(() => {
     const map = { ...ISO_COUNTRY_MAP }
     const list = countryCodesData?.countryCodes || []
@@ -214,6 +225,7 @@ export default function BookingsPage() {
     status: statusFilter,
     vendor: vendorFilter,
     country: countryFilter,
+    customer: customerFilter,
     from_date: fromDateFilter,
     to_date: toDateFilter
   })
@@ -418,6 +430,19 @@ export default function BookingsPage() {
     })
   }
 
+  const handleCustomerChange = (val) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (val) {
+        next.set('customer', val)
+      } else {
+        next.delete('customer')
+      }
+      next.delete('page')
+      return next
+    })
+  }
+
   const handleFromDateChange = (val) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
@@ -488,7 +513,7 @@ export default function BookingsPage() {
     setSearchParams({})
   }
 
-  const hasActiveFilters = Boolean(search || vendorFilter || countryFilter || fromDateFilter || toDateFilter)
+  const hasActiveFilters = Boolean(search || vendorFilter || countryFilter || customerFilter || fromDateFilter || toDateFilter)
 
   const handleTabChange = (val) => {
     setSelectedIds([])
@@ -867,6 +892,33 @@ export default function BookingsPage() {
                   onClick={() => handleCountryChange('')}
                   className="text-text-tertiary hover:text-danger p-0.5 cursor-pointer"
                   title="Clear country filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Customer Filter */}
+            <div className="flex items-center gap-1.5 bg-surface border border-border px-2.5 py-1.5 rounded-xl shadow-2xs">
+              <User className="w-3.5 h-3.5 text-navy flex-shrink-0" />
+              <select
+                value={customerFilter}
+                onChange={(e) => handleCustomerChange(e.target.value)}
+                className="bg-transparent text-text-primary text-[12px] font-semibold outline-none cursor-pointer max-w-[170px]"
+              >
+                <option value="">All Customers</option>
+                {registeredCustomers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {`CUST-${String(c.id).padStart(4, '0')} • ${c.name}${c.company ? ` (${c.company})` : ''}`}
+                  </option>
+                ))}
+              </select>
+              {customerFilter && (
+                <button
+                  type="button"
+                  onClick={() => handleCustomerChange('')}
+                  className="text-text-tertiary hover:text-danger p-0.5 cursor-pointer"
+                  title="Clear customer filter"
                 >
                   <X className="w-3 h-3" />
                 </button>

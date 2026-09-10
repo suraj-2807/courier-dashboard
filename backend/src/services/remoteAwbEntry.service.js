@@ -1056,3 +1056,129 @@ export async function cancelBookingRequestInRemoteDb(requestAwb, customerId) {
     return { success: false, message: err.message }
   }
 }
+
+/**
+ * Permanently delete shipments from the remote Hostinger database (AWBENTRY, parcel_history, booking_requests, request_updates, shipments).
+ *
+ * @param {Array<Object|string|number>} shipments - List of shipment objects or tracking numbers/IDs
+ */
+export async function deleteShipmentsFromRemoteDb(shipments) {
+  try {
+    const pool = getRemotePool()
+    if (!pool) return { success: false, message: 'Remote DB not available' }
+    if (!shipments || (Array.isArray(shipments) && shipments.length === 0)) {
+      return { success: false, message: 'No shipments specified' }
+    }
+
+    const items = Array.isArray(shipments) ? shipments : [shipments]
+    const awbNumbers = new Set()
+    const numericAwbs = new Set()
+    const ids = new Set()
+
+    for (const item of items) {
+      if (typeof item === 'object' && item !== null) {
+        if (item.tracking_number) awbNumbers.add(String(item.tracking_number).trim())
+        if (item.order_id) awbNumbers.add(String(item.order_id).trim())
+        if (item.vendor_awb_number) awbNumbers.add(String(item.vendor_awb_number).trim())
+        if (item.id) ids.add(item.id)
+      } else if (item) {
+        awbNumbers.add(String(item).trim())
+        if (!isNaN(item)) {
+          numericAwbs.add(parseInt(item))
+          ids.add(item)
+        }
+      }
+    }
+
+    const awbArray = Array.from(awbNumbers).filter(Boolean)
+    const idArray = Array.from(ids).filter(Boolean)
+
+    if (awbArray.length === 0 && idArray.length === 0) {
+      return { success: true, message: 'No valid shipment keys' }
+    }
+
+    console.log(`[Remote DB] Permanently deleting shipments: AWBs=[${awbArray.join(', ')}], IDs=[${idArray.join(', ')}]`)
+
+    // 1. Delete from AWBENTRY
+    if (awbArray.length > 0) {
+      const phs = awbArray.map(() => '?').join(',')
+      try {
+        await pool.query(
+          `DELETE FROM AWBENTRY WHERE AWBNO IN (${phs}) OR CAST(AWBNO AS CHAR) IN (${phs}) OR VENDORAWB1 IN (${phs}) OR VENDORAWB2 IN (${phs})`,
+          [...awbArray, ...awbArray, ...awbArray, ...awbArray]
+        )
+      } catch (err) {
+        console.warn('[Remote DB Delete AWBENTRY Warning]:', err.message)
+      }
+    }
+
+    // 2. Delete from parcel_history
+    if (awbArray.length > 0) {
+      const phs = awbArray.map(() => '?').join(',')
+      try {
+        await pool.query(
+          `DELETE FROM parcel_history WHERE AWBNO IN (${phs}) OR CAST(AWBNO AS CHAR) IN (${phs})`,
+          [...awbArray, ...awbArray]
+        )
+      } catch (err) {
+        console.warn('[Remote DB Delete parcel_history Warning]:', err.message)
+      }
+    }
+
+    // 3. Delete from booking_requests & request_updates
+    if (awbArray.length > 0 || idArray.length > 0) {
+      try {
+        const conds = []
+        const params = []
+        if (awbArray.length > 0) {
+          const phs = awbArray.map(() => '?').join(',')
+          conds.push(`request_awb IN (${phs})`, `tracking_number IN (${phs})`)
+          params.push(...awbArray, ...awbArray)
+        }
+        if (idArray.length > 0) {
+          const phs = idArray.map(() => '?').join(',')
+          conds.push(`id IN (${phs})`, `shipment_id IN (${phs})`)
+          params.push(...idArray, ...idArray)
+        }
+
+        // Find matching request IDs first to remove updates
+        const [reqRows] = await pool.query(`SELECT id FROM booking_requests WHERE ${conds.join(' OR ')}`, params)
+        if (reqRows && reqRows.length > 0) {
+          const reqIds = reqRows.map(r => r.id)
+          const reqPhs = reqIds.map(() => '?').join(',')
+          await pool.query(`DELETE FROM request_updates WHERE request_id IN (${reqPhs})`, reqIds)
+        }
+
+        await pool.query(`DELETE FROM booking_requests WHERE ${conds.join(' OR ')}`, params)
+      } catch (err) {
+        console.warn('[Remote DB Delete booking_requests Warning]:', err.message)
+      }
+    }
+
+    // 4. Delete from shipments table if exists in remote DB
+    if (awbArray.length > 0 || idArray.length > 0) {
+      try {
+        const conds = []
+        const params = []
+        if (awbArray.length > 0) {
+          const phs = awbArray.map(() => '?').join(',')
+          conds.push(`tracking_number IN (${phs})`, `order_id IN (${phs})`)
+          params.push(...awbArray, ...awbArray)
+        }
+        if (idArray.length > 0) {
+          const phs = idArray.map(() => '?').join(',')
+          conds.push(`id IN (${phs})`)
+          params.push(...idArray)
+        }
+        await pool.query(`DELETE FROM shipments WHERE ${conds.join(' OR ')}`, params)
+      } catch {}
+    }
+
+    console.log(`[Remote DB] Shipments permanently removed from remote Hostinger DB`)
+    return { success: true }
+  } catch (err) {
+    console.error('[Remote DB Delete Shipments Error]:', err.message)
+    return { success: false, message: err.message }
+  }
+}
+

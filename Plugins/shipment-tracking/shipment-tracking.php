@@ -196,6 +196,9 @@ class PE_Data {
                 }
             }
 
+            // Always ensure the first two company origin events exist
+            pe_attach_company_origin_events(self::$tracking, $r);
+
             // Filter out numeric-only locations from tracking
             foreach (self::$tracking as &$_t) {
                 if (preg_match('/^\d+$/', trim($_t['location']))) $_t['location'] = '';
@@ -293,6 +296,65 @@ class PE_Data {
 // ========================================
 // HELPERS
 // ========================================
+function pe_attach_company_origin_events(&$tracking, $result) {
+    if (!$result) return;
+
+    $origin_city = !empty($result->ORIGIN) ? strtoupper(trim($result->ORIGIN)) : 'SURAT';
+    if ($origin_city === 'SURAT' || empty($origin_city)) {
+        $origin_location = 'SURAT, INDIA';
+    } else {
+        $origin_location = $origin_city . ', INDIA';
+    }
+
+    $raw_bdate = !empty($result->BOOKINGDATE) && $result->BOOKINGDATE !== '0000-00-00' ? $result->BOOKINGDATE : current_time('Y-m-d');
+    $bdate = pe_fdate($raw_bdate);
+
+    $has_booked = false;
+    $has_manifested = false;
+
+    if (is_array($tracking)) {
+        foreach ($tracking as $ev) {
+            $act = strtolower(trim($ev['activity'] ?? ''));
+            if (strpos($act, 'booked') !== false || strpos($act, 'order created') !== false || strpos($act, 'shipment booked') !== false) {
+                $has_booked = true;
+            }
+            if (strpos($act, 'manifested') !== false || strpos($act, 'dispatched from origin') !== false) {
+                $has_manifested = true;
+            }
+        }
+    } else {
+        $tracking = [];
+    }
+
+    $company_events = [];
+
+    // 1. First event: Shipment Booked & Order Created
+    if (!$has_booked) {
+        $company_events[] = [
+            'date' => $bdate,
+            'time' => '10:00 AM',
+            'location' => $origin_location . ' (PRINCE EXPRESS)',
+            'activity' => 'Shipment Booked & Order Created'
+        ];
+    }
+
+    // 2. Second event: Shipment Manifested & Dispatched from Origin Hub
+    // Add if API was contacted, vendor AWB exists, or shipment has any other progress
+    $is_dispatched = !empty($result->VENDORID1) || !empty($result->VENDORID2) || !empty($result->VENDNAME) || intval($result->SERVICE ?? 0) > 0 || !empty($tracking);
+    if (!$has_manifested && $is_dispatched) {
+        $company_events[] = [
+            'date' => $bdate,
+            'time' => '11:15 AM',
+            'location' => $origin_location . ' (PRINCE EXPRESS HUB)',
+            'activity' => 'Shipment Manifested & Dispatched from Origin Hub'
+        ];
+    }
+
+    if (!empty($company_events)) {
+        $tracking = array_merge($tracking, $company_events);
+    }
+}
+
 function pe_short_status($status) {
     $s = strtolower(trim($status));
     if (strpos($s,'delivered')!==false) return 'Delivered';

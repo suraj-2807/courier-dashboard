@@ -1558,10 +1558,6 @@ export default function NewBookingPage() {
                           sender_company: prev.sender_company || cust.company || '',
                           sender_email: prev.sender_email || cust.email || '',
                           sender_phone: prev.sender_phone || cust.phone || '',
-                          sender_address: prev.sender_address || cust.address || '',
-                          sender_city: prev.sender_city || cust.city || '',
-                          sender_state: prev.sender_state || cust.state || '',
-                          sender_pincode: prev.sender_pincode || cust.pincode || '',
                           sender_gstin_no: prev.sender_gstin_no || cust.gst_number || ''
                         }))
                       } else {

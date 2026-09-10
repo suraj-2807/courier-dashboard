@@ -143,14 +143,29 @@ export async function syncCustomerToRemoteDb(customerData) {
 /**
  * Delete a customer from the remote Hostinger database.
  */
-export async function deleteCustomerFromRemoteDb(email) {
+export async function deleteCustomerFromRemoteDb(email, id = null) {
   const pool = getRemotePool()
-  if (!pool || !email) return false
+  if (!pool || (!email && !id)) return false
 
   try {
-    const cleanEmail = email.trim().toLowerCase()
-    await pool.query('DELETE FROM tbl_customers WHERE LOWER(TRIM(email)) = ?', [cleanEmail])
-    console.log(`[Remote DB] Customer ${cleanEmail} deleted from remote Hostinger DB`)
+    const cleanEmail = email ? email.trim().toLowerCase() : ''
+    const numId = id ? parseInt(id) : null
+
+    if (cleanEmail) {
+      await pool.query('DELETE FROM tbl_customers WHERE LOWER(TRIM(email)) = ?', [cleanEmail])
+      try {
+        await pool.query('DELETE FROM customer_addresses WHERE LOWER(TRIM(customer_email)) = ?', [cleanEmail])
+        await pool.query('DELETE FROM customer_documents WHERE LOWER(TRIM(customer_email)) = ?', [cleanEmail])
+      } catch {}
+    }
+    if (numId && numId > 0) {
+      await pool.query('DELETE FROM tbl_customers WHERE id = ?', [numId])
+      try {
+        await pool.query('DELETE FROM customer_addresses WHERE customer_id = ?', [numId])
+        await pool.query('DELETE FROM customer_documents WHERE customer_id = ?', [numId])
+      } catch {}
+    }
+    console.log(`[Remote DB] Customer ${cleanEmail || numId} deleted from remote Hostinger DB`)
     return true
   } catch (err) {
     console.error('[Remote DB Customer Delete Error]:', err.message)

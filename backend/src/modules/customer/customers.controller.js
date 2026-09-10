@@ -499,8 +499,12 @@ export const deleteCustomer = async (req, res) => {
     }
 
     await execute('DELETE FROM tbl_customers WHERE id = ?', [id])
+    try {
+      await execute('DELETE FROM customer_addresses WHERE customer_id = ? OR LOWER(TRIM(customer_email)) = ?', [id, (existing[0].email || '').toLowerCase().trim()])
+      await execute('DELETE FROM customer_documents WHERE customer_id = ? OR LOWER(TRIM(customer_email)) = ?', [id, (existing[0].email || '').toLowerCase().trim()])
+    } catch {}
 
-    deleteCustomerFromRemoteDb(existing[0].email).catch((err) =>
+    deleteCustomerFromRemoteDb(existing[0].email, id).catch((err) =>
       console.error('[Remote DB Customer Delete Error]:', err.message)
     )
 

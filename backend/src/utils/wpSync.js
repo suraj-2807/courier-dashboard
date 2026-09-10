@@ -204,3 +204,42 @@ export async function syncAddressToWP(addressData) {
   }
 }
 
+/**
+ * Sync shipment permanent deletion to WordPress database
+ *
+ * @param {Array<Object|string|number>} shipments
+ */
+export async function deleteShipmentsFromWP(shipments) {
+  if (!WP_SYNC_URL || !WP_SYNC_KEY || !shipments) return
+
+  try {
+    const items = Array.isArray(shipments) ? shipments : [shipments]
+    const awbs = []
+    const ids = []
+    for (const item of items) {
+      if (typeof item === 'object' && item !== null) {
+        if (item.tracking_number) awbs.push(item.tracking_number)
+        if (item.order_id) awbs.push(item.order_id)
+        if (item.vendor_awb_number) awbs.push(item.vendor_awb_number)
+        if (item.id) ids.push(item.id)
+      } else if (item) {
+        awbs.push(item)
+        if (!isNaN(item)) ids.push(item)
+      }
+    }
+
+    const url = `${WP_SYNC_URL}/wp-json/pe-cp/v1/sync-shipment-delete`
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Sync-Key': WP_SYNC_KEY
+      },
+      body: JSON.stringify({ awbs, ids })
+    })
+    console.log(`[WP Sync] Sent shipment deletion sync to WP`)
+  } catch (err) {
+    console.error('[WP Sync] Shipment delete sync error:', err.message)
+  }
+}
+

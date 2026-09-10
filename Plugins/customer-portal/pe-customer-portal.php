@@ -1981,6 +1981,13 @@ add_action('rest_api_init', function () {
         'callback' => 'pe_cp_rest_sync_address',
         'permission_callback' => 'pe_cp_rest_verify_sync_key',
     ]);
+
+    // Sync permanent shipment deletion from Node.js backend
+    register_rest_route('pe-cp/v1', '/sync-shipment-delete', [
+        'methods' => 'POST',
+        'callback' => 'pe_cp_rest_sync_shipment_delete',
+        'permission_callback' => 'pe_cp_rest_verify_sync_key',
+    ]);
 });
 
 /**
@@ -2123,12 +2130,95 @@ function pe_cp_rest_sync_customer_delete($request)
     $id = intval($d['id'] ?? 0);
 
     if ($email) {
-        $wpdb->query($wpdb->prepare("DELETE FROM tbl_customers WHERE email = %s", $email));
-    } elseif ($id) {
+        $wpdb->query($wpdb->prepare("DELETE FROM tbl_customers WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s))", $email));
+        $wpdb->query($wpdb->prepare("DELETE FROM customer_addresses WHERE LOWER(TRIM(customer_email)) = LOWER(TRIM(%s))", $email));
+        $wpdb->query($wpdb->prepare("DELETE FROM customer_documents WHERE LOWER(TRIM(customer_email)) = LOWER(TRIM(%s))", $email));
+    }
+    if ($id) {
         $wpdb->delete('tbl_customers', ['id' => $id]);
+        $wpdb->delete('customer_addresses', ['customer_id' => $id]);
+        $wpdb->delete('customer_documents', ['customer_id' => $id]);
     }
 
     return new WP_REST_Response(['success' => true, 'message' => 'Customer deleted from WP']);
+}
+
+/**
+ * REST: Sync permanent shipment deletion from Node.js backend into WP database.
+ */
+function pe_cp_rest_sync_shipment_delete($request)
+{
+    global $wpdb;
+    $d = $request->get_json_params();
+    $awbs = array_filter(array_map('sanitize_text_field', (array)($d['awbs'] ?? [])));
+    $ids = array_filter(array_map('intval', (array)($d['ids'] ?? [])));
+
+    if (empty($awbs) && empty($ids)) {
+        return new WP_REST_Response(['success' => false, 'message' => 'No AWBs or IDs provided'], 400);
+    }
+
+    // 1. Delete from AWBENTRY
+    if (!empty($awbs)) {
+        $phs = implode(',', array_fill(0, count($awbs), '%s'));
+        $sql = "DELETE FROM AWBENTRY WHERE AWBNO IN ($phs) OR CAST(AWBNO AS CHAR) IN ($phs) OR VENDORAWB1 IN ($phs) OR VENDORAWB2 IN ($phs)";
+        $params = array_merge($awbs, $awbs, $awbs, $awbs);
+        $wpdb->query($wpdb->prepare($sql, ...$params));
+
+        // 2. Delete from parcel_history
+        $sql_ph = "DELETE FROM parcel_history WHERE AWBNO IN ($phs) OR CAST(AWBNO AS CHAR) IN ($phs)";
+        $params_ph = array_merge($awbs, $awbs);
+        $wpdb->query($wpdb->prepare($sql_ph, ...$params_ph));
+    }
+
+    // 3. Delete from booking_requests & request_updates
+    $breq_conds = [];
+    $breq_params = [];
+    if (!empty($awbs)) {
+        $phs = implode(',', array_fill(0, count($awbs), '%s'));
+        $breq_conds[] = "request_awb IN ($phs)";
+        $breq_conds[] = "tracking_number IN ($phs)";
+        $breq_params = array_merge($breq_params, $awbs, $awbs);
+    }
+    if (!empty($ids)) {
+        $phs_id = implode(',', array_fill(0, count($ids), '%d'));
+        $breq_conds[] = "id IN ($phs_id)";
+        $breq_conds[] = "shipment_id IN ($phs_id)";
+        $breq_params = array_merge($breq_params, $ids, $ids);
+    }
+
+    if (!empty($breq_conds)) {
+        $where = "(" . implode(" OR ", $breq_conds) . ")";
+        $req_ids = $wpdb->get_col($wpdb->prepare("SELECT id FROM booking_requests WHERE $where", ...$breq_params));
+        if (!empty($req_ids)) {
+            $phs_upd = implode(',', array_fill(0, count($req_ids), '%d'));
+            $wpdb->query($wpdb->prepare("DELETE FROM request_updates WHERE request_id IN ($phs_upd)", ...$req_ids));
+        }
+        $wpdb->query($wpdb->prepare("DELETE FROM booking_requests WHERE $where", ...$breq_params));
+    }
+
+    // 4. Delete from shipments table if exists
+    $has_shipments = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
+    if ($has_shipments) {
+        $shp_conds = [];
+        $shp_params = [];
+        if (!empty($awbs)) {
+            $phs = implode(',', array_fill(0, count($awbs), '%s'));
+            $shp_conds[] = "tracking_number IN ($phs)";
+            $shp_conds[] = "order_id IN ($phs)";
+            $shp_params = array_merge($shp_params, $awbs, $awbs);
+        }
+        if (!empty($ids)) {
+            $phs_id = implode(',', array_fill(0, count($ids), '%d'));
+            $shp_conds[] = "id IN ($phs_id)";
+            $shp_params = array_merge($shp_params, $ids);
+        }
+        if (!empty($shp_conds)) {
+            $shp_where = "(" . implode(" OR ", $shp_conds) . ")";
+            $wpdb->query($wpdb->prepare("DELETE FROM shipments WHERE $shp_where", ...$shp_params));
+        }
+    }
+
+    return new WP_REST_Response(['success' => true, 'message' => 'Shipments permanently deleted from WP DB']);
 }
 
 /**

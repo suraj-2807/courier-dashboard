@@ -4,8 +4,8 @@ import { pushShipmentToVendor } from '../../services/vendorApiPush.service.js'
 import { generateInvoicePdf } from '../../services/invoicePdf.service.js'
 import { generateWaybillPdf } from '../../services/waybillPdf.service.js'
 import { generateBoxLabelsPdf } from '../../services/boxLabelPdf.service.js'
-import { syncToRemoteAwbEntry, syncToRemoteParcelHistory, syncBookingRequestStatusToRemoteDb } from '../../services/remoteAwbEntry.service.js'
-import { syncStatusToWP } from '../../utils/wpSync.js'
+import { syncToRemoteAwbEntry, syncToRemoteParcelHistory, syncBookingRequestStatusToRemoteDb, deleteShipmentsFromRemoteDb } from '../../services/remoteAwbEntry.service.js'
+import { syncStatusToWP, deleteShipmentsFromWP } from '../../utils/wpSync.js'
 import { isSettingEnabled } from '../systemSettings/systemSettings.controller.js'
 import path from 'path'
 import fs from 'fs'
@@ -1947,6 +1947,7 @@ export const getBookings = async (req, res) => {
       status = '',
       vendor = '',
       country = '',
+      customer = '',
       from_date = '',
       to_date = '',
       sort_by = 'created_at',
@@ -2018,7 +2019,6 @@ export const getBookings = async (req, res) => {
     // Also resolve ISO code variants (e.g. "UNITED STATES" → also match "US", "USA")
     if (country && country.trim()) {
       const cTerm = country.trim().toUpperCase()
-      // Build list of all possible variants for this country name
       const ISO_COUNTRY_MAP = {
         IN: 'INDIA', IND: 'INDIA', US: 'UNITED STATES', USA: 'UNITED STATES',
         GB: 'UNITED KINGDOM', GBR: 'UNITED KINGDOM', UK: 'UNITED KINGDOM',
@@ -2035,21 +2035,46 @@ export const getBookings = async (req, res) => {
         LK: 'SRI LANKA', BD: 'BANGLADESH', NP: 'NEPAL', MU: 'MAURITIUS',
         BR: 'BRAZIL', MX: 'MEXICO', EG: 'EGYPT', ET: 'ETHIOPIA'
       }
-      const variants = new Set([cTerm])
-      // Find all ISO codes that map to this country name
+      const cleanTerm = cTerm.replace(/\s*-\s*[A-Z]{2,3}$/, '').trim()
+      const variants = new Set([cTerm, cleanTerm])
       for (const [code, name] of Object.entries(ISO_COUNTRY_MAP)) {
-        if (name === cTerm) variants.add(code)
-        if (code === cTerm) variants.add(name)
+        if (name === cTerm || name === cleanTerm) variants.add(code)
+        if (code === cTerm || code === cleanTerm) variants.add(name)
       }
-      const varArray = Array.from(variants)
+      const varArray = Array.from(variants).filter(Boolean)
       const orClauses = []
       for (const v of varArray) {
         orClauses.push(`UPPER(TRIM(COALESCE(rcv.country, s.receiver_country, ''))) = CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
         params.push(v)
         orClauses.push(`UPPER(TRIM(COALESCE(s.receiver_country, rcv.country, ''))) = CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
         params.push(v)
+        orClauses.push(`UPPER(TRIM(COALESCE(rcv.country, s.receiver_country, ''))) LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
+        params.push(`%${v}%`)
+        orClauses.push(`UPPER(TRIM(COALESCE(s.receiver_country, rcv.country, ''))) LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
+        params.push(`%${v}%`)
       }
       whereConditions.push(`(${orClauses.join(' OR ')})`)
+    }
+
+    // Customer filter (by customer ID, sender ID, customer name, company, email)
+    if (customer && customer.trim()) {
+      const custVal = customer.trim()
+      if (!isNaN(custVal)) {
+        whereConditions.push('(s.customer_id = ? OR snd.id = ? OR s.sender_id = ?)')
+        params.push(parseInt(custVal), parseInt(custVal), parseInt(custVal))
+      } else {
+        const custWildcard = `%${custVal}%`
+        whereConditions.push(`(
+          s.customer_name LIKE ? OR 
+          snd.name LIKE ? OR 
+          snd.company LIKE ? OR 
+          snd.email LIKE ? OR 
+          s.sender_name LIKE ? OR 
+          s.sender_company LIKE ? OR 
+          s.sender_email LIKE ?
+        )`)
+        params.push(custWildcard, custWildcard, custWildcard, custWildcard, custWildcard, custWildcard, custWildcard)
+      }
     }
 
     // Date range filters
@@ -2064,6 +2089,7 @@ export const getBookings = async (req, res) => {
 
     if (search && search.trim()) {
       const fullTerm = search.trim()
+      const cleanTerm = fullTerm.replace(/[\s\-_,]+/g, '')
       const tokens = fullTerm.split(/\s+/).filter(t => t.length > 0)
 
       const candidateFields = [
@@ -2073,6 +2099,9 @@ export const getBookings = async (req, res) => {
         { table: 's', col: 'vendor_awb_number_2' },
         { table: 's', col: 'forwarding_no' },
         { table: 's', col: 'secondary_carrier' },
+        { table: 's', col: 'forwarding_vendor' },
+        { table: 's', col: 'forwarded_vendor' },
+        { table: 's', col: 'customer_name' },
         { table: 's', col: 'order_reference' },
         { table: 's', col: 'invoice_no' },
         { table: 's', col: 'vendor_code' },
@@ -2125,12 +2154,29 @@ export const getBookings = async (req, res) => {
           's.order_id',
           's.tracking_number',
           's.vendor_awb_number',
+          's.vendor_awb_number_2',
+          's.forwarding_no',
+          's.secondary_carrier',
+          's.customer_name',
           's.order_reference',
+          's.invoice_no',
           's.vendor_code',
+          's.sender_name',
+          's.sender_company',
+          's.sender_phone',
+          's.sender_city',
+          's.sender_country',
+          's.receiver_name',
+          's.receiver_company',
+          's.receiver_phone',
+          's.receiver_city',
+          's.receiver_country',
+          's.vendor_raw_response',
           'snd.name',
           'snd.company',
           'snd.phone',
           'snd.city',
+          'snd.country',
           'rcv.name',
           'rcv.company',
           'rcv.phone',
@@ -2147,6 +2193,9 @@ export const getBookings = async (req, res) => {
       }
 
       if (activeFields.length > 0) {
+        const fullLike = `%${fullTerm}%`
+        const cleanLike = `%${cleanTerm}%`
+
         if (tokens.length > 1) {
           const tokenClauses = []
           for (const token of tokens) {
@@ -2157,13 +2206,18 @@ export const getBookings = async (req, res) => {
               params.push(tLike)
             }
           }
-          whereConditions.push(`(${tokenClauses.join(' AND ')})`)
+          // Also allow full term match or unspaced match
+          const orExtra = activeFields.map(f => `${f} LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`).join(' OR ')
+          tokenClauses.push(`(${orExtra})`)
+          for (let i = 0; i < activeFields.length; i++) {
+            params.push(cleanLike)
+          }
+          whereConditions.push(`((${tokenClauses.slice(0, -1).join(' AND ')}) OR ${tokenClauses[tokenClauses.length - 1]})`)
         } else {
-          const tLike = `%${fullTerm}%`
           const sqlParts = activeFields.map(f => `${f} LIKE CONVERT(? USING utf8mb4) COLLATE utf8mb4_unicode_ci`)
           whereConditions.push(`(${sqlParts.join(' OR ')})`)
           for (let i = 0; i < activeFields.length; i++) {
-            params.push(tLike)
+            params.push(fullLike)
           }
         }
       }
@@ -2543,7 +2597,7 @@ export const restoreBookings = async (req, res) => {
 }
 
 /**
- * Permanently Delete selected booking(s)
+ * Permanently Delete selected booking(s) from local DB, remote Hostinger DB, and WP remote DB
  */
 export const deletePermanentBookings = async (req, res) => {
   try {
@@ -2554,8 +2608,30 @@ export const deletePermanentBookings = async (req, res) => {
     }
 
     const placeholders = ids.map(() => '?').join(',')
+
+    // 1. Fetch shipment details before deleting from local DB
+    const shipmentsToDelete = await query(
+      `SELECT id, order_id, tracking_number, vendor_awb_number, vendor_awb_number_2, forwarding_no 
+       FROM shipments WHERE id IN (${placeholders})`,
+      ids
+    )
+
+    // 2. Delete related records and shipments in local database
     try {
       await execute(`DELETE FROM tracking_events WHERE shipment_id IN (${placeholders})`, ids)
+    } catch { }
+
+    try {
+      const awbs = shipmentsToDelete.map(s => s.tracking_number || s.order_id).filter(Boolean)
+      if (awbs.length > 0) {
+        const awbPhs = awbs.map(() => '?').join(',')
+        await execute(
+          `DELETE FROM booking_requests WHERE shipment_id IN (${placeholders}) OR request_awb IN (${awbPhs}) OR tracking_number IN (${awbPhs})`,
+          [...ids, ...awbs, ...awbs]
+        )
+      } else {
+        await execute(`DELETE FROM booking_requests WHERE shipment_id IN (${placeholders})`, ids)
+      }
     } catch { }
 
     await execute(
@@ -2563,9 +2639,21 @@ export const deletePermanentBookings = async (req, res) => {
       ids
     )
 
+    // 3. Delete from remote Hostinger DB (AWBENTRY, parcel_history, booking_requests, request_updates, shipments)
+    if (shipmentsToDelete && shipmentsToDelete.length > 0) {
+      deleteShipmentsFromRemoteDb(shipmentsToDelete).catch((err) =>
+        console.error('[Remote DB Shipment Delete Error]:', err.message)
+      )
+
+      // 4. Delete from WP remote database via REST API
+      deleteShipmentsFromWP(shipmentsToDelete).catch((err) =>
+        console.error('[WP Shipment Delete Sync Error]:', err.message)
+      )
+    }
+
     return res.json({
       success: true,
-      message: `Permanently deleted ${ids.length} shipment(s)`
+      message: `Permanently deleted ${ids.length} shipment(s) from admin and WP remote database`
     })
   } catch (error) {
     console.error('Error deleting bookings permanently:', error)
