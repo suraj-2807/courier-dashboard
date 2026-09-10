@@ -435,7 +435,19 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
 
     if (!isWalkin && shipment.customer_id) {
       custCode = String(shipment.customer_id)
-      custName = (shipment.customer_name || shipment.sender_name || shipment.sender_company || 'CUSTOMER').toUpperCase()
+      try {
+        const [custRows] = await pool.query(
+          'SELECT id, name, company FROM tbl_customers WHERE id = ? LIMIT 1',
+          [shipment.customer_id]
+        )
+        if (custRows && custRows.length > 0) {
+          custName = (custRows[0].name || custRows[0].company || shipment.customer_name || 'CUSTOMER').toUpperCase()
+        } else {
+          custName = (shipment.customer_name || shipment.sender_name || shipment.sender_company || 'CUSTOMER').toUpperCase()
+        }
+      } catch (cErr) {
+        custName = (shipment.customer_name || shipment.sender_name || shipment.sender_company || 'CUSTOMER').toUpperCase()
+      }
     } else if (!isWalkin && shipment.customer_name && shipment.customer_name !== 'Walk-in Customer') {
       custName = shipment.customer_name.toUpperCase()
     } else if (!isWalkin && (shipment.sender_email || shipment.sender_phone)) {
@@ -453,8 +465,8 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
       }
     }
 
-    // Check if this shipment originated from a customer booking request
-    if (custCode === 'W001') {
+    // Fallback: check if this shipment originated from a customer booking request ONLY if not explicitly walk-in
+    if (!isWalkin && custCode === 'W001') {
       try {
         const fromReq = shipment.from_request || shipment.booking_request_id || 0
         const reqAwb = shipment.request_awb || ''
@@ -582,6 +594,7 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
         ]
       )
       console.log(`[Remote AWBENTRY Sync] Successfully updated AWBNO ${awbNo} in remote DB.`)
+      await syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode, custName, isWalkin)
       return { success: true, action: 'updated', awbNo }
     }
 
@@ -705,6 +718,7 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
 
     const [result] = await pool.execute(insertSql, params)
     console.log(`[Remote AWBENTRY Sync] Successfully inserted AWBNO ${awbNo} (AWBID: ${result.insertId}) into remote DB.`)
+    await syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode, custName, isWalkin)
 
     return { success: true, action: 'inserted', awbId: result.insertId, awbNo }
   } catch (err) {
@@ -1181,4 +1195,118 @@ export async function deleteShipmentsFromRemoteDb(shipments) {
     return { success: false, message: err.message }
   }
 }
+
+/**
+ * Internal helper to update customer ID and name in remote booking_requests and shipments tables.
+ */
+async function syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode, custName, isWalkin) {
+  try {
+    const targetCustId = isWalkin ? null : (shipment.customer_id ? parseInt(shipment.customer_id) : (custCode !== 'W001' ? parseInt(custCode) : null))
+    const targetCustName = isWalkin ? 'Walk-in Customer' : (custName || shipment.customer_name || 'Customer')
+
+    // 1. Update booking_requests in remote DB
+    const brConds = []
+    const brParams = [targetCustId, targetCustName]
+
+    if (shipment.from_request || shipment.booking_request_id) {
+      brConds.push('id = ?')
+      brParams.push(shipment.from_request || shipment.booking_request_id)
+    }
+    if (shipment.request_awb) {
+      brConds.push('request_awb = ?')
+      brParams.push(String(shipment.request_awb))
+    }
+    if (awbNo) {
+      brConds.push('request_awb = ?', 'tracking_number = ?')
+      brParams.push(String(awbNo), String(awbNo))
+    }
+    if (shipment.id) {
+      brConds.push('shipment_id = ?')
+      brParams.push(shipment.id)
+    }
+
+    if (brConds.length > 0) {
+      await pool.query(
+        `UPDATE booking_requests SET customer_id = ?, customer_name = ? WHERE ${brConds.join(' OR ')}`,
+        brParams
+      )
+      console.log(`[Remote DB] Synced customer_id=${targetCustId} (${targetCustName}) to booking_requests`)
+    }
+
+    // 2. Update shipments in remote DB if table exists
+    const shpConds = []
+    const shpParams = [targetCustId, targetCustName, isWalkin ? 'walkin' : 'registered']
+
+    if (awbNo) {
+      shpConds.push('tracking_number = ?', 'order_id = ?')
+      shpParams.push(String(awbNo), String(awbNo))
+    }
+    if (shipment.id) {
+      shpConds.push('id = ?')
+      shpParams.push(shipment.id)
+    }
+
+    if (shpConds.length > 0) {
+      await pool.query(
+        `UPDATE shipments SET customer_id = ?, customer_name = ?, customer_type = ? WHERE ${shpConds.join(' OR ')}`,
+        shpParams
+      )
+    }
+  } catch (err) {
+    console.warn('[Remote DB Sync Related Tables Warning]:', err.message)
+  }
+}
+
+/**
+ * Directly update customer assignment for a shipment in remote Hostinger MySQL (AWBENTRY, booking_requests, shipments).
+ */
+export async function syncCustomerAssignmentToRemoteDb(shipment) {
+  try {
+    const pool = getRemotePool()
+    if (!pool) return { success: false, message: 'Remote DB disabled' }
+
+    const trackingNumber = shipment.tracking_number || shipment.order_id || shipment.request_awb || ''
+    const awbNo = parseInt(String(trackingNumber).replace(/\D/g, '')) || 0
+    const isWalkin = shipment.customer_type === 'walkin' || (!shipment.customer_id && !shipment.customer_name)
+    
+    let custCode = 'W001'
+    let custName = 'WALKING CUSTOMER'
+    let custId = null
+
+    if (!isWalkin && shipment.customer_id) {
+      custId = parseInt(shipment.customer_id)
+      custCode = String(custId)
+      try {
+        const [cRows] = await pool.query('SELECT id, name, company FROM tbl_customers WHERE id = ? LIMIT 1', [custId])
+        if (cRows && cRows.length > 0) {
+          custName = (cRows[0].name || cRows[0].company || shipment.customer_name || 'CUSTOMER').toUpperCase()
+        } else {
+          custName = (shipment.customer_name || 'CUSTOMER').toUpperCase()
+        }
+      } catch {
+        custName = (shipment.customer_name || 'CUSTOMER').toUpperCase()
+      }
+    } else if (!isWalkin && shipment.customer_name) {
+      custName = shipment.customer_name.toUpperCase()
+    }
+
+    // 1. Update AWBENTRY
+    if (awbNo) {
+      await pool.query(
+        `UPDATE AWBENTRY SET CUSTCODE = ?, CUSTNAME = ? WHERE AWBNO = ? OR CAST(AWBNO AS CHAR) = ?`,
+        [custCode, custName, awbNo, String(awbNo)]
+      )
+    }
+
+    // 2. Update booking_requests and shipments
+    await syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode, custName, isWalkin)
+
+    console.log(`[Remote DB] Customer assignment updated for AWB ${awbNo}: CUSTCODE=${custCode}, CUSTNAME=${custName}`)
+    return { success: true }
+  } catch (err) {
+    console.error('[Remote DB Customer Assignment Update Error]:', err.message)
+    return { success: false, message: err.message }
+  }
+}
+
 

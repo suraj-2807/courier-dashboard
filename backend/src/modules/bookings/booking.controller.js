@@ -4,8 +4,8 @@ import { pushShipmentToVendor } from '../../services/vendorApiPush.service.js'
 import { generateInvoicePdf } from '../../services/invoicePdf.service.js'
 import { generateWaybillPdf } from '../../services/waybillPdf.service.js'
 import { generateBoxLabelsPdf } from '../../services/boxLabelPdf.service.js'
-import { syncToRemoteAwbEntry, syncToRemoteParcelHistory, syncBookingRequestStatusToRemoteDb, deleteShipmentsFromRemoteDb } from '../../services/remoteAwbEntry.service.js'
-import { syncStatusToWP, deleteShipmentsFromWP } from '../../utils/wpSync.js'
+import { syncToRemoteAwbEntry, syncToRemoteParcelHistory, syncBookingRequestStatusToRemoteDb, deleteShipmentsFromRemoteDb, syncCustomerAssignmentToRemoteDb } from '../../services/remoteAwbEntry.service.js'
+import { syncStatusToWP, deleteShipmentsFromWP, syncShipmentCustomerToWP } from '../../utils/wpSync.js'
 import { isSettingEnabled } from '../systemSettings/systemSettings.controller.js'
 import path from 'path'
 import fs from 'fs'
@@ -952,6 +952,14 @@ export const saveBooking = async (req, res) => {
           newCustomerId = fields.customer_id ? parseInt(fields.customer_id) : null
           newCustomerName = fields.customer_name || existing[0].customer_name || 'Walk-in Customer'
           newCustomerType = fields.customer_type || (newCustomerId ? 'registered' : 'walkin')
+          if (newCustomerId && (!fields.customer_name || fields.customer_name === 'Walk-in Customer')) {
+            try {
+              const custLookup = await query('SELECT name, company FROM customers WHERE id = ? LIMIT 1', [newCustomerId])
+              if (custLookup && custLookup.length > 0) {
+                newCustomerName = custLookup[0].name || custLookup[0].company || newCustomerName
+              }
+            } catch {}
+          }
         }
 
         await execute(
@@ -980,6 +988,16 @@ export const saveBooking = async (req, res) => {
           ]
         )
 
+        // Sync customer update to local booking_requests if linked
+        try {
+          await execute(
+            `UPDATE booking_requests SET customer_id = ?, customer_name = ? WHERE shipment_id = ? OR tracking_number = ?`,
+            [newCustomerId, newCustomerName, existingId, existing[0].tracking_number]
+          )
+        } catch (brErr) {
+          console.warn('[saveBooking locked br sync notice]:', brErr.message)
+        }
+
         const updatedRows = await query(
           `SELECT s.*, 
             snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
@@ -998,14 +1016,32 @@ export const saveBooking = async (req, res) => {
           [existingId]
         )
         const updatedShipment = updatedRows[0] || {}
+
+        // Sync to Remote Hostinger SQL (AWBENTRY, booking_requests, shipments)
         try {
           await syncToRemoteAwbEntry(updatedShipment)
+          await syncCustomerAssignmentToRemoteDb(updatedShipment)
         } catch (syncErr) {
           console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
         }
+
+        // Sync to WordPress REST API
+        try {
+          syncShipmentCustomerToWP({
+            tracking_number: updatedShipment.tracking_number,
+            request_awb: updatedShipment.request_awb,
+            shipment_id: updatedShipment.id,
+            customer_id: newCustomerId,
+            customer_name: newCustomerName,
+            customer_type: newCustomerType,
+            shipping_charge: shippingCharge,
+            total_amount: totalAmount
+          }).catch(wpErr => console.warn('[WP Sync Customer Notice]:', wpErr.message))
+        } catch {}
+
         return res.json({
           success: true,
-          message: 'Billing charges updated and synced to remote AWBENTRY (Shipment details remain locked)',
+          message: 'Customer & billing charges updated and synced to remote SQL and WP (Shipment details remain locked)',
           booking: updatedShipment,
           awb_number: updatedShipment.tracking_number
         })
@@ -1255,9 +1291,23 @@ export const saveBooking = async (req, res) => {
     // Sync draft booking to remote Hostinger operations DB (AWBENTRY and parcel_history)
     try {
       await syncToRemoteAwbEntry(updatedShipment)
+      await syncCustomerAssignmentToRemoteDb(updatedShipment)
     } catch (syncErr) {
       console.error('[Remote AWBENTRY Draft Sync Error]:', syncErr.message)
     }
+
+    try {
+      syncShipmentCustomerToWP({
+        tracking_number: updatedShipment.tracking_number,
+        request_awb: updatedShipment.request_awb,
+        shipment_id: updatedShipment.id,
+        customer_id: updatedShipment.customer_id,
+        customer_name: updatedShipment.customer_name,
+        customer_type: updatedShipment.customer_type,
+        shipping_charge: updatedShipment.shipping_charge,
+        total_amount: updatedShipment.total_amount
+      }).catch(wpErr => console.warn('[WP Sync Notice]:', wpErr.message))
+    } catch {}
 
     try {
       await syncToRemoteParcelHistory(
@@ -3126,6 +3176,14 @@ export const updateBookingBilling = async (req, res) => {
       newCustomerId = body.customer_id ? parseInt(body.customer_id) : null
       newCustomerName = body.customer_name || current.customer_name || 'Walk-in Customer'
       newCustomerType = body.customer_type || (newCustomerId ? 'registered' : 'walkin')
+      if (newCustomerId && (!body.customer_name || body.customer_name === 'Walk-in Customer')) {
+        try {
+          const custLookup = await query('SELECT name, company FROM customers WHERE id = ? LIMIT 1', [newCustomerId])
+          if (custLookup && custLookup.length > 0) {
+            newCustomerName = custLookup[0].name || custLookup[0].company || newCustomerName
+          }
+        } catch {}
+      }
     }
 
     // Extract updated billing parameters
@@ -3176,6 +3234,16 @@ export const updateBookingBilling = async (req, res) => {
       ]
     )
 
+    // Sync customer update to local booking_requests if linked
+    try {
+      await execute(
+        `UPDATE booking_requests SET customer_id = ?, customer_name = ? WHERE shipment_id = ? OR tracking_number = ?`,
+        [newCustomerId, newCustomerName, id, current.tracking_number]
+      )
+    } catch (brErr) {
+      console.warn('[updateBookingBilling local br sync notice]:', brErr.message)
+    }
+
     // Fetch updated shipment object
     const updatedRows = await query(
       `SELECT s.*, 
@@ -3197,16 +3265,31 @@ export const updateBookingBilling = async (req, res) => {
 
     const updatedShipment = updatedRows[0] || {}
 
-    // Synchronize the updated billing immediately to remote Hostinger AWBENTRY
+    // Synchronize customer & billing immediately to remote Hostinger SQL (AWBENTRY, booking_requests, shipments)
     let remoteSyncSuccess = false
     try {
       const syncResult = await syncToRemoteAwbEntry(updatedShipment)
+      await syncCustomerAssignmentToRemoteDb(updatedShipment)
       remoteSyncSuccess = syncResult?.success ?? true
     } catch (syncErr) {
       console.error('[Remote AWBENTRY Billing Sync Error]:', syncErr.message)
     }
 
-    // Synchronize the updated billing to customer booking request & WordPress portal
+    // Synchronize customer & billing to WordPress REST API
+    try {
+      syncShipmentCustomerToWP({
+        tracking_number: updatedShipment.tracking_number,
+        request_awb: updatedShipment.request_awb,
+        shipment_id: updatedShipment.id,
+        customer_id: newCustomerId,
+        customer_name: newCustomerName,
+        customer_type: newCustomerType,
+        shipping_charge: shippingCharge,
+        total_amount: totalAmount
+      }).catch(wpErr => console.warn('[WP Sync Customer Notice]:', wpErr.message))
+    } catch {}
+
+    // Synchronize the updated billing to customer booking request
     try {
       const fromReqId = updatedShipment.from_request || updatedShipment.booking_request_id || 0
       const reqAwb = updatedShipment.request_awb || ''
@@ -3223,7 +3306,7 @@ export const updateBookingBilling = async (req, res) => {
 
     return res.json({
       success: true,
-      message: 'Billing details updated successfully' + (remoteSyncSuccess ? ' and synced to remote AWBENTRY' : ''),
+      message: 'Customer & billing details updated successfully' + (remoteSyncSuccess ? ' and synced to remote SQL & WP' : ''),
       booking: updatedShipment
     })
   } catch (err) {

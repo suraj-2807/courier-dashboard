@@ -1318,7 +1318,7 @@ export default function NewBookingPage() {
         customer_name: form.customer_type === 'registered' ? (form.customer_name || 'Registered Customer') : 'Walk-in Customer',
         customer_type: form.customer_type || 'walkin'
       })
-      toast.success('Shipment customer & billing updated & synced to remote AWBENTRY!')
+      toast.success('Shipment customer & billing updated & synced to remote SQL & WP!')
       navigate(editId ? `/bookings/${editId}` : '/bookings')
     } catch (err) {
       toast.error(err?.response?.data?.message || err.message || 'Failed to update details')

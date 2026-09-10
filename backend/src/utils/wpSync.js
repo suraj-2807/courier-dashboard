@@ -243,3 +243,41 @@ export async function deleteShipmentsFromWP(shipments) {
   }
 }
 
+/**
+ * Sync shipment customer assignment update to WordPress REST API.
+ * Directly updates AWBENTRY, booking_requests, and shipments in WordPress.
+ *
+ * @param {Object} data - { awb_no, tracking_number, request_awb, customer_id, customer_name, customer_type, shipment_id }
+ */
+export async function syncShipmentCustomerToWP(data) {
+  if (!WP_SYNC_URL || !WP_SYNC_KEY) {
+    console.log('[WP Sync] Skipped — WP_SYNC_URL or WP_SYNC_KEY not configured')
+    return
+  }
+
+  try {
+    const url = `${WP_SYNC_URL}/wp-json/pe-cp/v1/sync-shipment-customer`
+    const awb = data.tracking_number || data.awb_no || data.request_awb || ''
+    console.log(`[WP Sync] Syncing customer assignment for AWB ${awb} to WP...`)
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Sync-Key': WP_SYNC_KEY
+      },
+      body: JSON.stringify(data)
+    })
+
+    const resData = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      console.warn('[WP Sync] Customer assignment sync notice:', res.status, resData)
+    } else {
+      console.log(`[WP Sync] Customer assignment for AWB ${awb} synced successfully to WP`)
+    }
+  } catch (err) {
+    console.warn('[WP Sync] Customer assignment sync error:', err.message)
+  }
+}
+
+

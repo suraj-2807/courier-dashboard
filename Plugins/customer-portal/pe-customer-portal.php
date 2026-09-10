@@ -2038,6 +2038,13 @@ add_action('rest_api_init', function () {
         'callback' => 'pe_cp_rest_sync_shipment_delete',
         'permission_callback' => 'pe_cp_rest_verify_sync_key',
     ]);
+
+    // Sync shipment customer assignment from Node.js backend
+    register_rest_route('pe-cp/v1', '/sync-shipment-customer', [
+        'methods' => 'POST',
+        'callback' => 'pe_cp_rest_sync_shipment_customer',
+        'permission_callback' => 'pe_cp_rest_verify_sync_key',
+    ]);
 });
 
 /**
@@ -2382,69 +2389,176 @@ function pe_cp_rest_sync_status($request)
     global $wpdb;
     $d = $request->get_json_params();
 
-    $awb = sanitize_text_field($d['request_awb'] ?? '');
+    $awb = sanitize_text_field($d['request_awb'] ?? ($d['tracking_number'] ?? ''));
     if (!$awb) {
-        return new WP_REST_Response(['success' => false, 'message' => 'request_awb required'], 400);
+        return new WP_REST_Response(['success' => false, 'message' => 'request_awb or tracking_number required'], 400);
     }
 
-    // Find local booking request by AWB
+    $raw_digits = preg_replace('/\D/', '', $awb);
+    $awb_no = $raw_digits ? intval($raw_digits) : 0;
+
+    // Find local booking request by AWB or tracking number
     $local = $wpdb->get_row($wpdb->prepare(
-        "SELECT * FROM booking_requests WHERE request_awb = %s",
+        "SELECT * FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
+        $awb,
         $awb
     ));
 
-    if (!$local) {
-        return new WP_REST_Response(['success' => false, 'message' => 'Booking request not found in WP DB'], 404);
+    // Resolve customer info if provided
+    $has_cust = isset($d['customer_id']) || isset($d['customer_name']) || isset($d['customer_type']);
+    $cust_id = isset($d['customer_id']) && $d['customer_id'] !== '' && $d['customer_id'] !== null ? intval($d['customer_id']) : null;
+    $cust_type = sanitize_text_field($d['customer_type'] ?? ($cust_id ? 'registered' : 'walkin'));
+    $is_walkin = ($cust_type === 'walkin' || !$cust_id);
+    $cust_code = $is_walkin ? 'W001' : strval($cust_id);
+    $cust_name = sanitize_text_field($d['customer_name'] ?? '');
+    if (!$cust_name) {
+        $cust_name = $is_walkin ? 'WALKING CUSTOMER' : 'CUSTOMER';
+    } else {
+        $cust_name = $is_walkin ? 'WALKING CUSTOMER' : strtoupper($cust_name);
     }
 
-    // Update the booking request fields
-    $update_data = ['status' => sanitize_text_field($d['status'] ?? 'pending')];
+    if ($local) {
+        // Update the booking request fields
+        $update_data = ['status' => sanitize_text_field($d['status'] ?? 'pending')];
 
-    if (isset($d['admin_notes'])) {
-        $update_data['admin_notes'] = sanitize_textarea_field($d['admin_notes']);
-    }
-    if (isset($d['shipment_id'])) {
-        $update_data['shipment_id'] = intval($d['shipment_id']) ?: null;
-    }
-    if (isset($d['tracking_number'])) {
-        $update_data['tracking_number'] = sanitize_text_field($d['tracking_number']);
-    }
-    if (isset($d['shipping_charge'])) {
-        $update_data['shipping_charge'] = floatval($d['shipping_charge']);
-    }
-    if (isset($d['total_amount'])) {
-        $update_data['total_amount'] = floatval($d['total_amount']);
+        if (isset($d['admin_notes'])) {
+            $update_data['admin_notes'] = sanitize_textarea_field($d['admin_notes']);
+        }
+        if (isset($d['shipment_id'])) {
+            $update_data['shipment_id'] = intval($d['shipment_id']) ?: null;
+        }
+        if (isset($d['tracking_number'])) {
+            $update_data['tracking_number'] = sanitize_text_field($d['tracking_number']);
+        }
+        if (isset($d['shipping_charge'])) {
+            $update_data['shipping_charge'] = floatval($d['shipping_charge']);
+        }
+        if (isset($d['total_amount'])) {
+            $update_data['total_amount'] = floatval($d['total_amount']);
+        }
+        if ($has_cust) {
+            $update_data['customer_id'] = $cust_id;
+            $update_data['customer_name'] = $is_walkin ? 'Walk-in Customer' : $cust_name;
+        }
+
+        $wpdb->update('booking_requests', $update_data, ['id' => $local->id]);
+
+        // Insert timeline entries
+        $updates = $d['updates'] ?? [];
+        foreach ($updates as $upd) {
+            $wpdb->insert('request_updates', [
+                'request_id' => $local->id,
+                'update_type' => sanitize_text_field($upd['type'] ?? 'info'),
+                'title' => sanitize_text_field($upd['title'] ?? ''),
+                'description' => sanitize_textarea_field($upd['description'] ?? ''),
+                'metadata' => isset($upd['metadata']) ? wp_json_encode($upd['metadata']) : null,
+            ]);
+        }
     }
 
-    $wpdb->update('booking_requests', $update_data, ['id' => $local->id]);
-
+    // Update AWBENTRY totals & customer assignment
     $finalAmt = floatval($d['total_amount'] ?? ($d['shipping_charge'] ?? 0));
+    $awb_updates = [];
+    $awb_params = [];
     if ($finalAmt > 0) {
+        $awb_updates[] = "TOTAL = %f, NETAMOUNT = %f, CHARGES = %f";
+        $awb_params[] = $finalAmt;
+        $awb_params[] = $finalAmt;
+        $awb_params[] = $finalAmt;
+    }
+    if ($has_cust) {
+        $awb_updates[] = "CUSTCODE = %s, CUSTNAME = %s";
+        $awb_params[] = $cust_code;
+        $awb_params[] = $cust_name;
+    }
+    if (!empty($awb_updates) && ($awb || $awb_no)) {
+        $awb_sql = "UPDATE AWBENTRY SET " . implode(", ", $awb_updates) . " WHERE AWBNO = %s OR CAST(AWBNO AS CHAR) = %s";
+        $awb_params[] = strval($awb_no ?: $awb);
+        $awb_params[] = strval($awb_no ?: $awb);
+        $wpdb->query($wpdb->prepare($awb_sql, ...$awb_params));
+    }
+
+    return new WP_REST_Response([
+        'success' => true,
+        'synced_updates' => count($d['updates'] ?? []),
+        'local_found' => !empty($local)
+    ]);
+}
+
+/**
+ * REST: Sync shipment customer assignment update into WP database (AWBENTRY, booking_requests, shipments).
+ */
+function pe_cp_rest_sync_shipment_customer($request)
+{
+    global $wpdb;
+    $d = $request->get_json_params();
+
+    $awb = sanitize_text_field($d['tracking_number'] ?? ($d['awb_no'] ?? ($d['request_awb'] ?? '')));
+    $raw_digits = preg_replace('/\D/', '', $awb);
+    $awb_no = $raw_digits ? intval($raw_digits) : 0;
+
+    if (!$awb && !$awb_no) {
+        return new WP_REST_Response(['success' => false, 'message' => 'tracking_number or awb_no required'], 400);
+    }
+
+    $cust_id = isset($d['customer_id']) && $d['customer_id'] !== '' && $d['customer_id'] !== null ? intval($d['customer_id']) : null;
+    $cust_type = sanitize_text_field($d['customer_type'] ?? ($cust_id ? 'registered' : 'walkin'));
+    $is_walkin = ($cust_type === 'walkin' || !$cust_id);
+
+    $cust_code = $is_walkin ? 'W001' : strval($cust_id);
+    $cust_name = sanitize_text_field($d['customer_name'] ?? '');
+    if (!$cust_name) {
+        $cust_name = $is_walkin ? 'WALKING CUSTOMER' : 'CUSTOMER';
+    } else {
+        $cust_name = $is_walkin ? 'WALKING CUSTOMER' : strtoupper($cust_name);
+    }
+
+    // 1. Update AWBENTRY
+    if ($awb_no > 0) {
         $wpdb->query($wpdb->prepare(
-            "UPDATE AWBENTRY SET TOTAL = %f, NETAMOUNT = %f, CHARGES = %f WHERE AWBNO = %s",
-            $finalAmt,
-            $finalAmt,
-            $finalAmt,
-            $awb
+            "UPDATE AWBENTRY SET CUSTCODE = %s, CUSTNAME = %s WHERE AWBNO = %d OR CAST(AWBNO AS CHAR) = %s",
+            $cust_code,
+            $cust_name,
+            $awb_no,
+            strval($awb_no)
         ));
     }
 
-    // Sync to AWBENTRY & parcel_history (DISABLED BY USER DIRECTIVE)
-    // No writes permitted to AWBENTRY or parcel_history.
+    // 2. Update booking_requests
+    $req_awb = sanitize_text_field($d['request_awb'] ?? $awb);
+    $shp_id = intval($d['shipment_id'] ?? 0);
+    $wpdb->query($wpdb->prepare(
+        "UPDATE booking_requests SET customer_id = %s, customer_name = %s WHERE (request_awb != '' AND (request_awb = %s OR request_awb = %s)) OR (tracking_number != '' AND (tracking_number = %s OR tracking_number = %s)) OR (shipment_id > 0 AND shipment_id = %d)",
+        $cust_id,
+        $is_walkin ? 'Walk-in Customer' : $cust_name,
+        $req_awb,
+        strval($awb_no),
+        $awb,
+        strval($awb_no),
+        $shp_id
+    ));
 
-    // Insert timeline entries
-    $updates = $d['updates'] ?? [];
-    foreach ($updates as $upd) {
-        $wpdb->insert('request_updates', [
-            'request_id' => $local->id,
-            'update_type' => sanitize_text_field($upd['type'] ?? 'info'),
-            'title' => sanitize_text_field($upd['title'] ?? ''),
-            'description' => sanitize_textarea_field($upd['description'] ?? ''),
-            'metadata' => isset($upd['metadata']) ? wp_json_encode($upd['metadata']) : null,
-        ]);
+    // 3. Update shipments if exists
+    $has_shipments = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
+    if ($has_shipments) {
+        $wpdb->query($wpdb->prepare(
+            "UPDATE shipments SET customer_id = %s, customer_name = %s, customer_type = %s WHERE tracking_number = %s OR order_id = %s OR id = %d",
+            $cust_id,
+            $is_walkin ? 'Walk-in Customer' : $cust_name,
+            $cust_type,
+            $awb,
+            $awb,
+            $shp_id
+        ));
     }
 
-    return new WP_REST_Response(['success' => true, 'synced_updates' => count($updates)]);
+    return new WP_REST_Response([
+        'success' => true,
+        'message' => 'Shipment customer assignment updated in WP',
+        'awb' => $awb,
+        'cust_code' => $cust_code,
+        'cust_name' => $cust_name
+    ]);
 }
 
 /**
