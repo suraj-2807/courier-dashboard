@@ -15,5 +15,6 @@ export const bookingsApi = {
   syncTracking: (ids) => api.post('/bookings/sync-tracking', { ids: Array.isArray(ids) ? ids : (ids ? [ids] : undefined) }),
   trash: (ids) => api.post('/bookings/trash', { ids: Array.isArray(ids) ? ids : [ids] }),
   restore: (ids) => api.post('/bookings/restore', { ids: Array.isArray(ids) ? ids : [ids] }),
-  deletePermanent: (ids) => api.post('/bookings/delete-permanent', { ids: Array.isArray(ids) ? ids : [ids] })
+  deletePermanent: (ids) => api.post('/bookings/delete-permanent', { ids: Array.isArray(ids) ? ids : [ids] }),
+  clone: (id) => api.post(`/bookings/${id}/clone`)
 }

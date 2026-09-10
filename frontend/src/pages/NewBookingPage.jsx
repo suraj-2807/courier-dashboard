@@ -312,6 +312,7 @@ export default function NewBookingPage() {
   const [itemSuggestionHighlight, setItemSuggestionHighlight] = useState(-1)
   const itemSuggestionsRef = useRef(null)
   const itemSuggestionRefs = useRef([])
+  const skipBillingRecalcRef = useRef(false)
 
   // Click outside listener to close autocomplete dropdowns
   useEffect(() => {
@@ -524,6 +525,7 @@ export default function NewBookingPage() {
   // Pre-fill form when editing an existing shipment
   useEffect(() => {
     if (!editBookingData) return
+    skipBillingRecalcRef.current = true
     const b = editBookingData
     const sender = b.senders || {}
     const receiver = b.receivers || {}
@@ -944,6 +946,11 @@ export default function NewBookingPage() {
 
   // Keep main form summary fields synced with per-parcel totals and recalculate shipping charges if rate_per_kg is set
   useEffect(() => {
+    // Skip recalculation when form is being populated from edit data to prevent overwriting saved billing values
+    if (skipBillingRecalcRef.current) {
+      skipBillingRecalcRef.current = false
+      return
+    }
     if (parcels.length > 1) {
       setForm(prev => {
         const chgWt = totalParcelChg > 0 ? String(totalParcelChg) : ''

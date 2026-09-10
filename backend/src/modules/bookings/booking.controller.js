@@ -1313,6 +1313,18 @@ export const saveBooking = async (req, res) => {
       }).catch(wpErr => console.warn('[WP Sync Notice]:', wpErr.message))
     } catch {}
 
+    // Ensure local tracking event exists for draft (first tracking entry)
+    try {
+      const evRows = await query('SELECT id FROM tracking_events WHERE shipment_id = ? LIMIT 1', [shipmentId])
+      if (evRows.length === 0) {
+        await execute(
+          `INSERT INTO tracking_events (shipment_id, status, description, location)
+           VALUES (?, ?, ?, ?)`,
+          [shipmentId, 'Shipment Booked & Order Created', 'Shipment saved as draft & order created', updatedShipment.s_city || updatedShipment.sender_city || 'Origin Hub']
+        )
+      }
+    } catch {}
+
     try {
       await syncToRemoteParcelHistory(
         updatedShipment,
@@ -1485,11 +1497,12 @@ export const pushBookingToApi = async (req, res) => {
         console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
       }
 
+      // Second tracking entry: Shipment Manifested & Dispatched
       try {
         await syncToRemoteParcelHistory(
           updated,
-          'SHIPMENT BOOKED',
-          updated.s_city || updated.sender_city || 'SURAT'
+          'Shipment Manifested & Dispatched from Origin Hub',
+          (updated.s_city || updated.sender_city || 'SURAT') + ' HUB'
         )
       } catch (syncErr) {
         console.error('[Remote parcel_history Sync Error]:', syncErr.message)
@@ -1903,6 +1916,7 @@ export const createBooking = async (req, res) => {
           console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
         }
 
+        // Second tracking entry: Shipment Manifested & Dispatched
         try {
           await syncToRemoteParcelHistory(
             {
@@ -1910,8 +1924,8 @@ export const createBooking = async (req, res) => {
               tracking_number,
               order_id
             },
-            'SHIPMENT BOOKED',
-            fields.sender_city || 'SURAT'
+            'Shipment Manifested & Dispatched from Origin Hub',
+            (fields.sender_city || 'SURAT') + ' HUB'
           )
         } catch (syncErr) {
           console.error('[Remote parcel_history Sync Error]:', syncErr.message)
@@ -3376,6 +3390,134 @@ export const syncTrackingController = async (req, res) => {
       success: false,
       message: error.message
     })
+  }
+}
+
+/**
+ * Clone / Duplicate an existing booking as a new draft shipment
+ */
+export const cloneBooking = async (req, res) => {
+  try {
+    const { id } = req.params
+
+    const rows = await query(
+      `SELECT s.*, 
+        snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
+        snd.address as s_address, snd.city as s_city, snd.state as s_state,
+        snd.pincode as s_pincode, snd.country as s_country,
+        rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
+        rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
+        rcv.pincode as r_pincode, rcv.country as r_country,
+        vac.name as vendor_name, vac.vendor_code as vac_vendor_code,
+        vac.auth_credentials as vac_auth_credentials, vac.available_services as vac_services
+       FROM shipments s
+       LEFT JOIN senders snd ON s.sender_id = snd.id
+       LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
+       WHERE s.id = ?`,
+      [id]
+    )
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Shipment to clone not found' })
+    }
+
+    const src = rows[0]
+    const newTracking = await generateTracking()
+    const newOrderId = newTracking
+    const today = new Date().toISOString().split('T')[0]
+
+    const result = await execute(
+      `INSERT INTO shipments (
+        order_id, customer_id, customer_name, customer_type,
+        sender_id, receiver_id, courier_provider_id, vendor_config_id,
+        vendor_code, service_code, product_code, tracking_number, weight, chargeable_weight, \`length\`, breadth, height,
+        no_of_pieces, content_description, declared_value, cod_amount,
+        payment_mode, package_type, total_amount, shipping_charge,
+        rate_per_kg, extra_charge, final_chargeable_weight,
+        order_reference, remarks, status, vendor_push_status, is_locked,
+        sender_name, sender_company, sender_phone, sender_phone_2, sender_email,
+        sender_address, sender_address_2, sender_city, sender_state,
+        sender_pincode, sender_country, sender_gstin_type, sender_gstin_no,
+        receiver_name, receiver_company, receiver_phone, receiver_phone_2, receiver_email,
+        receiver_address, receiver_address_2, receiver_city, receiver_state,
+        receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no,
+        invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
+        invoice_type, invoice_note, invoice_items, parcels
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, FALSE, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        newOrderId,
+        src.customer_id, src.customer_name, src.customer_type || 'walkin',
+        src.sender_id, src.receiver_id, src.courier_provider_id, src.vendor_config_id,
+        src.vendor_code, src.service_code, src.product_code, newTracking,
+        src.weight, src.chargeable_weight, src.length, src.breadth, src.height,
+        src.no_of_pieces, src.content_description, src.declared_value, src.cod_amount,
+        src.payment_mode, src.package_type, src.total_amount, src.shipping_charge,
+        src.rate_per_kg, src.extra_charge, src.final_chargeable_weight,
+        src.order_reference ? `${src.order_reference}-COPY` : '', src.remarks,
+        src.sender_name, src.sender_company, src.sender_phone, src.sender_phone_2, src.sender_email,
+        src.sender_address, src.sender_address_2, src.sender_city, src.sender_state,
+        src.sender_pincode, src.sender_country, src.sender_gstin_type, src.sender_gstin_no,
+        src.receiver_name, src.receiver_company, src.receiver_phone, src.receiver_phone_2, src.receiver_email,
+        src.receiver_address, src.receiver_address_2, src.receiver_city, src.receiver_state,
+        src.receiver_pincode, src.receiver_country, src.receiver_gstin_type, src.receiver_gstin_no,
+        newOrderId, today, src.invoice_currency, src.hs_code, src.export_reason, src.terms_of_trade,
+        src.invoice_type, src.invoice_note, src.invoice_items, src.parcels
+      ]
+    )
+
+    const newId = result.insertId
+
+    // Insert 1st tracking entry: Draft created
+    await execute(
+      `INSERT INTO tracking_events (shipment_id, status, description, location)
+       VALUES (?, ?, ?, ?)`,
+      [newId, 'Shipment Booked & Order Created', 'Shipment cloned and saved as draft', src.sender_city || 'Origin Hub']
+    )
+
+    // Generate invoice PDF
+    try {
+      const invoicePdfPath = await generateInvoiceForBooking(newTracking, src, src.sender_id, src.receiver_id)
+      await execute('UPDATE shipments SET invoice_pdf_path = ? WHERE id = ?', [invoicePdfPath, newId])
+    } catch {}
+
+    const [clonedRows] = await query('SELECT * FROM shipments WHERE id = ?', [newId])
+    const clonedShipment = clonedRows[0] || {}
+
+    // Sync draft to Remote AWBENTRY and parcel_history
+    try {
+      await syncToRemoteAwbEntry(clonedShipment)
+      await syncCustomerAssignmentToRemoteDb(clonedShipment)
+      await syncToRemoteParcelHistory(clonedShipment, 'SHIPMENT BOOKED', src.sender_city || 'SURAT')
+    } catch (rErr) {
+      console.error('[Clone Remote Sync Error]:', rErr.message)
+    }
+
+    // Sync to WordPress
+    try {
+      syncShipmentCustomerToWP({
+        tracking_number: newTracking,
+        request_awb: newTracking,
+        shipment_id: newId,
+        customer_id: clonedShipment.customer_id,
+        customer_name: clonedShipment.customer_name,
+        customer_type: clonedShipment.customer_type,
+        shipping_charge: clonedShipment.shipping_charge,
+        total_amount: clonedShipment.total_amount,
+        invoice_items: clonedShipment.invoice_items,
+        parcels: clonedShipment.parcels
+      }).catch(() => {})
+    } catch {}
+
+    return res.status(201).json({
+      success: true,
+      message: `Booking cloned successfully as new draft! AWB: ${newTracking}`,
+      booking: clonedShipment,
+      awb_number: newTracking
+    })
+  } catch (err) {
+    console.error('Clone booking error:', err)
+    return res.status(500).json({ success: false, message: err.message || 'Failed to clone booking' })
   }
 }
 

@@ -85,6 +85,7 @@ export default function BookingDetailPage() {
   // Billing edit modal state
   const [showBillingModal, setShowBillingModal] = useState(false)
   const [savingBilling, setSavingBilling] = useState(false)
+  const [cloning, setCloning] = useState(false)
   const [billingForm, setBillingForm] = useState({
     final_chargeable_weight: '',
     rate_per_kg: '',
@@ -154,6 +155,25 @@ export default function BookingDetailPage() {
     if (booking?.tracking_number) {
       navigator.clipboard.writeText(booking.tracking_number)
       toast.success('Our AWB copied!')
+    }
+  }
+
+  const handleClone = async () => {
+    if (cloning) return
+    setCloning(true)
+    const toastId = toast.loading('Cloning booking as new draft...')
+    try {
+      const res = await bookingsApi.clone(booking.id)
+      const newId = res.data?.booking?.id
+      const newAwb = res.data?.booking?.tracking_number || ''
+      toast.success(`Cloned! New AWB: ${newAwb}`, { id: toastId })
+      if (newId) {
+        navigate(`/bookings/${newId}`)
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to clone booking', { id: toastId })
+    } finally {
+      setCloning(false)
     }
   }
 
@@ -498,6 +518,17 @@ export default function BookingDetailPage() {
           >
             <Share2 className="w-3.5 h-3.5" />
             Share with Customer
+          </button>
+
+          {/* Clone Booking as New Draft */}
+          <button
+            onClick={handleClone}
+            disabled={cloning}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-900 text-[12px] font-bold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+            title="Clone this booking as a new draft with a new AWB"
+          >
+            <Copy className="w-3.5 h-3.5 text-indigo-700" />
+            {cloning ? 'Cloning...' : 'Clone'}
           </button>
 
           {/* Push to API button for draft */}
