@@ -101,8 +101,8 @@ $where_cust .= " AND (a.AWBDATE >= '2026-09-01' OR a.AWBDATE = '0000-00-00' OR a
 $_st = "(SELECT ph.activity FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO ORDER BY ph.date DESC, ph.time DESC LIMIT 1)";
 $ts = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust"));
 
-// Delivered: ANY historical activity contains 'deliver' (excluding 'out for'/'undeliver'), OR shipments.status = 'delivered'
-$_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND LOWER(ph.activity) LIKE '%deliver%' AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%')";
+// Delivered: ANY historical activity contains delivery keywords, OR shipments.status = 'delivered'
+$_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%deliver%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%pod uploaded%' OR LOWER(ph.activity) LIKE '%pod%') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%')";
 if ($has_shipments_tbl) {
   $_del_clause .= " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND LOWER(sh.status) = 'delivered')";
 }
@@ -2751,17 +2751,25 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     });
   }
 
-  function cpGetStatusDot(st) {
+  function cpGetStatusDot(st, isDelivered) {
     if (!st) return { dot: 'db', label: 'Shipment Booked' };
     var s = st.toLowerCase().trim();
-    if (s.indexOf('deliver') >= 0 && s.indexOf('out for') === -1) return { dot: 'dd', label: 'Delivered' };
-    if (s.indexOf('out for') >= 0 || s.indexOf('ofd') >= 0) return { dot: 'dt', label: 'Out for Delivery' };
-    if (s.indexOf('transit') >= 0 || s.indexOf('depart') >= 0 || s.indexOf('dispatch') >= 0 || s.indexOf('manifest') >= 0 || s.indexOf('hub') >= 0 || s.indexOf('scan') >= 0 || s.indexOf('arrived') >= 0 || s.indexOf('forward') >= 0 || s.indexOf('uplift') >= 0 || s.indexOf('flight') >= 0) return { dot: 'dt', label: 'In Transit' };
-    if (s.indexOf('custom') >= 0 || s.indexOf('clearance') >= 0) return { dot: 'dbl', label: 'Customs Clearance' };
-    if (s.indexOf('pick') >= 0 || s.indexOf('collect') >= 0) return { dot: 'dbl', label: 'Picked Up' };
-    if (s.indexOf('cancel') >= 0 || s.indexOf('reject') >= 0 || s.indexOf('fail') >= 0) return { dot: 'dr', label: 'Cancelled' };
-    if (s.indexOf('info') >= 0 || s.indexOf('received') >= 0 || s.indexOf('book') >= 0 || s.indexOf('order') >= 0 || s.indexOf('created') >= 0) return { dot: 'db', label: 'Shipment Booked' };
-    return { dot: 'dt', label: st.length > 25 ? st.substring(0, 25) + '…' : st };
+    var dot = 'dt'; // default: transit/orange
+    // Force delivered if backend confirmed
+    if (isDelivered) { dot = 'dd'; }
+    // Delivered (green)
+    else if ((s.indexOf('deliver') >= 0 || s.indexOf('dlvd') >= 0 || s.indexOf('pod') >= 0 || s.indexOf('proof') >= 0) && s.indexOf('out for') === -1 && s.indexOf('undeliver') === -1 && s.indexOf('not deliver') === -1) dot = 'dd';
+    // Out for delivery (orange/transit)
+    else if (s.indexOf('out for') >= 0 || s.indexOf('ofd') >= 0) dot = 'dt';
+    // Cancelled / Failed (red)
+    else if (s.indexOf('cancel') >= 0 || s.indexOf('reject') >= 0 || s.indexOf('fail') >= 0 || s.indexOf('rto') >= 0 || s.indexOf('return') >= 0) dot = 'dr';
+    // Booked / Created (blue)
+    else if (s.indexOf('book') >= 0 || s.indexOf('order') >= 0 || s.indexOf('created') >= 0 || s.indexOf('information received') >= 0 || s.indexOf('data received') >= 0) dot = 'db';
+    // Customs / Picked up (blue-light)
+    else if (s.indexOf('custom') >= 0 || s.indexOf('clearance') >= 0 || s.indexOf('pick') >= 0 || s.indexOf('collect') >= 0) dot = 'dbl';
+    // Show FULL status text as label (not simplified)
+    var label = st.length > 45 ? st.substring(0, 45) + '…' : st;
+    return { dot: dot, label: label };
   }
 
   function cpSkeleton() {
@@ -2785,10 +2793,10 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>AWB</th><th>Forwarding</th><th>Booking Date</th><th>Consignee</th><th>Destination</th><th>Weight</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
       if (!r.rows.length) h += '<tr><td colspan="8" style="text-align:center;padding:50px;color:var(--cptext3)"><i class="fa-solid fa-inbox" style="font-size:28px;display:block;margin-bottom:10px;opacity:.2"></i>No shipments found</td></tr>';
       r.rows.forEach(function (rw) {
-        var stDot = cpGetStatusDot(rw.status);
+        var stDot = cpGetStatusDot(rw.status, rw.is_delivered);
         var fwdCarrierBadge = rw.forwarding_carrier ? '<span style="display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--cpblue);background:rgba(59,130,246,0.1);padding:1px 6px;border-radius:4px;margin-bottom:2px;">' + rw.forwarding_carrier + '</span>' : '';
         var fwdHtml = (rw.forwarding_number ? '<div style="font-size:12px;font-weight:700;color:#1e40af;"><i class="fa-solid fa-plane-departure" style="font-size:9px;margin-right:3px;"></i>' + rw.forwarding_number + '</div>' : '<span style="color:var(--cptext3);font-size:11px;">—</span>');
-        h += '<tr onclick="cpShowDetail(\'' + rw.awb + '\')">';
+        h += '<tr onclick="cpShowDetail(\'' + rw.awb + '\')" data-awb="' + rw.awb + '">';
         h += '<td class="awbc">' + rw.awb + '</td>';
         h += '<td>' + (fwdCarrierBadge ? fwdCarrierBadge + '<br>' : '') + fwdHtml + '</td>';
         h += '<td style="font-weight:600;color:var(--cptext2)">' + (rw.booking_date || '—') + '</td>';
@@ -2796,8 +2804,8 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + cpGetFullCountryName(rw.destination) + '</td>';
         h += '<td style="font-weight:600">' + (rw.weight || '—') + ' kg</td>';
         h += '<td style="font-weight:700;color:var(--cptext)">' + (rw.amount ? '₹' + Number(rw.amount).toLocaleString('en-IN') : '—') + '</td>';
-        var lastTrackHtml = rw.last_update ? '<div style="font-size:11px;color:var(--cptext3);margin-top:4px;display:flex;align-items:center;gap:4px;line-height:1.2;" title="' + rw.last_update.replace(/"/g, '&quot;') + '"><i class="fa-solid fa-clock-rotate-left" style="font-size:9px;color:var(--cptext3);flex-shrink:0;"></i><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;">' + rw.last_update + '</span></div>' : '';
-        h += '<td><div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span>' + stDot.label + '</div>' + lastTrackHtml + '</td></tr>';
+        var lastTrackHtml = rw.last_update ? '<div style="font-size:11px;color:var(--cptext3);margin-top:4px;display:flex;align-items:center;gap:4px;line-height:1.2;" title="' + rw.last_update.replace(/"/g, '&quot;') + '"><i class="fa-solid fa-location-dot" style="font-size:9px;color:var(--cptext3);flex-shrink:0;"></i><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;">' + rw.last_update + '</span></div>' : '';
+        h += '<td class="cp-status-cell"><div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span>' + stDot.label + '</div>' + lastTrackHtml + '</td></tr>';
       });
       h += '</tbody></table></div>';
       h += '<div class="cp-pg"><div class="cp-pi">Showing <strong>' + r.rows.length + '</strong> of <strong>' + r.total + '</strong> · Page ' + r.page + '/' + r.pages + '</div><div class="cp-pbs">';
@@ -2806,7 +2814,45 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       h += '<button class="cp-pb" onclick="cpLoadShipments(' + (r.page + 1) + ')" ' + (r.page >= r.pages ? 'disabled' : '') + '><i class="fa-solid fa-chevron-right" style="font-size:10px"></i></button>';
       h += '</div></div></div>';
       document.getElementById('cp-shipments-container').innerHTML = h;
+      // Progressively update statuses with live real-time tracking
+      cpUpdateLiveStatuses();
     });
+  }
+
+  // Progressive real-time status updates for visible shipments
+  function cpUpdateLiveStatuses() {
+    var rows = document.querySelectorAll('#cp-shipments-container table tbody tr[data-awb]');
+    if (!rows.length) return;
+    var queue = Array.from(rows);
+    var active = 0;
+    var maxConcurrent = 3;
+
+    function processNext() {
+      while (active < maxConcurrent && queue.length > 0) {
+        var row = queue.shift();
+        var awb = row.getAttribute('data-awb');
+        if (!awb) continue;
+        active++;
+        (function(r, a) {
+          cpAjax('pe_cp_track_status', { awb: a }, function(d) {
+            active--;
+            if (d.success && d.data && d.data.status) {
+              var statusCell = r.querySelector('.cp-status-cell');
+              if (statusCell) {
+                var stDot = cpGetStatusDot(d.data.status, d.data.is_delivered);
+                var html = '<div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span>' + stDot.label + '</div>';
+                if (d.data.last_update) {
+                  html += '<div style="font-size:11px;color:var(--cptext3);margin-top:4px;display:flex;align-items:center;gap:4px;line-height:1.2;" title="' + d.data.last_update.replace(/"/g, '&quot;') + '"><i class="fa-solid fa-location-dot" style="font-size:9px;flex-shrink:0;"></i><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;">' + d.data.last_update + '</span></div>';
+                }
+                statusCell.innerHTML = html;
+              }
+            }
+            processNext();
+          });
+        })(row, awb);
+      }
+    }
+    processNext();
   }
 
   function cpShowDetail(awb) {

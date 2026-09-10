@@ -505,15 +505,15 @@ function pe_cp_ajax_shipments()
         $fwd = trim(strval($shp->forwarding_no ?? ($shp->vendor_awb_number_2 ?? ($r->VENDORAWB2 ?? ($breq->forwarding_no ?? '')))));
         $fwdCarrier = trim(strval($shp->secondary_carrier ?? ''));
 
-        // 1. Check if delivered in node shipment, latest activity, or ANY historical activity
+        // 1. Check if delivered - expanded patterns (DLVD, POD, Proof of Delivery, etc.)
         $is_delivered = false;
-        if (!empty($shp->status) && (strtolower(trim($shp->status)) === 'delivered' || preg_match('/^delivered$/i', trim($shp->status)))) {
+        if (!empty($shp->status) && preg_match('/^delivered$/i', trim($shp->status))) {
             $is_delivered = true;
-        } elseif (!empty($ph) && preg_match('/deliver/i', $ph) && !preg_match('/out for|undeliver/i', $ph)) {
+        } elseif (!empty($ph) && preg_match('/deliver|dlvd|pod|proof.of.delivery/i', $ph) && !preg_match('/out for|undeliver|not.deliver/i', $ph)) {
             $is_delivered = true;
         } else {
             $has_del_history = $wpdb->get_var($wpdb->prepare(
-                "SELECT activity FROM parcel_history WHERE AWBNO = %d AND LOWER(activity) LIKE '%deliver%' AND LOWER(activity) NOT LIKE '%out for%' AND LOWER(activity) NOT LIKE '%undeliver%' LIMIT 1",
+                "SELECT activity FROM parcel_history WHERE AWBNO = %d AND (LOWER(activity) LIKE '%deliver%' OR LOWER(activity) LIKE '%dlvd%' OR LOWER(activity) LIKE '%proof of delivery%' OR LOWER(activity) LIKE '%pod uploaded%' OR LOWER(activity) LIKE '%pod%') AND LOWER(activity) NOT LIKE '%out for%' AND LOWER(activity) NOT LIKE '%undeliver%' AND LOWER(activity) NOT LIKE '%not deliver%' LIMIT 1",
                 intval($r->AWBNO)
             ));
             if (!empty($has_del_history)) {
@@ -521,49 +521,40 @@ function pe_cp_ajax_shipments()
             }
         }
 
-        // Determine accurate and consistent status (Delivered takes absolute priority)
+        // Status = FULL tracking activity text (show real tracking update, not simplified labels)
         if ($is_delivered) {
-            $status = 'Delivered';
-        } elseif ($ph && !preg_match('/information received|data received|order created|shipment booked/i', $ph)) {
-            $status = $ph;
+            // Use actual delivery event text from tracking history
+            if (!empty($ph) && preg_match('/deliver|dlvd|pod|proof/i', $ph) && !preg_match('/out for|undeliver/i', $ph)) {
+                $status = $ph;
+            } else {
+                $del_event = $wpdb->get_var($wpdb->prepare(
+                    "SELECT activity FROM parcel_history WHERE AWBNO = %d AND (LOWER(activity) LIKE '%deliver%' OR LOWER(activity) LIKE '%dlvd%' OR LOWER(activity) LIKE '%proof%' OR LOWER(activity) LIKE '%pod%') AND LOWER(activity) NOT LIKE '%out for%' AND LOWER(activity) NOT LIKE '%undeliver%' ORDER BY date DESC, time DESC LIMIT 1",
+                    intval($r->AWBNO)
+                ));
+                $status = !empty($del_event) ? $del_event : 'Delivered';
+            }
+        } elseif (!empty($ph)) {
+            $status = $ph; // Full tracking activity text
         } elseif (!empty($shp->status) && !in_array(strtolower($shp->status), ['booked', 'created', 'pending'])) {
-            $stLower = strtolower(trim($shp->status));
-            if ($stLower === 'in_transit')
-                $status = 'In Transit';
-            elseif ($stLower === 'out_for_delivery')
-                $status = 'Out for Delivery';
-            elseif ($stLower === 'picked_up')
-                $status = 'Picked Up';
-            elseif ($stLower === 'manifested' || $stLower === 'dispatched')
-                $status = 'Manifested & Dispatched';
-            elseif ($stLower === 'cancelled')
-                $status = 'Cancelled';
-            else
-                $status = ucwords(str_replace('_', ' ', $stLower));
+            $status = ucwords(str_replace('_', ' ', strtolower(trim($shp->status))));
         } elseif (!empty($fwd) || !empty($vAwb)) {
             $status = 'In Transit';
-        } elseif ($ph) {
-            $status = $ph;
         } else {
             $status = 'Shipment Booked';
         }
 
-        // Format last update from tracking
+        // Format last update: location + date/time (activity text is shown as the status badge above)
         $last_update = '';
-        if ($latest_ph && !empty($latest_ph->activity)) {
-            $actText = trim($latest_ph->activity);
+        if ($latest_ph) {
             $dtText = !empty($latest_ph->date) ? date('d M Y', strtotime($latest_ph->date)) : '';
             $tmText = !empty($latest_ph->time) && $latest_ph->time !== '00:00:00' ? date('h:i A', strtotime($latest_ph->time)) : '';
             $locText = trim($latest_ph->location ?? '');
-
-            $parts = [$actText];
+            $parts = [];
             if (!empty($locText)) $parts[] = $locText;
             if (!empty($dtText)) $parts[] = $dtText . ($tmText ? ' ' . $tmText : '');
             $last_update = implode(' · ', $parts);
-        } elseif ($is_delivered) {
-            $last_update = 'Delivered to Recipient';
         } elseif (!empty($r->BOOKINGDATE)) {
-            $last_update = 'Shipment Booked · ' . date('d M Y', strtotime($r->BOOKINGDATE));
+            $last_update = date('d M Y', strtotime($r->BOOKINGDATE));
         }
 
         $amt = floatval($r->TOTAL ?: ($r->NETAMOUNT ?: $r->CHARGES));
@@ -588,6 +579,7 @@ function pe_cp_ajax_shipments()
             'balance' => max(0, $amt - $rec),
             'vendor' => $vendor_name,
             'status' => $status,
+            'is_delivered' => $is_delivered,
             'last_update' => $last_update,
             'shipper' => $r->SNAME ?? '',
             'vendor_awb1' => $vAwb,
@@ -599,7 +591,7 @@ function pe_cp_ajax_shipments()
     // Get accurate counts
     $count_all = $total;
     $_st_sub = "(SELECT ph.activity FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO ORDER BY ph.date DESC, ph.time DESC LIMIT 1)";
-    $_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND LOWER(ph.activity) LIKE '%deliver%' AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%')" .
+    $_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%deliver%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%pod uploaded%' OR LOWER(ph.activity) LIKE '%pod%') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%')" .
         ($has_shipments_tbl ? " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND LOWER(sh.status) = 'delivered')" : "") . ")";
     $count_delivered = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND $_del_clause"));
     $count_transit = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND NOT $_del_clause AND (LOWER(COALESCE($_st_sub, '')) LIKE '%transit%' OR LOWER(COALESCE($_st_sub, '')) LIKE '%departed%' OR (a.VENDORAWB1 != '' AND a.VENDORAWB1 IS NOT NULL))"));
@@ -623,6 +615,107 @@ function pe_cp_ajax_shipments()
 }
 add_action('wp_ajax_pe_cp_shipments', 'pe_cp_ajax_shipments');
 add_action('wp_ajax_nopriv_pe_cp_shipments', 'pe_cp_ajax_shipments');
+
+// ══════════════════════════════════════
+//  AJAX: LIVE TRACK STATUS (lightweight, single AWB)
+// ══════════════════════════════════════
+function pe_cp_ajax_track_status()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+
+    $awb = intval($_POST['awb'] ?? 0);
+    if (!$awb) {
+        wp_send_json_error(['message' => 'AWB required']);
+    }
+
+    $status = '';
+    $last_update = '';
+    $is_delivered = false;
+
+    // Fetch real-time live tracking from Admin Portal API
+    $live_api_url = 'https://purple-raccoon-753399.hostingersite.com/api/tracking/live?awb=' . urlencode(strval($awb));
+    $api_resp = wp_remote_get($live_api_url, ['timeout' => 8, 'sslverify' => false]);
+
+    if (!is_wp_error($api_resp)) {
+        $body = json_decode(wp_remote_retrieve_body($api_resp), true);
+        if (!empty($body['success']) && !empty($body['tracking'])) {
+            $trk = $body['tracking'];
+            $live_status = $trk['currentStatus'] ?? '';
+
+            // Check if delivered from live status
+            if (preg_match('/deliver|dlvd|pod|proof/i', $live_status) && !preg_match('/out for|undeliver/i', $live_status)) {
+                $is_delivered = true;
+            }
+
+            // Build from latest event
+            if (!empty($trk['events']) && is_array($trk['events'])) {
+                $ev = $trk['events'][0];
+                $act = $ev['status'] ?? ($ev['activity'] ?? ($ev['event_description'] ?? ''));
+                $loc = $ev['location'] ?? '';
+                $dt = $ev['date'] ?? '';
+                $tm = $ev['time'] ?? '';
+
+                $status = !empty($act) ? $act : $live_status;
+
+                if (preg_match('/deliver|dlvd|pod|proof/i', $status) && !preg_match('/out for|undeliver/i', $status)) {
+                    $is_delivered = true;
+                }
+
+                $parts = [];
+                if (!empty($loc)) $parts[] = $loc;
+                if (!empty($dt)) $parts[] = $dt . (!empty($tm) ? ' ' . $tm : '');
+                $last_update = implode(' · ', $parts);
+            } elseif (!empty($live_status)) {
+                $status = $live_status;
+            }
+        }
+    }
+
+    // Fallback to parcel_history if live API failed or returned nothing
+    if (empty($status)) {
+        $latest_ph = $wpdb->get_row($wpdb->prepare(
+            "SELECT activity, date, time, location FROM parcel_history WHERE AWBNO = %d ORDER BY date DESC, time DESC LIMIT 1",
+            $awb
+        ));
+        if ($latest_ph && !empty($latest_ph->activity)) {
+            $status = trim($latest_ph->activity);
+            $parts = [];
+            if (!empty($latest_ph->location)) $parts[] = trim($latest_ph->location);
+            if (!empty($latest_ph->date)) {
+                $dtStr = date('d M Y', strtotime($latest_ph->date));
+                $tmStr = (!empty($latest_ph->time) && $latest_ph->time !== '00:00:00') ? ' ' . date('h:i A', strtotime($latest_ph->time)) : '';
+                $parts[] = $dtStr . $tmStr;
+            }
+            $last_update = implode(' · ', $parts);
+
+            if (preg_match('/deliver|dlvd|pod|proof/i', $status) && !preg_match('/out for|undeliver/i', $status)) {
+                $is_delivered = true;
+            }
+        }
+
+        // Check full history for delivery events if not detected from latest
+        if (!$is_delivered) {
+            $del_hist = $wpdb->get_var($wpdb->prepare(
+                "SELECT activity FROM parcel_history WHERE AWBNO = %d AND (LOWER(activity) LIKE '%deliver%' OR LOWER(activity) LIKE '%dlvd%' OR LOWER(activity) LIKE '%proof%' OR LOWER(activity) LIKE '%pod%') AND LOWER(activity) NOT LIKE '%out for%' AND LOWER(activity) NOT LIKE '%undeliver%' LIMIT 1",
+                $awb
+            ));
+            if (!empty($del_hist)) {
+                $is_delivered = true;
+                if (empty($status)) $status = $del_hist;
+            }
+        }
+    }
+
+    wp_send_json_success([
+        'awb' => $awb,
+        'status' => $status ?: 'Shipment Booked',
+        'last_update' => $last_update,
+        'is_delivered' => $is_delivered,
+    ]);
+}
+add_action('wp_ajax_pe_cp_track_status', 'pe_cp_ajax_track_status');
+add_action('wp_ajax_nopriv_pe_cp_track_status', 'pe_cp_ajax_track_status');
 
 // ══════════════════════════════════════
 //  AJAX: SHIPMENT DETAIL + TRACKING
