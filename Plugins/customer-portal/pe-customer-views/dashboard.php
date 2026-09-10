@@ -2587,28 +2587,28 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       }
 
       // Invoice Items Table
-      if (r.invoice_items && Array.isArray(r.invoice_items) && r.invoice_items.length > 0) {
-        h += '<div class="cp-ds"><h4><i class="fa-solid fa-file-invoice"></i> Invoice Items (' + r.invoice_items.length + ')</h4>';
+      var reqInvItems = r.invoice_items;
+      if (typeof reqInvItems === 'string') {
+        try { reqInvItems = JSON.parse(reqInvItems); } catch(e) { reqInvItems = []; }
+      }
+      if (reqInvItems && Array.isArray(reqInvItems) && reqInvItems.length > 0) {
+        h += '<div class="cp-ds"><h4><i class="fa-solid fa-file-invoice"></i> Invoice Items (' + reqInvItems.length + ')</h4>';
         h += '<div style="overflow-x:auto; border:1px solid var(--cpbdr); border-radius:10px;">';
         h += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
         h += '<thead><tr style="background:var(--cpbg2); border-bottom:1px solid var(--cpbdr);">';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">#</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Box</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Description</th>';
-        h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">HS Code</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Qty</th>';
-        h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Rate</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Amount</th>';
         h += '</tr></thead><tbody>';
-        r.invoice_items.forEach(function (item, i) {
+        reqInvItems.forEach(function (item, i) {
           h += '<tr style="border-bottom:1px solid rgba(0,0,0,.05);">';
           h += '<td style="padding:8px 10px; color:var(--cptext3);">' + (item.sr_no || (i + 1)) + '</td>';
           h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.box_no || '—') + '</td>';
-          h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (item.description || '—') + '</td>';
-          h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.hs_code || '—') + '</td>';
-          h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.quantity || '—') + ' ' + (item.unit_type || '') + '</td>';
-          h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.unit_rates || item.rate || '—') + '</td>';
-          h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">₹' + (item.amount || item.cost || '—') + '</td>';
+          h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (item.description || item.item_name || item.name || '—') + '</td>';
+          h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.quantity || item.qty || '—') + ' ' + (item.unit_type || item.unit || '') + '</td>';
+          h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">₹' + (item.amount || item.cost || item.total || '—') + '</td>';
           h += '</tr>';
         });
         h += '</tbody></table></div></div>';
@@ -2894,27 +2894,39 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       h += '</div></div>';
 
       // Invoice / Items Details Table
-      if (s.invoice_items && Array.isArray(s.invoice_items) && s.invoice_items.length > 0) {
-        h += '<div class="cp-ds"><h4><i class="fa-solid fa-boxes-packing"></i> Items Details (' + s.invoice_items.length + ')</h4>';
+      var shpInvItems = s.invoice_items;
+      if (typeof shpInvItems === 'string') {
+        try { shpInvItems = JSON.parse(shpInvItems); } catch(e) { shpInvItems = []; }
+      }
+      // Fallback: extract nested items from parcels if invoice_items is empty
+      if ((!shpInvItems || !shpInvItems.length) && s.parcels && Array.isArray(s.parcels)) {
+        shpInvItems = [];
+        s.parcels.forEach(function(prc, pIdx) {
+          if (prc.items && Array.isArray(prc.items)) {
+            prc.items.forEach(function(pi) {
+              pi.box_no = pi.box_no || prc.box_no || (pIdx + 1);
+              shpInvItems.push(pi);
+            });
+          }
+        });
+      }
+      if (shpInvItems && Array.isArray(shpInvItems) && shpInvItems.length > 0) {
+        h += '<div class="cp-ds"><h4><i class="fa-solid fa-boxes-packing"></i> Items Details (' + shpInvItems.length + ')</h4>';
         h += '<div style="overflow-x:auto; border:1px solid var(--cpbdr); border-radius:10px;">';
         h += '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
         h += '<thead><tr style="background:var(--cpbg2); border-bottom:1px solid var(--cpbdr);">';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">#</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Box</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Description</th>';
-        h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">HS Code</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Qty</th>';
-        h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Rate</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Amount</th>';
         h += '</tr></thead><tbody>';
-        s.invoice_items.forEach(function (item, i) {
+        shpInvItems.forEach(function (item, i) {
           h += '<tr style="border-bottom:1px solid rgba(0,0,0,.05);">';
           h += '<td style="padding:8px 10px; color:var(--cptext3);">' + (item.sr_no || (i + 1)) + '</td>';
           h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.box_no || '—') + '</td>';
-          h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1); max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (item.description || item.item_name || item.name || '—') + '</td>';
-          h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.hs_code || item.hsn_code || '—') + '</td>';
+          h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (item.description || item.item_name || item.name || '—') + '</td>';
           h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.quantity || item.qty || '—') + ' ' + (item.unit_type || item.unit || '') + '</td>';
-          h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.unit_rates || item.rate || item.unit_rate || item.price || '—') + '</td>';
           h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">₹' + (item.amount || item.total || item.cost || '—') + '</td>';
           h += '</tr>';
         });

@@ -796,7 +796,9 @@ function attachCompanyOriginEvents(result, matchedShipment) {
                 ourAwb: matchedShipment.tracking_number,
                 orderId: matchedShipment.order_id,
                 invoiceNo: matchedShipment.invoice_no,
-                vendorAwbNumber: result.shipmentInfo?.vendorAwbNo || matchedShipment.vendor_awb_number
+                vendorAwbNumber: result.shipmentInfo?.vendorAwbNo || matchedShipment.vendor_awb_number,
+                invoice_items: matchedShipment.invoice_items,
+                parcels: matchedShipment.parcels
               }
             }
             attachCompanyOriginEvents(result, matchedShipment)

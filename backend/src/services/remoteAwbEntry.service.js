@@ -1236,12 +1236,100 @@ async function syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode
       brParams.push(shipment.id)
     }
 
+    let updatedRows = 0
     if (brConds.length > 0) {
-      await pool.query(
+      const [updateRes] = await pool.query(
         `UPDATE booking_requests SET ${brSetSql} WHERE ${brConds.join(' OR ')}`,
         brParams
       )
-      console.log(`[Remote DB] Synced customer_id=${targetCustId} (${targetCustName}) & invoice items to booking_requests`)
+      updatedRows = updateRes?.affectedRows || 0
+      console.log(`[Remote DB] Synced customer_id=${targetCustId} (${targetCustName}) & invoice items to booking_requests (affected: ${updatedRows})`)
+    }
+
+    // If no existing booking_requests was updated, and we have an AWBNO:
+    // Insert into booking_requests so the customer portal immediately displays item details & parcels
+    if (updatedRows === 0 && awbNo) {
+      try {
+        const reqAwb = String(shipment.request_awb || awbNo)
+        const sender = shipment.senders || shipment.sender || {}
+        const receiver = shipment.receivers || shipment.receiver || {}
+        const senderPhone = shipment.s_phone || sender.phone || shipment.sender_phone || ''
+        const receiverPhone = shipment.r_phone || receiver.phone || shipment.receiver_phone || ''
+        const sAddress = shipment.s_address || sender.address || shipment.sender_address || ''
+        const rAddress = shipment.r_address || receiver.address || shipment.receiver_address || ''
+        const sCity = shipment.s_city || sender.city || shipment.sender_city || 'SURAT'
+        const rCity = shipment.r_city || receiver.city || shipment.receiver_city || ''
+        const sPincode = shipment.s_pincode || sender.pincode || shipment.sender_pincode || ''
+        const rPincode = shipment.r_pincode || receiver.pincode || shipment.receiver_pincode || ''
+        const sCountry = shipment.s_country || sender.country || shipment.sender_country || 'INDIA'
+        const rCountry = shipment.r_country || receiver.country || shipment.receiver_country || ''
+
+        await pool.query(
+          `INSERT INTO booking_requests (
+            customer_id, customer_name, request_awb, tracking_number, shipment_id,
+            sender_name, sender_company, sender_email, sender_phone,
+            sender_address, sender_address_2, sender_city, sender_pincode, sender_state, sender_country,
+            receiver_name, receiver_company, receiver_email, receiver_phone,
+            receiver_address, receiver_address_2, receiver_city, receiver_pincode, receiver_state, receiver_country,
+            package_type, weight, \`length\`, length_cm, breadth, height, no_of_pieces,
+            content_description, declared_value, shipping_charge, total_amount,
+            payment_mode, invoice_items, parcels, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            customer_id = VALUES(customer_id),
+            customer_name = VALUES(customer_name),
+            tracking_number = VALUES(tracking_number),
+            invoice_items = COALESCE(VALUES(invoice_items), invoice_items),
+            parcels = COALESCE(VALUES(parcels), parcels),
+            shipping_charge = VALUES(shipping_charge),
+            total_amount = VALUES(total_amount)`,
+          [
+            targetCustId,
+            targetCustName,
+            reqAwb,
+            String(awbNo),
+            shipment.id || null,
+            shipment.s_name || sender.name || shipment.sender_name || '',
+            shipment.sender_company || sender.company || '',
+            shipment.sender_email || sender.email || '',
+            senderPhone,
+            sAddress,
+            shipment.sender_address_2 || sender.address_2 || '',
+            sCity,
+            sPincode,
+            shipment.s_state || sender.state || shipment.sender_state || '',
+            sCountry,
+            shipment.r_name || receiver.name || shipment.receiver_name || '',
+            shipment.receiver_company || receiver.company || '',
+            shipment.receiver_email || receiver.email || '',
+            receiverPhone,
+            rAddress,
+            shipment.receiver_address_2 || receiver.address_2 || '',
+            rCity,
+            rPincode,
+            shipment.r_state || receiver.state || shipment.receiver_state || '',
+            rCountry,
+            shipment.package_type || 'parcel',
+            parseFloat(shipment.weight) || 0,
+            parseFloat(shipment.length) || 0,
+            parseFloat(shipment.length) || 0,
+            parseFloat(shipment.breadth) || 0,
+            parseFloat(shipment.height) || 0,
+            parseInt(shipment.no_of_pieces) || 1,
+            shipment.content_description || '',
+            parseFloat(shipment.declared_value) || 0,
+            parseFloat(shipment.shipping_charge) || 0,
+            parseFloat(shipment.total_amount) || 0,
+            shipment.payment_mode || 'prepaid',
+            invItemsVal,
+            parcelsVal,
+            'confirmed'
+          ]
+        )
+        console.log(`[Remote DB] Inserted booking_requests record for AWB ${awbNo} with invoice_items & parcels`)
+      } catch (insertBrErr) {
+        console.warn('[Remote DB Sync Related Tables Insert Warning]:', insertBrErr.message)
+      }
     }
 
     // 2. Update shipments in remote DB if table exists
