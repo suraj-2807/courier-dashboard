@@ -474,12 +474,6 @@ function pe_cp_ajax_shipments()
          LIMIT " . intval($per) . " OFFSET " . intval($offset)
     );
 
-    // Check if shipments table exists in WP database
-    static $has_shipments_tbl = null;
-    if ($has_shipments_tbl === null) {
-        $has_shipments_tbl = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
-    }
-
     $data = [];
     foreach ($rows as $r) {
         $status = '';
