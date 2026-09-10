@@ -1308,6 +1308,13 @@ export default function NewBookingPage() {
 
     setSavingDraft(true)
     try {
+      const validInvoiceItems = (invoiceItems || [])
+        .filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0)
+        .map(item => ({
+          ...item,
+          unit_weight: (item.unit_weight !== undefined && item.unit_weight !== null && String(item.unit_weight).trim() !== '') ? String(item.unit_weight).trim() : '00'
+        }))
+
       await bookingsApi.updateBilling(editId, {
         final_chargeable_weight: finalChg,
         rate_per_kg: rate,
@@ -1316,9 +1323,11 @@ export default function NewBookingPage() {
         total_amount: total,
         customer_id: form.customer_type === 'registered' ? (form.customer_id || null) : null,
         customer_name: form.customer_type === 'registered' ? (form.customer_name || 'Registered Customer') : 'Walk-in Customer',
-        customer_type: form.customer_type || 'walkin'
+        customer_type: form.customer_type || 'walkin',
+        invoice_items: validInvoiceItems,
+        parcels: form.parcels || parcels
       })
-      toast.success('Shipment customer & billing updated & synced to remote SQL & WP!')
+      toast.success('Shipment customer, billing & invoice items updated & synced!')
       navigate(editId ? `/bookings/${editId}` : '/bookings')
     } catch (err) {
       toast.error(err?.response?.data?.message || err.message || 'Failed to update details')

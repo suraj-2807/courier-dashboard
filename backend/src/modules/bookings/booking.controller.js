@@ -1035,7 +1035,9 @@ export const saveBooking = async (req, res) => {
             customer_name: newCustomerName,
             customer_type: newCustomerType,
             shipping_charge: shippingCharge,
-            total_amount: totalAmount
+            total_amount: totalAmount,
+            invoice_items: updatedShipment.invoice_items,
+            parcels: updatedShipment.parcels
           }).catch(wpErr => console.warn('[WP Sync Customer Notice]:', wpErr.message))
         } catch {}
 
@@ -1305,7 +1307,9 @@ export const saveBooking = async (req, res) => {
         customer_name: updatedShipment.customer_name,
         customer_type: updatedShipment.customer_type,
         shipping_charge: updatedShipment.shipping_charge,
-        total_amount: updatedShipment.total_amount
+        total_amount: updatedShipment.total_amount,
+        invoice_items: updatedShipment.invoice_items,
+        parcels: updatedShipment.parcels
       }).catch(wpErr => console.warn('[WP Sync Notice]:', wpErr.message))
     } catch {}
 
@@ -3207,6 +3211,16 @@ export const updateBookingBilling = async (req, res) => {
       ? parseFloat(body.total_amount) || 0
       : (parseFloat(current.total_amount) || (shippingCharge + extraCharge))
 
+    // Extract invoice_items and parcels if provided
+    let invItemsJson = null
+    if (body.invoice_items !== undefined) {
+      invItemsJson = Array.isArray(body.invoice_items) ? JSON.stringify(body.invoice_items) : (typeof body.invoice_items === 'string' ? body.invoice_items : null)
+    }
+    let parcelsJson = null
+    if (body.parcels !== undefined) {
+      parcelsJson = Array.isArray(body.parcels) ? JSON.stringify(body.parcels) : (typeof body.parcels === 'string' ? body.parcels : null)
+    }
+
     // Update the local shipments table
     await execute(
       `UPDATE shipments SET
@@ -3218,7 +3232,9 @@ export const updateBookingBilling = async (req, res) => {
         rate_per_kg = ?,
         shipping_charge = ?,
         extra_charge = ?,
-        total_amount = ?
+        total_amount = ?,
+        invoice_items = COALESCE(?, invoice_items),
+        parcels = COALESCE(?, parcels)
        WHERE id = ?`,
       [
         newCustomerId,
@@ -3230,15 +3246,22 @@ export const updateBookingBilling = async (req, res) => {
         shippingCharge,
         extraCharge,
         totalAmount,
+        invItemsJson,
+        parcelsJson,
         id
       ]
     )
 
-    // Sync customer update to local booking_requests if linked
+    // Sync customer and items update to local booking_requests if linked
     try {
       await execute(
-        `UPDATE booking_requests SET customer_id = ?, customer_name = ? WHERE shipment_id = ? OR tracking_number = ?`,
-        [newCustomerId, newCustomerName, id, current.tracking_number]
+        `UPDATE booking_requests SET 
+          customer_id = ?, 
+          customer_name = ?,
+          invoice_items = COALESCE(?, invoice_items),
+          parcels = COALESCE(?, parcels)
+         WHERE shipment_id = ? OR tracking_number = ?`,
+        [newCustomerId, newCustomerName, invItemsJson, parcelsJson, id, current.tracking_number]
       )
     } catch (brErr) {
       console.warn('[updateBookingBilling local br sync notice]:', brErr.message)
@@ -3285,7 +3308,9 @@ export const updateBookingBilling = async (req, res) => {
         customer_name: newCustomerName,
         customer_type: newCustomerType,
         shipping_charge: shippingCharge,
-        total_amount: totalAmount
+        total_amount: totalAmount,
+        invoice_items: invItemsJson || updatedShipment.invoice_items,
+        parcels: parcelsJson || updatedShipment.parcels
       }).catch(wpErr => console.warn('[WP Sync Customer Notice]:', wpErr.message))
     } catch {}
 

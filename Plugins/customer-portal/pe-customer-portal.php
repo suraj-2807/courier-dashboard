@@ -509,11 +509,11 @@ function pe_cp_ajax_shipments()
         $is_delivered = false;
         if (!empty($shp->status) && preg_match('/^delivered$/i', trim($shp->status))) {
             $is_delivered = true;
-        } elseif (!empty($ph) && preg_match('/deliver|dlvd|pod|proof.of.delivery/i', $ph) && !preg_match('/out for|undeliver|not.deliver/i', $ph)) {
+        } elseif (!empty($ph) && preg_match('/deliver|dlvd|pod|proof/i', $ph) && !preg_match('/out for|undeliver|not.deliver/i', $ph)) {
             $is_delivered = true;
         } else {
             $has_del_history = $wpdb->get_var($wpdb->prepare(
-                "SELECT activity FROM parcel_history WHERE AWBNO = %d AND (LOWER(activity) LIKE '%deliver%' OR LOWER(activity) LIKE '%dlvd%' OR LOWER(activity) LIKE '%proof of delivery%' OR LOWER(activity) LIKE '%pod uploaded%' OR LOWER(activity) LIKE '%pod%') AND LOWER(activity) NOT LIKE '%out for%' AND LOWER(activity) NOT LIKE '%undeliver%' AND LOWER(activity) NOT LIKE '%not deliver%' LIMIT 1",
+                "SELECT activity FROM parcel_history WHERE AWBNO = %d AND (LOWER(activity) LIKE '%deliver%' OR LOWER(activity) LIKE '%dlvd%' OR LOWER(activity) LIKE '%proof of delivery%' OR LOWER(activity) LIKE '%pod uploaded%' OR LOWER(activity) LIKE '%pod%' OR LOWER(activity) LIKE '%proof%') AND LOWER(activity) NOT LIKE '%out for%' AND LOWER(activity) NOT LIKE '%undeliver%' AND LOWER(activity) NOT LIKE '%not deliver%' LIMIT 1",
                 intval($r->AWBNO)
             ));
             if (!empty($has_del_history)) {
@@ -591,7 +591,7 @@ function pe_cp_ajax_shipments()
     // Get accurate counts
     $count_all = $total;
     $_st_sub = "(SELECT ph.activity FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO ORDER BY ph.date DESC, ph.time DESC LIMIT 1)";
-    $_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%deliver%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%pod uploaded%' OR LOWER(ph.activity) LIKE '%pod%') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%')" .
+    $_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%deliver%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%pod uploaded%' OR LOWER(ph.activity) LIKE '%pod%' OR LOWER(ph.activity) LIKE '%proof%') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%')" .
         ($has_shipments_tbl ? " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND LOWER(sh.status) = 'delivered')" : "") . ")";
     $count_delivered = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND $_del_clause"));
     $count_transit = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND NOT $_del_clause AND (LOWER(COALESCE($_st_sub, '')) LIKE '%transit%' OR LOWER(COALESCE($_st_sub, '')) LIKE '%departed%' OR (a.VENDORAWB1 != '' AND a.VENDORAWB1 IS NOT NULL))"));
@@ -851,6 +851,16 @@ function pe_cp_ajax_shipment_detail()
             $trk = $body['tracking'];
             $live_status = $trk['currentStatus'] ?? '';
             $live_stage = $trk['currentStage'] ?? '';
+
+            // Fallback invoice items from live tracking internalShipment if database has none
+            if (empty($invoice_items) && !empty($trk['internalShipment']['invoice_items'])) {
+                $rawInv = $trk['internalShipment']['invoice_items'];
+                $parsed = is_string($rawInv) ? json_decode($rawInv, true) : (is_array($rawInv) ? $rawInv : []);
+                if (is_array($parsed) && !empty($parsed)) {
+                    $invoice_items = $parsed;
+                }
+            }
+
             if (!empty($trk['events']) && is_array($trk['events'])) {
                 foreach ($trk['events'] as $ev) {
                     $tracking_events[] = [
@@ -2611,13 +2621,16 @@ function pe_cp_rest_sync_shipment_customer($request)
         ));
     }
 
-    // 2. Update booking_requests
+    // 2. Update booking_requests (including invoice_items and parcels)
     $req_awb = sanitize_text_field($d['request_awb'] ?? $awb);
     $shp_id = intval($d['shipment_id'] ?? 0);
-    $wpdb->query($wpdb->prepare(
-        "UPDATE booking_requests SET customer_id = %s, customer_name = %s WHERE (request_awb != '' AND (request_awb = %s OR request_awb = %s)) OR (tracking_number != '' AND (tracking_number = %s OR tracking_number = %s)) OR (shipment_id > 0 AND shipment_id = %d)",
-        $cust_id,
-        $is_walkin ? 'Walk-in Customer' : $cust_name,
+    $inv_items_raw = $d['invoice_items'] ?? null;
+    $inv_items_str = is_array($inv_items_raw) ? json_encode($inv_items_raw) : (is_string($inv_items_raw) && strlen($inv_items_raw) > 2 ? $inv_items_raw : null);
+    $parcels_raw = $d['parcels'] ?? null;
+    $parcels_str = is_array($parcels_raw) ? json_encode($parcels_raw) : (is_string($parcels_raw) && strlen($parcels_raw) > 2 ? $parcels_raw : null);
+
+    $existing_br = $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM booking_requests WHERE (request_awb != '' AND (request_awb = %s OR request_awb = %s)) OR (tracking_number != '' AND (tracking_number = %s OR tracking_number = %s)) OR (shipment_id > 0 AND shipment_id = %d) LIMIT 1",
         $req_awb,
         strval($awb_no),
         $awb,
@@ -2625,18 +2638,54 @@ function pe_cp_rest_sync_shipment_customer($request)
         $shp_id
     ));
 
+    if ($existing_br) {
+        $br_sql = "UPDATE booking_requests SET customer_id = %s, customer_name = %s";
+        $br_params = [$cust_id, $is_walkin ? 'Walk-in Customer' : $cust_name];
+        if ($inv_items_str) {
+            $br_sql .= ", invoice_items = %s";
+            $br_params[] = $inv_items_str;
+        }
+        if ($parcels_str) {
+            $br_sql .= ", parcels = %s";
+            $br_params[] = $parcels_str;
+        }
+        $br_sql .= " WHERE id = %d";
+        $br_params[] = intval($existing_br);
+        $wpdb->query($wpdb->prepare($br_sql, ...$br_params));
+    } elseif ($awb) {
+        // Insert into booking_requests so customer portal immediately displays item details
+        $wpdb->insert('booking_requests', [
+            'customer_id' => $cust_id,
+            'customer_name' => $is_walkin ? 'Walk-in Customer' : $cust_name,
+            'request_awb' => $req_awb ?: $awb,
+            'tracking_number' => $awb,
+            'shipment_id' => $shp_id ?: null,
+            'invoice_items' => $inv_items_str,
+            'parcels' => $parcels_str,
+            'shipping_charge' => floatval($d['shipping_charge'] ?? 0),
+            'total_amount' => floatval($d['total_amount'] ?? 0),
+            'status' => 'confirmed',
+        ]);
+    }
+
     // 3. Update shipments if exists
     $has_shipments = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
     if ($has_shipments) {
-        $wpdb->query($wpdb->prepare(
-            "UPDATE shipments SET customer_id = %s, customer_name = %s, customer_type = %s WHERE tracking_number = %s OR order_id = %s OR id = %d",
-            $cust_id,
-            $is_walkin ? 'Walk-in Customer' : $cust_name,
-            $cust_type,
-            $awb,
-            $awb,
-            $shp_id
-        ));
+        $shp_sql = "UPDATE shipments SET customer_id = %s, customer_name = %s, customer_type = %s";
+        $shp_params = [$cust_id, $is_walkin ? 'Walk-in Customer' : $cust_name, $cust_type];
+        if ($inv_items_str) {
+            $shp_sql .= ", invoice_items = %s";
+            $shp_params[] = $inv_items_str;
+        }
+        if ($parcels_str) {
+            $shp_sql .= ", parcels = %s";
+            $shp_params[] = $parcels_str;
+        }
+        $shp_sql .= " WHERE tracking_number = %s OR order_id = %s OR id = %d";
+        $shp_params[] = $awb;
+        $shp_params[] = $awb;
+        $shp_params[] = $shp_id;
+        $wpdb->query($wpdb->prepare($shp_sql, ...$shp_params));
     }
 
     return new WP_REST_Response([

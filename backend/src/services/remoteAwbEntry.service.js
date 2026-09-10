@@ -1203,10 +1203,21 @@ async function syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode
   try {
     const targetCustId = isWalkin ? null : (shipment.customer_id ? parseInt(shipment.customer_id) : (custCode !== 'W001' ? parseInt(custCode) : null))
     const targetCustName = isWalkin ? 'Walk-in Customer' : (custName || shipment.customer_name || 'Customer')
+    const invItemsVal = shipment.invoice_items ? (typeof shipment.invoice_items === 'string' ? shipment.invoice_items : JSON.stringify(shipment.invoice_items)) : null
+    const parcelsVal = shipment.parcels ? (typeof shipment.parcels === 'string' ? shipment.parcels : JSON.stringify(shipment.parcels)) : null
 
     // 1. Update booking_requests in remote DB
     const brConds = []
     const brParams = [targetCustId, targetCustName]
+    let brSetSql = 'customer_id = ?, customer_name = ?'
+    if (invItemsVal) {
+      brSetSql += ', invoice_items = ?'
+      brParams.push(invItemsVal)
+    }
+    if (parcelsVal) {
+      brSetSql += ', parcels = ?'
+      brParams.push(parcelsVal)
+    }
 
     if (shipment.from_request || shipment.booking_request_id) {
       brConds.push('id = ?')
@@ -1227,15 +1238,24 @@ async function syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode
 
     if (brConds.length > 0) {
       await pool.query(
-        `UPDATE booking_requests SET customer_id = ?, customer_name = ? WHERE ${brConds.join(' OR ')}`,
+        `UPDATE booking_requests SET ${brSetSql} WHERE ${brConds.join(' OR ')}`,
         brParams
       )
-      console.log(`[Remote DB] Synced customer_id=${targetCustId} (${targetCustName}) to booking_requests`)
+      console.log(`[Remote DB] Synced customer_id=${targetCustId} (${targetCustName}) & invoice items to booking_requests`)
     }
 
     // 2. Update shipments in remote DB if table exists
     const shpConds = []
     const shpParams = [targetCustId, targetCustName, isWalkin ? 'walkin' : 'registered']
+    let shpSetSql = 'customer_id = ?, customer_name = ?, customer_type = ?'
+    if (invItemsVal) {
+      shpSetSql += ', invoice_items = ?'
+      shpParams.push(invItemsVal)
+    }
+    if (parcelsVal) {
+      shpSetSql += ', parcels = ?'
+      shpParams.push(parcelsVal)
+    }
 
     if (awbNo) {
       shpConds.push('tracking_number = ?', 'order_id = ?')
@@ -1248,7 +1268,7 @@ async function syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode
 
     if (shpConds.length > 0) {
       await pool.query(
-        `UPDATE shipments SET customer_id = ?, customer_name = ?, customer_type = ? WHERE ${shpConds.join(' OR ')}`,
+        `UPDATE shipments SET ${shpSetSql} WHERE ${shpConds.join(' OR ')}`,
         shpParams
       )
     }

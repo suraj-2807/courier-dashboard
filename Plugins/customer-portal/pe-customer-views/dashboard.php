@@ -102,7 +102,7 @@ $_st = "(SELECT ph.activity FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO ORDE
 $ts = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust"));
 
 // Delivered: ANY historical activity contains delivery keywords, OR shipments.status = 'delivered'
-$_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%deliver%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%pod uploaded%' OR LOWER(ph.activity) LIKE '%pod%') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%')";
+$_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%deliver%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%pod uploaded%' OR LOWER(ph.activity) LIKE '%pod%' OR LOWER(ph.activity) LIKE '%proof%') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%')";
 if ($has_shipments_tbl) {
   $_del_clause .= " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND LOWER(sh.status) = 'delivered')";
 }
@@ -876,16 +876,22 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
 
   .cp-st {
     display: flex;
-    align-items: center;
-    gap: 6px;
+    align-items: flex-start;
+    gap: 7px;
     font-size: 12px;
-    font-weight: 600
+    font-weight: 600;
+    line-height: 1.35;
+    white-space: normal;
+    word-break: break-word;
+    max-width: 220px;
   }
 
   .cp-dot {
     width: 7px;
     height: 7px;
-    border-radius: 50%
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 5px;
   }
 
   .dd {
@@ -2767,8 +2773,8 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     else if (s.indexOf('book') >= 0 || s.indexOf('order') >= 0 || s.indexOf('created') >= 0 || s.indexOf('information received') >= 0 || s.indexOf('data received') >= 0) dot = 'db';
     // Customs / Picked up (blue-light)
     else if (s.indexOf('custom') >= 0 || s.indexOf('clearance') >= 0 || s.indexOf('pick') >= 0 || s.indexOf('collect') >= 0) dot = 'dbl';
-    // Show FULL status text as label (not simplified)
-    var label = st.length > 45 ? st.substring(0, 45) + '…' : st;
+    // Show FULL status text without truncation, allowing multi-line wrapping
+    var label = st || 'Shipment Booked';
     return { dot: dot, label: label };
   }
 
@@ -2804,8 +2810,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + cpGetFullCountryName(rw.destination) + '</td>';
         h += '<td style="font-weight:600">' + (rw.weight || '—') + ' kg</td>';
         h += '<td style="font-weight:700;color:var(--cptext)">' + (rw.amount ? '₹' + Number(rw.amount).toLocaleString('en-IN') : '—') + '</td>';
-        var lastTrackHtml = rw.last_update ? '<div style="font-size:11px;color:var(--cptext3);margin-top:4px;display:flex;align-items:center;gap:4px;line-height:1.2;" title="' + rw.last_update.replace(/"/g, '&quot;') + '"><i class="fa-solid fa-location-dot" style="font-size:9px;color:var(--cptext3);flex-shrink:0;"></i><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;">' + rw.last_update + '</span></div>' : '';
-        h += '<td class="cp-status-cell"><div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span>' + stDot.label + '</div>' + lastTrackHtml + '</td></tr>';
+        h += '<td class="cp-status-cell"><div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span><span>' + stDot.label + '</span></div></td></tr>';
       });
       h += '</tbody></table></div>';
       h += '<div class="cp-pg"><div class="cp-pi">Showing <strong>' + r.rows.length + '</strong> of <strong>' + r.total + '</strong> · Page ' + r.page + '/' + r.pages + '</div><div class="cp-pbs">';
@@ -2840,11 +2845,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
               var statusCell = r.querySelector('.cp-status-cell');
               if (statusCell) {
                 var stDot = cpGetStatusDot(d.data.status, d.data.is_delivered);
-                var html = '<div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span>' + stDot.label + '</div>';
-                if (d.data.last_update) {
-                  html += '<div style="font-size:11px;color:var(--cptext3);margin-top:4px;display:flex;align-items:center;gap:4px;line-height:1.2;" title="' + d.data.last_update.replace(/"/g, '&quot;') + '"><i class="fa-solid fa-location-dot" style="font-size:9px;flex-shrink:0;"></i><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px;">' + d.data.last_update + '</span></div>';
-                }
-                statusCell.innerHTML = html;
+                statusCell.innerHTML = '<div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span><span>' + stDot.label + '</span></div>';
               }
             }
             processNext();

@@ -247,7 +247,7 @@ export async function deleteShipmentsFromWP(shipments) {
  * Sync shipment customer assignment update to WordPress REST API.
  * Directly updates AWBENTRY, booking_requests, and shipments in WordPress.
  *
- * @param {Object} data - { awb_no, tracking_number, request_awb, customer_id, customer_name, customer_type, shipment_id }
+ * @param {Object} data - { awb_no, tracking_number, request_awb, customer_id, customer_name, customer_type, shipment_id, invoice_items, parcels, shipping_charge, total_amount }
  */
 export async function syncShipmentCustomerToWP(data) {
   if (!WP_SYNC_URL || !WP_SYNC_KEY) {
