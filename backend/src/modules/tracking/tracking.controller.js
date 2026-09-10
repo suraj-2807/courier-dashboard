@@ -663,7 +663,32 @@ function attachCompanyOriginEvents(result, matchedShipment) {
     (result.vendor && result.vendor !== 'Prince Express' && result.vendorCode !== 'prince')
   )
 
-  const currentEvents = Array.isArray(result.events) ? result.events.slice() : []
+  let currentEvents = Array.isArray(result.events) ? result.events.slice() : []
+
+  // ── Filter out vendor generic placeholder events ──
+  const vendorPlaceholderPatterns = [
+    'information received',
+    'data received',
+    'info received',
+    'order created',
+    'record created',
+    'shipment created',
+    'booking received',
+    'manifest received',
+    'shipment booked',
+  ]
+
+  currentEvents = currentEvents.filter(e => {
+    const st = (e.status || '').toLowerCase().trim()
+    const loc = (e.location || '').toLowerCase().trim()
+    // Keep events from PRINCE EXPRESS
+    if (loc.includes('prince express')) return true
+    // Remove vendor placeholder events
+    for (const pattern of vendorPlaceholderPatterns) {
+      if (st.includes(pattern)) return false
+    }
+    return true
+  })
 
   // If in draft, ensure manifest event is NOT present
   let filteredEvents = currentEvents
@@ -674,37 +699,37 @@ function attachCompanyOriginEvents(result, matchedShipment) {
     })
   }
 
-  const existingSet = new Set(filteredEvents.map(e => (e.status || '').toLowerCase().trim()))
+  // Remove any existing duplicates of our company events
+  filteredEvents = filteredEvents.filter(e => {
+    const st = (e.status || '').toLowerCase().trim()
+    if (st.includes('shipment booked & order created')) return false
+    if (st.includes('manifested & dispatched from origin')) return false
+    return true
+  })
 
   const companyEvents = []
 
-  // If API pushed: Second entry is "Shipment Manifested & Dispatched from Origin Hub" (placed just before API's tracking entries)
+  // If API pushed: Second entry is "Shipment Manifested & Dispatched from Origin Hub"
   if (isApiPushed) {
-    const manifestStatus = 'Shipment Manifested & Dispatched from Origin Hub'
-    if (!existingSet.has(manifestStatus.toLowerCase())) {
-      companyEvents.push({
-        date: dateStr,
-        time: timeStr,
-        location: `${originCity}, ${originCountry} (PRINCE EXPRESS HUB)`,
-        status: manifestStatus,
-        rawDate: dateStr,
-        rawTime: timeStr
-      })
-    }
-  }
-
-  // First entry: "Shipment Booked & Order Created"
-  const bookedStatus = 'Shipment Booked & Order Created'
-  if (!existingSet.has(bookedStatus.toLowerCase()) && !existingSet.has('shipment created') && !existingSet.has('shipment booked')) {
     companyEvents.push({
       date: dateStr,
       time: timeStr,
-      location: `${originCity}, ${originCountry} (PRINCE EXPRESS)`,
-      status: bookedStatus,
+      location: `${originCity}, ${originCountry} (PRINCE EXPRESS HUB)`,
+      status: 'Shipment Manifested & Dispatched from Origin Hub',
       rawDate: dateStr,
       rawTime: timeStr
     })
   }
+
+  // First entry: "Shipment Booked & Order Created"
+  companyEvents.push({
+    date: dateStr,
+    time: timeStr,
+    location: `${originCity}, ${originCountry} (PRINCE EXPRESS)`,
+    status: 'Shipment Booked & Order Created',
+    rawDate: dateStr,
+    rawTime: timeStr
+  })
 
   result.events = [...filteredEvents, ...companyEvents]
 

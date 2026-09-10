@@ -309,50 +309,75 @@ function pe_attach_company_origin_events(&$tracking, $result) {
     $raw_bdate = !empty($result->BOOKINGDATE) && $result->BOOKINGDATE !== '0000-00-00' ? $result->BOOKINGDATE : current_time('Y-m-d');
     $bdate = pe_fdate($raw_bdate);
 
-    $has_booked = false;
-    $has_manifested = false;
-
-    if (is_array($tracking)) {
-        foreach ($tracking as $ev) {
-            $act = strtolower(trim($ev['activity'] ?? ''));
-            if (strpos($act, 'booked') !== false || strpos($act, 'order created') !== false || strpos($act, 'shipment booked') !== false) {
-                $has_booked = true;
-            }
-            if (strpos($act, 'manifested') !== false || strpos($act, 'dispatched from origin') !== false) {
-                $has_manifested = true;
-            }
-        }
-    } else {
+    if (!is_array($tracking)) {
         $tracking = [];
     }
+
+    // ── Filter out vendor generic placeholder events ──
+    // Vendors (Bhabani, ACX, FlySwift etc.) return initial EDI events like
+    // "Shipment Information Received" from "MUMBAI" which are redundant
+    // and conflict with our own origin events.
+    $vendor_placeholder_patterns = [
+        'information received',
+        'data received',
+        'info received',
+        'order created',
+        'record created',
+        'shipment created',
+        'booking received',
+        'manifest received',
+        'shipment booked',
+    ];
+
+    $tracking = array_values(array_filter($tracking, function($ev) use ($vendor_placeholder_patterns) {
+        $act = strtolower(trim($ev['activity'] ?? ''));
+        $loc = strtolower(trim($ev['location'] ?? ''));
+        // Keep events that are from PRINCE EXPRESS (our own events)
+        if (strpos($loc, 'prince express') !== false) {
+            return true;
+        }
+        // Remove vendor placeholder events
+        foreach ($vendor_placeholder_patterns as $pattern) {
+            if (strpos($act, $pattern) !== false) {
+                return false;
+            }
+        }
+        return true;
+    }));
 
     $company_events = [];
 
     // 1. First event: Shipment Booked & Order Created
-    if (!$has_booked) {
-        $company_events[] = [
-            'date' => $bdate,
-            'time' => '10:00 AM',
-            'location' => $origin_location . ' (PRINCE EXPRESS)',
-            'activity' => 'Shipment Booked & Order Created'
-        ];
-    }
+    $company_events[] = [
+        'date' => $bdate,
+        'time' => '10:00 AM',
+        'location' => $origin_location . ' (PRINCE EXPRESS)',
+        'activity' => 'Shipment Booked & Order Created',
+        '_pe_origin' => 1, // marker for sorting
+    ];
 
     // 2. Second event: Shipment Manifested & Dispatched from Origin Hub
     // Add if API was contacted, vendor AWB exists, or shipment has any other progress
     $is_dispatched = !empty($result->VENDORID1) || !empty($result->VENDORID2) || !empty($result->VENDNAME) || intval($result->SERVICE ?? 0) > 0 || !empty($tracking);
-    if (!$has_manifested && $is_dispatched) {
+    if ($is_dispatched) {
         $company_events[] = [
             'date' => $bdate,
             'time' => '11:15 AM',
             'location' => $origin_location . ' (PRINCE EXPRESS HUB)',
-            'activity' => 'Shipment Manifested & Dispatched from Origin Hub'
+            'activity' => 'Shipment Manifested & Dispatched from Origin Hub',
+            '_pe_origin' => 2, // marker for sorting
         ];
     }
 
-    if (!empty($company_events)) {
-        $tracking = array_merge($tracking, $company_events);
-    }
+    // Remove any existing duplicates of our company events from tracking
+    $tracking = array_values(array_filter($tracking, function($ev) {
+        $act = strtolower(trim($ev['activity'] ?? ''));
+        if (strpos($act, 'shipment booked & order created') !== false) return false;
+        if (strpos($act, 'manifested & dispatched from origin') !== false) return false;
+        return true;
+    }));
+
+    $tracking = array_merge($tracking, $company_events);
 }
 
 function pe_short_status($status) {
@@ -2123,6 +2148,20 @@ function pe_tracking_history_shortcode($atts) {
 
     $display = $tracking;
     usort($display, function($a, $b) {
+        // Company origin events always go to the end (bottom = oldest in reverse-chrono)
+        $a_origin = $a['_pe_origin'] ?? 0;
+        $b_origin = $b['_pe_origin'] ?? 0;
+
+        // If one is a company origin event and the other isn't, origin goes last
+        if ($a_origin && !$b_origin) return 1;
+        if (!$a_origin && $b_origin) return -1;
+
+        // If both are company origin events, "Manifested" (_pe_origin=2) goes second-to-last, "Booked" (_pe_origin=1) goes last (very bottom)
+        if ($a_origin && $b_origin) {
+            return $b_origin - $a_origin; // 2 before 1 — Manifested above Booked
+        }
+
+        // Normal events: reverse chronological (newest first)
         $ta = strtotime(str_replace(',', '', $a['date']) . ' ' . $a['time']);
         $tb = strtotime(str_replace(',', '', $b['date']) . ' ' . $b['time']);
         return $tb - $ta;
