@@ -3427,6 +3427,15 @@ export const cloneBooking = async (req, res) => {
     const newOrderId = newTracking
     const today = new Date().toISOString().split('T')[0]
 
+    // Ensure JSON fields are strings (or null) to prevent MySQL prepared statement parameter errors
+    const invoiceItemsJson = src.invoice_items
+      ? (typeof src.invoice_items === 'string' ? src.invoice_items : JSON.stringify(src.invoice_items))
+      : null
+
+    const parcelsJson = src.parcels
+      ? (typeof src.parcels === 'string' ? src.parcels : JSON.stringify(src.parcels))
+      : null
+
     const result = await execute(
       `INSERT INTO shipments (
         order_id, customer_id, customer_name, customer_type,
@@ -3447,22 +3456,71 @@ export const cloneBooking = async (req, res) => {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, FALSE, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         newOrderId,
-        src.customer_id, src.customer_name, src.customer_type || 'walkin',
-        src.sender_id, src.receiver_id, src.courier_provider_id, src.vendor_config_id,
-        src.vendor_code, src.service_code, src.product_code, newTracking,
-        src.weight, src.chargeable_weight, src.length, src.breadth, src.height,
-        src.no_of_pieces, src.content_description, src.declared_value, src.cod_amount,
-        src.payment_mode, src.package_type, src.total_amount, src.shipping_charge,
-        src.rate_per_kg, src.extra_charge, src.final_chargeable_weight,
-        src.order_reference ? `${src.order_reference}-COPY` : '', src.remarks,
-        src.sender_name, src.sender_company, src.sender_phone, src.sender_phone_2, src.sender_email,
-        src.sender_address, src.sender_address_2, src.sender_city, src.sender_state,
-        src.sender_pincode, src.sender_country, src.sender_gstin_type, src.sender_gstin_no,
-        src.receiver_name, src.receiver_company, src.receiver_phone, src.receiver_phone_2, src.receiver_email,
-        src.receiver_address, src.receiver_address_2, src.receiver_city, src.receiver_state,
-        src.receiver_pincode, src.receiver_country, src.receiver_gstin_type, src.receiver_gstin_no,
-        newOrderId, today, src.invoice_currency, src.hs_code, src.export_reason, src.terms_of_trade,
-        src.invoice_type, src.invoice_note, src.invoice_items, src.parcels
+        src.customer_id ?? null,
+        src.customer_name || 'Walk-in Customer',
+        src.customer_type || 'walkin',
+        src.sender_id ?? null,
+        src.receiver_id ?? null,
+        src.courier_provider_id ?? null,
+        src.vendor_config_id ?? null,
+        src.vendor_code || '',
+        src.service_code || '',
+        src.product_code || '',
+        newTracking,
+        parseFloat(src.weight) || 0,
+        parseFloat(src.chargeable_weight) || 0,
+        parseFloat(src.length) || 0,
+        parseFloat(src.breadth) || 0,
+        parseFloat(src.height) || 0,
+        parseInt(src.no_of_pieces) || 1,
+        src.content_description || '',
+        parseFloat(src.declared_value) || 0,
+        parseFloat(src.cod_amount) || 0,
+        src.payment_mode || 'prepaid',
+        src.package_type || 'parcel',
+        parseFloat(src.total_amount) || 0,
+        parseFloat(src.shipping_charge) || 0,
+        parseFloat(src.rate_per_kg) || 0,
+        parseFloat(src.extra_charge) || 0,
+        parseFloat(src.final_chargeable_weight) || 0,
+        src.order_reference ? `${src.order_reference}-COPY` : '',
+        src.remarks || '',
+        src.sender_name || src.s_name || '',
+        src.sender_company || '',
+        src.sender_phone || src.s_phone || '',
+        src.sender_phone_2 || '',
+        src.sender_email || src.s_email || '',
+        src.sender_address || src.s_address || '',
+        src.sender_address_2 || '',
+        src.sender_city || src.s_city || '',
+        src.sender_state || src.s_state || '',
+        src.sender_pincode || src.s_pincode || '',
+        src.sender_country || src.s_country || 'INDIA',
+        src.sender_gstin_type || '',
+        src.sender_gstin_no || '',
+        src.receiver_name || src.r_name || '',
+        src.receiver_company || '',
+        src.receiver_phone || src.r_phone || '',
+        src.receiver_phone_2 || '',
+        src.receiver_email || src.r_email || '',
+        src.receiver_address || src.r_address || '',
+        src.receiver_address_2 || '',
+        src.receiver_city || src.r_city || '',
+        src.receiver_state || src.r_state || '',
+        src.receiver_pincode || src.r_pincode || '',
+        src.receiver_country || src.r_country || '',
+        src.receiver_gstin_type || '',
+        src.receiver_gstin_no || '',
+        newOrderId,
+        today,
+        src.invoice_currency || 'INR',
+        src.hs_code || '',
+        src.export_reason || '',
+        src.terms_of_trade || 'CIF',
+        src.invoice_type || 'INVOICE',
+        src.invoice_note || '',
+        invoiceItemsJson,
+        parcelsJson
       ]
     )
 
@@ -3481,7 +3539,7 @@ export const cloneBooking = async (req, res) => {
       await execute('UPDATE shipments SET invoice_pdf_path = ? WHERE id = ?', [invoicePdfPath, newId])
     } catch {}
 
-    const [clonedRows] = await query('SELECT * FROM shipments WHERE id = ?', [newId])
+    const clonedRows = await query('SELECT * FROM shipments WHERE id = ?', [newId])
     const clonedShipment = clonedRows[0] || {}
 
     // Sync draft to Remote AWBENTRY and parcel_history

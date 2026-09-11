@@ -50,6 +50,17 @@ export async function rawQuery(sql, params = []) {
   return rows
 }
 
+function sanitizeParams(params) {
+  if (!Array.isArray(params)) return params
+  return params.map(p => {
+    if (p === undefined) return null
+    if (p !== null && typeof p === 'object' && !Buffer.isBuffer(p) && !(p instanceof Date)) {
+      return JSON.stringify(p)
+    }
+    return p
+  })
+}
+
 /**
  * Execute a SELECT query with parameterized values.
  * @param {string} sql - SQL query string with ? placeholders
@@ -57,13 +68,19 @@ export async function rawQuery(sql, params = []) {
  * @returns {Promise<Array>} Query result rows
  */
 export async function query(sql, params = []) {
+  const cleanParams = sanitizeParams(params)
   try {
-    const [rows] = await pool.execute(sql, params)
+    const [rows] = await pool.execute(sql, cleanParams)
     return rows
   } catch (err) {
-    // If prepared statement protocol is unsupported (e.g. SHOW, ALTER, certain JSON functions), fallback to pool.query
-    if (err.code === 'ER_UNSUPPORTED_PS' || err.code === 'ER_NOT_SUPPORTED_YET') {
-      const [rows] = params && params.length > 0 ? await pool.query(sql, params) : await pool.query(sql)
+    // If prepared statement protocol is unsupported or fails on argument type (e.g. SHOW, ALTER, JSON, ER_WRONG_ARGUMENTS), fallback to pool.query
+    if (
+      err.code === 'ER_UNSUPPORTED_PS' ||
+      err.code === 'ER_NOT_SUPPORTED_YET' ||
+      err.code === 'ER_WRONG_ARGUMENTS' ||
+      err.errno === 1210
+    ) {
+      const [rows] = cleanParams && cleanParams.length > 0 ? await pool.query(sql, cleanParams) : await pool.query(sql)
       return rows
     }
     throw err
@@ -77,12 +94,18 @@ export async function query(sql, params = []) {
  * @returns {Promise<Object>} ResultSetHeader with insertId, affectedRows, etc.
  */
 export async function execute(sql, params = []) {
+  const cleanParams = sanitizeParams(params)
   try {
-    const [result] = await pool.execute(sql, params)
+    const [result] = await pool.execute(sql, cleanParams)
     return result
   } catch (err) {
-    if (err.code === 'ER_UNSUPPORTED_PS' || err.code === 'ER_NOT_SUPPORTED_YET') {
-      const [result] = params && params.length > 0 ? await pool.query(sql, params) : await pool.query(sql)
+    if (
+      err.code === 'ER_UNSUPPORTED_PS' ||
+      err.code === 'ER_NOT_SUPPORTED_YET' ||
+      err.code === 'ER_WRONG_ARGUMENTS' ||
+      err.errno === 1210
+    ) {
+      const [result] = cleanParams && cleanParams.length > 0 ? await pool.query(sql, cleanParams) : await pool.query(sql)
       return result
     }
     throw err
