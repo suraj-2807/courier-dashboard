@@ -761,7 +761,7 @@ function pe_cp_ajax_shipments()
     $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.TOTAL, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
     $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.NETAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
     $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.CHARGES, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
-    $_amt_expr .= "NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.WEIGHT + 0, 0)), 2), 0), ";
+    $_amt_expr .= "NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.ACTUALWEIGHT + 0, 0)), 2), 0), ";
     $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.RECEIPTAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
     if (!empty($has_booking_req_tbl)) {
         $_amt_expr .= "(SELECT NULLIF(br.shipping_charge + 0, 0) FROM booking_requests br WHERE br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR) LIMIT 1), ";
@@ -784,7 +784,7 @@ function pe_cp_ajax_shipments()
                 NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.TOTAL, '0'), ',', ''), ' ', '') + 0, 2), 0),
                 NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.NETAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
                 NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.CHARGES, '0'), ',', ''), ' ', '') + 0, 2), 0),
-                NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.WEIGHT + 0, 0)), 2), 0),
+                NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.ACTUALWEIGHT + 0, 0)), 2), 0),
                 NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.RECEIPTAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
                 " . (!empty($has_booking_req_tbl) ? "(SELECT NULLIF(br.shipping_charge + 0, 0) FROM booking_requests br WHERE br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR) LIMIT 1), " : "") . "
                 0
@@ -800,7 +800,7 @@ function pe_cp_ajax_shipments()
                 NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.TOTAL, '0'), ',', ''), ' ', '') + 0, 2), 0),
                 NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.NETAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
                 NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.CHARGES, '0'), ',', ''), ' ', '') + 0, 2), 0),
-                NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.WEIGHT + 0, 0)), 2), 0),
+                NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.ACTUALWEIGHT + 0, 0)), 2), 0),
                 NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.RECEIPTAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
                 " . (!empty($has_booking_req_tbl) ? "(SELECT NULLIF(br.shipping_charge + 0, 0) FROM booking_requests br WHERE br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR) LIMIT 1), " : "") . "
                 0

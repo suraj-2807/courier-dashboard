@@ -124,6 +124,12 @@ export function getFullCountryName(codeOrName, customCountryList = []) {
     return ISO_COUNTRY_MAP[clean]
   }
 
+  // Check aliases and mapped country names
+  if (COUNTRY_NAME_TO_CODE[clean]) {
+    const cCode = COUNTRY_NAME_TO_CODE[clean]
+    if (ISO_COUNTRY_MAP[cCode]) return ISO_COUNTRY_MAP[cCode]
+  }
+
   // 2. Check custom DB country list if passed
   if (Array.isArray(customCountryList) && customCountryList.length > 0) {
     const found = customCountryList.find(c => 

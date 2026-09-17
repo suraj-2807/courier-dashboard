@@ -3026,7 +3026,7 @@ function CompactField({ label, required, children, className = '', highlight = f
       className={`relative border ${
         highlight
           ? 'border-danger ring-2 ring-danger/10'
-          : 'border-border focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10'
+          : 'border-border focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/10 focus-within:z-30'
       } rounded-xl bg-surface px-3.5 py-2.5 transition-all ${className}`}
     >
       <label className="absolute -top-2.5 left-3 px-1 bg-surface text-[10px] font-bold text-text-secondary uppercase tracking-wider whitespace-nowrap z-10">

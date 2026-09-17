@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { ChevronDown, Globe, Check, X } from 'lucide-react'
 import { getFullCountryName, getCountryCode, ISO_COUNTRY_MAP } from '../utils/countryUtils'
 
@@ -76,32 +76,19 @@ export default function CountryAutocompleteInput({
     const cleanVal = stripHyphen(value)
     if (!cleanVal) return ''
     const full = stripHyphen(getFullCountryName(cleanVal, combinedList))
-    return full || ''
+    return full || cleanVal || ''
   }, [value, combinedList])
 
-  // Sync internal search with value prop (show clean full name or empty string)
+  // Sync internal search with value prop (show clean full name or clean value)
   useEffect(() => {
     if (!isOpen) {
-      setSearch(currentFullName || '')
+      setSearch(currentFullName || stripHyphen(value) || '')
     }
   }, [value, currentFullName, isOpen])
 
-  // Close dropdown on click outside
-  useEffect(() => {
-    function handleClickOutside(e) {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setIsOpen(false)
-        setHighlightedIndex(-1)
-        setSearch(currentFullName || '')
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [currentFullName, value])
-
   // Filter country list by search term (show all matching countries without slicing)
   const filtered = useMemo(() => {
-    const cleanSearch = stripHyphen(search)
+    const cleanSearch = stripHyphen(search).trim()
     if (!cleanSearch || cleanSearch.toUpperCase() === currentFullName.toUpperCase()) {
       return combinedList
     }
@@ -118,8 +105,8 @@ export default function CountryAutocompleteInput({
     setHighlightedIndex(-1)
   }, [filtered.length, search])
 
-  const handleSelect = (item) => {
-    if (disabled) return
+  const handleSelect = useCallback((item) => {
+    if (disabled || !item) return
     const code = (getCountryCode(item.country_code) || item.country_code || '').toUpperCase()
     const name = stripHyphen(item.country_name) || ''
     setSearch(name)
@@ -128,7 +115,68 @@ export default function CountryAutocompleteInput({
     if (onChange) {
       onChange(code, item)
     }
-  }
+  }, [disabled, onChange])
+
+  const commitSelection = useCallback((rawTerm) => {
+    const clean = stripHyphen(rawTerm).trim()
+    if (!clean) {
+      if (onChange) onChange('')
+      setSearch('')
+      setIsOpen(false)
+      return
+    }
+
+    const upper = clean.toUpperCase()
+
+    // 1. Direct exact match by code or name
+    const exact = combinedList.find(c => 
+      c.country_code?.toUpperCase() === upper ||
+      c.country_name?.toUpperCase() === upper
+    )
+    if (exact) {
+      handleSelect(exact)
+      return
+    }
+
+    // 2. Alias resolution (e.g. "USA" -> "US", "UAE" / "DUBAI" -> "AE", "UK" -> "GB")
+    const aliasCode = getCountryCode(upper, combinedList)
+    if (aliasCode) {
+      const matched = combinedList.find(c => c.country_code?.toUpperCase() === aliasCode.toUpperCase())
+      if (matched) {
+        handleSelect(matched)
+        return
+      }
+    }
+
+    // 3. Match from filtered list (prefer startsWith)
+    if (filtered.length > 0) {
+      const startsWithMatch = filtered.find(c =>
+        c.country_name?.toUpperCase().startsWith(upper) ||
+        c.country_code?.toUpperCase().startsWith(upper)
+      )
+      handleSelect(startsWithMatch || filtered[0])
+      return
+    }
+
+    // 4. Fallback: revert to existing valid selection
+    setSearch(currentFullName || '')
+    setIsOpen(false)
+  }, [combinedList, filtered, currentFullName, handleSelect, onChange])
+
+  // Close dropdown on click outside & commit selection
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        if (isOpen) {
+          commitSelection(search)
+        }
+        setIsOpen(false)
+        setHighlightedIndex(-1)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [isOpen, search, commitSelection])
 
   const handleInputChange = (e) => {
     if (disabled) return
@@ -143,17 +191,30 @@ export default function CountryAutocompleteInput({
       return
     }
 
-    // Check if directly matching an exact country code or name
     const upper = val.trim().toUpperCase()
-    const exactMatch = combinedList.find(c => 
-      c.country_code?.toUpperCase() === upper ||
-      c.country_name?.toUpperCase() === upper
-    )
-    if (exactMatch && onChange) {
-      onChange(exactMatch.country_code, exactMatch)
-    } else if (onChange) {
-      const resolved = getCountryCode(upper) || upper
-      onChange(resolved)
+
+    // 1. Direct exact code match (e.g. "US", "IN", "AE", "CA", "FR")
+    const exactCode = combinedList.find(c => c.country_code?.toUpperCase() === upper)
+    if (exactCode && onChange) {
+      onChange(exactCode.country_code, exactCode)
+      return
+    }
+
+    // 2. Direct exact name match (e.g. "UNITED STATES", "INDIA", "CANADA")
+    const exactName = combinedList.find(c => c.country_name?.toUpperCase() === upper)
+    if (exactName && onChange) {
+      onChange(exactName.country_code, exactName)
+      return
+    }
+
+    // 3. Known alias match (e.g. "USA", "UK", "DUBAI")
+    const aliasCode = getCountryCode(upper, combinedList)
+    if (aliasCode && aliasCode.length === 2) {
+      const matchedAlias = combinedList.find(c => c.country_code?.toUpperCase() === aliasCode.toUpperCase())
+      if (matchedAlias && onChange) {
+        onChange(matchedAlias.country_code, matchedAlias)
+        return
+      }
     }
   }
 
@@ -190,8 +251,19 @@ export default function CountryAutocompleteInput({
         e.preventDefault()
         if (highlightedIndex >= 0 && highlightedIndex < filtered.length) {
           handleSelect(filtered[highlightedIndex])
-        } else if (filtered.length === 1) {
+        } else if (filtered.length > 0) {
           handleSelect(filtered[0])
+        } else {
+          commitSelection(search)
+        }
+        break
+      case 'Tab':
+        if (highlightedIndex >= 0 && highlightedIndex < filtered.length) {
+          handleSelect(filtered[highlightedIndex])
+        } else if (filtered.length > 0 && search && search.toUpperCase() !== currentFullName.toUpperCase()) {
+          handleSelect(filtered[0])
+        } else {
+          setIsOpen(false)
         }
         break
       case 'Escape':
@@ -219,15 +291,21 @@ export default function CountryAutocompleteInput({
   }
 
   return (
-    <div ref={containerRef} className="relative w-full">
+    <div ref={containerRef} className={`relative w-full ${isOpen ? 'z-[9999]' : ''}`}>
       <div className="relative flex items-center w-full">
         <input
           type="text"
           placeholder={placeholder}
           value={search}
           disabled={disabled}
-          onFocus={() => {
+          onFocus={(e) => {
             if (!disabled) {
+              setIsOpen(true)
+              e.target.select()
+            }
+          }}
+          onClick={() => {
+            if (!disabled && !isOpen) {
               setIsOpen(true)
             }
           }}
@@ -263,7 +341,7 @@ export default function CountryAutocompleteInput({
       {isOpen && (
         <div
           ref={listRef}
-          className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl z-50 max-h-60 overflow-y-auto divide-y divide-gray-100 animate-fade-in"
+          className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-2xl z-[99999] max-h-60 overflow-y-auto divide-y divide-gray-100 animate-fade-in"
         >
           {filtered.length === 0 ? (
             <div className="p-3 text-xs text-gray-400 text-center flex items-center justify-center gap-1.5">
