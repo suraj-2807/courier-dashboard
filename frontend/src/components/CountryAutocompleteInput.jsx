@@ -99,18 +99,18 @@ export default function CountryAutocompleteInput({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [currentFullName, value])
 
-  // Filter country list by search term
+  // Filter country list by search term (show all matching countries without slicing)
   const filtered = useMemo(() => {
     const cleanSearch = stripHyphen(search)
     if (!cleanSearch || cleanSearch.toUpperCase() === currentFullName.toUpperCase()) {
-      return combinedList.slice(0, 100)
+      return combinedList
     }
     const term = cleanSearch.toLowerCase()
     return combinedList.filter(item => {
       const nameMatch = item.country_name?.toLowerCase().includes(term)
       const codeMatch = item.country_code?.toLowerCase().includes(term)
       return nameMatch || codeMatch
-    }).slice(0, 100)
+    })
   }, [search, combinedList, currentFullName])
 
   // Reset highlight when filtered list changes

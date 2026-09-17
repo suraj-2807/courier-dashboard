@@ -467,18 +467,29 @@ function pe_fetch_tracking($result) {
                         'activity' => str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'],'Agent', $s->event_description ?? $s->event_state ?? '')
                     ];
                 }
-                if (!empty($d->forwarding_no)) {
-                    $result->VENDORID2 = $d->forwarding_no;
+                $d_obj = is_object($d) ? $d : (is_array($d) ? (object)$d : null);
+                $d_data = ($d_obj && isset($d_obj->data)) ? (is_object($d_obj->data) ? $d_obj->data : (is_array($d_obj->data) ? (object)$d_obj->data : null)) : null;
+                $cand_fwd = $d_obj->forwarding_no ?? ($d_obj->forwording_no ?? ($d_obj->vendor_awb_2 ?? ($d_obj->vendor_awb2 ?? ($d_obj->secondary_awb ?? ($d_data->forwarding_no ?? ($d_data->forwording_no ?? ($d_data->vendor_awb_2 ?? ($d_data->vendor_awb2 ?? ''))))))));
+                if (!empty($cand_fwd) && empty($result->VENDORID2)) {
+                    $cand_str = trim((string)$cand_fwd);
+                    if ($cand_str !== '' && stripos($cand_str, 'not found') === false && stripos($cand_str, 'error') === false && !in_array($cand_str, ['0', 'None', 'null', 'undefined', '-', '—'], true) && $cand_str !== ($result->VENDORID1 ?? '') && $cand_str !== strval($result->AWBNO ?? '')) {
+                        $result->VENDORID2 = $cand_str;
+                    }
                 }
-                if (isset($d->docket_info) && is_array($d->docket_info)) {
-                    foreach ($d->docket_info as $info) {
+                $d_info = (isset($d->docket_info) && is_array($d->docket_info)) ? $d->docket_info : (($d_data && isset($d_data->docket_info) && is_array($d_data->docket_info)) ? $d_data->docket_info : null);
+                if ($d_info) {
+                    foreach ($d_info as $info) {
                         if (is_array($info) && count($info) >= 2) {
                             $k = strtolower(trim($info[0]));
                             $v = trim($info[1]);
                             if (strpos($k, 'status') !== false && !empty($v)) $result->STATUS = $v;
                             if (strpos($k, 'delivery date') !== false && !empty($v)) $result->DELIVERYDATE = $v;
                             if (strpos($k, 'receiver name') !== false && !empty($v)) $result->RECEIVER = $v;
-                            if (strpos($k, 'forwarding no') !== false && !empty($v) && empty($result->VENDORID2)) $result->VENDORID2 = $v;
+                            if ((strpos($k, 'forwarding') !== false || strpos($k, 'forwording') !== false || strpos($k, 'secondary') !== false || strpos($k, 'fwd') !== false) && !empty($v) && empty($result->VENDORID2)) {
+                                if (stripos($v, 'not found') === false && stripos($v, 'error') === false && !in_array($v, ['0', 'None', 'null', 'undefined', '-', '—'], true) && $v !== ($result->VENDORID1 ?? '') && $v !== strval($result->AWBNO ?? '')) {
+                                    $result->VENDORID2 = $v;
+                                }
+                            }
                         }
                     }
                 }

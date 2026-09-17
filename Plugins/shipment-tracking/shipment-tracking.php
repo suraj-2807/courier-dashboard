@@ -347,25 +347,26 @@ function pe_attach_company_origin_events(&$tracking, $result) {
 
     $company_events = [];
 
-    // 1. First event: Shipment Booked & Order Created
-    $company_events[] = [
-        'date' => $bdate,
-        'time' => '10:00 AM',
-        'location' => $origin_location . ' (PRINCE EXPRESS)',
-        'activity' => 'Shipment Booked & Order Created',
-        '_pe_origin' => 1, // marker for sorting
-    ];
-
-    // 2. Second event: Shipment Manifested & Dispatched from Origin Hub
-    // Add if API was contacted, vendor AWB exists, or shipment has any other progress
+    // 2. Check if shipment is dispatched (API pushed / vendor AWB exists)
     $is_dispatched = !empty($result->VENDORID1) || !empty($result->VENDORID2) || !empty($result->VENDNAME) || intval($result->SERVICE ?? 0) > 0 || !empty($tracking);
+
     if ($is_dispatched) {
+        // After API push: ONLY show "Shipment Manifested & Dispatched from Origin Hub"
         $company_events[] = [
             'date' => $bdate,
             'time' => '11:15 AM',
             'location' => $origin_location . ' (PRINCE EXPRESS HUB)',
             'activity' => 'Shipment Manifested & Dispatched from Origin Hub',
-            '_pe_origin' => 2, // marker for sorting
+            '_pe_origin' => 2,
+        ];
+    } else {
+        // Draft: ONLY show "Shipment Booked & Order Created"
+        $company_events[] = [
+            'date' => $bdate,
+            'time' => '10:00 AM',
+            'location' => $origin_location . ' (PRINCE EXPRESS)',
+            'activity' => 'Shipment Booked & Order Created',
+            '_pe_origin' => 1,
         ];
     }
 
@@ -611,11 +612,28 @@ function pe_parse_flyswift_events($body, &$result, $vendor_label = 'FlySwift') {
         $d = $d[0];
     }
 
+    $d_obj = is_object($d) ? $d : (is_array($d) ? (object)$d : null);
+    $d_data = null;
+    if ($d_obj && isset($d_obj->data)) {
+        $d_data = is_object($d_obj->data) ? $d_obj->data : (is_array($d_obj->data) ? (object)$d_obj->data : null);
+    }
+
+    // Extract forwarding number from root or data object if present
+    $cand_fwd = $d_obj->forwarding_no ?? ($d_obj->forwording_no ?? ($d_obj->vendor_awb_2 ?? ($d_obj->vendor_awb2 ?? ($d_obj->secondary_awb ?? ($d_data->forwarding_no ?? ($d_data->forwording_no ?? ($d_data->vendor_awb_2 ?? ($d_data->vendor_awb2 ?? ''))))))));
+    if (!empty($cand_fwd) && empty($result->VENDORID2)) {
+        $cand_str = trim((string)$cand_fwd);
+        if ($cand_str !== '' && stripos($cand_str, 'not found') === false && stripos($cand_str, 'error') === false && !in_array($cand_str, ['0', 'None', 'null', 'undefined', '-', '—'], true) && $cand_str !== ($result->VENDORID1 ?? '') && $cand_str !== strval($result->AWBNO ?? '')) {
+            $result->VENDORID2 = $cand_str;
+        }
+    }
+
     $events = null;
     if (is_object($d) && isset($d->docket_events) && is_array($d->docket_events)) {
         $events = $d->docket_events;
     } elseif (is_array($d) && isset($d['docket_events']) && is_array($d['docket_events'])) {
         $events = $d['docket_events'];
+    } elseif ($d_data && isset($d_data->docket_events) && is_array($d_data->docket_events)) {
+        $events = $d_data->docket_events;
     }
 
     $info = null;
@@ -623,6 +641,8 @@ function pe_parse_flyswift_events($body, &$result, $vendor_label = 'FlySwift') {
         $info = $d->docket_info;
     } elseif (is_array($d) && isset($d['docket_info']) && is_array($d['docket_info'])) {
         $info = $d['docket_info'];
+    } elseif ($d_data && isset($d_data->docket_info) && is_array($d_data->docket_info)) {
+        $info = $d_data->docket_info;
     }
 
     if ($info) {
@@ -642,8 +662,10 @@ function pe_parse_flyswift_events($body, &$result, $vendor_label = 'FlySwift') {
                 $result->DELIVERYDATE = $val;
             } elseif (($key === 'receiver name' || $key === 'receiver_name' || $key === 'recipient') && !empty($val)) {
                 $result->RECEIVER = $val;
-            } elseif (($key === 'forwarding no.' || $key === 'forwarding no' || $key === 'forwarding_no') && !empty($val)) {
-                $result->VENDORID2 = $val;
+            } elseif ((preg_match('/forwarding.*(no|awb|num)|forwording.*(no|awb|num)|fwd.*(no|num)|carrier.*(no|num)|secondary.*awb|vendor.*awb.*2/i', $key) || strpos($key, 'forwarding') !== false || strpos($key, 'forwording') !== false) && !empty($val) && empty($result->VENDORID2)) {
+                if (stripos($val, 'not found') === false && stripos($val, 'error') === false && !in_array($val, ['0', 'None', 'null', 'undefined', '-', '—'], true) && $val !== ($result->VENDORID1 ?? '') && $val !== strval($result->AWBNO ?? '')) {
+                    $result->VENDORID2 = $val;
+                }
             }
         }
     }
@@ -789,7 +811,12 @@ function pe_fetch_tracking($result) {
                     $t = $b->Response->Tracking[0];
                     $result->STATUS = $t->Status ?? $result->STATUS;
                     $result->RECEIVER = $t->ReceiverName ?? '';
-                    $result->DELIVERYDATE = $t->DeliveryDate1 ?? $result->DELIVERYDATE;
+                    $result->DELIVERYDATE = $t->DeliveryDate1 ?? ($t->DeliveryDate ?? $result->DELIVERYDATE);
+                    if (!empty($t->VendorAWBNo2)) {
+                        $result->VENDORID2 = trim((string)$t->VendorAWBNo2);
+                    } elseif (!empty($t->VendorAWBNo1)) {
+                        $result->VENDORID2 = trim((string)$t->VendorAWBNo1);
+                    }
                 }
                 PE_Data::log('Pacific Events Parsed Successfully', ['events_count' => count($history), 'status' => $result->STATUS ?? '']);
             } else {

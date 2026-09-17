@@ -14,8 +14,9 @@ $cust_phone = trim($cust['phone'] ?? '');
 $match_clauses = [];
 $match_params = [];
 
-// Check if shipments table exists in WP database
+// Check if shipments and booking_requests tables exist in WP database
 $has_shipments_tbl = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
+$has_booking_req_tbl = !empty($wpdb->get_var("SHOW TABLES LIKE 'booking_requests'"));
 
 // 1. Direct match by registered customer ID / code (strictly excluding walk-in 'W001')
 if ($cust_id > 0) {
@@ -89,25 +90,30 @@ if (!empty($cust_company) && strtolower($cust_company) !== 'walking customer' &&
 if (empty($match_clauses)) {
   $where_cust = "1=0";
 } else {
-  $where_cust = "(" . implode(" OR ", $match_clauses) . ")";
+  $where_all = "(" . implode(" OR ", $match_clauses) . ") AND a.AWBNO > 0";
   if (!empty($match_params)) {
-    $where_cust = $wpdb->prepare($where_cust, ...$match_params);
+    $where_all = $wpdb->prepare($where_all, ...$match_params);
+  }
+  // Filter out data before September 1, 2026 in customer dashboard (include current/unassigned dates)
+  $where_cust = $where_all . " AND (a.AWBDATE >= '2026-09-01' OR a.AWBDATE = '0000-00-00' OR a.AWBDATE IS NULL)";
+  // If date filter results in 0 shipments, fall back to all-time customer shipments
+  $chk_ts = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust"));
+  if ($chk_ts === 0) {
+    $where_cust = $where_all;
   }
 }
-
-// Filter out data before September 1, 2026 in customer dashboard (include current/unassigned dates)
-$where_cust .= " AND (a.AWBDATE >= '2026-09-01' OR a.AWBDATE = '0000-00-00' OR a.AWBDATE IS NULL)";
 
 $_st = "(SELECT ph.activity FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO ORDER BY ph.date DESC, ph.time DESC LIMIT 1)";
 $ts = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust"));
 
-// Delivered: ANY historical activity contains delivery keywords, OR shipments.status = 'delivered'
-$_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%deliver%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%pod uploaded%' OR LOWER(ph.activity) LIKE '%pod%' OR LOWER(ph.activity) LIKE '%proof%') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%')";
-if ($has_shipments_tbl) {
-  $_del_clause .= " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND LOWER(sh.status) = 'delivered')";
-}
-$_del_clause .= ")";
+// Delivered: PODTOWEB = 1, latest activity delivered, or parcel_history proof of delivery/delivered, or booking_requests
+$_del_clause = "(a.PODTOWEB = 1 OR a.PODTOWEB = '1'" .
+  " OR EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%delivered%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%signed by%' OR LOWER(ph.activity) = 'pod') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%' AND LOWER(ph.activity) NOT LIKE '%attempt%')" .
+  ($has_shipments_tbl ? " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND (LOWER(sh.status) LIKE '%delivered%' OR LOWER(sh.status) LIKE '%proof of delivery%' OR LOWER(sh.status) = 'pod'))" : "") .
+  " OR EXISTS (SELECT 1 FROM booking_requests br WHERE (br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR)) AND (LOWER(br.status) LIKE '%delivered%' OR LOWER(br.status) LIKE '%proof of delivery%' OR LOWER(br.status) = 'pod'))" .
+  ")";
 $dc = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust AND $_del_clause"));
+$dc = min($dc, $ts);
 $tc = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust AND NOT $_del_clause AND (LOWER(COALESCE($_st, '')) LIKE '%transit%' OR LOWER(COALESCE($_st, '')) LIKE '%departed%' OR (a.VENDORAWB1 != '' AND a.VENDORAWB1 IS NOT NULL))"));
 
 $iframe_booking_url = esc_url(add_query_arg([
@@ -146,10 +152,60 @@ if (strlen($cust_name) >= 3) {
 $where_requests = !empty($req_conds) ? $wpdb->prepare("(" . implode(" OR ", $req_conds) . ")", ...$req_params) : "1=0";
 $pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE status = 'pending' AND created_at >= '2026-09-01 00:00:00' AND ($where_requests)"));
 
-// Fetch customer total billed amount across all shipments
+// Fetch customer total amount across all shipments checking shipments, booking_requests, and AWBENTRY
 $cust_total_amount = 0.00;
 if (!empty($where_cust) && $where_cust !== "1=0") {
-  $cust_total_amount = floatval($wpdb->get_var("SELECT SUM(COALESCE(NULLIF(a.TOTAL, 0), NULLIF(a.NETAMOUNT, 0), a.CHARGES, 0)) FROM AWBENTRY a WHERE $where_cust"));
+  // Build amount expression that checks all available data sources (mirrors per-row logic)
+  // Order: 1) shipments table if exists, 2) AWBENTRY actual billed amounts, 3) booking_requests fallback
+  $_amt_expr = "COALESCE(";
+  if ($has_shipments_tbl) {
+    $_amt_expr .= "(SELECT COALESCE(NULLIF(sh.final_grand_total + 0, 0), NULLIF(sh.grand_total + 0, 0), NULLIF(sh.total_amount + 0, 0), NULLIF(sh.net_amount + 0, 0), NULLIF(sh.shipping_charge + 0, 0)) FROM shipments sh WHERE sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR) LIMIT 1), ";
+  }
+  $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.TOTAL, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
+  $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.NETAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
+  $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.CHARGES, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
+  $_amt_expr .= "NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.WEIGHT + 0, 0)), 2), 0), ";
+  $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.RECEIPTAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
+  if (!empty($has_booking_req_tbl)) {
+    $_amt_expr .= "(SELECT NULLIF(br.shipping_charge + 0, 0) FROM booking_requests br WHERE br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR) LIMIT 1), ";
+  }
+  $_amt_expr .= "0)";
+
+  $cust_total_amount = floatval($wpdb->get_var(
+    "SELECT SUM($_amt_expr) FROM AWBENTRY a WHERE $where_cust AND a.AWBNO > 0"
+  ) ?? 0);
+  if ($cust_total_amount <= 0 && !empty($where_all) && $chk_ts === 0) {
+    $cust_total_amount = floatval($wpdb->get_var(
+      "SELECT SUM($_amt_expr) FROM AWBENTRY a WHERE $where_all AND a.AWBNO > 0"
+    ) ?? 0);
+  }
+  // Fallback if needed
+  if ($cust_total_amount <= 0) {
+    $cust_total_amount = floatval($wpdb->get_var(
+      "SELECT SUM(COALESCE(
+        NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.TOTAL, '0'), ',', ''), ' ', '') + 0, 2), 0),
+        NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.NETAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
+        NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.CHARGES, '0'), ',', ''), ' ', '') + 0, 2), 0),
+        NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.WEIGHT + 0, 0)), 2), 0),
+        NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.RECEIPTAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
+        " . (!empty($has_booking_req_tbl) ? "(SELECT NULLIF(br.shipping_charge + 0, 0) FROM booking_requests br WHERE br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR) LIMIT 1), " : "") . "
+        0
+      )) FROM AWBENTRY a WHERE $where_cust AND a.AWBNO > 0"
+    ) ?? 0);
+  }
+  if ($cust_total_amount <= 0 && !empty($where_all) && $chk_ts === 0) {
+    $cust_total_amount = floatval($wpdb->get_var(
+      "SELECT SUM(COALESCE(
+        NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.TOTAL, '0'), ',', ''), ' ', '') + 0, 2), 0),
+        NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.NETAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
+        NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.CHARGES, '0'), ',', ''), ' ', '') + 0, 2), 0),
+        NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.WEIGHT + 0, 0)), 2), 0),
+        NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.RECEIPTAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
+        " . (!empty($has_booking_req_tbl) ? "(SELECT NULLIF(br.shipping_charge + 0, 0) FROM booking_requests br WHERE br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR) LIMIT 1), " : "") . "
+        0
+      )) FROM AWBENTRY a WHERE $where_all AND a.AWBNO > 0"
+    ) ?? 0);
+  }
 }
 ?>
 <style>
@@ -441,6 +497,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     .cp-sidebar-toggle {
       display: flex
     }
+   
 
     .cp-sidebar {
       transition: width .25s cubic-bezier(.4, 0, .2, 1)
@@ -1369,6 +1426,13 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     .cp-mobile-header {
       display: flex
     }
+     .cp-app{
+        flex-direction: column;
+    
+    }
+    td.cp-status-cell {
+    min-width: 250px;
+}
 
     .cp-sidebar {
       position: fixed;
@@ -1411,6 +1475,9 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
   @media(max-width:480px) {
     .cp-stats {
       grid-template-columns: 1fr
+    }
+    .cp-app{
+        flex-direction: column !important;
     }
   }
 
@@ -1548,6 +1615,34 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
 
   .cp-live-badge.paused .cp-live-dot {
     animation: none
+  }
+
+  /* ── COPY BUTTON ── */
+  .cp-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 2px 7px;
+    background: #f1f5f9;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .15s ease;
+    line-height: 1.4;
+    vertical-align: middle;
+  }
+  .cp-copy-btn:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+    border-color: #94a3b8;
+    transform: scale(1.04);
+  }
+  .cp-copy-btn:active {
+    transform: scale(0.96);
   }
 
   /* ── TOAST NOTIFICATIONS ── */
@@ -1762,7 +1857,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         <div class="cp-stat">
           <div>
             <div class="cp-stat-label">Total Shipments</div>
-            <div class="cp-stat-value"><?php echo number_format($ts); ?></div>
+            <div class="cp-stat-value" id="cp-stat-total-shipments"><?php echo number_format($ts); ?></div>
             <div class="cp-stat-desc r">All time</div>
           </div>
           <div class="cp-stat-icon"><i class="fa-solid fa-boxes-stacked"></i></div>
@@ -1770,7 +1865,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         <div class="cp-stat">
           <div>
             <div class="cp-stat-label">In Transit</div>
-            <div class="cp-stat-value"><?php echo str_pad($tc, 2, '0', STR_PAD_LEFT); ?></div>
+            <div class="cp-stat-value" id="cp-stat-transit"><?php echo str_pad($tc, 2, '0', STR_PAD_LEFT); ?></div>
             <div class="cp-stat-desc w">On the way</div>
           </div>
           <div class="cp-stat-icon"><i class="fa-solid fa-truck"></i></div>
@@ -1778,7 +1873,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         <div class="cp-stat">
           <div>
             <div class="cp-stat-label">Delivered</div>
-            <div class="cp-stat-value"><?php echo number_format($dc); ?></div>
+            <div class="cp-stat-value" id="cp-stat-delivered"><?php echo number_format($dc); ?></div>
             <div class="cp-stat-desc g">Completed</div>
           </div>
           <div class="cp-stat-icon"><i class="fa-solid fa-circle-check"></i></div>
@@ -1786,9 +1881,9 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         <div class="cp-stat">
           <div>
             <div class="cp-stat-label">Total Amount</div>
-            <div class="cp-stat-value" style="font-size:20px; font-weight:800; color:var(--cpgreen);">
+            <div class="cp-stat-value" id="cp-stat-total-amount" style="font-size:20px; font-weight:800; color:var(--cpgreen);">
               ₹<?php echo number_format($cust_total_amount, 2); ?></div>
-            <div class="cp-stat-desc g">Total Billed</div>
+            <div class="cp-stat-desc g">Total Amount</div>
           </div>
           <div class="cp-stat-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
         </div>
@@ -1889,7 +1984,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
             <div
               style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--cptext3); letter-spacing:0.5px;">
               Total Amount</div>
-            <div style="font-size:16px; font-weight:800; color:var(--cpgreen);">
+            <div id="cp-profile-total-amount" style="font-size:16px; font-weight:800; color:var(--cpgreen);">
               ₹<?php echo number_format($cust_total_amount, 2); ?></div>
           </div>
         </div>
@@ -2192,7 +2287,258 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
 
         <div class="cp-form-group">
           <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); text-transform:uppercase; margin-bottom:5px;">Country *</label>
-          <input type="text" id="addr-country" class="cp-form-input" value="INDIA" placeholder="Enter country name (e.g. INDIA, UNITED STATES, UNITED ARAB EMIRATES)" oninput="this.value=this.value.replace(/[-–—]/g,'').toUpperCase()" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-weight:800; color:var(--cpred); text-transform:uppercase;">
+          <input type="text" id="addr-country" list="cp-all-countries-list" class="cp-form-input" value="INDIA" placeholder="Search or enter country name (e.g. INDIA, UNITED STATES, UNITED ARAB EMIRATES)..." oninput="this.value=this.value.replace(/[-–—]/g,'').toUpperCase()" style="width:100%; padding:9px 12px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-weight:800; color:var(--cpred); text-transform:uppercase;">
+          <datalist id="cp-all-countries-list">
+            <option value="AFGHANISTAN">AF - AFGHANISTAN</option>
+            <option value="ALAND ISLANDS">AX - ALAND ISLANDS</option>
+            <option value="ALBANIA">AL - ALBANIA</option>
+            <option value="ALGERIA">DZ - ALGERIA</option>
+            <option value="AMERICAN SAMOA">AS - AMERICAN SAMOA</option>
+            <option value="ANDORRA">AD - ANDORRA</option>
+            <option value="ANGOLA">AO - ANGOLA</option>
+            <option value="ANGUILLA">AI - ANGUILLA</option>
+            <option value="ANTARCTICA">AQ - ANTARCTICA</option>
+            <option value="ANTIGUA AND BARBUDA">AG - ANTIGUA AND BARBUDA</option>
+            <option value="ARGENTINA">AR - ARGENTINA</option>
+            <option value="ARMENIA">AM - ARMENIA</option>
+            <option value="ARUBA">AW - ARUBA</option>
+            <option value="AUSTRALIA">AU - AUSTRALIA</option>
+            <option value="AUSTRIA">AT - AUSTRIA</option>
+            <option value="AZERBAIJAN">AZ - AZERBAIJAN</option>
+            <option value="BAHAMAS">BS - BAHAMAS</option>
+            <option value="BAHRAIN">BH - BAHRAIN</option>
+            <option value="BANGLADESH">BD - BANGLADESH</option>
+            <option value="BARBADOS">BB - BARBADOS</option>
+            <option value="BELARUS">BY - BELARUS</option>
+            <option value="BELGIUM">BE - BELGIUM</option>
+            <option value="BELIZE">BZ - BELIZE</option>
+            <option value="BENIN">BJ - BENIN</option>
+            <option value="BERMUDA">BM - BERMUDA</option>
+            <option value="BHUTAN">BT - BHUTAN</option>
+            <option value="BOLIVIA">BO - BOLIVIA</option>
+            <option value="BOSNIA AND HERZEGOVINA">BA - BOSNIA AND HERZEGOVINA</option>
+            <option value="BOTSWANA">BW - BOTSWANA</option>
+            <option value="BOUVET ISLAND">BV - BOUVET ISLAND</option>
+            <option value="BRAZIL">BR - BRAZIL</option>
+            <option value="BRITISH INDIAN OCEAN TERRITORY">IO - BRITISH INDIAN OCEAN TERRITORY</option>
+            <option value="BRUNEI">BN - BRUNEI</option>
+            <option value="BULGARIA">BG - BULGARIA</option>
+            <option value="BURKINA FASO">BF - BURKINA FASO</option>
+            <option value="BURUNDI">BI - BURUNDI</option>
+            <option value="CAMBODIA">KH - CAMBODIA</option>
+            <option value="CAMEROON">CM - CAMEROON</option>
+            <option value="CANADA">CA - CANADA</option>
+            <option value="CAPE VERDE">CV - CAPE VERDE</option>
+            <option value="CAYMAN ISLANDS">KY - CAYMAN ISLANDS</option>
+            <option value="CENTRAL AFRICAN REPUBLIC">CF - CENTRAL AFRICAN REPUBLIC</option>
+            <option value="CHAD">TD - CHAD</option>
+            <option value="CHILE">CL - CHILE</option>
+            <option value="CHINA">CN - CHINA</option>
+            <option value="CHRISTMAS ISLAND">CX - CHRISTMAS ISLAND</option>
+            <option value="COCOS (KEELING) ISLANDS">CC - COCOS (KEELING) ISLANDS</option>
+            <option value="COLOMBIA">CO - COLOMBIA</option>
+            <option value="COMOROS">KM - COMOROS</option>
+            <option value="CONGO">CG - CONGO</option>
+            <option value="CONGO (DRC)">CD - CONGO (DRC)</option>
+            <option value="COOK ISLANDS">CK - COOK ISLANDS</option>
+            <option value="COSTA RICA">CR - COSTA RICA</option>
+            <option value="IVORY COAST">CI - IVORY COAST</option>
+            <option value="CROATIA">HR - CROATIA</option>
+            <option value="CUBA">CU - CUBA</option>
+            <option value="CURACAO">CW - CURACAO</option>
+            <option value="CYPRUS">CY - CYPRUS</option>
+            <option value="CZECH REPUBLIC">CZ - CZECH REPUBLIC</option>
+            <option value="DENMARK">DK - DENMARK</option>
+            <option value="DJIBOUTI">DJ - DJIBOUTI</option>
+            <option value="DOMINICA">DM - DOMINICA</option>
+            <option value="DOMINICAN REPUBLIC">DO - DOMINICAN REPUBLIC</option>
+            <option value="ECUADOR">EC - ECUADOR</option>
+            <option value="EGYPT">EG - EGYPT</option>
+            <option value="EL SALVADOR">SV - EL SALVADOR</option>
+            <option value="EQUATORIAL GUINEA">GQ - EQUATORIAL GUINEA</option>
+            <option value="ERITREA">ER - ERITREA</option>
+            <option value="ESTONIA">EE - ESTONIA</option>
+            <option value="ESWATINI">SZ - ESWATINI</option>
+            <option value="ETHIOPIA">ET - ETHIOPIA</option>
+            <option value="FALKLAND ISLANDS">FK - FALKLAND ISLANDS</option>
+            <option value="FAROE ISLANDS">FO - FAROE ISLANDS</option>
+            <option value="FIJI">FJ - FIJI</option>
+            <option value="FINLAND">FI - FINLAND</option>
+            <option value="FRANCE">FR - FRANCE</option>
+            <option value="FRENCH GUIANA">GF - FRENCH GUIANA</option>
+            <option value="FRENCH POLYNESIA">PF - FRENCH POLYNESIA</option>
+            <option value="FRENCH SOUTHERN TERRITORIES">TF - FRENCH SOUTHERN TERRITORIES</option>
+            <option value="GABON">GA - GABON</option>
+            <option value="GAMBIA">GM - GAMBIA</option>
+            <option value="GEORGIA">GE - GEORGIA</option>
+            <option value="GERMANY">DE - GERMANY</option>
+            <option value="GHANA">GH - GHANA</option>
+            <option value="GIBRALTAR">GI - GIBRALTAR</option>
+            <option value="GREECE">GR - GREECE</option>
+            <option value="GREENLAND">GL - GREENLAND</option>
+            <option value="GRENADA">GD - GRENADA</option>
+            <option value="GUADELOUPE">GP - GUADELOUPE</option>
+            <option value="GUAM">GU - GUAM</option>
+            <option value="GUATEMALA">GT - GUATEMALA</option>
+            <option value="GUERNSEY">GG - GUERNSEY</option>
+            <option value="GUINEA">GN - GUINEA</option>
+            <option value="GUINEA-BISSAU">GW - GUINEA-BISSAU</option>
+            <option value="GUYANA">GY - GUYANA</option>
+            <option value="HAITI">HT - HAITI</option>
+            <option value="HEARD ISLAND AND MCDONALD ISLANDS">HM - HEARD ISLAND AND MCDONALD ISLANDS</option>
+            <option value="VATICAN CITY">VA - VATICAN CITY</option>
+            <option value="HONDURAS">HN - HONDURAS</option>
+            <option value="HONG KONG">HK - HONG KONG</option>
+            <option value="HUNGARY">HU - HUNGARY</option>
+            <option value="ICELAND">IS - ICELAND</option>
+            <option value="INDIA">IN - INDIA</option>
+            <option value="INDONESIA">ID - INDONESIA</option>
+            <option value="IRAN">IR - IRAN</option>
+            <option value="IRAQ">IQ - IRAQ</option>
+            <option value="IRELAND">IE - IRELAND</option>
+            <option value="ISLE OF MAN">IM - ISLE OF MAN</option>
+            <option value="ISRAEL">IL - ISRAEL</option>
+            <option value="ITALY">IT - ITALY</option>
+            <option value="JAMAICA">JM - JAMAICA</option>
+            <option value="JAPAN">JP - JAPAN</option>
+            <option value="JERSEY">JE - JERSEY</option>
+            <option value="JORDAN">JO - JORDAN</option>
+            <option value="KAZAKHSTAN">KZ - KAZAKHSTAN</option>
+            <option value="KENYA">KE - KENYA</option>
+            <option value="KIRIBATI">KI - KIRIBATI</option>
+            <option value="NORTH KOREA">KP - NORTH KOREA</option>
+            <option value="SOUTH KOREA">KR - SOUTH KOREA</option>
+            <option value="KUWAIT">KW - KUWAIT</option>
+            <option value="KYRGYZSTAN">KG - KYRGYZSTAN</option>
+            <option value="LAOS">LA - LAOS</option>
+            <option value="LATVIA">LV - LATVIA</option>
+            <option value="LEBANON">LB - LEBANON</option>
+            <option value="LESOTHO">LS - LESOTHO</option>
+            <option value="LIBERIA">LR - LIBERIA</option>
+            <option value="LIBYA">LY - LIBYA</option>
+            <option value="LIECHTENSTEIN">LI - LIECHTENSTEIN</option>
+            <option value="LITHUANIA">LT - LITHUANIA</option>
+            <option value="LUXEMBOURG">LU - LUXEMBOURG</option>
+            <option value="MACAU">MO - MACAU</option>
+            <option value="MADAGASCAR">MG - MADAGASCAR</option>
+            <option value="MALAWI">MW - MALAWI</option>
+            <option value="MALAYSIA">MY - MALAYSIA</option>
+            <option value="MALDIVES">MV - MALDIVES</option>
+            <option value="MALI">ML - MALI</option>
+            <option value="MALTA">MT - MALTA</option>
+            <option value="MARSHALL ISLANDS">MH - MARSHALL ISLANDS</option>
+            <option value="MARTINIQUE">MQ - MARTINIQUE</option>
+            <option value="MAURITANIA">MR - MAURITANIA</option>
+            <option value="MAURITIUS">MU - MAURITIUS</option>
+            <option value="MAYOTTE">YT - MAYOTTE</option>
+            <option value="MEXICO">MX - MEXICO</option>
+            <option value="MICRONESIA">FM - MICRONESIA</option>
+            <option value="MOLDOVA">MD - MOLDOVA</option>
+            <option value="MONACO">MC - MONACO</option>
+            <option value="MONGOLIA">MN - MONGOLIA</option>
+            <option value="MONTENEGRO">ME - MONTENEGRO</option>
+            <option value="MONTSERRAT">MS - MONTSERRAT</option>
+            <option value="MOROCCO">MA - MOROCCO</option>
+            <option value="MOZAMBIQUE">MZ - MOZAMBIQUE</option>
+            <option value="MYANMAR">MM - MYANMAR</option>
+            <option value="NAMIBIA">NA - NAMIBIA</option>
+            <option value="NAURU">NR - NAURU</option>
+            <option value="NEPAL">NP - NEPAL</option>
+            <option value="NETHERLANDS">NL - NETHERLANDS</option>
+            <option value="NEW CALEDONIA">NC - NEW CALEDONIA</option>
+            <option value="NEW ZEALAND">NZ - NEW ZEALAND</option>
+            <option value="NICARAGUA">NI - NICARAGUA</option>
+            <option value="NIGER">NE - NIGER</option>
+            <option value="NIGERIA">NG - NIGERIA</option>
+            <option value="NIUE">NU - NIUE</option>
+            <option value="NORFOLK ISLAND">NF - NORFOLK ISLAND</option>
+            <option value="NORTH MACEDONIA">MK - NORTH MACEDONIA</option>
+            <option value="NORTHERN MARIANA ISLANDS">MP - NORTHERN MARIANA ISLANDS</option>
+            <option value="NORWAY">NO - NORWAY</option>
+            <option value="OMAN">OM - OMAN</option>
+            <option value="PAKISTAN">PK - PAKISTAN</option>
+            <option value="PALAU">PW - PALAU</option>
+            <option value="PALESTINE">PS - PALESTINE</option>
+            <option value="PANAMA">PA - PANAMA</option>
+            <option value="PAPUA NEW GUINEA">PG - PAPUA NEW GUINEA</option>
+            <option value="PARAGUAY">PY - PARAGUAY</option>
+            <option value="PERU">PE - PERU</option>
+            <option value="PHILIPPINES">PH - PHILIPPINES</option>
+            <option value="PITCAIRN">PN - PITCAIRN</option>
+            <option value="POLAND">PL - POLAND</option>
+            <option value="PORTUGAL">PT - PORTUGAL</option>
+            <option value="PUERTO RICO">PR - PUERTO RICO</option>
+            <option value="QATAR">QA - QATAR</option>
+            <option value="REUNION">RE - REUNION</option>
+            <option value="ROMANIA">RO - ROMANIA</option>
+            <option value="RUSSIA">RU - RUSSIA</option>
+            <option value="RWANDA">RW - RWANDA</option>
+            <option value="SAINT BARTHELEMY">BL - SAINT BARTHELEMY</option>
+            <option value="SAINT HELENA">SH - SAINT HELENA</option>
+            <option value="SAINT KITTS AND NEVIS">KN - SAINT KITTS AND NEVIS</option>
+            <option value="SAINT LUCIA">LC - SAINT LUCIA</option>
+            <option value="SAINT MARTIN">MF - SAINT MARTIN</option>
+            <option value="SAINT PIERRE AND MIQUELON">PM - SAINT PIERRE AND MIQUELON</option>
+            <option value="SAINT VINCENT AND THE GRENADINES">VC - SAINT VINCENT AND THE GRENADINES</option>
+            <option value="SAMOA">WS - SAMOA</option>
+            <option value="SAN MARINO">SM - SAN MARINO</option>
+            <option value="SAO TOME AND PRINCIPE">ST - SAO TOME AND PRINCIPE</option>
+            <option value="SAUDI ARABIA">SA - SAUDI ARABIA</option>
+            <option value="SENEGAL">SN - SENEGAL</option>
+            <option value="SERBIA">RS - SERBIA</option>
+            <option value="SEYCHELLES">SC - SEYCHELLES</option>
+            <option value="SIERRA LEONE">SL - SIERRA LEONE</option>
+            <option value="SINGAPORE">SG - SINGAPORE</option>
+            <option value="SINT MAARTEN">SX - SINT MAARTEN</option>
+            <option value="SLOVAKIA">SK - SLOVAKIA</option>
+            <option value="SLOVENIA">SI - SLOVENIA</option>
+            <option value="SOLOMON ISLANDS">SB - SOLOMON ISLANDS</option>
+            <option value="SOMALIA">SO - SOMALIA</option>
+            <option value="SOUTH AFRICA">ZA - SOUTH AFRICA</option>
+            <option value="SOUTH GEORGIA">GS - SOUTH GEORGIA</option>
+            <option value="SOUTH SUDAN">SS - SOUTH SUDAN</option>
+            <option value="SPAIN">ES - SPAAIN</option>
+            <option value="SRI LANKA">LK - SRI LANKA</option>
+            <option value="SUDAN">SD - SUDAN</option>
+            <option value="SURINAME">SR - SURINAME</option>
+            <option value="SVALBARD AND JAN MAYEN">SJ - SVALBARD AND JAN MAYEN</option>
+            <option value="SWEDEN">SE - SWEDEN</option>
+            <option value="SWITZERLAND">CH - SWITZERLAND</option>
+            <option value="SYRIA">SY - SYRIA</option>
+            <option value="TAIWAN">TW - TAIWAN</option>
+            <option value="TAJIKISTAN">TJ - TAJIKISTAN</option>
+            <option value="TANZANIA">TZ - TANZANIA</option>
+            <option value="THAILAND">TH - THAILAND</option>
+            <option value="TIMOR-LESTE">TL - TIMOR-LESTE</option>
+            <option value="TOGO">TG - TOGO</option>
+            <option value="TOKELAU">TK - TOKELAU</option>
+            <option value="TONGA">TO - TONGA</option>
+            <option value="TRINIDAD AND TOBAGO">TT - TRINIDAD AND TOBAGO</option>
+            <option value="TUNISIA">TN - TUNISIA</option>
+            <option value="TURKEY">TR - TURKEY</option>
+            <option value="TURKMENISTAN">TM - TURKMENISTAN</option>
+            <option value="TURKS AND CAICOS ISLANDS">TC - TURKS AND CAICOS ISLANDS</option>
+            <option value="TUVALU">TV - TUVALU</option>
+            <option value="UGANDA">UG - UGANDA</option>
+            <option value="UKRAINE">UA - UKRAINE</option>
+            <option value="UNITED ARAB EMIRATES">AE - UNITED ARAB EMIRATES</option>
+            <option value="UNITED KINGDOM">GB - UNITED KINGDOM</option>
+            <option value="UNITED STATES">US - UNITED STATES</option>
+            <option value="UNITED STATES MINOR OUTLYING ISLANDS">UM - UNITED STATES MINOR OUTLYING ISLANDS</option>
+            <option value="URUGUAY">UY - URUGUAY</option>
+            <option value="UZBEKISTAN">UZ - UZBEKISTAN</option>
+            <option value="VANUATU">VU - VANUATU</option>
+            <option value="VENEZUELA">VE - VENEZUELA</option>
+            <option value="VIETNAM">VN - VIETNAM</option>
+            <option value="VIRGIN ISLANDS (BRITISH)">VG - VIRGIN ISLANDS (BRITISH)</option>
+            <option value="VIRGIN ISLANDS (U.S.)">VI - VIRGIN ISLANDS (U.S.)</option>
+            <option value="WALLIS AND FUTUNA">WF - WALLIS AND FUTUNA</option>
+            <option value="WESTERN SAHARA">EH - WESTERN SAHARA</option>
+            <option value="YEMEN">YE - YEMEN</option>
+            <option value="ZAMBIA">ZM - ZAMBIA</option>
+            <option value="ZIMBABWE">ZW - ZIMBABWE</option>
+            <option value="KOSOVO">XK - KOSOVO</option>
+          </datalist>
         </div>
       </div>
 
@@ -2241,63 +2587,73 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
   var cpReqPage = 1, cpReqSearch = '', cpReqStatus = '', cpReqSearchTimer = null;
 
   // Universal ISO Country Dictionary
+  // Universal ISO Country Dictionary (all 249 ISO 3166-1 alpha-2 countries + 3-letter codes + aliases)
   var cpCountryDictionary = {
-    'AF': 'AFGHANISTAN', 'AL': 'ALBANIA', 'DZ': 'ALGERIA', 'AS': 'AMERICAN SAMOA', 'AD': 'ANDORRA',
-    'AO': 'ANGOLA', 'AI': 'ANGUILLA', 'AQ': 'ANTARCTICA', 'AG': 'ANTIGUA AND BARBUDA', 'AR': 'ARGENTINA',
-    'AM': 'ARMENIA', 'AW': 'ARUBA', 'AU': 'AUSTRALIA', 'AT': 'AUSTRIA', 'AZ': 'AZERBAIJAN',
-    'BS': 'BAHAMAS', 'BH': 'BAHRAIN', 'BD': 'BANGLADESH', 'BB': 'BARBADOS', 'BY': 'BELARUS',
-    'BE': 'BELGIUM', 'BZ': 'BELIZE', 'BJ': 'BENIN', 'BM': 'BERMUDA', 'BT': 'BHUTAN',
-    'BO': 'BOLIVIA', 'BA': 'BOSNIA AND HERZEGOVINA', 'BW': 'BOTSWANA', 'BR': 'BRAZIL', 'BN': 'BRUNEI',
-    'BG': 'BULGARIA', 'BF': 'BURKINA FASO', 'BI': 'BURUNDI', 'KH': 'CAMBODIA', 'CM': 'CAMEROON',
-    'CA': 'CANADA', 'CV': 'CAPE VERDE', 'KY': 'CAYMAN ISLANDS', 'CF': 'CENTRAL AFRICAN REPUBLIC',
-    'TD': 'CHAD', 'CL': 'CHILE', 'CN': 'CHINA', 'CO': 'COLOMBIA', 'KM': 'COMOROS', 'CG': 'CONGO',
-    'CD': 'CONGO (DRC)', 'CK': 'COOK ISLANDS', 'CR': 'COSTA RICA', 'CI': 'IVORY COAST', 'HR': 'CROATIA',
-    'CU': 'CUBA', 'CY': 'CYPRUS', 'CZ': 'CZECH REPUBLIC', 'DK': 'DENMARK', 'DJ': 'DJIBOUTI',
-    'DM': 'DOMINICA', 'DO': 'DOMINICAN REPUBLIC', 'EC': 'ECUADOR', 'EG': 'EGYPT', 'SV': 'EL SALVADOR',
-    'GQ': 'EQUATORIAL GUINEA', 'ER': 'ERITREA', 'EE': 'ESTONIA', 'ET': 'ETHIOPIA', 'FJ': 'FIJI',
-    'FI': 'FINLAND', 'FR': 'FRANCE', 'GF': 'FRENCH GUIANA', 'PF': 'FRENCH POLYNESIA', 'GA': 'GABON',
-    'GM': 'GAMBIA', 'GE': 'GEORGIA', 'DE': 'GERMANY', 'GH': 'GHANA', 'GI': 'GIBRALTAR',
-    'GR': 'GREECE', 'GL': 'GREENLAND', 'GD': 'GRENADA', 'GP': 'GUADELOUPE', 'GU': 'GUAM',
-    'GT': 'GUATEMALA', 'GN': 'GUINEA', 'GW': 'GUINEA-BISSAU', 'GY': 'GUYANA', 'HT': 'HAITI',
-    'HN': 'HONDURAS', 'HK': 'HONG KONG', 'HU': 'HUNGARY', 'IS': 'ICELAND', 'IN': 'INDIA',
-    'ID': 'INDONESIA', 'IR': 'IRAN', 'IQ': 'IRAQ', 'IE': 'IRELAND', 'IL': 'ISRAEL', 'IT': 'ITALY',
-    'JM': 'JAMAICA', 'JP': 'JAPAN', 'JO': 'JORDAN', 'KZ': 'KAZAKHSTAN', 'KE': 'KENYA',
-    'KI': 'KIRIBATI', 'KW': 'KUWAIT', 'KG': 'KYRGYZSTAN', 'LA': 'LAOS', 'LV': 'LATVIA',
-    'LB': 'LEBANON', 'LS': 'LESOTHO', 'LR': 'LIBERIA', 'LY': 'LIBYA', 'LI': 'LIECHTENSTEIN',
-    'LT': 'LITHUANIA', 'LU': 'LUXEMBOURG', 'MO': 'MACAU', 'MK': 'NORTH MACEDONIA', 'MG': 'MADAGASCAR',
-    'MW': 'MALAWI', 'MY': 'MALAYSIA', 'MV': 'MALDIVES', 'ML': 'MALI', 'MT': 'MALTA',
-    'MH': 'MARSHALL ISLANDS', 'MQ': 'MARTINIQUE', 'MR': 'MAURITANIA', 'MU': 'MAURITIUS', 'MX': 'MEXICO',
-    'FM': 'MICRONESIA', 'MD': 'MOLDOVA', 'MC': 'MONACO', 'MN': 'MONGOLIA', 'ME': 'MONTENEGRO',
-    'MS': 'MONTSERRAT', 'MA': 'MOROCCO', 'MZ': 'MOZAMBIQUE', 'MM': 'MYANMAR', 'NA': 'NAMIBIA',
-    'NR': 'NAURU', 'NP': 'NEPAL', 'NL': 'NETHERLANDS', 'NC': 'NEW CALEDONIA', 'NZ': 'NEW ZEALAND',
-    'NI': 'NICARAGUA', 'NE': 'NIGER', 'NG': 'NIGERIA', 'NO': 'NORWAY', 'OM': 'OMAN',
-    'PK': 'PAKISTAN', 'PW': 'PALAU', 'PS': 'PALESTINE', 'PA': 'PANAMA', 'PG': 'PAPUA NEW GUINEA',
-    'PY': 'PARAGUAY', 'PE': 'PERU', 'PH': 'PHILIPPINES', 'PL': 'POLAND', 'PT': 'PORTUGAL',
-    'PR': 'PUERTO RICO', 'QA': 'QATAR', 'RE': 'REUNION', 'RO': 'ROMANIA', 'RU': 'RUSSIA',
-    'RW': 'RWANDA', 'SA': 'SAUDI ARABIA', 'SN': 'SENEGAL', 'RS': 'SERBIA', 'SC': 'SEYCHELLES',
-    'SL': 'SIERRA LEONE', 'SG': 'SINGAPORE', 'SK': 'SLOVAKIA', 'SI': 'SLOVENIA', 'SB': 'SOLOMON ISLANDS',
-    'SO': 'SOMALIA', 'ZA': 'SOUTH AFRICA', 'KR': 'SOUTH KOREA', 'SS': 'SOUTH SUDAN', 'ES': 'SPAIN',
-    'LK': 'SRI LANKA', 'SD': 'SUDAN', 'SR': 'SURINAME', 'SE': 'SWEDEN', 'CH': 'SWITZERLAND',
-    'SY': 'SYRIA', 'TW': 'TAIWAN', 'TJ': 'TAJIKISTAN', 'TZ': 'TANZANIA', 'TH': 'THAILAND',
-    'TG': 'TOGO', 'TO': 'TONGA', 'TT': 'TRINIDAD AND TOBAGO', 'TN': 'TUNISIA', 'TR': 'TURKEY',
-    'TM': 'TURKMENISTAN', 'TC': 'TURKS AND CAICOS ISLANDS', 'TV': 'TUVALU', 'UG': 'UGANDA', 'UA': 'UKRAINE',
-    'AE': 'UNITED ARAB EMIRATES', 'GB': 'UNITED KINGDOM', 'US': 'UNITED STATES', 'UY': 'URUGUAY',
-    'UZ': 'UZBEKISTAN', 'VU': 'VANUATU', 'VE': 'VENEZUELA', 'VN': 'VIETNAM', 'YE': 'YEMEN',
-    'ZM': 'ZAMBIA', 'ZW': 'ZIMBABWE', 'USA': 'UNITED STATES', 'UK': 'UNITED KINGDOM', 'UAE': 'UNITED ARAB EMIRATES',
+    'AF': 'AFGHANISTAN', 'AX': 'ALAND ISLANDS', 'AL': 'ALBANIA', 'DZ': 'ALGERIA', 'AS': 'AMERICAN SAMOA', 'AD': 'ANDORRA',
+    'AO': 'ANGOLA', 'AI': 'ANGUILLA', 'AQ': 'ANTARCTICA', 'AG': 'ANTIGUA AND BARBUDA', 'AR': 'ARGENTINA', 'AM': 'ARMENIA',
+    'AW': 'ARUBA', 'AU': 'AUSTRALIA', 'AT': 'AUSTRIA', 'AZ': 'AZERBAIJAN', 'BS': 'BAHAMAS', 'BH': 'BAHRAIN',
+    'BD': 'BANGLADESH', 'BB': 'BARBADOS', 'BY': 'BELARUS', 'BE': 'BELGIUM', 'BZ': 'BELIZE', 'BJ': 'BENIN',
+    'BM': 'BERMUDA', 'BT': 'BHUTAN', 'BO': 'BOLIVIA', 'BA': 'BOSNIA AND HERZEGOVINA', 'BW': 'BOTSWANA', 'BV': 'BOUVET ISLAND',
+    'BR': 'BRAZIL', 'IO': 'BRITISH INDIAN OCEAN TERRITORY', 'BN': 'BRUNEI', 'BG': 'BULGARIA', 'BF': 'BURKINA FASO', 'BI': 'BURUNDI',
+    'KH': 'CAMBODIA', 'CM': 'CAMEROON', 'CA': 'CANADA', 'CV': 'CAPE VERDE', 'KY': 'CAYMAN ISLANDS', 'CF': 'CENTRAL AFRICAN REPUBLIC',
+    'TD': 'CHAD', 'CL': 'CHILE', 'CN': 'CHINA', 'CX': 'CHRISTMAS ISLAND', 'CC': 'COCOS (KEELING) ISLANDS', 'CO': 'COLOMBIA',
+    'KM': 'COMOROS', 'CG': 'CONGO', 'CD': 'CONGO (DRC)', 'CK': 'COOK ISLANDS', 'CR': 'COSTA RICA', 'CI': 'IVORY COAST',
+    'HR': 'CROATIA', 'CU': 'CUBA', 'CW': 'CURACAO', 'CY': 'CYPRUS', 'CZ': 'CZECH REPUBLIC', 'DK': 'DENMARK',
+    'DJ': 'DJIBOUTI', 'DM': 'DOMINICA', 'DO': 'DOMINICAN REPUBLIC', 'EC': 'ECUADOR', 'EG': 'EGYPT', 'SV': 'EL SALVADOR',
+    'GQ': 'EQUATORIAL GUINEA', 'ER': 'ERITREA', 'EE': 'ESTONIA', 'SZ': 'ESWATINI', 'ET': 'ETHIOPIA', 'FK': 'FALKLAND ISLANDS',
+    'FO': 'FAROE ISLANDS', 'FJ': 'FIJI', 'FI': 'FINLAND', 'FR': 'FRANCE', 'GF': 'FRENCH GUIANA', 'PF': 'FRENCH POLYNESIA',
+    'TF': 'FRENCH SOUTHERN TERRITORIES', 'GA': 'GABON', 'GM': 'GAMBIA', 'GE': 'GEORGIA', 'DE': 'GERMANY', 'GH': 'GHANA',
+    'GI': 'GIBRALTAR', 'GR': 'GREECE', 'GL': 'GREENLAND', 'GD': 'GRENADA', 'GP': 'GUADELOUPE', 'GU': 'GUAM',
+    'GT': 'GUATEMALA', 'GG': 'GUERNSEY', 'GN': 'GUINEA', 'GW': 'GUINEA-BISSAU', 'GY': 'GUYANA', 'HT': 'HAITI',
+    'HM': 'HEARD ISLAND AND MCDONALD ISLANDS', 'VA': 'VATICAN CITY', 'HN': 'HONDURAS', 'HK': 'HONG KONG', 'HU': 'HUNGARY',
+    'IS': 'ICELAND', 'IN': 'INDIA', 'ID': 'INDONESIA', 'IR': 'IRAN', 'IQ': 'IRAQ', 'IE': 'IRELAND',
+    'IM': 'ISLE OF MAN', 'IL': 'ISRAEL', 'IT': 'ITALY', 'JM': 'JAMAICA', 'JP': 'JAPAN', 'JE': 'JERSEY',
+    'JO': 'JORDAN', 'KZ': 'KAZAKHSTAN', 'KE': 'KENYA', 'KI': 'KIRIBATI', 'KP': 'NORTH KOREA', 'KR': 'SOUTH KOREA',
+    'KW': 'KUWAIT', 'KG': 'KYRGYZSTAN', 'LA': 'LAOS', 'LV': 'LATVIA', 'LB': 'LEBANON', 'LS': 'LESOTHO',
+    'LR': 'LIBERIA', 'LY': 'LIBYA', 'LI': 'LIECHTENSTEIN', 'LT': 'LITHUANIA', 'LU': 'LUXEMBOURG', 'MO': 'MACAU',
+    'MG': 'MADAGASCAR', 'MW': 'MALAWI', 'MY': 'MALAYSIA', 'MV': 'MALDIVES', 'ML': 'MALI', 'MT': 'MALTA',
+    'MH': 'MARSHALL ISLANDS', 'MQ': 'MARTINIQUE', 'MR': 'MAURITANIA', 'MU': 'MAURITIUS', 'YT': 'MAYOTTE', 'MX': 'MEXICO',
+    'FM': 'MICRONESIA', 'MD': 'MOLDOVA', 'MC': 'MONACO', 'MN': 'MONGOLIA', 'ME': 'MONTENEGRO', 'MS': 'MONTSERRAT',
+    'MA': 'MOROCCO', 'MZ': 'MOZAMBIQUE', 'MM': 'MYANMAR', 'NA': 'NAMIBIA', 'NR': 'NAURU', 'NP': 'NEPAL',
+    'NL': 'NETHERLANDS', 'NC': 'NEW CALEDONIA', 'NZ': 'NEW ZEALAND', 'NI': 'NICARAGUA', 'NE': 'NIGER', 'NG': 'NIGERIA',
+    'NU': 'NIUE', 'NF': 'NORFOLK ISLAND', 'MK': 'NORTH MACEDONIA', 'MP': 'NORTHERN MARIANA ISLANDS', 'NO': 'NORWAY',
+    'OM': 'OMAN', 'PK': 'PAKISTAN', 'PW': 'PALAU', 'PS': 'PALESTINE', 'PA': 'PANAMA', 'PG': 'PAPUA NEW GUINEA',
+    'PY': 'PARAGUAY', 'PE': 'PERU', 'PH': 'PHILIPPINES', 'PN': 'PITCAIRN', 'PL': 'POLAND', 'PT': 'PORTUGAL',
+    'PR': 'PUERTO RICO', 'QA': 'QATAR', 'RE': 'REUNION', 'RO': 'ROMANIA', 'RU': 'RUSSIA', 'RW': 'RWANDA',
+    'BL': 'SAINT BARTHELEMY', 'SH': 'SAINT HELENA', 'KN': 'SAINT KITTS AND NEVIS', 'LC': 'SAINT LUCIA',
+    'MF': 'SAINT MARTIN', 'PM': 'SAINT PIERRE AND MIQUELON', 'VC': 'SAINT VINCENT AND THE GRENADINES',
+    'WS': 'SAMOA', 'SM': 'SAN MARINO', 'ST': 'SAO TOME AND PRINCIPE', 'SA': 'SAUDI ARABIA', 'SN': 'SENEGAL',
+    'RS': 'SERBIA', 'SC': 'SEYCHELLES', 'SL': 'SIERRA LEONE', 'SG': 'SINGAPORE', 'SX': 'SINT MAARTEN',
+    'SK': 'SLOVAKIA', 'SI': 'SLOVENIA', 'SB': 'SOLOMON ISLANDS', 'SO': 'SOMALIA', 'ZA': 'SOUTH AFRICA',
+    'GS': 'SOUTH GEORGIA', 'SS': 'SOUTH SUDAN', 'ES': 'SPAIN', 'LK': 'SRI LANKA', 'SD': 'SUDAN',
+    'SR': 'SURINAME', 'SJ': 'SVALBARD AND JAN MAYEN', 'SE': 'SWEDEN', 'CH': 'SWITZERLAND', 'SY': 'SYRIA',
+    'TW': 'TAIWAN', 'TJ': 'TAJIKISTAN', 'TZ': 'TANZANIA', 'TH': 'THAILAND', 'TL': 'TIMOR-LESTE',
+    'TG': 'TOGO', 'TK': 'TOKELAU', 'TO': 'TONGA', 'TT': 'TRINIDAD AND TOBAGO', 'TN': 'TUNISIA',
+    'TR': 'TURKEY', 'TM': 'TURKMENISTAN', 'TC': 'TURKS AND CAICOS ISLANDS', 'TV': 'TUVALU', 'UG': 'UGANDA',
+    'UA': 'UKRAINE', 'AE': 'UNITED ARAB EMIRATES', 'GB': 'UNITED KINGDOM', 'US': 'UNITED STATES',
+    'UM': 'UNITED STATES MINOR OUTLYING ISLANDS', 'UY': 'URUGUAY', 'UZ': 'UZBEKISTAN', 'VU': 'VANUATU',
+    'VE': 'VENEZUELA', 'VN': 'VIETNAM', 'VG': 'VIRGIN ISLANDS (BRITISH)', 'VI': 'VIRGIN ISLANDS (U.S.)',
+    'WF': 'WALLIS AND FUTUNA', 'EH': 'WESTERN SAHARA', 'YE': 'YEMEN', 'ZM': 'ZAMBIA', 'ZW': 'ZIMBABWE',
+    'XK': 'KOSOVO',
+
     // 3-letter ISO and common legacy aliases
+    'USA': 'UNITED STATES', 'UK': 'UNITED KINGDOM', 'UAE': 'UNITED ARAB EMIRATES',
     'FRA': 'FRANCE', 'DUBAI': 'UNITED ARAB EMIRATES', 'DXB': 'UNITED ARAB EMIRATES',
-    'SHARJAH': 'UNITED ARAB EMIRATES', 'ABU DHABI': 'UNITED ARAB EMIRATES', 'AJMAN': 'UNITED ARAB EMIRATES',
+    'SHARJAH': 'UNITED ARAB EMIRATES', 'SHJ': 'UNITED ARAB EMIRATES',
+    'ABU DHABI': 'UNITED ARAB EMIRATES', 'ABUDHABI': 'UNITED ARAB EMIRATES', 'AUH': 'UNITED ARAB EMIRATES',
+    'AJMAN': 'UNITED ARAB EMIRATES', 'FUJAIRAH': 'UNITED ARAB EMIRATES',
     'DEU': 'GERMANY', 'GER': 'GERMANY', 'CAN': 'CANADA', 'SGP': 'SINGAPORE', 'SIN': 'SINGAPORE',
     'IND': 'INDIA', 'AUS': 'AUSTRALIA', 'GBR': 'UNITED KINGDOM', 'NZL': 'NEW ZEALAND', 'NLD': 'NETHERLANDS',
-    'ITA': 'ITALY', 'ESP': 'SPAIN', 'CHE': 'SWITZERLAND', 'CHN': 'CHINA', 'JPN': 'JAPAN',
-    'KOR': 'SOUTH KOREA', 'MYS': 'MALAYSIA', 'THA': 'THAILAND', 'IDN': 'INDONESIA', 'PHL': 'PHILIPPINES',
-    'VNM': 'VIETNAM', 'SAU': 'SAUDI ARABIA', 'QAT': 'QATAR', 'KWT': 'KUWAIT', 'BHR': 'BAHRAIN',
-    'OMN': 'OMAN', 'TUR': 'TURKEY', 'EGY': 'EGYPT', 'ZAF': 'SOUTH AFRICA', 'RUS': 'RUSSIA',
+    'HOL': 'NETHERLANDS', 'ITA': 'ITALY', 'ESP': 'SPAIN', 'CHE': 'SWITZERLAND', 'SUI': 'SWITZERLAND',
+    'CHN': 'CHINA', 'JPN': 'JAPAN', 'KOR': 'SOUTH KOREA', 'MYS': 'MALAYSIA', 'MAS': 'MALAYSIA',
+    'THA': 'THAILAND', 'IDN': 'INDONESIA', 'PHL': 'PHILIPPINES', 'VNM': 'VIETNAM', 'SAU': 'SAUDI ARABIA',
+    'KSA': 'SAUDI ARABIA', 'QAT': 'QATAR', 'KWT': 'KUWAIT', 'BHR': 'BAHRAIN', 'OMN': 'OMAN',
+    'TUR': 'TURKEY', 'EGY': 'EGYPT', 'ZAF': 'SOUTH AFRICA', 'RSA': 'SOUTH AFRICA', 'RUS': 'RUSSIA',
     'BRA': 'BRAZIL', 'MEX': 'MEXICO', 'ARG': 'ARGENTINA', 'COL': 'COLOMBIA', 'CHL': 'CHILE',
     'POL': 'POLAND', 'SWE': 'SWEDEN', 'NOR': 'NORWAY', 'DNK': 'DENMARK', 'FIN': 'FINLAND',
-    'IRL': 'IRELAND', 'BEL': 'BELGIUM', 'AUT': 'AUSTRIA', 'PRT': 'PORTUGAL', 'GRC': 'GREECE',
-    'CZE': 'CZECH REPUBLIC', 'HUN': 'HUNGARY', 'ROU': 'ROMANIA', 'ISR': 'ISRAEL', 'LKA': 'SRI LANKA',
-    'BGD': 'BANGLADESH', 'NPL': 'NEPAL', 'PAK': 'PAKISTAN', 'HKG': 'HONG KONG', 'TWN': 'TAIWAN'
+    'IRL': 'IRELAND', 'BEL': 'BELGIUM', 'AUT': 'AUSTRIA', 'PRT': 'PORTUGAL', 'POR': 'PORTUGAL',
+    'GRC': 'GREECE', 'CZE': 'CZECH REPUBLIC', 'HUN': 'HUNGARY', 'ROU': 'ROMANIA', 'ISR': 'ISRAEL',
+    'LKA': 'SRI LANKA', 'BGD': 'BANGLADESH', 'NPL': 'NEPAL', 'PAK': 'PAKISTAN', 'HKG': 'HONG KONG', 'TWN': 'TAIWAN'
   };
 
   function cpGetFullCountryName(val) {
@@ -2468,7 +2824,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         }
 
         h += '<tr onclick="cpShowRequestDetail(\'' + rw.request_awb + '\')">';
-        h += '<td class="awbc">' + rw.request_awb + '</td>';
+        h += '<td class="awbc"><div style="display:inline-flex;align-items:center;gap:6px;"><span>' + rw.request_awb + '</span><button type="button" class="cp-copy-btn" onclick="cpCopyText(\'' + rw.request_awb + '\', \'Request AWB\', event)" title="Copy Request AWB"><i class="fa-regular fa-copy"></i></button></div></td>';
         h += '<td style="font-weight:600;color:var(--cptext2)">' + formattedDate + '</td>';
         h += '<td class="nmc">' + (rw.receiver_name || '—') + '</td>';
         h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + (rw.receiver_city || '—') + (rw.receiver_country ? ' (' + cpGetFullCountryName(rw.receiver_country) + ')' : '') + '</td>';
@@ -2511,7 +2867,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       var formattedDate = r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
       var h = '';
-      h += '<div class="cp-dh"><h3><i class="fa-solid fa-clipboard-list"></i> Request ' + r.request_awb + ' <span class="cp-live-badge" style="font-size:9px"><span class="cp-live-dot"></span>Live</span></h3>';
+      h += '<div class="cp-dh"><div style="display:flex;align-items:center;gap:8px;"><h3><i class="fa-solid fa-clipboard-list"></i> Request ' + r.request_awb + '</h3><button type="button" class="cp-copy-btn" onclick="cpCopyText(\'' + r.request_awb + '\', \'Request AWB\', event)" title="Copy Request AWB"><i class="fa-regular fa-copy"></i> Copy</button><span class="cp-live-badge" style="font-size:9px"><span class="cp-live-dot"></span>Live</span></div>';
       h += '<div style="display:flex;align-items:center;gap:8px;">';
       if (r.status !== 'confirmed' && r.status !== 'cancelled' && r.status !== 'rejected') {
         h += '<button onclick="cpCancelBookingRequest(\'' + r.request_awb + '\')" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="fa-solid fa-trash-can"></i> Cancel Request</button>';
@@ -2600,7 +2956,6 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Box</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Description</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Qty</th>';
-        h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Amount</th>';
         h += '</tr></thead><tbody>';
         reqInvItems.forEach(function (item, i) {
           h += '<tr style="border-bottom:1px solid rgba(0,0,0,.05);">';
@@ -2608,7 +2963,6 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
           h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.box_no || '—') + '</td>';
           h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (item.description || item.item_name || item.name || '—') + '</td>';
           h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.quantity || item.qty || '—') + ' ' + (item.unit_type || item.unit || '') + '</td>';
-          h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">₹' + (item.amount || item.cost || item.total || '—') + '</td>';
           h += '</tr>';
         });
         h += '</tbody></table></div></div>';
@@ -2751,6 +3105,45 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     }, 5000);
   }
 
+  // Copy to clipboard helper
+  function cpCopyText(text, label, e) {
+    if (e) {
+      if (typeof e.stopPropagation === 'function') e.stopPropagation();
+      if (typeof e.preventDefault === 'function') e.preventDefault();
+    }
+    if (!text) return;
+    var clean = String(text).trim().replace(/^FWD\s*:\s*/i, '');
+    var lbl = label || 'Number';
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(clean).then(function () {
+        cpShowToast('success', 'Copied!', lbl + ' ' + clean + ' copied to clipboard');
+      }).catch(function () {
+        cpFallbackCopy(clean, lbl);
+      });
+    } else {
+      cpFallbackCopy(clean, lbl);
+    }
+  }
+
+  function cpFallbackCopy(clean, lbl) {
+    var ta = document.createElement('textarea');
+    ta.value = clean;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+      document.execCommand('copy');
+      cpShowToast('success', 'Copied!', lbl + ' ' + clean + ' copied to clipboard');
+    } catch (err) {
+      cpShowToast('error', 'Copy Failed', 'Please copy manually: ' + clean);
+    }
+    document.body.removeChild(ta);
+  }
+
   function cpLogout() {
     cpAjax('pe_cp_logout', {}, function () {
       location.reload();
@@ -2761,10 +3154,10 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     if (!st) return { dot: 'db', label: 'Shipment Booked' };
     var s = st.toLowerCase().trim();
     var dot = 'dt'; // default: transit/orange
-    // Force delivered if backend confirmed
-    if (isDelivered) { dot = 'dd'; }
-    // Delivered (green)
-    else if ((s.indexOf('deliver') >= 0 || s.indexOf('dlvd') >= 0 || s.indexOf('pod') >= 0 || s.indexOf('proof') >= 0) && s.indexOf('out for') === -1 && s.indexOf('undeliver') === -1 && s.indexOf('not deliver') === -1) dot = 'dd';
+    // Force delivered if backend confirmed or status indicates delivered / proof of delivery
+    if (isDelivered || s.indexOf('deliver') >= 0 || s.indexOf('dlvd') >= 0 || s.indexOf('proof of delivery') >= 0 || s.indexOf('signed by') >= 0 || s === 'pod') {
+      dot = 'dd';
+    }
     // Out for delivery (orange/transit)
     else if (s.indexOf('out for') >= 0 || s.indexOf('ofd') >= 0) dot = 'dt';
     // Cancelled / Failed (red)
@@ -2795,16 +3188,70 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         return;
       }
       var r = d.data, h = '';
+      var totalAmt = (typeof r.total_amount !== 'undefined' && Number(r.total_amount) > 0) ? Number(r.total_amount) : ((typeof r.total_billed_amount !== 'undefined' && Number(r.total_billed_amount) > 0) ? Number(r.total_billed_amount) : 0);
+      var allAmt = (typeof r.total_all_amount !== 'undefined' && Number(r.total_all_amount) > 0) ? Number(r.total_all_amount) : totalAmt;
+
+      // Always update profile total amount with grand total across ALL shipments
+      if (allAmt > 0) {
+        var formattedAllAmt = '₹' + Number(allAmt).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        var elProfAmt = document.getElementById('cp-profile-total-amount');
+        if (elProfAmt) {
+          elProfAmt.textContent = formattedAllAmt;
+        }
+      }
+
+      // If user is searching, show total of matching search results across all matching pages
+      // When not searching (or browsing pages 1, 2, 3...), show grand total across all shipments
+      var statAmt = cpSearch ? (totalAmt > 0 ? totalAmt : allAmt) : (allAmt > 0 ? allAmt : totalAmt);
+      if (statAmt > 0) {
+        var formattedStatAmt = '₹' + Number(statAmt).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        var elStatAmt = document.getElementById('cp-stat-total-amount');
+        if (elStatAmt) {
+          elStatAmt.textContent = formattedStatAmt;
+        }
+      }
+
+      var deliveredCount = Number(r.count_delivered) || 0;
+      var pageDelivered = 0;
+      if (r.rows && r.rows.length > 0) {
+        r.rows.forEach(function (rw) {
+          var isDel = Boolean(rw.is_delivered);
+          var sLow = (rw.status || '').toLowerCase();
+          if (isDel || sLow.indexOf('deliver') >= 0 || sLow.indexOf('proof of delivery') >= 0 || sLow.indexOf('signed by') >= 0 || sLow === 'pod') {
+            pageDelivered++;
+            rw.is_delivered = true;
+          }
+        });
+      }
+      if (pageDelivered > deliveredCount) {
+        deliveredCount = pageDelivered;
+      }
+      if (!cpSearch) {
+        var elDel = document.getElementById('cp-stat-delivered');
+        if (elDel) {
+          elDel.textContent = Number(deliveredCount).toLocaleString('en-IN');
+        }
+      }
+
+      if (typeof r.count_transit !== 'undefined' && (!cpSearch || Number(r.count_transit) > 0)) {
+        var elTr = document.getElementById('cp-stat-transit');
+        if (elTr) elTr.textContent = String(r.count_transit).padStart(2, '0');
+      }
+      if (typeof r.count_all !== 'undefined' && (!cpSearch || Number(r.count_all) > 0)) {
+        var elTot = document.getElementById('cp-stat-total-shipments');
+        if (elTot) elTot.textContent = Number(r.count_all).toLocaleString('en-IN');
+      }
       h += '<div class="cp-tc"><div class="cp-th"><h3><i class="fa-solid fa-layer-group"></i> Your Shipments <span class="badge">' + r.total + '</span></h3></div>';
       h += '<div class="cp-tw"><table class="cp-t"><thead><tr><th>AWB</th><th>Forwarding</th><th>Booking Date</th><th>Consignee</th><th>Destination</th><th>Weight</th><th>Amount</th><th>Status</th></tr></thead><tbody>';
       if (!r.rows.length) h += '<tr><td colspan="8" style="text-align:center;padding:50px;color:var(--cptext3)"><i class="fa-solid fa-inbox" style="font-size:28px;display:block;margin-bottom:10px;opacity:.2"></i>No shipments found</td></tr>';
       r.rows.forEach(function (rw) {
         var stDot = cpGetStatusDot(rw.status, rw.is_delivered);
-        var fwdCarrierBadge = rw.forwarding_carrier ? '<span style="display:inline-block;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--cpblue);background:rgba(59,130,246,0.1);padding:1px 6px;border-radius:4px;margin-bottom:2px;">' + rw.forwarding_carrier + '</span>' : '';
-        var fwdHtml = (rw.forwarding_number ? '<div style="font-size:12px;font-weight:700;color:#1e40af;"><i class="fa-solid fa-plane-departure" style="font-size:9px;margin-right:3px;"></i>' + rw.forwarding_number + '</div>' : '<span style="color:var(--cptext3);font-size:11px;">—</span>');
-        h += '<tr onclick="cpShowDetail(\'' + rw.awb + '\')" data-awb="' + rw.awb + '">';
-        h += '<td class="awbc">' + rw.awb + '</td>';
-        h += '<td>' + (fwdCarrierBadge ? fwdCarrierBadge + '<br>' : '') + fwdHtml + '</td>';
+        var fwdCopyBtn = rw.forwarding_number ? ' <button type="button" class="cp-copy-btn" onclick="cpCopyText(\'' + String(rw.forwarding_number).replace(/'/g, "\\'") + '\', \'Forwarding Number\', event)" title="Copy Forwarding Number"><i class="fa-regular fa-copy"></i></button>' : '';
+        var fwdHtml = (rw.forwarding_number ? '<div style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:#1e40af;"><i class="fa-solid fa-plane-departure" style="font-size:9px;margin-right:2px;"></i><span>' + rw.forwarding_number + '</span>' + fwdCopyBtn + '</div>' : '<span style="color:var(--cptext3);font-size:11px;">—</span>');
+        var rowIsDeliv = Boolean(rw.is_delivered);
+        h += '<tr onclick="cpShowDetail(\'' + rw.awb + '\')" data-awb="' + rw.awb + '" data-delivered="' + (rowIsDeliv ? '1' : '0') + '">';
+        h += '<td class="awbc"><div style="display:inline-flex;align-items:center;gap:6px;"><span>' + rw.awb + '</span><button type="button" class="cp-copy-btn" onclick="cpCopyText(\'' + rw.awb + '\', \'AWB\', event)" title="Copy AWB"><i class="fa-regular fa-copy"></i></button></div></td>';
+        h += '<td>' + fwdHtml + '</td>';
         h += '<td style="font-weight:600;color:var(--cptext2)">' + (rw.booking_date || '—') + '</td>';
         h += '<td class="nmc">' + rw.consignee + '</td>';
         h += '<td><i class="fa-solid fa-location-dot" style="color:var(--cptext3);font-size:10px;margin-right:4px"></i>' + cpGetFullCountryName(rw.destination) + '</td>';
@@ -2841,11 +3288,46 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         (function(r, a) {
           cpAjax('pe_cp_track_status', { awb: a }, function(d) {
             active--;
-            if (d.success && d.data && d.data.status) {
-              var statusCell = r.querySelector('.cp-status-cell');
-              if (statusCell) {
-                var stDot = cpGetStatusDot(d.data.status, d.data.is_delivered);
-                statusCell.innerHTML = '<div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span><span>' + stDot.label + '</span></div>';
+            if (d.success && d.data) {
+              // Dynamically update forwarding number in table row if returned by live tracking
+              if (d.data.forwarding_number) {
+                var fwdCell = r.children[1];
+                if (fwdCell) {
+                  var curFwdText = fwdCell.textContent.trim();
+                  if (!curFwdText || curFwdText === '—' || curFwdText === '-') {
+                    var rawFwd = String(d.data.forwarding_number).trim();
+                    var fwdCopyBtn = ' <button type="button" class="cp-copy-btn" onclick="cpCopyText(\'' + rawFwd.replace(/'/g, "\\'") + '\', \'Forwarding Number\', event)" title="Copy Forwarding Number"><i class="fa-regular fa-copy"></i></button>';
+                    var fwdHtml = '<div style="display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:#1e40af;"><i class="fa-solid fa-plane-departure" style="font-size:9px;margin-right:2px;"></i><span>' + rawFwd + '</span>' + fwdCopyBtn + '</div>';
+                    fwdCell.innerHTML = fwdHtml;
+                  }
+                }
+              }
+
+              if (d.data.status) {
+                var statusCell = r.querySelector('.cp-status-cell');
+                if (statusCell) {
+                  var liveDelivered = Boolean(d.data.is_delivered);
+                  var displayStatus = d.data.status || '';
+                  var sLow = displayStatus.toLowerCase();
+                  if (sLow.indexOf('deliver') >= 0 || sLow.indexOf('proof of delivery') >= 0 || sLow.indexOf('signed by') >= 0 || sLow === 'pod') {
+                    liveDelivered = true;
+                  }
+                  var wasDelivered = r.getAttribute('data-delivered') === '1';
+                  if (wasDelivered && !liveDelivered) {
+                    liveDelivered = true;
+                  }
+                  var stDot = cpGetStatusDot(displayStatus, liveDelivered);
+                  statusCell.innerHTML = '<div class="cp-st"><span class="cp-dot ' + stDot.dot + '"></span><span>' + stDot.label + '</span></div>';
+                  if (liveDelivered) {
+                    var wasAlreadyDel = r.getAttribute('data-delivered') === '1';
+                    r.setAttribute('data-delivered', '1');
+                    var elDel = document.getElementById('cp-stat-delivered');
+                    if (elDel && !wasAlreadyDel) {
+                      var curStat = parseInt((elDel.textContent || '0').replace(/,/g, '')) || 0;
+                      elDel.textContent = Number(curStat + 1).toLocaleString('en-IN');
+                    }
+                  }
+                }
               }
             }
             processNext();
@@ -2869,12 +3351,12 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       h += '<div class="cp-db-body">';
       h += '<div class="cp-ds"><h4><i class="fa-solid fa-circle-info"></i> Current Status</h4><div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0"><span class="cp-dot ' + stDot.dot + '" style="width:10px;height:10px"></span><span style="font-size:15px;font-weight:700;color:#0f172a">' + (s.status || stDot.label) + '</span></div></div>';
       h += '<div class="cp-ds"><h4><i class="fa-solid fa-box"></i> Shipment Details</h4><div class="cp-dg">';
-      h += '<div class="cp-df"><div class="l">AWB Number</div><div class="v" style="font-weight:800;color:var(--cptext);">' + s.awb + '</div></div>';
+      h += '<div class="cp-df"><div class="l">AWB Number</div><div class="v" style="font-weight:800;color:var(--cptext);display:flex;align-items:center;gap:8px;"><span>' + s.awb + '</span><button type="button" class="cp-copy-btn" onclick="cpCopyText(\'' + s.awb + '\', \'AWB\', event)" title="Copy AWB"><i class="fa-regular fa-copy"></i> Copy</button></div></div>';
       if (s.forwarding_number) {
         var rawFwd = String(s.forwarding_number).trim().replace(/^FWD\s*:\s*/i, '');
         var blockMatches = rawFwd.match(/\b\d{4}\s+\d{4}\s+\d{4}\s+[0-9A-Za-z]+\b/g);
         var fwdDisplay = (blockMatches && blockMatches.length > 1) ? blockMatches.join('<br>') : rawFwd;
-        h += '<div class="cp-df"><div class="l">Forwarding Number</div><div class="v" style="font-weight:700;color:#1e40af;line-height:1.4;">' + fwdDisplay + '</div></div>';
+        h += '<div class="cp-df"><div class="l">Forwarding Number</div><div class="v" style="font-weight:700;color:#1e40af;line-height:1.4;"><div style="display:flex;align-items:center;gap:8px;"><span>' + fwdDisplay + '</span><button type="button" class="cp-copy-btn" onclick="cpCopyText(\'' + rawFwd.replace(/'/g, "\\'") + '\', \'Forwarding Number\', event)" title="Copy Forwarding Number"><i class="fa-regular fa-copy"></i> Copy</button></div></div></div>';
       }
       h += '<div class="cp-df"><div class="l">Booking Date</div><div class="v">' + (s.date || '—') + '</div></div>';
       if (s.chargeable_weight) {
@@ -2919,7 +3401,6 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Box</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Description</th>';
         h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Qty</th>';
-        h += '<th style="padding:8px 10px; text-align:left; font-size:9px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:.5px;">Amount</th>';
         h += '</tr></thead><tbody>';
         shpInvItems.forEach(function (item, i) {
           h += '<tr style="border-bottom:1px solid rgba(0,0,0,.05);">';
@@ -2927,7 +3408,6 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
           h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.box_no || '—') + '</td>';
           h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + (item.description || item.item_name || item.name || '—') + '</td>';
           h += '<td style="padding:8px 10px; color:var(--cptext2);">' + (item.quantity || item.qty || '—') + ' ' + (item.unit_type || item.unit || '') + '</td>';
-          h += '<td style="padding:8px 10px; font-weight:600; color:var(--cptext1);">₹' + (item.amount || item.total || item.cost || '—') + '</td>';
           h += '</tr>';
         });
         h += '</tbody></table></div></div>';

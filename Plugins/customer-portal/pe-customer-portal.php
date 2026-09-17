@@ -365,6 +365,10 @@ function pe_cp_ajax_shipments()
     if ($has_shipments_tbl === null) {
         $has_shipments_tbl = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
     }
+    static $has_booking_req_tbl = null;
+    if ($has_booking_req_tbl === null) {
+        $has_booking_req_tbl = !empty($wpdb->get_var("SHOW TABLES LIKE 'booking_requests'"));
+    }
 
     // 1. Direct match by registered customer ID / code (strictly excluding walk-in 'W001')
     if ($cust_id > 0) {
@@ -438,14 +442,19 @@ function pe_cp_ajax_shipments()
     if (empty($match_clauses)) {
         $where = "1=0";
     } else {
-        $where = "(" . implode(" OR ", $match_clauses) . ")";
+        $where_all = "(" . implode(" OR ", $match_clauses) . ") AND a.AWBNO > 0";
         if (!empty($match_params)) {
-            $where = $wpdb->prepare($where, ...$match_params);
+            $where_all = $wpdb->prepare($where_all, ...$match_params);
         }
+        // Filter out data before September 1, 2026 in customer dashboard (include current/unassigned dates)
+        $where = $where_all . " AND (a.AWBDATE >= '2026-09-01' OR a.AWBDATE = '0000-00-00' OR a.AWBDATE IS NULL)";
+        // If date filter results in 0 shipments, fall back to all-time customer records
+        $chk_count = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where"));
+        if ($chk_count === 0) {
+            $where = $where_all;
+        }
+        $where_base = $where;
     }
-
-    // Filter out data before September 1, 2026 in customer dashboard (include current/unassigned dates)
-    $where .= " AND (a.AWBDATE >= '2026-09-01' OR a.AWBDATE = '0000-00-00' OR a.AWBDATE IS NULL)";
 
     if ($search) {
         $like = '%' . $wpdb->esc_like($search) . '%';
@@ -466,20 +475,33 @@ function pe_cp_ajax_shipments()
 
     $rows = $wpdb->get_results(
         "SELECT a.AWBID as c_id, a.AWBNO, a.CNEENAME as CONSIGNEE, a.DESTNAME as DESTINATION,
-                a.CHARGEWEIGHT as WEIGHT, a.AWBDATE as BOOKINGDATE, a.VENDNAME as vendor,
-                a.SNAME, a.VENDORAWB1, a.VENDORAWB2, a.NETAMOUNT, a.TOTAL, a.CHARGES, a.RECEIPTAMOUNT
+                a.CHARGEWEIGHT as WEIGHT, a.ACTUALWEIGHT, a.RATE, a.AWBDATE as BOOKINGDATE, a.VENDNAME as vendor,
+                a.SNAME, a.VENDORAWB1, a.VENDORAWB2, a.NETAMOUNT, a.TOTAL, a.CHARGES, a.RECEIPTAMOUNT,
+                a.PODTOWEB, a.REMARKS, a.SERVICE, a.SHOWFWD, a.VENDCODE, a.TUSER, a.TPASS, a.ACCODE, a.APIKEY
          FROM AWBENTRY a
          WHERE $where
          ORDER BY a.AWBID DESC
          LIMIT " . intval($per) . " OFFSET " . intval($offset)
     );
 
+    $clean_fwd = function($val, $primaryVendor = '', $ourAwb = '') {
+        if ($val === null) return '';
+        $s = trim(strval($val));
+        if ($s === '' || $s === '0' || $s === '0.00' || $s === 'null' || $s === 'undefined' || $s === 'None' || $s === '-' || $s === '—') return '';
+        $s = preg_replace('/^FWD\s*[:\-]\s*/i', '', $s);
+        $s = trim($s);
+        if ($s === '' || $s === $primaryVendor || $s === $ourAwb) return '';
+        if (stripos($s, 'not found') !== false || stripos($s, 'error') !== false || strtolower($s) === 'pending') return '';
+        return $s;
+    };
+
     $data = [];
     foreach ($rows as $r) {
         $status = '';
         $latest_ph = $wpdb->get_row($wpdb->prepare(
-            "SELECT activity, date, time, location FROM parcel_history WHERE AWBNO = %d ORDER BY date DESC, time DESC LIMIT 1",
-            intval($r->AWBNO)
+            "SELECT activity, date, time, location FROM parcel_history WHERE AWBNO = %d OR CAST(AWBNO AS CHAR) = %s ORDER BY date DESC, time DESC LIMIT 1",
+            intval($r->AWBNO),
+            strval($r->AWBNO)
         ));
         $ph = $latest_ph ? trim($latest_ph->activity) : '';
 
@@ -487,57 +509,155 @@ function pe_cp_ajax_shipments()
         $shp = null;
         if ($has_shipments_tbl) {
             $shp = $wpdb->get_row($wpdb->prepare(
-                "SELECT vendor_code, vendor_awb_number, vendor_awb_number_2, forwarding_no, secondary_carrier, status, total_amount, shipping_charge, grand_total, final_grand_total, net_amount FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
+                "SELECT id, vendor_code, vendor_awb_number, vendor_awb_number_2, forwarding_no, secondary_carrier, status, total_amount, shipping_charge, grand_total, final_grand_total, net_amount, vendor_raw_response FROM shipments WHERE tracking_number = %s OR order_id = %s OR vendor_awb_number = %s OR order_reference = %s OR invoice_no = %s LIMIT 1",
+                strval($r->AWBNO),
+                strval($r->AWBNO),
+                strval($r->AWBNO),
+                strval($r->AWBNO),
+                strval($r->AWBNO)
+            ));
+            if (!$shp && !empty($r->VENDORAWB1)) {
+                $shp = $wpdb->get_row($wpdb->prepare(
+                    "SELECT id, vendor_code, vendor_awb_number, vendor_awb_number_2, forwarding_no, secondary_carrier, status, total_amount, shipping_charge, grand_total, final_grand_total, net_amount, vendor_raw_response FROM shipments WHERE vendor_awb_number = %s OR tracking_number = %s LIMIT 1",
+                    strval($r->VENDORAWB1),
+                    strval($r->VENDORAWB1)
+                ));
+            }
+        }
+
+        // Lookup booking request for amount if not found in AWBENTRY
+        $breq = null;
+        if (!empty($has_booking_req_tbl)) {
+            $breq = $wpdb->get_row($wpdb->prepare(
+                "SELECT shipping_charge, status FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
                 strval($r->AWBNO),
                 strval($r->AWBNO)
             ));
         }
 
-        // Lookup booking request for amount/forwarding if not found in AWBENTRY
-        $breq = $wpdb->get_row($wpdb->prepare(
-            "SELECT shipping_charge, total_amount, forwarding_no FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
-            strval($r->AWBNO),
-            strval($r->AWBNO)
-        ));
+        // Pick first non-empty vendor name
+        $vendor_name = trim(strval($shp->vendor_code ?? ''));
+        if ($vendor_name === '') $vendor_name = trim(strval($r->vendor ?? ($r->VENDNAME ?? '')));
 
-        $vendor_name = trim(strval($shp->vendor_code ?? ($r->vendor ?? ($r->VENDNAME ?? ''))));
-        $vAwb = trim(strval($shp->vendor_awb_number ?? ($r->VENDORAWB1 ?? '')));
-        $fwd = trim(strval($shp->forwarding_no ?? ($shp->vendor_awb_number_2 ?? ($r->VENDORAWB2 ?? ($breq->forwarding_no ?? '')))));
+        // Pick first non-empty vendor AWB
+        $vAwb = trim(strval($shp->vendor_awb_number ?? ''));
+        if ($vAwb === '') $vAwb = trim(strval($r->VENDORAWB1 ?? ''));
+
+        // Pick first non-empty forwarding number from all sources
+        $fwd = $clean_fwd($shp->forwarding_no ?? '', $vAwb, strval($r->AWBNO));
+        if ($fwd === '') $fwd = $clean_fwd($shp->vendor_awb_number_2 ?? '', $vAwb, strval($r->AWBNO));
+        if ($fwd === '') $fwd = $clean_fwd($r->VENDORAWB2 ?? '', $vAwb, strval($r->AWBNO));
+        if ($fwd === '') $fwd = $clean_fwd($breq->forwarding_no ?? '', $vAwb, strval($r->AWBNO));
+
         $fwdCarrier = trim(strval($shp->secondary_carrier ?? ''));
 
-        // 1. Check if delivered - expanded patterns (DLVD, POD, Proof of Delivery, etc.)
+        // Parse vendor_raw_response if present for forwarding number & carrier (Pacific, ITDServices, FlySwift, etc.)
+        if (!empty($shp->vendor_raw_response)) {
+            $raw_resp = is_string($shp->vendor_raw_response) ? json_decode($shp->vendor_raw_response, true) : (is_array($shp->vendor_raw_response) ? $shp->vendor_raw_response : null);
+            $raw_data = $raw_resp['response'] ?? ($raw_resp['data'] ?? ($raw_resp['Tracking'] ?? $raw_resp));
+            if (is_array($raw_data)) {
+                $trk_obj = isset($raw_data['Tracking'][0]) && is_array($raw_data['Tracking'][0]) ? $raw_data['Tracking'][0] : (isset($raw_data[0]) && is_array($raw_data[0]) ? $raw_data[0] : $raw_data);
+                if ($fwd === '') {
+                    $raw_cand = $trk_obj['VendorAWBNo2'] ?? $trk_obj['VendorAWBNo1'] ?? $trk_obj['VendorAWBNo'] ?? $trk_obj['VendorAwbNo2'] ?? $trk_obj['VendorAwbNo1'] ?? $trk_obj['VendorAwbNo'] ?? $trk_obj['ForwardingNo'] ?? $trk_obj['ForwardingNo1'] ?? $trk_obj['forwarding_no'] ?? $trk_obj['forwording_no'] ?? $trk_obj['Forwarding_No'] ?? $trk_obj['vendor_awb_2'] ?? $trk_obj['vendorAwb2'] ?? $raw_data['forwarding_no'] ?? $raw_data['forwording_no'] ?? $raw_data['vendor_awb_2'] ?? '';
+                    
+                    // FlySwift / ITDServices docket_info check
+                    $d_info = !empty($raw_data['docket_info']) && is_array($raw_data['docket_info']) ? $raw_data['docket_info'] : (!empty($raw_data['data']['docket_info']) && is_array($raw_data['data']['docket_info']) ? $raw_data['data']['docket_info'] : null);
+                    if (empty($raw_cand) && !empty($d_info)) {
+                        foreach ($d_info as $info_pair) {
+                            $k = ''; $v = '';
+                            if (is_array($info_pair) && count($info_pair) >= 2) {
+                                $k = strtolower(trim((string)$info_pair[0]));
+                                $v = trim((string)$info_pair[1]);
+                            } elseif (is_object($info_pair) && isset($info_pair->key)) {
+                                $k = strtolower(trim((string)$info_pair->key));
+                                $v = trim((string)($info_pair->value ?? ''));
+                            }
+                            if ((strpos($k, 'forwarding') !== false || strpos($k, 'forwording') !== false || strpos($k, 'secondary') !== false || strpos($k, 'fwd') !== false) && !empty($v)) {
+                                $raw_cand = $v;
+                                break;
+                            }
+                        }
+                    }
+
+                    $raw_fwd = $clean_fwd($raw_cand, $vAwb, strval($r->AWBNO));
+                    if ($raw_fwd !== '') {
+                        $fwd = $raw_fwd;
+                    }
+                }
+                if ($fwdCarrier === '' || strtolower($fwdCarrier) === 'forwarded vendor' || strtolower($fwdCarrier) === 'carrier') {
+                    $raw_c = trim(strval($trk_obj['VendorName2'] ?? ($trk_obj['VendorName'] ?? ($trk_obj['ForwardingCarrier'] ?? ($trk_obj['Carrier'] ?? ($trk_obj['carrier'] ?? ($trk_obj['secondary_carrier'] ?? '')))))));
+                    if ($raw_c !== '') $fwdCarrier = $raw_c;
+                }
+            }
+        }
+
+        // Live vendor API fallback if forwarding number is still empty and service is configured
+        if ($fwd === '' && intval($r->SERVICE ?? 0) > 0 && function_exists('pe_fetch_tracking')) {
+            $c = new stdClass();
+            $c->AWBNO = strval($r->AWBNO);
+            $c->VENDORID1 = $vAwb ?: '';
+            $c->VENDORID2 = '';
+            $c->VENDCODE = $r->VENDCODE ?: '';
+            $c->VENDNAME = $vendor_name ?: '';
+            $c->SERVICE = intval($r->SERVICE);
+            $c->API = 1;
+            $c->TUSER = $r->TUSER ?: '';
+            $c->TPASS = $r->TPASS ?: '';
+            $c->ACCODE = $r->ACCODE ?: '';
+            $c->APIKEY = $r->APIKEY ?: '';
+
+            try {
+                pe_fetch_tracking($c);
+                if (!empty($c->VENDORID2)) {
+                    $live_fwd = $clean_fwd($c->VENDORID2, $vAwb, strval($r->AWBNO));
+                    if ($live_fwd !== '') {
+                        $fwd = $live_fwd;
+                        $wpdb->query($wpdb->prepare("UPDATE AWBENTRY SET VENDORAWB2 = %s WHERE AWBNO = %d", $fwd, intval($r->AWBNO)));
+                        if (!empty($shp->id)) {
+                            $wpdb->query($wpdb->prepare("UPDATE shipments SET vendor_awb_number_2 = %s, forwarding_no = %s WHERE id = %d", $fwd, $fwd, intval($shp->id)));
+                        }
+                    }
+                }
+            } catch (\Exception $ex) {}
+        }
+
+        // Auto-detect carrier from forwarding number pattern
+        if ($fwd !== '' && ($fwdCarrier === '' || strtolower($fwdCarrier) === 'forwarded vendor' || strtolower($fwdCarrier) === 'carrier')) {
+            if (preg_match('/^1Z/i', $fwd)) $fwdCarrier = 'UPS';
+            elseif (preg_match('/^[0-9]{12}$/', $fwd)) $fwdCarrier = 'FedEx';
+            elseif (preg_match('/^[0-9]{10}$/', $fwd)) $fwdCarrier = 'DHL';
+            elseif (preg_match('/^026[0-9]{11}$/', $fwd)) $fwdCarrier = 'DPD';
+        }
+
+        // 1. Check if delivered - strictly matching Admin Portal logic (no false matches on remarks or loose terms)
         $is_delivered = false;
-        if (!empty($shp->status) && preg_match('/^delivered$/i', trim($shp->status))) {
+        if (intval($r->PODTOWEB ?? 0) === 1 || strval($r->PODTOWEB ?? '') === '1') {
             $is_delivered = true;
-        } elseif (!empty($ph) && preg_match('/deliver|dlvd|pod|proof/i', $ph) && !preg_match('/out for|undeliver|not.deliver/i', $ph)) {
+        } elseif (!empty($shp->status) && (stripos($shp->status, 'deliver') !== false || stripos($shp->status, 'proof of delivery') !== false || strtolower(trim($shp->status)) === 'pod')) {
+            $is_delivered = true;
+        } elseif (!empty($breq->status) && (stripos($breq->status, 'deliver') !== false || stripos($breq->status, 'proof of delivery') !== false || strtolower(trim($breq->status)) === 'pod')) {
+            $is_delivered = true;
+        } elseif (!empty($ph) && preg_match('/\b(delivered|dlvd|proof of delivery|signed by|pod)\b/i', $ph) && !preg_match('/out for|undeliver|not delivered|attempt|fail|expected|scheduled/i', $ph)) {
             $is_delivered = true;
         } else {
-            $has_del_history = $wpdb->get_var($wpdb->prepare(
-                "SELECT activity FROM parcel_history WHERE AWBNO = %d AND (LOWER(activity) LIKE '%deliver%' OR LOWER(activity) LIKE '%dlvd%' OR LOWER(activity) LIKE '%proof of delivery%' OR LOWER(activity) LIKE '%pod uploaded%' OR LOWER(activity) LIKE '%pod%' OR LOWER(activity) LIKE '%proof%') AND LOWER(activity) NOT LIKE '%out for%' AND LOWER(activity) NOT LIKE '%undeliver%' AND LOWER(activity) NOT LIKE '%not deliver%' LIMIT 1",
-                intval($r->AWBNO)
+            $has_del_event = $wpdb->get_var($wpdb->prepare(
+                "SELECT 1 FROM parcel_history WHERE (AWBNO = %d OR CAST(AWBNO AS CHAR) = %s) AND (LOWER(activity) LIKE '%%delivered%%' OR LOWER(activity) LIKE '%%proof of delivery%%' OR LOWER(activity) LIKE '%%dlvd%%' OR LOWER(activity) = 'pod' OR LOWER(activity) LIKE '%%signed by%%') AND LOWER(activity) NOT LIKE '%%out for%%' AND LOWER(activity) NOT LIKE '%%undeliver%%' AND LOWER(activity) NOT LIKE '%%not deliver%%' AND LOWER(activity) NOT LIKE '%%attempt%%' LIMIT 1",
+                intval($r->AWBNO),
+                strval($r->AWBNO)
             ));
-            if (!empty($has_del_history)) {
+            if (!empty($has_del_event)) {
                 $is_delivered = true;
             }
         }
 
-        // Status = FULL tracking activity text (show real tracking update, not simplified labels)
+        // Status = FULL tracking activity text (show real tracking update)
         if ($is_delivered) {
-            // Use actual delivery event text from tracking history
-            if (!empty($ph) && preg_match('/deliver|dlvd|pod|proof/i', $ph) && !preg_match('/out for|undeliver/i', $ph)) {
-                $status = $ph;
-            } else {
-                $del_event = $wpdb->get_var($wpdb->prepare(
-                    "SELECT activity FROM parcel_history WHERE AWBNO = %d AND (LOWER(activity) LIKE '%deliver%' OR LOWER(activity) LIKE '%dlvd%' OR LOWER(activity) LIKE '%proof%' OR LOWER(activity) LIKE '%pod%') AND LOWER(activity) NOT LIKE '%out for%' AND LOWER(activity) NOT LIKE '%undeliver%' ORDER BY date DESC, time DESC LIMIT 1",
-                    intval($r->AWBNO)
-                ));
-                $status = !empty($del_event) ? $del_event : 'Delivered';
-            }
+            $status = (!empty($ph) && preg_match('/\b(deliver|dlvd|pod|proof|sign)\b/i', $ph) && !preg_match('/out for|undeliver/i', $ph)) ? $ph : 'Proof of Delivery';
         } elseif (!empty($ph)) {
             $status = $ph; // Full tracking activity text
         } elseif (!empty($shp->status) && !in_array(strtolower($shp->status), ['booked', 'created', 'pending'])) {
             $status = ucwords(str_replace('_', ' ', strtolower(trim($shp->status))));
-        } elseif (!empty($fwd) || !empty($vAwb)) {
+        } elseif (!empty($fwd)) {
             $status = 'In Transit';
         } else {
             $status = 'Shipment Booked';
@@ -557,12 +677,34 @@ function pe_cp_ajax_shipments()
             $last_update = date('d M Y', strtotime($r->BOOKINGDATE));
         }
 
-        $amt = floatval($r->TOTAL ?: ($r->NETAMOUNT ?: $r->CHARGES));
-        $shp_amt = floatval($shp->final_grand_total ?? ($shp->grand_total ?? ($shp->total_amount ?? ($shp->net_amount ?? ($shp->shipping_charge ?? 0)))));
-        $breq_amt = floatval($breq->total_amount ?? ($breq->shipping_charge ?? 0));
+        // Get AWBENTRY amount: pick first non-zero from TOTAL, NETAMOUNT, CHARGES, RATE*WEIGHT, RECEIPTAMOUNT
+        $awb_t = floatval(str_replace(',', '', strval($r->TOTAL ?? '0')));
+        $awb_n = floatval(str_replace(',', '', strval($r->NETAMOUNT ?? '0')));
+        $awb_c = floatval(str_replace(',', '', strval($r->CHARGES ?? '0')));
+        $amt = $awb_t > 0 ? $awb_t : ($awb_n > 0 ? $awb_n : $awb_c);
+        $charge_wt = floatval($r->CHARGEWEIGHT ?? 0) > 0 ? floatval($r->CHARGEWEIGHT) : floatval($r->WEIGHT ?? 0);
+        if ($amt <= 0 && floatval($r->RATE ?? 0) > 0 && $charge_wt > 0) {
+            $amt = floatval($r->RATE) * $charge_wt;
+        }
+        if ($amt <= 0 && floatval($r->RECEIPTAMOUNT ?? 0) > 0) {
+            $amt = floatval($r->RECEIPTAMOUNT);
+        }
+
+        // Check shipments and booking_requests for amounts
+        $shp_amt = 0;
+        if ($shp) {
+            foreach (['final_grand_total', 'grand_total', 'total_amount', 'net_amount', 'shipping_charge'] as $_af) {
+                $sv = floatval($shp->$_af ?? 0);
+                if ($sv > 0) { $shp_amt = $sv; break; }
+            }
+        }
+        $breq_amt = floatval($breq->total_amount ?? 0);
+        if ($breq_amt <= 0) $breq_amt = floatval($breq->shipping_charge ?? 0);
+
+        // Pick the best available amount: shipments > booking_requests > AWBENTRY
         if ($shp_amt > 0) {
             $amt = $shp_amt;
-        } elseif ($breq_amt > 0 && ($amt <= 0)) {
+        } elseif ($breq_amt > 0 && $amt <= 0) {
             $amt = $breq_amt;
         }
 
@@ -588,16 +730,84 @@ function pe_cp_ajax_shipments()
         ];
     }
 
-    // Get accurate counts
+    // Get accurate counts strictly matching Admin Portal
     $count_all = $total;
     $_st_sub = "(SELECT ph.activity FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO ORDER BY ph.date DESC, ph.time DESC LIMIT 1)";
-    $_del_clause = "(EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%deliver%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%pod uploaded%' OR LOWER(ph.activity) LIKE '%pod%' OR LOWER(ph.activity) LIKE '%proof%') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%')" .
-        ($has_shipments_tbl ? " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND LOWER(sh.status) = 'delivered')" : "") . ")";
+    $_del_clause = "(a.PODTOWEB = 1 OR a.PODTOWEB = '1'" .
+        " OR EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%delivered%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%signed by%' OR LOWER(ph.activity) = 'pod') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%' AND LOWER(ph.activity) NOT LIKE '%attempt%')" .
+        ($has_shipments_tbl ? " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND (LOWER(sh.status) LIKE '%delivered%' OR LOWER(sh.status) LIKE '%proof of delivery%' OR LOWER(sh.status) = 'pod'))" : "") .
+        " OR EXISTS (SELECT 1 FROM booking_requests br WHERE (br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR)) AND (LOWER(br.status) LIKE '%delivered%' OR LOWER(br.status) LIKE '%proof of delivery%' OR LOWER(br.status) = 'pod'))" .
+        ")";
     $count_delivered = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND $_del_clause"));
+    $count_delivered = min($count_delivered, $count_all);
     $count_transit = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where AND NOT $_del_clause AND (LOWER(COALESCE($_st_sub, '')) LIKE '%transit%' OR LOWER(COALESCE($_st_sub, '')) LIKE '%departed%' OR (a.VENDORAWB1 != '' AND a.VENDORAWB1 IS NOT NULL))"));
 
-    // Calculate customer total billed amount across all shipments
-    $total_billed_amount = floatval($wpdb->get_var("SELECT SUM(COALESCE(NULLIF(a.TOTAL, 0), NULLIF(a.NETAMOUNT, 0), a.CHARGES, 0)) FROM AWBENTRY a WHERE $where"));
+    // Also check page rows for delivered items (fallback if SQL count is lower)
+    $page_del_count = 0;
+    foreach ($data as $dr) {
+        if (!empty($dr['is_delivered'])) $page_del_count++;
+    }
+    if ($page_del_count > $count_delivered) {
+        $count_delivered = min($page_del_count, $count_all);
+    }
+
+    // Calculate customer total amount across ALL shipments using all available data sources
+    // Safe numeric casting using + 0 for MySQL string coercion without syntax/mode errors
+    // Order: 1) shipments table if exists, 2) AWBENTRY actual billed amounts, 3) booking_requests fallback
+    $_amt_expr = "COALESCE(";
+    if ($has_shipments_tbl) {
+        $_amt_expr .= "(SELECT COALESCE(NULLIF(sh.final_grand_total + 0, 0), NULLIF(sh.grand_total + 0, 0), NULLIF(sh.total_amount + 0, 0), NULLIF(sh.net_amount + 0, 0), NULLIF(sh.shipping_charge + 0, 0)) FROM shipments sh WHERE sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR) LIMIT 1), ";
+    }
+    $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.TOTAL, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
+    $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.NETAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
+    $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.CHARGES, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
+    $_amt_expr .= "NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.WEIGHT + 0, 0)), 2), 0), ";
+    $_amt_expr .= "NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.RECEIPTAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0), ";
+    if (!empty($has_booking_req_tbl)) {
+        $_amt_expr .= "(SELECT NULLIF(br.shipping_charge + 0, 0) FROM booking_requests br WHERE br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR) LIMIT 1), ";
+    }
+    $_amt_expr .= "0)";
+
+    $total_billed_amount = floatval($wpdb->get_var(
+        "SELECT SUM($_amt_expr) FROM AWBENTRY a WHERE $where AND a.AWBNO > 0"
+    ) ?? 0);
+
+    // Grand total of all shipments in this dashboard scope (independent of search filter or pagination)
+    $total_all_amount = floatval($wpdb->get_var(
+        "SELECT SUM($_amt_expr) FROM AWBENTRY a WHERE " . (!empty($where_base) ? $where_base : $where) . " AND a.AWBNO > 0"
+    ) ?? 0);
+
+    // Safety fallback: if total is still 0, sum basic amount fields across matching shipments (not just current page)
+    if ($total_billed_amount <= 0) {
+        $fallback_sum = floatval($wpdb->get_var(
+            "SELECT SUM(COALESCE(
+                NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.TOTAL, '0'), ',', ''), ' ', '') + 0, 2), 0),
+                NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.NETAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
+                NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.CHARGES, '0'), ',', ''), ' ', '') + 0, 2), 0),
+                NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.WEIGHT + 0, 0)), 2), 0),
+                NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.RECEIPTAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
+                " . (!empty($has_booking_req_tbl) ? "(SELECT NULLIF(br.shipping_charge + 0, 0) FROM booking_requests br WHERE br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR) LIMIT 1), " : "") . "
+                0
+            )) FROM AWBENTRY a WHERE $where AND a.AWBNO > 0"
+        ) ?? 0);
+        if ($fallback_sum > 0) {
+            $total_billed_amount = $fallback_sum;
+        }
+    }
+    if ($total_all_amount <= 0) {
+        $fallback_all_sum = floatval($wpdb->get_var(
+            "SELECT SUM(COALESCE(
+                NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.TOTAL, '0'), ',', ''), ' ', '') + 0, 2), 0),
+                NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.NETAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
+                NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.CHARGES, '0'), ',', ''), ' ', '') + 0, 2), 0),
+                NULLIF(ROUND((COALESCE(a.RATE, 0) + 0) * (COALESCE(NULLIF(a.CHARGEWEIGHT + 0, 0), a.WEIGHT + 0, 0)), 2), 0),
+                NULLIF(ROUND(REPLACE(REPLACE(COALESCE(a.RECEIPTAMOUNT, '0'), ',', ''), ' ', '') + 0, 2), 0),
+                " . (!empty($has_booking_req_tbl) ? "(SELECT NULLIF(br.shipping_charge + 0, 0) FROM booking_requests br WHERE br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR) LIMIT 1), " : "") . "
+                0
+            )) FROM AWBENTRY a WHERE " . (!empty($where_base) ? $where_base : $where) . " AND a.AWBNO > 0"
+        ) ?? 0);
+        $total_all_amount = $fallback_all_sum > 0 ? $fallback_all_sum : $total_billed_amount;
+    }
 
     wp_send_json_success([
         'rows' => $data,
@@ -605,11 +815,16 @@ function pe_cp_ajax_shipments()
         'pages' => max(1, ceil($total / $per)),
         'page' => $page,
         'total_amount' => $total_billed_amount,
+        'total_billed_amount' => $total_billed_amount,
+        'total_all_amount' => $total_all_amount,
+        'count_all' => $count_all,
+        'count_delivered' => $count_delivered,
+        'count_transit' => $count_transit,
         'counts' => [
             'all' => $count_all,
             'delivered' => $count_delivered,
             'transit' => $count_transit,
-            'booked' => $count_all - $count_delivered - $count_transit,
+            'booked' => max(0, $count_all - $count_delivered - $count_transit),
         ],
     ]);
 }
@@ -632,8 +847,67 @@ function pe_cp_ajax_track_status()
     $status = '';
     $last_update = '';
     $is_delivered = false;
+    $forwarding_number = '';
+    $forwarding_carrier = '';
 
-    // Fetch real-time live tracking from Admin Portal API
+    $clean_fwd = function($val, $primaryVendor = '', $ourAwb = '') {
+        if ($val === null) return '';
+        $s = trim(strval($val));
+        if ($s === '' || $s === '0' || $s === '0.00' || $s === 'null' || $s === 'undefined' || $s === 'None' || $s === '-' || $s === '—') return '';
+        $s = preg_replace('/^FWD\s*[:\-]\s*/i', '', $s);
+        $s = trim($s);
+        if ($s === '' || $s === $primaryVendor || $s === $ourAwb) return '';
+        if (stripos($s, 'not found') !== false || stripos($s, 'error') !== false || strtolower($s) === 'pending') return '';
+        return $s;
+    };
+
+    $awb_row = $wpdb->get_row($wpdb->prepare("SELECT a.SERVICE, a.VENDCODE, a.VENDNAME, a.VENDORAWB1, a.VENDORAWB2, a.PODTOWEB, a.TUSER, a.TPASS, a.ACCODE, a.APIKEY FROM AWBENTRY a WHERE a.AWBNO = %d LIMIT 1", $awb));
+    $vAwb = trim(strval($awb_row->VENDORAWB1 ?? ''));
+    $existing_fwd = $clean_fwd($awb_row->VENDORAWB2 ?? '', $vAwb, strval($awb));
+    if (!empty($existing_fwd)) {
+        $forwarding_number = $existing_fwd;
+    }
+    if ($awb_row && (intval($awb_row->PODTOWEB ?? 0) === 1 || strval($awb_row->PODTOWEB ?? '') === '1')) {
+        $is_delivered = true;
+    }
+
+    // 1. Query Admin Portal Search API for accurate shipment data, forwarding number & delivery status
+    $admin_search_url = 'https://purple-raccoon-753399.hostingersite.com/api/tracking/search?tracking_number=' . urlencode(strval($awb));
+    $search_resp = wp_remote_get($admin_search_url, ['timeout' => 8, 'sslverify' => false]);
+    if (!is_wp_error($search_resp)) {
+        $search_body = json_decode(wp_remote_retrieve_body($search_resp), true);
+        if (!empty($search_body['success']) && !empty($search_body['shipment'])) {
+            $admin_shp = $search_body['shipment'];
+            if (empty($forwarding_number)) {
+                $cand_fwd = $clean_fwd($admin_shp['forwarding_no'] ?? '', $vAwb, strval($awb));
+                if ($cand_fwd === '') $cand_fwd = $clean_fwd($admin_shp['vendor_awb_number_2'] ?? '', $vAwb, strval($awb));
+                if ($cand_fwd !== '') {
+                    $forwarding_number = $cand_fwd;
+                }
+            }
+            if (empty($forwarding_carrier) && !empty($admin_shp['secondary_carrier']) && !in_array(strtolower($admin_shp['secondary_carrier']), ['carrier', 'forwarded vendor'])) {
+                $forwarding_carrier = trim(strval($admin_shp['secondary_carrier']));
+            }
+            $adm_st = strtolower(trim($admin_shp['status'] ?? ''));
+            if ($adm_st === 'delivered' || $adm_st === 'proof of delivery' || $adm_st === 'pod' || strpos($adm_st, 'deliver') !== false) {
+                $is_delivered = true;
+                if (empty($status) || $status === 'Shipment Booked') {
+                    $status = ($adm_st === 'proof of delivery' || $adm_st === 'pod') ? 'Proof of Delivery' : 'Delivered';
+                }
+            }
+            if (empty($status) && !empty($admin_shp['tracking_events']) && is_array($admin_shp['tracking_events'])) {
+                $ev = $admin_shp['tracking_events'][0];
+                $status = $ev['description'] ?? ($ev['status'] ?? '');
+                $loc = $ev['location'] ?? '';
+                $dt = !empty($ev['event_time']) ? date('d M Y', strtotime($ev['event_time'])) : '';
+                $tm = !empty($ev['event_time']) ? date('h:i A', strtotime($ev['event_time'])) : '';
+                $parts = array_filter([$loc, trim($dt . ' ' . $tm)]);
+                $last_update = implode(' · ', $parts);
+            }
+        }
+    }
+
+    // 2. Fetch real-time live tracking from Admin Portal API
     $live_api_url = 'https://purple-raccoon-753399.hostingersite.com/api/tracking/live?awb=' . urlencode(strval($awb));
     $api_resp = wp_remote_get($live_api_url, ['timeout' => 8, 'sslverify' => false]);
 
@@ -642,10 +916,23 @@ function pe_cp_ajax_track_status()
         if (!empty($body['success']) && !empty($body['tracking'])) {
             $trk = $body['tracking'];
             $live_status = $trk['currentStatus'] ?? '';
+            $live_stage = $trk['currentStage'] ?? '';
 
-            // Check if delivered from live status
-            if (preg_match('/deliver|dlvd|pod|proof/i', $live_status) && !preg_match('/out for|undeliver/i', $live_status)) {
+            // Check if delivered from live tracking
+            if ($live_stage === 'delivered' || (preg_match('/\b(delivered|dlvd|proof of delivery|signed by|pod)\b/i', $live_status) && !preg_match('/out for|undeliver|not delivered|attempt|fail|expected|scheduled/i', $live_status))) {
                 $is_delivered = true;
+            }
+
+            // Extract forwarding number from live tracking (only secondary vendor AWB / forwardingNo, NEVER primary AWB)
+            if (empty($forwarding_number)) {
+                $candFwd = trim(strval($trk['shipmentInfo']['vendorAwbNo'] ?? ($trk['shipmentInfo']['forwardingNo'] ?? ($trk['shipmentInfo']['secondaryAwb'] ?? ''))));
+                $candFwd = $clean_fwd($candFwd, $vAwb, strval($awb));
+                if ($candFwd !== '') {
+                    $forwarding_number = $candFwd;
+                }
+            }
+            if (empty($forwarding_carrier) && !empty($trk['shipmentInfo']['secondaryCarrier']) && !in_array(strtolower($trk['shipmentInfo']['secondaryCarrier']), ['carrier', 'forwarded vendor'])) {
+                $forwarding_carrier = trim(strval($trk['shipmentInfo']['secondaryCarrier']));
             }
 
             // Build from latest event
@@ -658,7 +945,7 @@ function pe_cp_ajax_track_status()
 
                 $status = !empty($act) ? $act : $live_status;
 
-                if (preg_match('/deliver|dlvd|pod|proof/i', $status) && !preg_match('/out for|undeliver/i', $status)) {
+                if (preg_match('/\b(delivered|dlvd|proof of delivery|signed by|pod)\b/i', $status) && !preg_match('/out for|undeliver|not delivered|attempt|fail|expected|scheduled/i', $status)) {
                     $is_delivered = true;
                 }
 
@@ -672,7 +959,7 @@ function pe_cp_ajax_track_status()
         }
     }
 
-    // Fallback to parcel_history if live API failed or returned nothing
+    // 3. Fallback to parcel_history if live API failed or returned nothing
     if (empty($status)) {
         $latest_ph = $wpdb->get_row($wpdb->prepare(
             "SELECT activity, date, time, location FROM parcel_history WHERE AWBNO = %d ORDER BY date DESC, time DESC LIMIT 1",
@@ -689,29 +976,71 @@ function pe_cp_ajax_track_status()
             }
             $last_update = implode(' · ', $parts);
 
-            if (preg_match('/deliver|dlvd|pod|proof/i', $status) && !preg_match('/out for|undeliver/i', $status)) {
+            if (preg_match('/\b(delivered|dlvd|proof of delivery|signed by|pod)\b/i', $status) && !preg_match('/out for|undeliver|not delivered|attempt|fail|expected|scheduled/i', $status)) {
                 $is_delivered = true;
-            }
-        }
-
-        // Check full history for delivery events if not detected from latest
-        if (!$is_delivered) {
-            $del_hist = $wpdb->get_var($wpdb->prepare(
-                "SELECT activity FROM parcel_history WHERE AWBNO = %d AND (LOWER(activity) LIKE '%deliver%' OR LOWER(activity) LIKE '%dlvd%' OR LOWER(activity) LIKE '%proof%' OR LOWER(activity) LIKE '%pod%') AND LOWER(activity) NOT LIKE '%out for%' AND LOWER(activity) NOT LIKE '%undeliver%' LIMIT 1",
-                $awb
-            ));
-            if (!empty($del_hist)) {
-                $is_delivered = true;
-                if (empty($status)) $status = $del_hist;
             }
         }
     }
 
+    // 4. Check parcel_history for any delivery event
+    if (!$is_delivered) {
+        $has_del_event = $wpdb->get_var($wpdb->prepare(
+            "SELECT 1 FROM parcel_history WHERE AWBNO = %d AND (LOWER(activity) LIKE '%%delivered%%' OR LOWER(activity) LIKE '%%proof of delivery%%' OR LOWER(activity) LIKE '%%dlvd%%' OR LOWER(activity) = 'pod' OR LOWER(activity) LIKE '%%signed by%%') AND LOWER(activity) NOT LIKE '%%out for%%' AND LOWER(activity) NOT LIKE '%%undeliver%%' AND LOWER(activity) NOT LIKE '%%not deliver%%' AND LOWER(activity) NOT LIKE '%%attempt%%' LIMIT 1",
+            $awb
+        ));
+        if (!empty($has_del_event)) {
+            $is_delivered = true;
+        }
+    }
+
+    // 5. Fallback to pe_fetch_tracking if forwarding number is still empty and service configured
+    if (empty($forwarding_number) && $awb_row && intval($awb_row->SERVICE ?? 0) > 0 && function_exists('pe_fetch_tracking')) {
+        $c = new stdClass();
+        $c->AWBNO = strval($awb);
+        $c->VENDORID1 = $awb_row->VENDORAWB1 ?: '';
+        $c->VENDORID2 = '';
+        $c->VENDCODE = $awb_row->VENDCODE ?: '';
+        $c->VENDNAME = $awb_row->VENDNAME ?: '';
+        $c->SERVICE = intval($awb_row->SERVICE);
+        $c->API = 1;
+        $c->TUSER = $awb_row->TUSER ?: '';
+        $c->TPASS = $awb_row->TPASS ?: '';
+        $c->ACCODE = $awb_row->ACCODE ?: '';
+        $c->APIKEY = $awb_row->APIKEY ?: '';
+        try {
+            pe_fetch_tracking($c);
+            if (!empty($c->VENDORID2)) {
+                $fwd_clean = $clean_fwd($c->VENDORID2, $vAwb, strval($awb));
+                if (!empty($fwd_clean)) {
+                    $forwarding_number = $fwd_clean;
+                }
+            }
+        } catch (\Exception $ex) {}
+    }
+
+    // Auto-detect carrier if carrier name is empty
+    if (!empty($forwarding_number) && empty($forwarding_carrier)) {
+        if (preg_match('/^1Z/i', $forwarding_number)) $forwarding_carrier = 'UPS';
+        elseif (preg_match('/^[0-9]{12}$/', $forwarding_number)) $forwarding_carrier = 'FedEx';
+        elseif (preg_match('/^[0-9]{10}$/', $forwarding_number)) $forwarding_carrier = 'DHL';
+        elseif (preg_match('/^026[0-9]{11}$/', $forwarding_number)) $forwarding_carrier = 'DPD';
+    }
+
+    // Auto-persist forwarding number and delivery status to AWBENTRY
+    if (!empty($forwarding_number)) {
+        $wpdb->query($wpdb->prepare("UPDATE AWBENTRY SET VENDORAWB2 = %s WHERE AWBNO = %d", $forwarding_number, $awb));
+    }
+    if ($is_delivered) {
+        $wpdb->query($wpdb->prepare("UPDATE AWBENTRY SET PODTOWEB = 1 WHERE AWBNO = %d", $awb));
+    }
+
     wp_send_json_success([
         'awb' => $awb,
-        'status' => $status ?: 'Shipment Booked',
+        'status' => $status ?: ($is_delivered ? 'Proof of Delivery' : 'Shipment Booked'),
         'last_update' => $last_update,
         'is_delivered' => $is_delivered,
+        'forwarding_number' => $forwarding_number,
+        'forwarding_carrier' => $forwarding_carrier,
     ]);
 }
 add_action('wp_ajax_pe_cp_track_status', 'pe_cp_ajax_track_status');
@@ -775,22 +1104,156 @@ function pe_cp_ajax_shipment_detail()
             strval($row->AWBNO),
             strval($row->AWBNO)
         ));
+        if (!$shp && !empty($row->VENDORAWB1)) {
+            $shp = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM shipments WHERE vendor_awb_number = %s OR tracking_number = %s LIMIT 1",
+                strval($row->VENDORAWB1),
+                strval($row->VENDORAWB1)
+            ));
+        }
     }
 
-    $shp_amt = floatval($shp->final_grand_total ?? ($shp->grand_total ?? ($shp->total_amount ?? ($shp->net_amount ?? ($shp->shipping_charge ?? 0)))));
-    $breq_amt = floatval($breq->total_amount ?? ($breq->shipping_charge ?? 0));
+    $shp_amt = 0;
+    if ($shp) {
+        foreach (['final_grand_total', 'grand_total', 'total_amount', 'net_amount', 'shipping_charge'] as $_af) {
+            $sv = floatval($shp->$_af ?? 0);
+            if ($sv > 0) { $shp_amt = $sv; break; }
+        }
+    }
+    $breq_amt = floatval($breq->total_amount ?? 0);
+    if ($breq_amt <= 0) $breq_amt = floatval($breq->shipping_charge ?? 0);
+
     if ($shp_amt > 0) {
         $totAmount = $shp_amt;
     } elseif ($breq_amt > 0 && $totAmount <= 0) {
         $totAmount = $breq_amt;
+    } elseif ($totAmount <= 0) {
+        if (!empty($row->RATE) && !empty($row->CHARGEWEIGHT)) {
+            $totAmount = floatval($row->RATE) * floatval($row->CHARGEWEIGHT);
+        } elseif (!empty($row->RECEIPTAMOUNT)) {
+            $totAmount = floatval($row->RECEIPTAMOUNT);
+        }
     }
 
-    $vendor_name = trim(strval($shp->vendor_code ?? ($row->VENDNAME ?? '')));
-    $vendor_awb = trim(strval($shp->vendor_awb_number ?? ($row->VENDORAWB1 ?? '')));
-    $forwarding_no = trim(strval($shp->forwarding_no ?? ($shp->vendor_awb_number_2 ?? ($row->VENDORAWB2 ?? ''))));
+    $vendor_name = trim(strval($shp->vendor_code ?? ''));
+    if ($vendor_name === '') $vendor_name = trim(strval($row->vendor ?? ($row->VENDNAME ?? '')));
+
+    $vendor_awb = trim(strval($shp->vendor_awb_number ?? ''));
+    if ($vendor_awb === '') $vendor_awb = trim(strval($row->VENDORAWB1 ?? ''));
+
+    $clean_detail_fwd = function($val, $primaryVendor = '', $ourAwb = '') {
+        if ($val === null) return '';
+        $s = trim(strval($val));
+        if ($s === '' || $s === '0' || $s === '0.00' || $s === 'null' || $s === 'undefined' || $s === 'None' || $s === '-' || $s === '—') return '';
+        $s = preg_replace('/^FWD\s*[:\-]\s*/i', '', $s);
+        $s = trim($s);
+        if ($s === '' || $s === $primaryVendor || $s === $ourAwb) return '';
+        if (stripos($s, 'not found') !== false || stripos($s, 'error') !== false || strtolower($s) === 'pending') return '';
+        return $s;
+    };
+
+    $forwarding_no = $clean_detail_fwd($shp->forwarding_no ?? '', $vendor_awb, strval($row->AWBNO));
+    if ($forwarding_no === '') $forwarding_no = $clean_detail_fwd($shp->vendor_awb_number_2 ?? '', $vendor_awb, strval($row->AWBNO));
+    if ($forwarding_no === '') $forwarding_no = $clean_detail_fwd($row->VENDORAWB2 ?? '', $vendor_awb, strval($row->AWBNO));
+    if ($forwarding_no === '') $forwarding_no = $clean_detail_fwd($breq->forwarding_no ?? '', $vendor_awb, strval($row->AWBNO));
+
     $secondary_carrier = trim(strval($shp->secondary_carrier ?? ''));
-    if (empty($forwarding_no) && $breq && !empty($breq->forwarding_no)) {
-        $forwarding_no = trim(strval($breq->forwarding_no));
+
+    // Query Admin Portal Search API if forwarding number is missing
+    if ($forwarding_no === '') {
+        $admin_search_url = 'https://purple-raccoon-753399.hostingersite.com/api/tracking/search?tracking_number=' . urlencode(strval($row->AWBNO));
+        $search_resp = wp_remote_get($admin_search_url, ['timeout' => 6, 'sslverify' => false]);
+        if (!is_wp_error($search_resp)) {
+            $search_body = json_decode(wp_remote_retrieve_body($search_resp), true);
+            if (!empty($search_body['success']) && !empty($search_body['shipment'])) {
+                $admin_shp = $search_body['shipment'];
+                $cand_fwd = $clean_detail_fwd($admin_shp['forwarding_no'] ?? '', $vendor_awb, strval($row->AWBNO));
+                if ($cand_fwd === '') $cand_fwd = $clean_detail_fwd($admin_shp['vendor_awb_number_2'] ?? '', $vendor_awb, strval($row->AWBNO));
+                if ($cand_fwd !== '') {
+                    $forwarding_no = $cand_fwd;
+                    $wpdb->query($wpdb->prepare("UPDATE AWBENTRY SET VENDORAWB2 = %s WHERE AWBNO = %d", $forwarding_no, intval($row->AWBNO)));
+                }
+                if (empty($secondary_carrier) && !empty($admin_shp['secondary_carrier']) && !in_array(strtolower($admin_shp['secondary_carrier']), ['carrier', 'forwarded vendor'])) {
+                    $secondary_carrier = trim(strval($admin_shp['secondary_carrier']));
+                }
+            }
+        }
+    }
+
+    // Parse vendor_raw_response if present
+    if (!empty($shp->vendor_raw_response)) {
+        $raw_resp = is_string($shp->vendor_raw_response) ? json_decode($shp->vendor_raw_response, true) : (is_array($shp->vendor_raw_response) ? $shp->vendor_raw_response : null);
+        $raw_data = $raw_resp['response'] ?? ($raw_resp['data'] ?? ($raw_resp['Tracking'] ?? $raw_resp));
+        if (is_array($raw_data)) {
+            $trk_obj = isset($raw_data['Tracking'][0]) && is_array($raw_data['Tracking'][0]) ? $raw_data['Tracking'][0] : (isset($raw_data[0]) && is_array($raw_data[0]) ? $raw_data[0] : $raw_data);
+            if ($forwarding_no === '') {
+                $raw_cand = $trk_obj['VendorAWBNo2'] ?? $trk_obj['VendorAWBNo1'] ?? $trk_obj['VendorAWBNo'] ?? $trk_obj['VendorAwbNo2'] ?? $trk_obj['VendorAwbNo1'] ?? $trk_obj['VendorAwbNo'] ?? $trk_obj['ForwardingNo'] ?? $trk_obj['ForwardingNo1'] ?? $trk_obj['forwarding_no'] ?? $trk_obj['forwording_no'] ?? $trk_obj['Forwarding_No'] ?? $trk_obj['vendor_awb_2'] ?? $trk_obj['vendorAwb2'] ?? $raw_data['forwarding_no'] ?? $raw_data['forwording_no'] ?? $raw_data['vendor_awb_2'] ?? '';
+                
+                $d_info = !empty($raw_data['docket_info']) && is_array($raw_data['docket_info']) ? $raw_data['docket_info'] : (!empty($raw_data['data']['docket_info']) && is_array($raw_data['data']['docket_info']) ? $raw_data['data']['docket_info'] : null);
+                if (empty($raw_cand) && !empty($d_info)) {
+                    foreach ($d_info as $info_pair) {
+                        $k = ''; $v = '';
+                        if (is_array($info_pair) && count($info_pair) >= 2) {
+                            $k = strtolower(trim((string)$info_pair[0]));
+                            $v = trim((string)$info_pair[1]);
+                        } elseif (is_object($info_pair) && isset($info_pair->key)) {
+                            $k = strtolower(trim((string)$info_pair->key));
+                            $v = trim((string)($info_pair->value ?? ''));
+                        }
+                        if ((strpos($k, 'forwarding') !== false || strpos($k, 'forwording') !== false || strpos($k, 'secondary') !== false || strpos($k, 'fwd') !== false) && !empty($v)) {
+                            $raw_cand = $v;
+                            break;
+                        }
+                    }
+                }
+
+                $raw_fwd = $clean_detail_fwd($raw_cand, $vendor_awb, strval($row->AWBNO));
+                if ($raw_fwd !== '') {
+                    $forwarding_no = $raw_fwd;
+                }
+            }
+            if ($secondary_carrier === '' || strtolower($secondary_carrier) === 'forwarded vendor' || strtolower($secondary_carrier) === 'carrier') {
+                $raw_c = trim(strval($trk_obj['VendorName2'] ?? ($trk_obj['VendorName'] ?? ($trk_obj['ForwardingCarrier'] ?? ($trk_obj['Carrier'] ?? ($trk_obj['carrier'] ?? ($trk_obj['secondary_carrier'] ?? '')))))));
+                if ($raw_c !== '') $secondary_carrier = $raw_c;
+            }
+        }
+    }
+
+    // Live vendor API fallback if forwarding number is still empty and service configured
+    if ($forwarding_no === '' && intval($row->SERVICE ?? 0) > 0 && function_exists('pe_fetch_tracking')) {
+        $c = new stdClass();
+        $c->AWBNO = strval($row->AWBNO);
+        $c->VENDORID1 = $vendor_awb ?: '';
+        $c->VENDORID2 = '';
+        $c->VENDCODE = $row->VENDCODE ?: '';
+        $c->VENDNAME = $vendor_name ?: '';
+        $c->SERVICE = intval($row->SERVICE);
+        $c->API = 1;
+        $c->TUSER = $row->TUSER ?: '';
+        $c->TPASS = $row->TPASS ?: '';
+        $c->ACCODE = $row->ACCODE ?: '';
+        $c->APIKEY = $row->APIKEY ?: '';
+        try {
+            pe_fetch_tracking($c);
+            if (!empty($c->VENDORID2)) {
+                $live_fwd = $clean_detail_fwd($c->VENDORID2, $vendor_awb, strval($row->AWBNO));
+                if ($live_fwd !== '') {
+                    $forwarding_no = $live_fwd;
+                    $wpdb->query($wpdb->prepare("UPDATE AWBENTRY SET VENDORAWB2 = %s WHERE AWBNO = %d", $forwarding_no, intval($row->AWBNO)));
+                    if (!empty($shp->id)) {
+                        $wpdb->query($wpdb->prepare("UPDATE shipments SET vendor_awb_number_2 = %s, forwarding_no = %s WHERE id = %d", $forwarding_no, $forwarding_no, intval($shp->id)));
+                    }
+                }
+            }
+        } catch (\Exception $ex) {}
+    }
+
+    // Auto-detect carrier from forwarding number pattern
+    if ($forwarding_no !== '' && ($secondary_carrier === '' || strtolower($secondary_carrier) === 'forwarded vendor' || strtolower($secondary_carrier) === 'carrier')) {
+        if (preg_match('/^1Z/i', $forwarding_no)) $secondary_carrier = 'UPS';
+        elseif (preg_match('/^[0-9]{12}$/', $forwarding_no)) $secondary_carrier = 'FedEx';
+        elseif (preg_match('/^[0-9]{10}$/', $forwarding_no)) $secondary_carrier = 'DHL';
+        elseif (preg_match('/^026[0-9]{11}$/', $forwarding_no)) $secondary_carrier = 'DPD';
     }
     $content_desc = trim(strval($shp->content_description ?? ($row->PRODNAME ?? ($breq->content_description ?? ''))));
     $length = floatval($shp->length ?? ($breq->length ?? 0));
@@ -852,6 +1315,23 @@ function pe_cp_ajax_shipment_detail()
             $live_status = $trk['currentStatus'] ?? '';
             $live_stage = $trk['currentStage'] ?? '';
 
+            // Extract forwarding number from live tracking if still missing
+            if ($forwarding_no === '') {
+                $candFwd = trim(strval($trk['shipmentInfo']['vendorAwbNo'] ?? ''));
+                $candFwd = preg_replace('/^FWD\s*[:\-]\s*/i', '', $candFwd);
+                $candPrimary = trim(strval($trk['shipmentInfo']['awbNo'] ?? ''));
+                if (!empty($candFwd) && $candFwd !== $candPrimary && $candFwd !== strval($row->AWBNO) && $candFwd !== $vendor_awb && $candFwd !== '0' && $candFwd !== '—') {
+                    $forwarding_no = $candFwd;
+                    $wpdb->query($wpdb->prepare("UPDATE AWBENTRY SET VENDORAWB2 = %s WHERE AWBNO = %d", $forwarding_no, intval($row->AWBNO)));
+                    if (!empty($shp->id)) {
+                        $wpdb->query($wpdb->prepare("UPDATE shipments SET vendor_awb_number_2 = %s, forwarding_no = %s WHERE id = %d", $forwarding_no, $forwarding_no, intval($shp->id)));
+                    }
+                }
+            }
+            if ((empty($secondary_carrier) || strtolower($secondary_carrier) === 'carrier' || strtolower($secondary_carrier) === 'forwarded vendor') && !empty($trk['shipmentInfo']['secondaryCarrier']) && $trk['shipmentInfo']['secondaryCarrier'] !== 'Carrier' && $trk['shipmentInfo']['secondaryCarrier'] !== 'Forwarded Vendor') {
+                $secondary_carrier = trim(strval($trk['shipmentInfo']['secondaryCarrier']));
+            }
+
             // Fallback invoice items from live tracking internalShipment if database has none
             if (empty($invoice_items) && !empty($trk['internalShipment']['invoice_items'])) {
                 $rawInv = $trk['internalShipment']['invoice_items'];
@@ -889,12 +1369,34 @@ function pe_cp_ajax_shipment_detail()
     // Initial fallback if still completely empty
     if (empty($tracking_events)) {
         $bDate = !empty($row->AWBDATE) ? date('d/m/Y', strtotime($row->AWBDATE)) : date('d/m/Y');
-        $tracking_events[] = [
-            'activity' => 'Shipment Booked & Order Created',
-            'date' => $bDate,
-            'time' => '10:00 AM',
-            'location' => 'SURAT, INDIA (PRINCE EXPRESS)'
-        ];
+        $is_dispatched = !empty($row->VENDORID1) || !empty($row->VENDORID2) || !empty($row->VENDNAME) || intval($row->SERVICE ?? 0) > 0;
+        if ($is_dispatched) {
+            $tracking_events[] = [
+                'activity' => 'Shipment Manifested & Dispatched from Origin Hub',
+                'date' => $bDate,
+                'time' => '11:15 AM',
+                'location' => 'SURAT, INDIA (PRINCE EXPRESS HUB)'
+            ];
+            if (empty($live_status)) {
+                $live_status = 'Shipment Manifested & Dispatched from Origin Hub';
+            }
+            if (empty($live_stage)) {
+                $live_stage = 'in_transit';
+            }
+        } else {
+            $tracking_events[] = [
+                'activity' => 'Shipment Booked & Order Created',
+                'date' => $bDate,
+                'time' => '10:00 AM',
+                'location' => 'SURAT, INDIA (PRINCE EXPRESS)'
+            ];
+            if (empty($live_status)) {
+                $live_status = 'Shipment Booked & Order Created';
+            }
+            if (empty($live_stage)) {
+                $live_stage = 'booked';
+            }
+        }
     }
 
     wp_send_json_success([

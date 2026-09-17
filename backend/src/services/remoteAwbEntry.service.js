@@ -401,7 +401,7 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
     }
 
     const vendorAwb = shipment.vendor_awb_number || vendorResult.awbNumber || ''
-    const vendorAwb2 = shipment.vendor_awb_number_2 || ''
+    const vendorAwb2 = shipment.vendor_awb_number_2 || shipment.forwarding_no || vendorResult.vendorAwb2 || vendorResult.forwardingNo || vendorResult.forwarding_no || ''
     const vendorDetails = resolveVendorDetails(vendorCode, vendorName, serviceCode, authCredentials)
     const productCode = shipment.product_code || 'SPX'
 

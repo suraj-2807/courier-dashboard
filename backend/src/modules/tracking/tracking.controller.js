@@ -30,7 +30,7 @@ function determineCurrentStageAndStatus(events = [], initialStatus = '') {
   const evaluateText = (txt) => {
     if (!txt) return
     const s = String(txt).toLowerCase().trim()
-    if (/delivered|dlvd|signed by/i.test(s) && !/out for delivery/i.test(s)) {
+    if (/delivered|dlvd|signed by|proof of delivery|pod|proof/i.test(s) && !/out for delivery/i.test(s)) {
       if (highestWeight < 4) { highestWeight = 4; highestStage = 'delivered'; latestStatus = txt }
     } else if (/out for delivery|ofd|with courier|out for del|today.*delivery|for delivery/i.test(s)) {
       if (highestWeight < 3) { highestWeight = 3; highestStage = 'out_for_delivery'; latestStatus = txt }
@@ -709,8 +709,8 @@ function attachCompanyOriginEvents(result, matchedShipment) {
 
   const companyEvents = []
 
-  // If API pushed: Second entry is "Shipment Manifested & Dispatched from Origin Hub"
   if (isApiPushed) {
+    // After API push: ONLY show "Shipment Manifested & Dispatched from Origin Hub"
     companyEvents.push({
       date: dateStr,
       time: timeStr,
@@ -719,17 +719,17 @@ function attachCompanyOriginEvents(result, matchedShipment) {
       rawDate: dateStr,
       rawTime: timeStr
     })
+  } else {
+    // Draft: ONLY show "Shipment Booked & Order Created"
+    companyEvents.push({
+      date: dateStr,
+      time: timeStr,
+      location: `${originCity}, ${originCountry} (PRINCE EXPRESS)`,
+      status: 'Shipment Booked & Order Created',
+      rawDate: dateStr,
+      rawTime: timeStr
+    })
   }
-
-  // First entry: "Shipment Booked & Order Created"
-  companyEvents.push({
-    date: dateStr,
-    time: timeStr,
-    location: `${originCity}, ${originCountry} (PRINCE EXPRESS)`,
-    status: 'Shipment Booked & Order Created',
-    rawDate: dateStr,
-    rawTime: timeStr
-  })
 
   result.events = [...filteredEvents, ...companyEvents]
 

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -45,6 +46,8 @@ import EmptyState from '../components/ui/EmptyState'
 import ErrorState from '../components/ui/ErrorState'
 import { formatCurrency, formatDate, formatDateDDMMYYYY } from '../utils/formatters'
 import toast from 'react-hot-toast'
+import { countryCodesApi } from '../api/countryCodes.api'
+import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
 
 const STATUS_TABS = [
   { value: '', label: 'All Accounts' },
@@ -74,6 +77,13 @@ export default function CustomersPage() {
     search,
     status: statusFilter
   })
+
+  // Fetch Country Codes
+  const { data: countryCodesData } = useQuery({
+    queryKey: ['country-codes'],
+    queryFn: () => countryCodesApi.getAll().then(res => res.data)
+  })
+  const countryList = countryCodesData?.countryCodes || []
 
   const createMutation = useCreateCustomer()
   const updateMutation = useUpdateCustomer()
@@ -512,6 +522,7 @@ export default function CustomersPage() {
         <CustomerFormModal
           isOpen={modalOpen}
           customer={editingCustomer}
+          countryList={countryList}
           onClose={() => setModalOpen(false)}
           onSaved={() => {
             setModalOpen(false)
@@ -552,7 +563,7 @@ export default function CustomersPage() {
 }
 
 // ─── Create / Edit Customer Modal ──────────────────────────────────────────
-function CustomerFormModal({ isOpen, customer, onClose, onSaved }) {
+function CustomerFormModal({ isOpen, customer, onClose, onSaved, countryList = [] }) {
   const isEdit = Boolean(customer?.id)
 
   const [formData, setFormData] = useState({
@@ -810,11 +821,11 @@ function CustomerFormModal({ isOpen, customer, onClose, onSaved }) {
                 </div>
                 <div>
                   <label className="block text-[11px] font-bold text-text-tertiary uppercase mb-1">Country</label>
-                  <input
-                    type="text"
-                    placeholder="INDIA"
-                    value={formData.country}
-                    onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                  <CountryAutocompleteInput
+                    value={formData.country || ''}
+                    onChange={(code) => setFormData({ ...formData, country: code || '' })}
+                    placeholder="Search Country (e.g. India, USA)..."
+                    countryList={countryList}
                     className="w-full px-2.5 py-1.5 bg-surface-alt border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary"
                   />
                 </div>
