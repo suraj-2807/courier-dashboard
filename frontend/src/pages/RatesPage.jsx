@@ -21,8 +21,11 @@ import {
   Table2,
   Eye,
   EyeOff,
-  Save
+  Save,
+  Globe,
+  Sparkles
 } from 'lucide-react'
+import PacificRatesView from '../components/PacificRatesView'
 import {
   uploadRatesExcel,
   getCompanies,
@@ -40,6 +43,7 @@ export default function RatesPage() {
   const fileInputRef = useRef(null)
 
   // ── State ──
+  const [systemMode, setSystemMode] = useState('pacific') // 'pacific' | 'standard'
   const [selectedCompanyId, setSelectedCompanyId] = useState(null)
   const [selectedServiceId, setSelectedServiceId] = useState(null)
   const [activeDataTab, setActiveDataTab] = useState('rates') // 'rates' | 'zones'
@@ -52,6 +56,7 @@ export default function RatesPage() {
   const [zoneSearch, setZoneSearch] = useState('')
   const [zonePage, setZonePage] = useState(1)
   const [showUploadArea, setShowUploadArea] = useState(false)
+
 
   // ── Queries ──
   const { data: companiesData, isLoading: companiesLoading } = useQuery({
@@ -222,30 +227,100 @@ export default function RatesPage() {
             Rate Management
           </h1>
           <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-            Upload rate sheets by company & service, manage zone-wise pricing
+            {systemMode === 'pacific'
+              ? 'Multi-sheet tariff engine, version management, diff comparison & rate calculation'
+              : 'Upload rate sheets by company & service, manage zone-wise pricing'}
           </p>
         </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={() => setShowUploadArea(!showUploadArea)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '8px 18px', fontSize: '13px', fontWeight: 700,
-              color: 'white', background: 'linear-gradient(135deg, #BB0013, #D4001A)',
-              border: 'none', borderRadius: '10px', cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(187, 0, 19, 0.25)',
-              transition: 'all 0.2s'
-            }}
-          >
-            <Upload style={{ width: '14px', height: '14px' }} />
-            Upload Excel
-          </button>
-        </div>
+        {systemMode === 'standard' && (
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => setShowUploadArea(!showUploadArea)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '8px 18px', fontSize: '13px', fontWeight: 700,
+                color: 'white', background: 'linear-gradient(135deg, #BB0013, #D4001A)',
+                border: 'none', borderRadius: '10px', cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(187, 0, 19, 0.25)',
+                transition: 'all 0.2s'
+              }}
+            >
+              <Upload style={{ width: '14px', height: '14px' }} />
+              Upload Excel
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* ── Upload Area (collapsible) ── */}
-      {showUploadArea && (
-        <div style={{ marginBottom: '20px' }} className="animate-slide-down">
+      {/* ── Tariff System Switcher ── */}
+      <div style={{
+        display: 'inline-flex',
+        gap: '6px',
+        marginBottom: '20px',
+        background: 'var(--color-surface)',
+        padding: '5px',
+        borderRadius: '14px',
+        border: '1px solid var(--color-border)',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+        flexWrap: 'wrap'
+      }}>
+        <button
+          onClick={() => setSystemMode('pacific')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 18px',
+            borderRadius: '10px',
+            border: 'none',
+            fontSize: '13px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            background: systemMode === 'pacific'
+              ? 'linear-gradient(135deg, #BB0013, #D4001A)'
+              : 'transparent',
+            color: systemMode === 'pacific' ? 'white' : 'var(--color-text-secondary)',
+            boxShadow: systemMode === 'pacific' ? '0 2px 8px rgba(187, 0, 19, 0.25)' : 'none'
+          }}
+        >
+          <Globe style={{ width: '15px', height: '15px' }} />
+          Pacific Express (Multi-Sheet Tariff)
+        </button>
+
+        <button
+          onClick={() => setSystemMode('standard')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 18px',
+            borderRadius: '10px',
+            border: 'none',
+            fontSize: '13px',
+            fontWeight: 700,
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            background: systemMode === 'standard'
+              ? 'linear-gradient(135deg, #BB0013, #D4001A)'
+              : 'transparent',
+            color: systemMode === 'standard' ? 'white' : 'var(--color-text-secondary)',
+            boxShadow: systemMode === 'standard' ? '0 2px 8px rgba(187, 0, 19, 0.25)' : 'none'
+          }}
+        >
+          <Building2 style={{ width: '15px', height: '15px' }} />
+          Standard Courier Tariffs {companies.length > 0 && `(${companies.length})`}
+        </button>
+      </div>
+
+      {systemMode === 'pacific' ? (
+        <PacificRatesView />
+      ) : (
+        <>
+          {/* ── Upload Area (collapsible) ── */}
+          {showUploadArea && (
+            <div style={{ marginBottom: '20px' }} className="animate-slide-down">
+
           <div
             onDragOver={(e) => { e.preventDefault(); setUploadDragging(true) }}
             onDragLeave={() => setUploadDragging(false)}
@@ -886,6 +961,8 @@ export default function RatesPage() {
             </div>
           )}
         </div>
+      )}
+        </>
       )}
     </div>
   )

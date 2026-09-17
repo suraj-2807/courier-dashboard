@@ -11,7 +11,15 @@ import {
   updateRateEntry,
   updateZoneEntry,
   deleteService,
-  deleteCompany
+  deleteCompany,
+  uploadVendorRateSheet,
+  getVendorVersions,
+  getVendorVersionDetail,
+  activateVendorVersion,
+  getVendorVersionDiff,
+  deleteVendorVersion,
+  calculateVendorRate,
+  getVendorDestinations
 } from './rates.controller.js'
 
 const router = express.Router()
@@ -38,4 +46,19 @@ router.put('/rates/:id', authMiddleware, updateRateEntry)
 router.get('/services/:serviceId/zones', authMiddleware, getServiceZones)
 router.put('/zones/:id', authMiddleware, updateZoneEntry)
 
+// ═══════════════════════════════════════════════════════════════════════
+// VENDOR RATE SHEETS (Multi-Sheet Tariff & Versioning — Pacific, etc.)
+// ═══════════════════════════════════════════════════════════════════════
+router.post('/vendors/:vendorCode/upload', authMiddleware, upload.single('file'), uploadVendorRateSheet)
+router.get('/vendors/:vendorCode/versions', authMiddleware, getVendorVersions)
+router.get('/vendors/:vendorCode/versions/:versionId', authMiddleware, getVendorVersionDetail)
+router.put('/vendors/:vendorCode/versions/:versionId/activate', authMiddleware, activateVendorVersion)
+router.get('/vendors/:vendorCode/versions/:versionId/diff', authMiddleware, getVendorVersionDiff)
+router.delete('/vendors/:vendorCode/versions/:versionId', authMiddleware, deleteVendorVersion)
+router.get('/vendors/:vendorCode/destinations', authMiddleware, getVendorDestinations)
+
+// Vendor Rate Calculator
+router.post('/calculate', authMiddleware, calculateVendorRate)
+
 export default router
+

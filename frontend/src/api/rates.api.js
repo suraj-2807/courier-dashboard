@@ -59,3 +59,62 @@ export const deleteService = (serviceId) =>
  */
 export const deleteCompany = (companyId) =>
   api.delete(`/rates/companies/${companyId}`).then((res) => res.data)
+
+// ═══════════════════════════════════════════════════════════════════════
+// VENDOR RATE SHEETS (Multi-Sheet Tariff & Versioning — Pacific, etc.)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Upload vendor rate workbook (Pacific Excel)
+ */
+export const uploadVendorRateSheet = (vendorCode, file) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post(`/rates/vendors/${vendorCode}/upload`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }).then((res) => res.data)
+}
+
+/**
+ * Get all versions for a vendor
+ */
+export const getVendorVersions = (vendorCode = 'pacific') =>
+  api.get(`/rates/vendors/${vendorCode}/versions`).then((res) => res.data)
+
+/**
+ * Get detailed view of a specific vendor rate version
+ */
+export const getVendorVersionDetail = (vendorCode, versionId) =>
+  api.get(`/rates/vendors/${vendorCode}/versions/${versionId}`).then((res) => res.data)
+
+/**
+ * Activate a validated vendor rate version (archives previous active)
+ */
+export const activateVendorVersion = (vendorCode, versionId) =>
+  api.put(`/rates/vendors/${vendorCode}/versions/${versionId}/activate`).then((res) => res.data)
+
+/**
+ * Get diff comparison between a version and current active
+ */
+export const getVendorVersionDiff = (vendorCode, versionId) =>
+  api.get(`/rates/vendors/${vendorCode}/versions/${versionId}/diff`).then((res) => res.data)
+
+/**
+ * Delete a draft/failed vendor rate version
+ */
+export const deleteVendorVersion = (vendorCode, versionId) =>
+  api.delete(`/rates/vendors/${vendorCode}/versions/${versionId}`).then((res) => res.data)
+
+/**
+ * Get destinations list for a vendor (from active rate sheet)
+ */
+export const getVendorDestinations = (vendorCode = 'pacific') =>
+  api.get(`/rates/vendors/${vendorCode}/destinations`).then((res) => res.data)
+
+/**
+ * Test rate calculation against active vendor rates
+ * @param {Object} params - { vendor_code, country, postcode, weight, service_code }
+ */
+export const calculateVendorRate = (params) =>
+  api.post('/rates/calculate', params).then((res) => res.data)
+
