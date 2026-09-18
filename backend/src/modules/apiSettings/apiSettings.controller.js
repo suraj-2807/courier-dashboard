@@ -250,12 +250,15 @@ export const updateApiSetting = async (req, res) => {
     }
 
     // Build encrypted credentials from simple fields
-    if (body.user_id || body.password || body.customer_code || body.company_code) {
+    if (body.user_id || body.username || body.email || body.password || body.customer_code || body.company_code || body.company_id || body.customer_id) {
       const credentials = {}
       if (body.user_id) credentials.user_id = body.user_id
+      if (body.username) credentials.username = body.username
+      if (body.email) credentials.email = body.email
       if (body.password) credentials.password = body.password
       if (body.customer_code) credentials.customer_code = body.customer_code
       if (body.company_code) credentials.company_code = body.company_code
+      if (body.company_id) credentials.company_id = body.company_id
       if (body.customer_id) credentials.customer_id = body.customer_id
       setClauses.push('auth_credentials = ?')
       values.push(encrypt(JSON.stringify(credentials)))
@@ -651,14 +654,16 @@ function _buildConfigFromBody(body) {
   let encryptedCredentials = ''
   if (body.auth_credentials && typeof body.auth_credentials === 'object') {
     encryptedCredentials = encrypt(JSON.stringify(body.auth_credentials))
-  } else if (body.user_id || body.password || body.customer_code || body.company_code) {
+  } else if (body.user_id || body.username || body.email || body.password || body.customer_code || body.company_code || body.company_id || body.customer_id) {
     // Simple form fields → build credentials object
     const credentials = {}
     if (body.user_id) credentials.user_id = body.user_id
     if (body.username) credentials.username = body.username
+    if (body.email) credentials.email = body.email
     if (body.password) credentials.password = body.password
     if (body.customer_code) credentials.customer_code = body.customer_code
     if (body.company_code) credentials.company_code = body.company_code
+    if (body.company_id) credentials.company_id = body.company_id
     if (body.customer_id) credentials.customer_id = body.customer_id
     encryptedCredentials = encrypt(JSON.stringify(credentials))
   }

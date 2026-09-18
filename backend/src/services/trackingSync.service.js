@@ -135,11 +135,33 @@ async function trackPacific(awb, config) {
 // ── FlySwift / ITDServices Platform Tracking ──
 async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Partner') {
   const creds = parseCredentials(config?.auth_credentials)
-  const apiCompanyId = creds.api_company_id || creds.company_code || creds.company_id || creds.customer_code || creds.customer_id || '1032'
-  const customerCode = creds.customer_code || creds.customer_id || creds.company_code || creds.api_company_id || '1032'
+  const code = (config?.vendor_code || '').toLowerCase().trim()
+  const nameLower = (config?.name || '').toLowerCase().trim()
+
+  // Dynamic defaults based on vendor platform
+  let defaultCompanyId = '1032'
+  let defaultCustomerCode = '1032'
+  if (code.includes('sairaj') || nameLower.includes('sairaj')) {
+    defaultCompanyId = '144'
+    defaultCustomerCode = 'T001'
+  } else if (code.includes('acx') || nameLower.includes('acx')) {
+    defaultCompanyId = '5'
+    defaultCustomerCode = 'A0872'
+  } else if (code.includes('bhabani') || code.includes('bhavani') || nameLower.includes('bhabani')) {
+    defaultCompanyId = '913'
+    defaultCustomerCode = 'T001'
+  }
+
+  const apiCompanyId = creds.api_company_id || creds.company_code || creds.company_id || defaultCompanyId
+  const customerCode = creds.customer_code || creds.accode || creds.acc_code || creds.customer_id || defaultCustomerCode
 
   let host = 'admin.flyswift.net'
-  if (config?.auth_url) {
+  if (config?.tracking_api_url) {
+    try {
+      const urlStr = config.tracking_api_url.startsWith('http') ? config.tracking_api_url : `https://${config.tracking_api_url}`
+      host = new URL(urlStr).host
+    } catch {}
+  } else if (config?.auth_url) {
     try {
       const urlStr = config.auth_url.startsWith('http') ? config.auth_url : `https://${config.auth_url}`
       host = new URL(urlStr).host
@@ -151,7 +173,12 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
     } catch {}
   }
 
-  const vendorDisplayName = config?.name || defaultVendorName || 'Courier Partner'
+  // Ensure Sairaj uses the admin. subdomain for tracking API
+  if (host.includes('sairaj') && !host.startsWith('admin.')) {
+    host = `admin.${host}`
+  }
+
+  const vendorDisplayName = config?.name || (code.includes('sairaj') ? 'Sairaj International' : defaultVendorName) || 'Courier Partner'
   const cleanAwb = String(awb).trim()
 
   let trackingUrl
@@ -166,16 +193,21 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
         .replace('{awb}', encodeURIComponent(cleanAwb))
         .replace('{api_company_id}', encodeURIComponent(apiCompanyId))
         .replace('{customer_code}', encodeURIComponent(customerCode))
-    } else if (configuredUrl.includes('api_company_id') || configuredUrl.includes('tracking_no')) {
-      if (!configuredUrl.includes('tracking_no=')) {
-        const sep = configuredUrl.includes('?') ? '&' : '?'
-        trackingUrl = `${configuredUrl}${sep}tracking_no=${encodeURIComponent(cleanAwb)}`
-      } else {
-        trackingUrl = configuredUrl
-      }
     } else {
-      const sep = configuredUrl.includes('?') ? '&' : '?'
-      trackingUrl = `${configuredUrl}${sep}api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(cleanAwb)}`
+      try {
+        const u = new URL(configuredUrl)
+        u.searchParams.set('tracking_no', cleanAwb)
+        if (!u.searchParams.get('api_company_id') && apiCompanyId) {
+          u.searchParams.set('api_company_id', apiCompanyId)
+        }
+        if (!u.searchParams.get('customer_code') && customerCode) {
+          u.searchParams.set('customer_code', customerCode)
+        }
+        trackingUrl = u.toString()
+      } catch {
+        const sep = configuredUrl.includes('?') ? '&' : '?'
+        trackingUrl = `${configuredUrl}${sep}api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(cleanAwb)}`
+      }
     }
   } else {
     trackingUrl = `https://${host}/api/tracking_api/get_tracking_data?api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(cleanAwb)}`
@@ -205,6 +237,12 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
 
   if (Array.isArray(data)) {
     data = data[0] || {}
+  }
+
+  // Handle explicit error responses from ITD Services (e.g. [{"errors":true,"tracking_no":"Customer not found"}])
+  if (data.errors === true || (typeof data.errors === 'string' && data.errors) || data.status === false || data.status === 'error') {
+    const errMsg = data.tracking_no || data.message || (typeof data.errors === 'string' ? data.errors : '') || 'Vendor tracking returned error'
+    throw new Error(`${vendorDisplayName}: ${errMsg}`)
   }
 
   const trackingData = data.data || data

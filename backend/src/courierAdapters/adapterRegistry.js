@@ -28,6 +28,15 @@ const ADAPTERS = {
   'bhabani_express': FlySwiftAdapter,
   'bhavaniexpress': FlySwiftAdapter,
   'bhavani_express': FlySwiftAdapter,
+  'sairaj': FlySwiftAdapter,           // Sairaj International (ITDServices platform)
+  'sairaj_international': FlySwiftAdapter,
+  'sairajinternational': FlySwiftAdapter,
+  'sairaj_express': FlySwiftAdapter,
+  'sairajexpress': FlySwiftAdapter,
+  'itd': FlySwiftAdapter,              // ITD Services Center platform
+  'itdservices': FlySwiftAdapter,
+  'itd_services': FlySwiftAdapter,
+  'itdservicescenter': FlySwiftAdapter,
   'pacific': PacificAdapter,
   'pacifc': PacificAdapter,       // Support typo variation as requested
   'pacificexpress': PacificAdapter,

@@ -241,10 +241,10 @@ export function resolveVendorDetails(vendorCode, vendorName, serviceCode = null,
       vendName: 'SAIRAJ',
       service: svcInt > 0 ? svcInt : 1022,
       autotrack: 1,
-      accode: getCred('accode', 'customer_code', 'acc_code') || '44',
-      tuser: getCred('tuser', 'username') || '',
+      accode: getCred('accode', 'customer_code', 'acc_code') || 'T001',
+      tuser: getCred('tuser', 'username', 'email') || 'sai.surat2022@gmail.com',
       tpass: getCred('tpass', 'password') || '',
-      apikey: getCred('apikey', 'api_key') || ''
+      apikey: getCred('apikey', 'api_key', 'company_id') || '144'
     }
   }
 

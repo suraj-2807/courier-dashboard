@@ -774,7 +774,24 @@ function pe_fetch_tracking($result) {
             $history = pe_parse_flyswift_events($body, $result, 'FlySwift');
         }
     }
-    // 4. PACIFIC EXPRESS
+    // 4. SAIRAJ INTERNATIONAL (ITDServices Platform)
+    elseif ($svc == 1009 || $svc == 1022 || strpos($vend, 'sairaj') !== false) {
+        $accode = !empty($result->ACCODE) ? trim($result->ACCODE) : 'T001';
+        $company_id = '144';
+        $url = "http://admin.sairajinternational.online/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
+        PE_Data::log('Calling Sairaj International Tracking API', ['url' => $url]);
+        
+        $r = wp_remote_get($url, ['timeout' => 15, 'sslverify' => false]);
+        if (is_wp_error($r)) {
+            PE_Data::log('Sairaj API HTTP Error', ['error' => $r->get_error_message()]);
+        } else {
+            $code = wp_remote_retrieve_response_code($r);
+            $body = wp_remote_retrieve_body($r);
+            PE_Data::log('Sairaj API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
+            $history = pe_parse_flyswift_events($body, $result, 'Sairaj International');
+        }
+    }
+    // 5. PACIFIC EXPRESS
     elseif ($svc == 1007 || $svc == 1008 || strpos($vend, 'pacific') !== false) {
         $user_id = !empty($result->TUSER) ? trim($result->TUSER) : 'P0503';
         $password = !empty($result->TPASS) ? trim($result->TPASS) : 'P0503@7199';

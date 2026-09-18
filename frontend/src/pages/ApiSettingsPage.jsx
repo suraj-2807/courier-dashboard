@@ -126,6 +126,105 @@ const EMPTY_SERVICE = { code: '', label: '' }
 const EMPTY_CODE_ENTRY = { code: '', label: '' }
 const EMPTY_RESTRICTION = { code: '', label: '', countries: '', min_weight: '', max_weight: '', package_types: '' }
 
+// Quick configuration presets for popular courier partners
+const VENDOR_PRESETS = [
+  {
+    id: 'sairaj',
+    name: 'Sairaj International',
+    badge: 'ITDServices Platform',
+    color: '#0284c7',
+    values: {
+      name: 'Sairaj International',
+      vendor_code: 'sairaj',
+      auth_type: 'token',
+      auth_url: 'https://sairajinternational.online/docket_api/get_token',
+      auth_token_path: 'data.token',
+      shipment_api_url: 'https://sairajinternational.online/docket_api/create_docket',
+      tracking_api_url: 'http://admin.sairajinternational.online/api/tracking_api/get_tracking_data?api_company_id=144&customer_code=T001&tracking_no={tracking_no}',
+      shipment_api_method: 'POST',
+      username: 'sai.surat2022@gmail.com',
+      user_id: 'sai.surat2022@gmail.com',
+      password: '224433556688',
+      company_code: '144',
+      customer_code: 'T001',
+      customer_id: '72',
+      response_tracking_path: 'data.tracking_number',
+      response_success_path: 'success',
+      response_success_value: 'true',
+      environment: 'production',
+      is_active: true
+    }
+  },
+  {
+    id: 'flyswift',
+    name: 'FlySwift Express',
+    badge: 'FlySwift Platform',
+    color: '#ea580c',
+    values: {
+      name: 'FlySwift Express',
+      vendor_code: 'flyswift',
+      auth_type: 'token',
+      auth_url: 'https://flyswift.net/docket_api/get_token',
+      auth_token_path: 'data.token',
+      shipment_api_url: 'https://flyswift.net/docket_api/create_docket',
+      tracking_api_url: 'http://admin.flyswift.net/api/tracking_api/get_tracking_data?api_company_id=1614&customer_code=1032&tracking_no={tracking_no}',
+      shipment_api_method: 'POST',
+      company_code: '1614',
+      customer_code: '1032',
+      response_tracking_path: 'data.tracking_number',
+      response_success_path: 'success',
+      response_success_value: 'true',
+      environment: 'production',
+      is_active: true
+    }
+  },
+  {
+    id: 'bhabani',
+    name: 'Bhabani Express',
+    badge: 'ITDServices Platform',
+    color: '#0d9488',
+    values: {
+      name: 'Bhabani Express',
+      vendor_code: 'bhabani',
+      auth_type: 'token',
+      auth_url: 'https://bhabani.itdservices.in/docket_api/get_token',
+      auth_token_path: 'data.token',
+      shipment_api_url: 'https://bhabani.itdservices.in/docket_api/create_docket',
+      tracking_api_url: 'https://bhabani.itdservices.in/api/tracking_api/get_tracking_data?api_company_id=913&customer_code=T001&tracking_no={tracking_no}',
+      shipment_api_method: 'POST',
+      company_code: '913',
+      customer_code: 'T001',
+      response_tracking_path: 'data.tracking_number',
+      response_success_path: 'success',
+      response_success_value: 'true',
+      environment: 'production',
+      is_active: true
+    }
+  },
+  {
+    id: 'pacific',
+    name: 'Pacific Express',
+    badge: 'eShip Platform',
+    color: '#2563eb',
+    values: {
+      name: 'Pacific Express',
+      vendor_code: 'pacific',
+      auth_type: 'inline',
+      auth_url: '',
+      shipment_api_url: 'https://eship.pacificexp.net/api/v1/Docket/CreateDocket',
+      tracking_api_url: 'https://eship.pacificexp.net/api/v1/Tracking/Tracking',
+      shipment_api_method: 'POST',
+      user_id: 'P0503',
+      password: 'P0503@7199',
+      response_tracking_path: 'Response.AWBNo',
+      response_success_path: 'Response.ErrorCode',
+      response_success_value: '0',
+      environment: 'production',
+      is_active: true
+    }
+  }
+]
+
 // All configurable form sections for required_fields
 const ALL_FORM_SECTIONS = [
   { key: 'vendor_code', label: 'Vendor Code' },
@@ -1213,6 +1312,59 @@ export default function ApiSettingsPage() {
             <form onSubmit={handleSubmit} style={{ padding: '24px' }}>
               {modalTab === 'connection' && (
                 <>
+                  {/* Quick Presets Bar */}
+                  <div style={{
+                    marginBottom: '20px',
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    background: 'var(--color-surface-alt)',
+                    border: '1px solid var(--color-border)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--color-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Zap style={{ width: '13px', height: '13px', color: '#eab308' }} />
+                        Quick Presets (1-Click Auto Fill)
+                      </span>
+                      <span style={{ fontSize: '10px', color: 'var(--color-text-tertiary)' }}>Click to autofill all endpoints & credentials</span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {VENDOR_PRESETS.map((preset) => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => {
+                            setForm(prev => ({
+                              ...prev,
+                              ...preset.values
+                            }))
+                            toast.success(`Loaded ${preset.name} preset!`)
+                          }}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--color-border)',
+                            background: form.vendor_code === preset.values.vendor_code ? 'rgba(187, 0, 19, 0.08)' : 'var(--color-surface)',
+                            borderColor: form.vendor_code === preset.values.vendor_code ? 'var(--color-primary)' : 'var(--color-border)',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            color: form.vendor_code === preset.values.vendor_code ? 'var(--color-primary)' : 'var(--color-text-primary)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: preset.color }} />
+                          {preset.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* ── Section: Basic Info ── */}
                   <SectionLabel>Basic Information</SectionLabel>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
