@@ -15,6 +15,81 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 /**
+ * Normalizes a list of parcels, ensuring volumetric weight and chargeable weight are computed
+ */
+function normalizeParcels(rawParcels, fallbackWeight, fallbackL, fallbackB, fallbackH) {
+  let list = []
+  if (Array.isArray(rawParcels)) {
+    list = rawParcels
+  } else if (typeof rawParcels === 'string') {
+    try {
+      list = JSON.parse(rawParcels)
+    } catch {}
+  }
+  if (!Array.isArray(list) || list.length === 0) {
+    const l = parseFloat(fallbackL) || 0
+    const b = parseFloat(fallbackB) || 0
+    const h = parseFloat(fallbackH) || 0
+    const w = parseFloat(fallbackWeight) || 0
+    if (l > 0 || b > 0 || h > 0 || w > 0) {
+      const vol = (l > 0 && b > 0 && h > 0) ? Math.round(((l * b * h) / 5000) * 100) / 100 : 0
+      const act = w
+      const chg = Math.ceil(Math.max(act, vol))
+      list = [{
+        parcel_no: 1,
+        box_no: '1',
+        weight: w > 0 ? String(w) : '',
+        length: l > 0 ? String(l) : '',
+        breadth: b > 0 ? String(b) : '',
+        width: b > 0 ? String(b) : '',
+        height: h > 0 ? String(h) : '',
+        volumetric_weight: vol > 0 ? String(vol) : '',
+        chargeable_weight: chg > 0 ? String(chg) : ''
+      }]
+    }
+  } else {
+    list = list.map((p, idx) => {
+      const l = parseFloat(p.length) || 0
+      const b = parseFloat(p.breadth || p.width) || 0
+      const h = parseFloat(p.height) || 0
+      const vol = (l > 0 && b > 0 && h > 0) ? Math.round(((l * b * h) / 5000) * 100) / 100 : 0
+      const act = parseFloat(p.weight) || 0
+      const maxW = Math.max(act, vol)
+      const chg = maxW > 0 ? Math.ceil(maxW) : 0
+      return {
+        ...p,
+        parcel_no: p.parcel_no || idx + 1,
+        box_no: p.box_no || String(idx + 1),
+        volumetric_weight: (p.volumetric_weight && parseFloat(p.volumetric_weight) > 0)
+          ? String(p.volumetric_weight)
+          : (vol > 0 ? String(vol) : ''),
+        chargeable_weight: (p.chargeable_weight && parseFloat(p.chargeable_weight) > 0)
+          ? String(p.chargeable_weight)
+          : (chg > 0 ? String(chg) : '')
+      }
+    })
+  }
+  return list
+}
+
+/**
+ * Calculates total volumetric weight from parcels or dimensions
+ */
+function calculateTotalVolumetricWeight(parcelsList, fallbackL, fallbackB, fallbackH) {
+  if (Array.isArray(parcelsList) && parcelsList.length > 0) {
+    const total = parcelsList.reduce((sum, p) => sum + (parseFloat(p.volumetric_weight) || 0), 0)
+    return Math.round(total * 100) / 100
+  }
+  const l = parseFloat(fallbackL) || 0
+  const b = parseFloat(fallbackB) || 0
+  const h = parseFloat(fallbackH) || 0
+  if (l > 0 && b > 0 && h > 0) {
+    return Math.round(((l * b * h) / 5000) * 100) / 100
+  }
+  return 0
+}
+
+/**
  * Extract all booking fields from request body.
  * Shared between saveBooking and createBooking.
  */
@@ -39,6 +114,7 @@ function extractBookingFields(body) {
     product_code: body.product_code,
     weight: body.weight,
     chargeable_weight: body.chargeable_weight,
+    volumetric_weight: body.volumetric_weight,
     length: body.length,
     breadth: body.breadth,
     height: body.height,
@@ -879,13 +955,8 @@ export const saveBooking = async (req, res) => {
       contentDescription = 'Books'
     }
 
-    const parcelsJson = Array.isArray(fields.parcels)
-      ? JSON.stringify(fields.parcels)
-      : (typeof fields.parcels === 'string' ? fields.parcels : null)
-
-    const parsedParcelsList = Array.isArray(fields.parcels)
-      ? fields.parcels
-      : (typeof fields.parcels === 'string' ? (JSON.parse(fields.parcels || '[]') || []) : [])
+    const parsedParcelsList = normalizeParcels(fields.parcels, fields.weight, fields.length, fields.breadth, fields.height)
+    const parcelsJson = parsedParcelsList.length > 0 ? JSON.stringify(parsedParcelsList) : null
 
     let finalWeight = parseFloat(fields.weight) || 0
     let finalLength = parseFloat(fields.length) || 0
@@ -1335,10 +1406,17 @@ export const saveBooking = async (req, res) => {
       console.error('[Remote parcel_history Draft Sync Error]:', syncErr.message)
     }
 
+    const finalSavedParcels = normalizeParcels(updatedShipment.parcels, updatedShipment.weight, updatedShipment.length, updatedShipment.breadth, updatedShipment.height)
+    const finalSavedVol = calculateTotalVolumetricWeight(finalSavedParcels, updatedShipment.length, updatedShipment.breadth, updatedShipment.height)
+
     return res.status(201).json({
       success: true,
       message: existingId ? 'Booking updated successfully' : 'Booking saved as draft',
-      booking: updatedShipment,
+      booking: {
+        ...updatedShipment,
+        parcels: finalSavedParcels,
+        volumetric_weight: finalSavedVol > 0 ? String(finalSavedVol) : ''
+      },
       awb_number: tracking_number
     })
   } catch (err) {
@@ -1598,13 +1676,8 @@ export const createBooking = async (req, res) => {
       contentDescription = 'Books'
     }
 
-    const parcelsJson = Array.isArray(fields.parcels)
-      ? JSON.stringify(fields.parcels)
-      : (typeof fields.parcels === 'string' ? fields.parcels : null)
-
-    const parsedParcelsList = Array.isArray(fields.parcels)
-      ? fields.parcels
-      : (typeof fields.parcels === 'string' ? (JSON.parse(fields.parcels || '[]') || []) : [])
+    const parsedParcelsList = normalizeParcels(fields.parcels, fields.weight, fields.length, fields.breadth, fields.height)
+    const parcelsJson = parsedParcelsList.length > 0 ? JSON.stringify(parsedParcelsList) : null
 
     let finalWeight = parseFloat(fields.weight) || 0
     let finalLength = parseFloat(fields.length) || 0
@@ -1966,11 +2039,17 @@ export const createBooking = async (req, res) => {
     }
 
 
-    const shipmentRows = await query('SELECT * FROM shipments WHERE id = ?', [shipmentId])
+    const shipmentObj = shipmentRows[0] || {}
+    const createdParcels = normalizeParcels(shipmentObj.parcels, shipmentObj.weight, shipmentObj.length, shipmentObj.breadth, shipmentObj.height)
+    const createdTotalVol = calculateTotalVolumetricWeight(createdParcels, shipmentObj.length, shipmentObj.breadth, shipmentObj.height)
 
     return res.status(201).json({
       success: true,
-      booking: shipmentRows[0],
+      booking: {
+        ...shipmentObj,
+        parcels: createdParcels,
+        volumetric_weight: createdTotalVol > 0 ? String(createdTotalVol) : ''
+      },
       vendor_result: vendorResult
     })
   } catch (error) {
@@ -2396,12 +2475,8 @@ export const getBookings = async (req, res) => {
         environment: row.vac_environment
       } : null
 
-      let parsedParcels = []
-      if (row.parcels) {
-        try {
-          parsedParcels = typeof row.parcels === 'string' ? JSON.parse(row.parcels) : row.parcels
-        } catch { }
-      }
+      const normalizedParcels = normalizeParcels(row.parcels, row.weight, row.length, row.breadth, row.height)
+      const totalVolWeight = calculateTotalVolumetricWeight(normalizedParcels, row.length, row.breadth, row.height)
 
       let parsedInvoiceItems = []
       if (row.invoice_items) {
@@ -2412,7 +2487,8 @@ export const getBookings = async (req, res) => {
 
       return {
         ...row,
-        parcels: parsedParcels,
+        volumetric_weight: totalVolWeight > 0 ? String(totalVolWeight) : (row.volumetric_weight ? String(row.volumetric_weight) : ''),
+        parcels: normalizedParcels,
         invoice_items: parsedInvoiceItems,
         senders,
         receivers,
@@ -2535,12 +2611,8 @@ export const getBookingById = async (req, res) => {
       environment: b.vac_environment
     } : null
 
-    let parsedParcels = []
-    if (b.parcels) {
-      try {
-        parsedParcels = typeof b.parcels === 'string' ? JSON.parse(b.parcels) : b.parcels
-      } catch { }
-    }
+    const normalizedParcels = normalizeParcels(b.parcels, b.weight, b.length, b.breadth, b.height)
+    const totalVolWeight = calculateTotalVolumetricWeight(normalizedParcels, b.length, b.breadth, b.height)
 
     let parsedInvoiceItems = []
     if (b.invoice_items) {
@@ -2615,7 +2687,8 @@ export const getBookingById = async (req, res) => {
       success: true,
       booking: {
         ...b,
-        parcels: parsedParcels,
+        volumetric_weight: totalVolWeight > 0 ? String(totalVolWeight) : (b.volumetric_weight ? String(b.volumetric_weight) : ''),
+        parcels: normalizedParcels,
         invoice_items: parsedInvoiceItems,
         senders,
         receivers,
@@ -3432,9 +3505,8 @@ export const cloneBooking = async (req, res) => {
       ? (typeof src.invoice_items === 'string' ? src.invoice_items : JSON.stringify(src.invoice_items))
       : null
 
-    const parcelsJson = src.parcels
-      ? (typeof src.parcels === 'string' ? src.parcels : JSON.stringify(src.parcels))
-      : null
+    const normalizedParcels = normalizeParcels(src.parcels, src.weight, src.length, src.breadth, src.height)
+    const parcelsJson = normalizedParcels.length > 0 ? JSON.stringify(normalizedParcels) : null
 
     const result = await execute(
       `INSERT INTO shipments (
@@ -3567,10 +3639,15 @@ export const cloneBooking = async (req, res) => {
       }).catch(() => {})
     } catch {}
 
+    const clonedTotalVol = calculateTotalVolumetricWeight(normalizedParcels, src.length, src.breadth, src.height)
     return res.status(201).json({
       success: true,
       message: `Booking cloned successfully as new draft! AWB: ${newTracking}`,
-      booking: clonedShipment,
+      booking: {
+        ...clonedShipment,
+        parcels: normalizedParcels,
+        volumetric_weight: clonedTotalVol > 0 ? String(clonedTotalVol) : ''
+      },
       awb_number: newTracking
     })
   } catch (err) {

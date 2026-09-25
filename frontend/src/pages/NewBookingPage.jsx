@@ -190,17 +190,26 @@ export default function NewBookingPage() {
     { parcel_no: 1, box_no: '1', weight: '', length: '', breadth: '', height: '', volumetric_weight: '', chargeable_weight: '' }
   ])
 
-  // Invoice items state
+  // Invoice items state — default unit_type from last invoice if available
+  const getLastUsedUnitType = () => {
+    try {
+      const stored = localStorage.getItem('lastInvoiceUnitType')
+      if (stored) return stored
+    } catch {}
+    return 'PCS'
+  }
   const [invoiceItems, setInvoiceItems] = useState([
-    { sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '00', cost: '', unit_rates: '', amount: '' }
+    { sr_no: 1, box_no: '1', description: '', hs_code: '', unit_type: getLastUsedUnitType(), quantity: '', unit_weight: '00', cost: '', unit_rates: '', amount: '' }
   ])
 
   const addInvoiceItem = () => {
     setInvoiceItems(prev => {
       const lastBoxNo = prev.length > 0 ? prev[prev.length - 1].box_no : '1'
+      // Carry forward unit_type from last row, or from localStorage
+      const lastUnitType = prev.length > 0 ? (prev[prev.length - 1].unit_type || getLastUsedUnitType()) : getLastUsedUnitType()
       return [
         ...prev,
-        { sr_no: prev.length + 1, box_no: lastBoxNo, description: '', hs_code: '', unit_type: 'PCS', quantity: '', unit_weight: '00', cost: '', unit_rates: '', amount: '' }
+        { sr_no: prev.length + 1, box_no: lastBoxNo, description: '', hs_code: '', unit_type: lastUnitType, quantity: '', unit_weight: '00', cost: '', unit_rates: '', amount: '' }
       ]
     })
   }
@@ -611,8 +620,44 @@ export default function NewBookingPage() {
       try {
         const pList = typeof b.parcels === 'string' ? JSON.parse(b.parcels) : b.parcels
         if (Array.isArray(pList) && pList.length > 0) {
-          setParcels(pList)
+          const parsed = pList.map((p, i) => {
+            const l = parseFloat(p.length) || 0
+            const br = parseFloat(p.breadth || p.width) || 0
+            const h = parseFloat(p.height) || 0
+            const vol = (l > 0 && br > 0 && h > 0) ? Math.round(((l * br * h) / 5000) * 100) / 100 : 0
+            const act = parseFloat(p.weight) || 0
+            const maxW = Math.max(act, vol)
+            const chg = maxW > 0 ? Math.ceil(maxW) : 0
+            return {
+              parcel_no: p.parcel_no || i + 1,
+              box_no: String(p.box_no || i + 1),
+              weight: String(p.weight !== undefined && p.weight !== null ? p.weight : ''),
+              length: String(p.length !== undefined && p.length !== null ? p.length : ''),
+              breadth: String((p.breadth || p.width) !== undefined && (p.breadth || p.width) !== null ? (p.breadth || p.width) : ''),
+              height: String(p.height !== undefined && p.height !== null ? p.height : ''),
+              volumetric_weight: (p.volumetric_weight && parseFloat(p.volumetric_weight) > 0)
+                ? String(p.volumetric_weight)
+                : (vol > 0 ? String(vol) : ''),
+              chargeable_weight: (p.chargeable_weight && parseFloat(p.chargeable_weight) > 0)
+                ? String(p.chargeable_weight)
+                : (chg > 0 ? String(chg) : '')
+            }
+          })
+          setParcels(parsed)
+          const sumVol = Math.round(parsed.reduce((sum, p) => sum + (parseFloat(p.volumetric_weight) || 0), 0) * 100) / 100
+          setForm(prev => ({
+            ...prev,
+            no_of_pieces: String(Math.max(parsed.length, parseInt(b.no_of_pieces) || 1)),
+            volumetric_weight: sumVol > 0 ? String(sumVol) : String(b.volumetric_weight || '')
+          }))
         } else {
+          const l = parseFloat(b.length) || 0
+          const br = parseFloat(b.breadth) || 0
+          const h = parseFloat(b.height) || 0
+          const vol = (l > 0 && br > 0 && h > 0) ? Math.round(((l * br * h) / 5000) * 100) / 100 : 0
+          const act = parseFloat(b.weight) || 0
+          const maxW = Math.max(act, vol)
+          const chg = maxW > 0 ? Math.ceil(maxW) : 0
           setParcels([{
             parcel_no: 1,
             box_no: '1',
@@ -620,12 +665,22 @@ export default function NewBookingPage() {
             length: String(b.length || ''),
             breadth: String(b.breadth || ''),
             height: String(b.height || ''),
-            volumetric_weight: String(b.volumetric_weight || ''),
-            chargeable_weight: String(b.chargeable_weight || '')
+            volumetric_weight: vol > 0 ? String(vol) : String(b.volumetric_weight || ''),
+            chargeable_weight: String(b.chargeable_weight || (chg > 0 ? chg : ''))
           }])
+          if (vol > 0) {
+            setForm(prev => ({ ...prev, volumetric_weight: String(vol) }))
+          }
         }
       } catch (err) {}
     } else if (b.weight || b.length || b.breadth || b.height) {
+      const l = parseFloat(b.length) || 0
+      const br = parseFloat(b.breadth) || 0
+      const h = parseFloat(b.height) || 0
+      const vol = (l > 0 && br > 0 && h > 0) ? Math.round(((l * br * h) / 5000) * 100) / 100 : 0
+      const act = parseFloat(b.weight) || 0
+      const maxW = Math.max(act, vol)
+      const chg = maxW > 0 ? Math.ceil(maxW) : 0
       setParcels([{
         parcel_no: 1,
         box_no: '1',
@@ -633,9 +688,12 @@ export default function NewBookingPage() {
         length: String(b.length || ''),
         breadth: String(b.breadth || ''),
         height: String(b.height || ''),
-        volumetric_weight: String(b.volumetric_weight || ''),
-        chargeable_weight: String(b.chargeable_weight || '')
+        volumetric_weight: vol > 0 ? String(vol) : String(b.volumetric_weight || ''),
+        chargeable_weight: String(b.chargeable_weight || (chg > 0 ? chg : ''))
       }])
+      if (vol > 0) {
+        setForm(prev => ({ ...prev, volumetric_weight: String(vol) }))
+      }
     }
 
     if (b.invoice_items) {
@@ -904,15 +962,56 @@ export default function NewBookingPage() {
           })
         }
       } else if (next.length > count) {
-        // Protect pre-filled / existing multi-box data from being sliced if subsequent boxes contain values
-        const hasSubsequentData = next.slice(count).some(p => p.weight || p.length || p.breadth || p.height)
-        if (!hasSubsequentData) {
-          return next.slice(0, count)
-        }
+        return next.slice(0, count)
       }
       return next
     })
   }, [form.no_of_pieces])
+
+  const addParcel = () => {
+    setParcels(prev => [
+      ...prev,
+      {
+        parcel_no: prev.length + 1,
+        box_no: String(prev.length + 1),
+        weight: '',
+        length: '',
+        breadth: '',
+        height: '',
+        volumetric_weight: '',
+        chargeable_weight: ''
+      }
+    ])
+    setForm(prev => ({
+      ...prev,
+      no_of_pieces: String(parcels.length + 1)
+    }))
+  }
+
+  const removeParcel = (index) => {
+    if (parcels.length <= 1) return
+    const newCount = parcels.length - 1
+    setParcels(prev => {
+      const filtered = prev.filter((_, i) => i !== index)
+      return filtered.map((p, i) => ({
+        ...p,
+        parcel_no: i + 1,
+        box_no: String(i + 1)
+      }))
+    })
+    setForm(prev => ({
+      ...prev,
+      no_of_pieces: String(newCount)
+    }))
+    setInvoiceItems(prev => prev.map(item => {
+      const bNum = parseInt(item.box_no) || 1
+      if (bNum > newCount) {
+        return { ...item, box_no: String(newCount) }
+      }
+      return item
+    }))
+    toast.success(`Box ${index + 1} removed`)
+  }
 
   const updateParcel = (index, field, value) => {
     setParcels(prev => {
@@ -946,25 +1045,24 @@ export default function NewBookingPage() {
 
   // Keep main form summary fields synced with per-parcel totals and recalculate shipping charges if rate_per_kg is set
   useEffect(() => {
-    // Skip recalculation when form is being populated from edit data to prevent overwriting saved billing values
-    if (skipBillingRecalcRef.current) {
+    const isSkipBilling = skipBillingRecalcRef.current
+    if (isSkipBilling) {
       skipBillingRecalcRef.current = false
-      return
     }
     if (parcels.length > 1) {
       setForm(prev => {
         const chgWt = totalParcelChg > 0 ? String(totalParcelChg) : ''
         const rate = parseFloat(prev.rate_per_kg) || 0
         const chgNum = parseFloat(chgWt) || (totalParcelActual > 0 ? Math.ceil(totalParcelActual) : 0)
-        const updatedShipping = (rate > 0 && chgNum > 0)
+        const updatedShipping = (!isSkipBilling && rate > 0 && chgNum > 0)
           ? (rate * chgNum).toFixed(2)
           : prev.shipping_charge
 
         return {
           ...prev,
           weight: totalParcelActual > 0 ? String(totalParcelActual) : prev.weight,
-          volumetric_weight: totalParcelVol > 0 ? String(totalParcelVol) : '',
-          chargeable_weight: chgWt,
+          volumetric_weight: totalParcelVol > 0 ? String(totalParcelVol) : prev.volumetric_weight,
+          chargeable_weight: chgWt || prev.chargeable_weight,
           shipping_charge: updatedShipping
         }
       })
@@ -984,15 +1082,15 @@ export default function NewBookingPage() {
       setForm(prev => {
         const rate = parseFloat(prev.rate_per_kg) || 0
         const chgNum = chg > 0 ? chg : (act > 0 ? Math.ceil(act) : 0)
-        const updatedShipping = (rate > 0 && chgNum > 0)
+        const updatedShipping = (!isSkipBilling && rate > 0 && chgNum > 0)
           ? (rate * chgNum).toFixed(2)
           : prev.shipping_charge
 
         return {
           ...prev,
           weight: act > 0 ? String(act) : prev.weight,
-          volumetric_weight: vol > 0 ? String(vol) : '',
-          chargeable_weight: chg > 0 ? String(chg) : '',
+          volumetric_weight: vol > 0 ? String(vol) : prev.volumetric_weight,
+          chargeable_weight: chg > 0 ? String(chg) : prev.chargeable_weight,
           shipping_charge: updatedShipping
         }
       })
@@ -1295,8 +1393,14 @@ export default function NewBookingPage() {
       const result = await saveBookingMutation.mutateAsync(payload)
       console.log('[NewBookingPage] 💾 handleSaveBooking result:', result)
       const awb = result?.awb_number || result?.booking?.tracking_number || 'N/A'
+      const savedId = result?.booking?.id || editId
       toast.success(editId ? `Booking updated! AWB: ${awb}` : `Booking saved as draft! AWB: ${awb}`)
-      navigate(editId ? `/bookings/${editId}` : '/bookings')
+      // Persist last-used invoice unit_type for next booking
+      try {
+        const lastUnit = invoiceItems.find(it => it.unit_type)?.unit_type
+        if (lastUnit) localStorage.setItem('lastInvoiceUnitType', lastUnit)
+      } catch {}
+      navigate(savedId ? `/bookings/${savedId}` : '/bookings')
     } catch (err) {
       console.error('[NewBookingPage] ❌ handleSaveBooking error:', err)
       toast.error(err?.response?.data?.message || err.message || 'Failed to save booking')
@@ -1375,9 +1479,16 @@ export default function NewBookingPage() {
       })
 
       const ourAwb = result?.booking?.tracking_number || 'N/A'
+      const createdId = result?.booking?.id
       const vendorAwb = result?.vendor_result?.awbNumber || ''
       const vendorPushed = result?.vendor_result?.success
       const vendorErr = result?.vendor_result?.error || result?.vendor_result?.errorMessage
+
+      // Persist last-used invoice unit_type for next booking
+      try {
+        const lastUnit = invoiceItems.find(it => it.unit_type)?.unit_type
+        if (lastUnit) localStorage.setItem('lastInvoiceUnitType', lastUnit)
+      } catch {}
 
       // If booked from a customer request, explicitly ensure the request status is marked confirmed
       if (payload.from_request) {
@@ -1394,10 +1505,13 @@ export default function NewBookingPage() {
         }
       }
 
+      // Navigate to the newly created shipment's detail page
+      const detailPath = createdId ? `/bookings/${createdId}` : '/bookings'
+
       if (vendorPushed) {
         setPushError(null)
         toast.success(`Booking created & pushed! Our AWB: ${ourAwb} | Vendor AWB: ${vendorAwb}`)
-        navigate('/bookings')
+        navigate(detailPath)
       } else if (form.vendor_config_id) {
         const errMsg = `Vendor API Push Failed: ${vendorErr || 'Validation or connection error'}. Shipment saved as AWB: ${ourAwb}`
         setPushError(errMsg)
@@ -1405,7 +1519,7 @@ export default function NewBookingPage() {
         window.scrollTo({ top: 0, behavior: 'smooth' })
       } else {
         toast.success(`Booking created! Our AWB: ${ourAwb}`)
-        navigate('/bookings')
+        navigate(detailPath)
       }
     } catch (err) {
       console.error('[NewBookingPage] ❌ handleSubmit error:', err)

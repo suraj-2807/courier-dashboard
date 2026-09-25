@@ -640,7 +640,21 @@ export default function BookingDetailPage() {
 
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+              <div className="bg-surface-alt p-3 rounded-xl border border-border-light">
+                <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Volumetric Wt</p>
+                <p className="text-[15px] font-extrabold text-navy mt-1">
+                  {(() => {
+                    const vol = booking.volumetric_weight
+                      ? parseFloat(booking.volumetric_weight)
+                      : (Array.isArray(booking.parcels) && booking.parcels.length > 0
+                          ? booking.parcels.reduce((sum, p) => sum + ((parseFloat(p.volumetric_weight) || (((parseFloat(p.length) || 0) * (parseFloat(p.breadth || p.width) || 0) * (parseFloat(p.height) || 0)) / 5000))), 0)
+                          : (((parseFloat(booking.length) || 0) * (parseFloat(booking.breadth) || 0) * (parseFloat(booking.height) || 0)) / 5000))
+                    return vol > 0 ? `${vol.toFixed(2)} kg` : '0.00 kg'
+                  })()}
+                </p>
+              </div>
+
               <div className="bg-surface-alt p-3 rounded-xl border border-border-light">
                 <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Final Chargeable Wt</p>
                 <p className="text-[15px] font-extrabold text-navy mt-1">
@@ -717,7 +731,14 @@ export default function BookingDetailPage() {
                         <td className="py-2.5 px-3 text-text-secondary">
                           {parseFloat(p.length) || 0} × {parseFloat(p.breadth || p.width) || 0} × {parseFloat(p.height) || 0} cm
                         </td>
-                        <td className="py-2.5 px-3 text-text-secondary">{p.volumetric_weight ? parseFloat(p.volumetric_weight).toFixed(2) : '—'} kg</td>
+                        <td className="py-2.5 px-3 text-text-secondary">
+                          {(() => {
+                            const pVol = (p.volumetric_weight && parseFloat(p.volumetric_weight) > 0)
+                              ? parseFloat(p.volumetric_weight)
+                              : (((parseFloat(p.length) || 0) * (parseFloat(p.breadth || p.width) || 0) * (parseFloat(p.height) || 0)) / 5000)
+                            return pVol > 0 ? `${pVol.toFixed(2)} kg` : '—'
+                          })()}
+                        </td>
                         <td className="py-2.5 px-3 font-bold text-text-primary">{p.chargeable_weight ? parseFloat(p.chargeable_weight).toFixed(2) : (p.weight ? parseFloat(p.weight).toFixed(2) : '—')} kg</td>
                       </tr>
                     ))}
