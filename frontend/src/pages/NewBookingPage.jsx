@@ -932,22 +932,55 @@ export default function NewBookingPage() {
     })
   })()
 
-  // Auto-sync parcels count with no_of_pieces
-  useEffect(() => {
-    const count = Math.max(1, parseInt(form.no_of_pieces) || 1)
+  // Dedicated handler for changing number of pieces/boxes
+  const handlePiecesChange = (val) => {
+    if (val === '') {
+      setForm(prev => ({ ...prev, no_of_pieces: '' }))
+      return
+    }
+    const num = parseInt(val)
+    if (isNaN(num)) return
+    const newCount = Math.max(1, num)
+
+    setForm(prev => ({ ...prev, no_of_pieces: String(newCount) }))
+
     setParcels(prev => {
       const next = [...prev]
-      if (next.length > 0 && !next[0].weight && form.weight) {
-        next[0] = {
-          ...next[0],
-          weight: form.weight,
-          length: form.length || next[0].length || '',
-          breadth: form.breadth || next[0].breadth || '',
-          height: form.height || next[0].height || '',
-          volumetric_weight: form.volumetric_weight || next[0].volumetric_weight || '',
-          chargeable_weight: form.chargeable_weight || next[0].chargeable_weight || ''
+      if (next.length < newCount) {
+        for (let i = next.length; i < newCount; i++) {
+          next.push({
+            parcel_no: i + 1,
+            box_no: String(i + 1),
+            weight: '',
+            length: '',
+            breadth: '',
+            height: '',
+            volumetric_weight: '',
+            chargeable_weight: ''
+          })
         }
+      } else if (next.length > newCount) {
+        return next.slice(0, newCount)
       }
+      return next
+    })
+
+    setInvoiceItems(prev => prev.map(item => {
+      const bNum = parseInt(item.box_no) || 1
+      if (bNum > newCount) {
+        return { ...item, box_no: String(newCount) }
+      }
+      return item
+    }))
+  }
+
+  // Auto-sync parcels count with no_of_pieces if changed
+  useEffect(() => {
+    if (!form.no_of_pieces) return
+    const count = Math.max(1, parseInt(form.no_of_pieces) || 1)
+    setParcels(prev => {
+      if (prev.length === count) return prev
+      const next = [...prev]
       if (next.length < count) {
         for (let i = next.length; i < count; i++) {
           next.push({
@@ -961,56 +994,68 @@ export default function NewBookingPage() {
             chargeable_weight: ''
           })
         }
+        return next
       } else if (next.length > count) {
         return next.slice(0, count)
       }
-      return next
+      return prev
     })
+
+    setInvoiceItems(prev => prev.map(item => {
+      const bNum = parseInt(item.box_no) || 1
+      if (bNum > count) {
+        return { ...item, box_no: String(count) }
+      }
+      return item
+    }))
   }, [form.no_of_pieces])
 
   const addParcel = () => {
-    setParcels(prev => [
-      ...prev,
-      {
-        parcel_no: prev.length + 1,
-        box_no: String(prev.length + 1),
-        weight: '',
-        length: '',
-        breadth: '',
-        height: '',
-        volumetric_weight: '',
-        chargeable_weight: ''
-      }
-    ])
-    setForm(prev => ({
-      ...prev,
-      no_of_pieces: String(parcels.length + 1)
-    }))
+    setParcels(prev => {
+      const nextCount = prev.length + 1
+      const updated = [
+        ...prev,
+        {
+          parcel_no: nextCount,
+          box_no: String(nextCount),
+          weight: '',
+          length: '',
+          breadth: '',
+          height: '',
+          volumetric_weight: '',
+          chargeable_weight: ''
+        }
+      ]
+      setForm(f => ({ ...f, no_of_pieces: String(nextCount) }))
+      return updated
+    })
+    toast.success('Box added')
   }
 
   const removeParcel = (index) => {
-    if (parcels.length <= 1) return
-    const newCount = parcels.length - 1
     setParcels(prev => {
+      if (prev.length <= 1) {
+        toast.error('At least 1 box is required')
+        return prev
+      }
       const filtered = prev.filter((_, i) => i !== index)
-      return filtered.map((p, i) => ({
+      const reindexed = filtered.map((p, i) => ({
         ...p,
         parcel_no: i + 1,
         box_no: String(i + 1)
       }))
+      const newCount = reindexed.length
+      setForm(f => ({ ...f, no_of_pieces: String(newCount) }))
+      setInvoiceItems(items => items.map(item => {
+        const bNum = parseInt(item.box_no) || 1
+        if (bNum > newCount) {
+          return { ...item, box_no: String(newCount) }
+        }
+        return item
+      }))
+      toast.success(`Box ${index + 1} removed`)
+      return reindexed
     })
-    setForm(prev => ({
-      ...prev,
-      no_of_pieces: String(newCount)
-    }))
-    setInvoiceItems(prev => prev.map(item => {
-      const bNum = parseInt(item.box_no) || 1
-      if (bNum > newCount) {
-        return { ...item, box_no: String(newCount) }
-      }
-      return item
-    }))
-    toast.success(`Box ${index + 1} removed`)
   }
 
   const updateParcel = (index, field, value) => {
@@ -1066,11 +1111,12 @@ export default function NewBookingPage() {
           shipping_charge: updatedShipping
         }
       })
-    } else {
-      const l = parseFloat(form.length) || parseFloat(parcels[0]?.length) || 0
-      const b = parseFloat(form.breadth) || parseFloat(parcels[0]?.breadth) || 0
-      const h = parseFloat(form.height) || parseFloat(parcels[0]?.height) || 0
-      const act = parseFloat(form.weight) || parseFloat(parcels[0]?.weight) || 0
+    } else if (parcels.length === 1) {
+      const p0 = parcels[0]
+      const l = parseFloat(p0?.length) || 0
+      const b = parseFloat(p0?.breadth || p0?.width) || 0
+      const h = parseFloat(p0?.height) || 0
+      const act = parseFloat(p0?.weight) || 0
 
       let vol = 0
       if (l > 0 && b > 0 && h > 0) {
@@ -1088,14 +1134,17 @@ export default function NewBookingPage() {
 
         return {
           ...prev,
-          weight: act > 0 ? String(act) : prev.weight,
-          volumetric_weight: vol > 0 ? String(vol) : prev.volumetric_weight,
-          chargeable_weight: chg > 0 ? String(chg) : prev.chargeable_weight,
+          weight: p0?.weight !== undefined && p0?.weight !== '' ? String(p0.weight) : prev.weight,
+          length: p0?.length !== undefined && p0?.length !== '' ? String(p0.length) : prev.length,
+          breadth: (p0?.breadth || p0?.width) !== undefined && (p0?.breadth || p0?.width) !== '' ? String(p0.breadth || p0.width) : prev.breadth,
+          height: p0?.height !== undefined && p0?.height !== '' ? String(p0.height) : prev.height,
+          volumetric_weight: vol > 0 ? String(vol) : (p0?.volumetric_weight || prev.volumetric_weight),
+          chargeable_weight: chg > 0 ? String(chg) : (p0?.chargeable_weight || prev.chargeable_weight),
           shipping_charge: updatedShipping
         }
       })
     }
-  }, [parcels, form.length, form.breadth, form.height, form.weight, form.no_of_pieces])
+  }, [parcels, form.rate_per_kg])
 
   // Auto-sync final chargeable weight from computed chargeable weight
   useEffect(() => {
@@ -1174,12 +1223,16 @@ export default function NewBookingPage() {
     receiver_gstin_type: form.receiver_gstin_type,
     receiver_gstin_no: form.receiver_gstin_no,
 
-    weight: (parcels.length > 1 && totalParcelActual > 0) ? String(totalParcelActual) : String(parseFloat(form.weight) || (parcels[0] ? parseFloat(parcels[0].weight) : 0) || 0),
-    chargeable_weight: (parcels.length > 1 && totalParcelChg > 0) ? totalParcelChg : (parseFloat(form.chargeable_weight) ? Math.ceil(parseFloat(form.chargeable_weight)) : 0),
-    length: parseFloat(form.length) || (parcels[0] ? parseFloat(parcels[0].length) : 0) || 0,
-    breadth: parseFloat(form.breadth) || (parcels[0] ? parseFloat(parcels[0].breadth) : 0) || 0,
-    height: parseFloat(form.height) || (parcels[0] ? parseFloat(parcels[0].height) : 0) || 0,
-    no_of_pieces: Math.max(parcels.length, parseInt(form.no_of_pieces) || 1),
+    weight: (parcels.length > 1 && totalParcelActual > 0)
+      ? String(totalParcelActual)
+      : String(parcels[0]?.weight !== undefined && parcels[0]?.weight !== '' ? parcels[0].weight : (parseFloat(form.weight) || 0)),
+    chargeable_weight: (parcels.length > 1 && totalParcelChg > 0)
+      ? totalParcelChg
+      : (parcels[0]?.chargeable_weight ? Math.ceil(parseFloat(parcels[0].chargeable_weight)) : (parseFloat(form.chargeable_weight) ? Math.ceil(parseFloat(form.chargeable_weight)) : 0)),
+    length: (parcels[0]?.length !== undefined && parcels[0]?.length !== '') ? parseFloat(parcels[0].length) : (parseFloat(form.length) || 0),
+    breadth: ((parcels[0]?.breadth || parcels[0]?.width) !== undefined && (parcels[0]?.breadth || parcels[0]?.width) !== '') ? parseFloat(parcels[0].breadth || parcels[0].width) : (parseFloat(form.breadth) || 0),
+    height: (parcels[0]?.height !== undefined && parcels[0]?.height !== '') ? parseFloat(parcels[0].height) : (parseFloat(form.height) || 0),
+    no_of_pieces: Math.max(1, parseInt(form.no_of_pieces) || parcels.length || 1),
     content_description: (form.content_description && form.content_description !== 'General Goods' && form.content_description !== 'ITEMS / GOODS INSIDE')
       ? form.content_description
       : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'Books'),
@@ -2536,7 +2589,8 @@ export default function NewBookingPage() {
                 type="number"
                 min="1"
                 value={form.no_of_pieces}
-                onChange={e => updateForm('no_of_pieces', e.target.value)}
+                onChange={e => handlePiecesChange(e.target.value)}
+                onBlur={() => { if (!form.no_of_pieces || parseInt(form.no_of_pieces) < 1) handlePiecesChange(String(parcels.length || 1)) }}
                 className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 font-bold text-center"
               />
             </CompactField>
@@ -2565,8 +2619,17 @@ export default function NewBookingPage() {
           {/* Weights and Dimensions Table */}
           <div className="border border-border rounded-xl overflow-hidden bg-surface">
             {/* Section Header */}
-            <div className="bg-navy text-white px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider">
-              Weights and Dimensions
+            <div className="bg-navy text-white px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider flex items-center justify-between">
+              <span>Weights and Dimensions</span>
+              <button
+                type="button"
+                onClick={addParcel}
+                className="inline-flex items-center gap-1 px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                title="Add Another Box"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Box
+              </button>
             </div>
 
             {/* Summary Row */}
@@ -2577,7 +2640,8 @@ export default function NewBookingPage() {
                   type="number"
                   min="1"
                   value={form.no_of_pieces}
-                  onChange={e => updateForm('no_of_pieces', e.target.value)}
+                  onChange={e => handlePiecesChange(e.target.value)}
+                  onBlur={() => { if (!form.no_of_pieces || parseInt(form.no_of_pieces) < 1) handlePiecesChange(String(parcels.length || 1)) }}
                   className="w-full bg-transparent focus:outline-none text-[14px] text-navy font-bold"
                 />
               </div>
@@ -2611,19 +2675,20 @@ export default function NewBookingPage() {
             </div>
 
             {/* Per-Parcel Table Header */}
-            <div className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] bg-surface-alt text-[10px] font-bold uppercase text-text-tertiary tracking-wider border-b border-border">
+            <div className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr_45px] bg-surface-alt text-[10px] font-bold uppercase text-text-tertiary tracking-wider border-b border-border">
               <div className="px-3 py-2 text-center border-r border-border">Box No.</div>
               <div className="px-3 py-2 text-center border-r border-border">Actual Wt(Kg.)</div>
               <div className="px-3 py-2 text-center border-r border-border">L(CM)</div>
               <div className="px-3 py-2 text-center border-r border-border">B(CM)</div>
               <div className="px-3 py-2 text-center border-r border-border">H(CM)</div>
               <div className="px-3 py-2 text-center border-r border-border">Volumetric Wt(Kg.)</div>
-              <div className="px-3 py-2 text-center">Chargeable Wt(Kg.)</div>
+              <div className="px-3 py-2 text-center border-r border-border">Chargeable Wt(Kg.)</div>
+              <div className="px-2 py-2 text-center">Action</div>
             </div>
 
             {/* Per-Parcel Data Rows */}
             {parcels.map((p, pIdx) => (
-              <div key={pIdx} className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] text-[13px] items-center hover:bg-surface-hover transition-colors border-b border-border-light last:border-0 py-1">
+              <div key={pIdx} className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr_45px] text-[13px] items-center hover:bg-surface-hover transition-colors border-b border-border-light last:border-0 py-1">
                 <div className="px-2 py-1 border-r border-border-light">
                   <input type="text" value={p.box_no} readOnly className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-text-secondary" />
                 </div>
@@ -2684,7 +2749,7 @@ export default function NewBookingPage() {
                     className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy"
                   />
                 </div>
-                <div className="px-2 py-1">
+                <div className="px-2 py-1 border-r border-border-light">
                   <input
                     type="text"
                     readOnly
@@ -2692,8 +2757,37 @@ export default function NewBookingPage() {
                     className="w-full bg-transparent focus:outline-none text-xs text-center font-extrabold text-primary"
                   />
                 </div>
+                <div className="px-1 text-center">
+                  {parcels.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => removeParcel(pIdx)}
+                      className="text-danger/70 hover:text-danger hover:bg-danger/10 p-1.5 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+                      title={`Remove Box ${p.box_no || pIdx + 1}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-text-tertiary select-none">-</span>
+                  )}
+                </div>
               </div>
             ))}
+
+            {/* Table Footer with Add Box button & Total Count */}
+            <div className="p-2.5 bg-surface-alt/40 border-t border-border flex justify-between items-center">
+              <button
+                type="button"
+                onClick={addParcel}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-navy/5 hover:bg-navy/10 text-navy font-bold text-xs rounded-lg transition-colors cursor-pointer border border-navy/20"
+              >
+                <Plus className="w-3.5 h-3.5 text-navy" />
+                Add Box
+              </button>
+              <span className="text-[11px] text-text-secondary font-medium">
+                Total Boxes: <strong className="text-navy font-bold">{parcels.length}</strong>
+              </span>
+            </div>
           </div>
 
           <p className="text-[11px] text-text-tertiary mt-2 italic">

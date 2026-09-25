@@ -967,7 +967,7 @@ export const saveBooking = async (req, res) => {
     if (parsedParcelsList.length > 0) {
       const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
       if (sumPWeight > 0) finalWeight = Math.round(sumPWeight * 1000) / 1000
-      if (parsedParcelsList.length > finalPieces) finalPieces = parsedParcelsList.length
+      finalPieces = parsedParcelsList.length
       if (finalLength <= 0 && parsedParcelsList[0]?.length) finalLength = parseFloat(parsedParcelsList[0].length) || 0
       if (finalBreadth <= 0 && (parsedParcelsList[0]?.breadth || parsedParcelsList[0]?.width)) finalBreadth = parseFloat(parsedParcelsList[0].breadth || parsedParcelsList[0].width) || 0
       if (finalHeight <= 0 && parsedParcelsList[0]?.height) finalHeight = parseFloat(parsedParcelsList[0].height) || 0
@@ -1688,7 +1688,7 @@ export const createBooking = async (req, res) => {
     if (parsedParcelsList.length > 0) {
       const sumPWeight = parsedParcelsList.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0)
       if (sumPWeight > 0) finalWeight = Math.round(sumPWeight * 1000) / 1000
-      if (parsedParcelsList.length > finalPieces) finalPieces = parsedParcelsList.length
+      finalPieces = parsedParcelsList.length
       if (finalLength <= 0 && parsedParcelsList[0]?.length) finalLength = parseFloat(parsedParcelsList[0].length) || 0
       if (finalBreadth <= 0 && (parsedParcelsList[0]?.breadth || parsedParcelsList[0]?.width)) finalBreadth = parseFloat(parsedParcelsList[0].breadth || parsedParcelsList[0].width) || 0
       if (finalHeight <= 0 && parsedParcelsList[0]?.height) finalHeight = parseFloat(parsedParcelsList[0].height) || 0
@@ -3304,8 +3304,18 @@ export const updateBookingBilling = async (req, res) => {
       invItemsJson = Array.isArray(body.invoice_items) ? JSON.stringify(body.invoice_items) : (typeof body.invoice_items === 'string' ? body.invoice_items : null)
     }
     let parcelsJson = null
+    let updatedPieces = null
     if (body.parcels !== undefined) {
-      parcelsJson = Array.isArray(body.parcels) ? JSON.stringify(body.parcels) : (typeof body.parcels === 'string' ? body.parcels : null)
+      if (Array.isArray(body.parcels)) {
+        parcelsJson = JSON.stringify(body.parcels)
+        updatedPieces = Math.max(1, body.parcels.length)
+      } else if (typeof body.parcels === 'string') {
+        parcelsJson = body.parcels
+        try {
+          const parsed = JSON.parse(body.parcels)
+          if (Array.isArray(parsed)) updatedPieces = Math.max(1, parsed.length)
+        } catch {}
+      }
     }
 
     // Update the local shipments table
@@ -3321,7 +3331,8 @@ export const updateBookingBilling = async (req, res) => {
         extra_charge = ?,
         total_amount = ?,
         invoice_items = COALESCE(?, invoice_items),
-        parcels = COALESCE(?, parcels)
+        parcels = COALESCE(?, parcels),
+        no_of_pieces = COALESCE(?, no_of_pieces)
        WHERE id = ?`,
       [
         newCustomerId,
@@ -3335,6 +3346,7 @@ export const updateBookingBilling = async (req, res) => {
         totalAmount,
         invItemsJson,
         parcelsJson,
+        updatedPieces,
         id
       ]
     )
