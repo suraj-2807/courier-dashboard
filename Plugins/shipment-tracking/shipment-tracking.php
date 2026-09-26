@@ -776,7 +776,7 @@ function pe_fetch_tracking($result) {
     }
     // 4. SAIRAJ INTERNATIONAL (ITDServices Platform)
     elseif ($svc == 1009 || $svc == 1022 || strpos($vend, 'sairaj') !== false) {
-        $accode = !empty($result->ACCODE) ? trim($result->ACCODE) : 'T001';
+        $accode = (!empty($result->ACCODE) && $result->ACCODE !== 'T001' && $result->ACCODE !== '1032') ? trim($result->ACCODE) : '1447';
         $company_id = '144';
         $url = "http://admin.sairajinternational.online/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
         PE_Data::log('Calling Sairaj International Tracking API', ['url' => $url]);
@@ -839,21 +839,6 @@ function pe_fetch_tracking($result) {
             } else {
                 PE_Data::log('Pacific API returned error/no events', ['response' => $b]);
             }
-        }
-    }
-    // 5. SAIRAJ INTERNATIONAL
-    elseif ($svc == 1009) {
-        $accode = !empty($result->ACCODE) ? trim($result->ACCODE) : '';
-        $url = "http://admin.sairajinternational.online/api/tracking_api/get_tracking_data?company=sairaj-international&customer_code={$accode}&tracking_no={$vendor_awb}&api_company_id=44";
-        PE_Data::log('Calling Sairaj International Tracking API', ['url' => $url]);
-        $r = wp_remote_get($url, ['timeout' => 15]);
-        if (is_wp_error($r)) {
-            PE_Data::log('Sairaj API HTTP Error', ['error' => $r->get_error_message()]);
-        } else {
-            $code = wp_remote_retrieve_response_code($r);
-            $body = wp_remote_retrieve_body($r);
-            PE_Data::log('Sairaj API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
-            $history = pe_parse_flyswift_events($body, $result, 'Sairaj International');
         }
     }
     // 6. SAIN

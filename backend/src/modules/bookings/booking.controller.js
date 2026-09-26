@@ -2039,6 +2039,23 @@ export const createBooking = async (req, res) => {
     }
 
 
+    const shipmentRows = await query(
+      `SELECT s.*, 
+        snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
+        snd.address as s_address, snd.city as s_city, snd.state as s_state,
+        snd.pincode as s_pincode, snd.country as s_country,
+        rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
+        rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
+        rcv.pincode as r_pincode, rcv.country as r_country,
+        vac.name as vendor_name, vac.vendor_code as vac_vendor_code,
+        vac.auth_credentials as vac_auth_credentials, vac.available_services as vac_services
+       FROM shipments s
+       LEFT JOIN senders snd ON s.sender_id = snd.id
+       LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
+       WHERE s.id = ?`,
+      [shipmentId]
+    )
     const shipmentObj = shipmentRows[0] || {}
     const createdParcels = normalizeParcels(shipmentObj.parcels, shipmentObj.weight, shipmentObj.length, shipmentObj.breadth, shipmentObj.height)
     const createdTotalVol = calculateTotalVolumetricWeight(createdParcels, shipmentObj.length, shipmentObj.breadth, shipmentObj.height)

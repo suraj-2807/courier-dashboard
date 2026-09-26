@@ -442,9 +442,9 @@ function pe_fetch_tracking($result) {
         }
     }
     elseif ($svc==1009||$svc==1019) {
-        $customerCode = !empty($result->ACCODE) ? $result->ACCODE : '1032';
+        $customerCode = (!empty($result->ACCODE) && $result->ACCODE !== 'T001' && $result->ACCODE !== '1032') ? $result->ACCODE : ($svc==1009 ? '1447' : '1032');
         $url = ($svc==1009)
-            ? "http://admin.sairajinternational.online/api/tracking_api/get_tracking_data?company=sairaj-international&customer_code={$customerCode}&tracking_no={$result->VENDORID1}&api_company_id=44"
+            ? "http://admin.sairajinternational.online/api/tracking_api/get_tracking_data?api_company_id=144&customer_code={$customerCode}&tracking_no={$result->VENDORID1}"
             : "http://admin.flyswift.net/api/tracking_api/get_tracking_data?api_company_id={$customerCode}&customer_code={$customerCode}&tracking_no={$result->VENDORID1}";
         $r = wp_remote_get($url,['timeout'=>15]);
         if (!is_wp_error($r)) {

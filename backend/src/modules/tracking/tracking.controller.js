@@ -177,7 +177,7 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
   let defaultCustomerCode = '1032'
   if (code.includes('sairaj') || nameLower.includes('sairaj')) {
     defaultCompanyId = '144'
-    defaultCustomerCode = 'T001'
+    defaultCustomerCode = '1447'
   } else if (code.includes('acx') || nameLower.includes('acx')) {
     defaultCompanyId = '5'
     defaultCustomerCode = 'A0872'
@@ -187,7 +187,10 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
   }
 
   const apiCompanyId = creds.api_company_id || creds.company_id || creds.company_code || defaultCompanyId
-  const customerCode = creds.customer_code || creds.accode || creds.acc_code || creds.customer_id || defaultCustomerCode
+  let customerCode = creds.customer_code || creds.accode || creds.acc_code || creds.customer_id || defaultCustomerCode
+  if ((code.includes('sairaj') || nameLower.includes('sairaj')) && (!customerCode || customerCode === 'T001' || customerCode === '1032')) {
+    customerCode = '1447'
+  }
 
   // Determine host dynamically from config tracking_api_url, auth_url, or shipment_api_url
   let host = 'admin.flyswift.net'
@@ -221,7 +224,13 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
   if (config?.tracking_api_url && config.tracking_api_url.trim() !== '') {
     let configuredUrl = config.tracking_api_url.trim()
     if (!configuredUrl.startsWith('http://') && !configuredUrl.startsWith('https://')) {
-      configuredUrl = `https://${configuredUrl}`
+      configuredUrl = host.includes('sairaj') ? `http://${configuredUrl}` : `https://${configuredUrl}`
+    }
+    if (code.includes('sairaj') || nameLower.includes('sairaj')) {
+      configuredUrl = configuredUrl.replace(/customer_code=T001/gi, 'customer_code=1447').replace(/customer_code=1032/gi, 'customer_code=1447')
+      if (configuredUrl.startsWith('https://admin.sairajinternational.online')) {
+        configuredUrl = configuredUrl.replace('https://', 'http://')
+      }
     }
 
     if (configuredUrl.includes('{tracking_no}') || configuredUrl.includes('{awb}')) {
@@ -237,7 +246,7 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
         if (!u.searchParams.get('api_company_id') && apiCompanyId) {
           u.searchParams.set('api_company_id', apiCompanyId)
         }
-        if (!u.searchParams.get('customer_code') && customerCode) {
+        if (customerCode) {
           u.searchParams.set('customer_code', customerCode)
         }
         trackingUrl = u.toString()
@@ -247,7 +256,8 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
       }
     }
   } else {
-    trackingUrl = `https://${host}/api/tracking_api/get_tracking_data?api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(cleanAwb)}`
+    const protocol = host.includes('sairaj') ? 'http' : 'https'
+    trackingUrl = `${protocol}://${host}/api/tracking_api/get_tracking_data?api_company_id=${apiCompanyId}&customer_code=${customerCode}&tracking_no=${encodeURIComponent(cleanAwb)}`
   }
 
   const startTime = Date.now()
