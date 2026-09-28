@@ -1687,10 +1687,7 @@ export default function CustomerBookingPage() {
             </div>
 
             {/* Per-Parcel Table Header */}
-            <div
-              className="grid customer-parcel-table-grid bg-surface-alt text-[10px] font-bold uppercase text-text-tertiary tracking-wider border-b border-border items-center"
-              style={{ gridTemplateColumns: '1fr 1.2fr 1fr 1fr 1fr 1.2fr 1.2fr' }}
-            >
+            <div className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] bg-surface-alt text-[10px] font-bold uppercase text-text-tertiary tracking-wider border-b border-border">
               <div className="px-3 py-2 text-center border-r border-border">Box No.</div>
               <div className="px-3 py-2 text-center border-r border-border">Actual Wt(Kg.)</div>
               <div className="px-3 py-2 text-center border-r border-border">L(CM)</div>
@@ -1702,11 +1699,7 @@ export default function CustomerBookingPage() {
 
             {/* Per-Parcel Data Rows */}
             {parcels.map((p, pIdx) => (
-              <div
-                key={pIdx}
-                className="grid customer-parcel-table-grid text-[13px] items-center hover:bg-surface-hover/70 transition-colors border-b border-border-light last:border-0 py-1"
-                style={{ gridTemplateColumns: '1fr 1.2fr 1fr 1fr 1fr 1.2fr 1.2fr' }}
-              >
+              <div key={pIdx} className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr] text-[13px] items-center hover:bg-surface-hover transition-colors border-b border-border-light last:border-0 py-1">
                 <div className="px-2 py-1 border-r border-border-light">
                   <input type="text" value={p.box_no} readOnly className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-text-secondary" />
                 </div>
@@ -1873,10 +1866,7 @@ export default function CustomerBookingPage() {
               {/* Invoice Items Table */}
               <div className="border border-border rounded-xl overflow-hidden bg-surface">
                 {/* Table Header */}
-                <div
-                  className="bg-navy text-white grid invoice-items-table-grid text-[10px] font-bold uppercase tracking-wider"
-                  style={{ gridTemplateColumns: '40px 45px 1fr 95px 70px 65px 80px 70px 80px 85px 45px' }}
-                >
+                <div className="bg-navy text-white grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] text-[10px] font-bold uppercase tracking-wider">
                   <div className="px-1.5 py-2.5 text-center">SR</div>
                   <div className="px-1.5 py-2.5 text-center">Box</div>
                   <div className="px-1.5 py-2.5">Description</div>
@@ -1892,11 +1882,7 @@ export default function CustomerBookingPage() {
 
                 {/* Item Rows */}
                 {invoiceItems.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="grid invoice-items-table-grid border-t border-border-light text-[13px] items-center hover:bg-surface-hover transition-colors py-1"
-                    style={{ gridTemplateColumns: '40px 45px 1fr 95px 70px 65px 80px 70px 80px 85px 45px' }}
-                  >
+                  <div key={idx} className="grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] border-t border-border-light text-[13px] items-center hover:bg-surface-hover transition-colors py-1">
                     <div className="px-1.5 py-1 text-center text-xs font-bold text-text-tertiary">{item.sr_no}</div>
                     <div className="px-1">
                       <select
@@ -1982,10 +1968,7 @@ export default function CustomerBookingPage() {
                 ))}
 
                 {/* Totals Row */}
-                <div
-                  className="grid invoice-items-table-grid border-t-2 border-border bg-surface-alt text-[11px] font-extrabold items-center py-2"
-                  style={{ gridTemplateColumns: '40px 45px 1fr 95px 70px 65px 80px 70px 80px 85px 45px' }}
-                >
+                <div className="grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] border-t-2 border-border bg-surface-alt text-[11px] font-extrabold items-center py-2">
                   <div className="col-span-5"></div>
                   <div className="px-1.5 py-1 text-right text-navy uppercase tracking-wider">Total Wt</div>
                   <div className="px-1.5 py-1 text-right text-navy">{invoiceTotalWeight.toFixed(2)}</div>
