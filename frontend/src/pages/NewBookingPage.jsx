@@ -2675,22 +2675,34 @@ export default function NewBookingPage() {
             </div>
 
             {/* Per-Parcel Table Header */}
-            <div className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr_45px] bg-surface-alt text-[10px] font-bold uppercase text-text-tertiary tracking-wider border-b border-border">
-              <div className="px-3 py-2 text-center border-r border-border">Box No.</div>
-              <div className="px-3 py-2 text-center border-r border-border">Actual Wt(Kg.)</div>
-              <div className="px-3 py-2 text-center border-r border-border">L(CM)</div>
-              <div className="px-3 py-2 text-center border-r border-border">B(CM)</div>
-              <div className="px-3 py-2 text-center border-r border-border">H(CM)</div>
-              <div className="px-3 py-2 text-center border-r border-border">Volumetric Wt(Kg.)</div>
-              <div className="px-3 py-2 text-center border-r border-border">Chargeable Wt(Kg.)</div>
-              <div className="px-2 py-2 text-center">Action</div>
+            <div
+              className="grid parcel-table-grid bg-surface-alt text-[10px] font-bold uppercase text-text-tertiary tracking-wider border-b border-border items-center"
+              style={{ gridTemplateColumns: '1fr 1.2fr 1fr 1fr 1fr 1.2fr 1.2fr 110px' }}
+            >
+              <div className="px-2.5 py-2.5 text-center border-r border-border">Box No.</div>
+              <div className="px-2.5 py-2.5 text-center border-r border-border text-navy">Actual Wt(Kg.)</div>
+              <div className="px-2.5 py-2.5 text-center border-r border-border">L(CM)</div>
+              <div className="px-2.5 py-2.5 text-center border-r border-border">B(CM)</div>
+              <div className="px-2.5 py-2.5 text-center border-r border-border">H(CM)</div>
+              <div className="px-2.5 py-2.5 text-center border-r border-border text-navy">Volumetric Wt(Kg.)</div>
+              <div className="px-2.5 py-2.5 text-center border-r border-border text-primary">Chargeable Wt(Kg.)</div>
+              <div className="px-2.5 py-2.5 text-center">Action</div>
             </div>
 
             {/* Per-Parcel Data Rows */}
             {parcels.map((p, pIdx) => (
-              <div key={pIdx} className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr_45px] text-[13px] items-center hover:bg-surface-hover transition-colors border-b border-border-light last:border-0 py-1">
+              <div
+                key={pIdx}
+                className="grid parcel-table-grid text-[13px] items-center hover:bg-surface-hover/70 transition-colors border-b border-border-light last:border-0 py-1"
+                style={{ gridTemplateColumns: '1fr 1.2fr 1fr 1fr 1fr 1.2fr 1.2fr 110px' }}
+              >
                 <div className="px-2 py-1 border-r border-border-light">
-                  <input type="text" value={p.box_no} readOnly className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-text-secondary" />
+                  <input
+                    type="text"
+                    value={p.box_no}
+                    readOnly
+                    className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-text-secondary cursor-default select-none"
+                  />
                 </div>
                 <div className="px-2 py-1 border-r border-border-light">
                   <input
@@ -2702,7 +2714,7 @@ export default function NewBookingPage() {
                       updateParcel(pIdx, 'weight', e.target.value)
                       if (parcels.length === 1) updateForm('weight', e.target.value)
                     }}
-                    className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy"
+                    className="w-full bg-surface hover:bg-white focus:bg-white border border-transparent hover:border-border focus:border-navy/40 focus:ring-1 focus:ring-navy/20 rounded px-1.5 py-1 text-xs text-center font-bold text-navy transition-all focus:outline-none"
                   />
                 </div>
                 <div className="px-2 py-1 border-r border-border-light">
@@ -2714,7 +2726,7 @@ export default function NewBookingPage() {
                       updateParcel(pIdx, 'length', e.target.value)
                       if (parcels.length === 1) updateForm('length', e.target.value)
                     }}
-                    className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
+                    className="w-full bg-surface hover:bg-white focus:bg-white border border-transparent hover:border-border focus:border-primary/40 focus:ring-1 focus:ring-primary/20 rounded px-1.5 py-1 text-xs text-center text-text-primary transition-all focus:outline-none"
                   />
                 </div>
                 <div className="px-2 py-1 border-r border-border-light">
@@ -2726,7 +2738,7 @@ export default function NewBookingPage() {
                       updateParcel(pIdx, 'breadth', e.target.value)
                       if (parcels.length === 1) updateForm('breadth', e.target.value)
                     }}
-                    className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
+                    className="w-full bg-surface hover:bg-white focus:bg-white border border-transparent hover:border-border focus:border-primary/40 focus:ring-1 focus:ring-primary/20 rounded px-1.5 py-1 text-xs text-center text-text-primary transition-all focus:outline-none"
                   />
                 </div>
                 <div className="px-2 py-1 border-r border-border-light">
@@ -2738,37 +2750,38 @@ export default function NewBookingPage() {
                       updateParcel(pIdx, 'height', e.target.value)
                       if (parcels.length === 1) updateForm('height', e.target.value)
                     }}
-                    className="w-full bg-transparent focus:outline-none text-xs text-center text-text-primary"
+                    className="w-full bg-surface hover:bg-white focus:bg-white border border-transparent hover:border-border focus:border-primary/40 focus:ring-1 focus:ring-primary/20 rounded px-1.5 py-1 text-xs text-center text-text-primary transition-all focus:outline-none"
                   />
                 </div>
-                <div className="px-2 py-1 border-r border-border-light">
+                <div className="px-2 py-1 border-r border-border-light bg-navy/[0.02]">
                   <input
                     type="text"
                     readOnly
                     value={p.volumetric_weight ? parseFloat(p.volumetric_weight).toFixed(2) : '0.00'}
-                    className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy"
+                    className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-navy cursor-default select-none"
                   />
                 </div>
-                <div className="px-2 py-1 border-r border-border-light">
+                <div className="px-2 py-1 border-r border-border-light bg-primary/[0.02]">
                   <input
                     type="text"
                     readOnly
                     value={p.chargeable_weight ? parseFloat(p.chargeable_weight).toFixed(2) : '0.00'}
-                    className="w-full bg-transparent focus:outline-none text-xs text-center font-extrabold text-primary"
+                    className="w-full bg-transparent focus:outline-none text-xs text-center font-extrabold text-primary cursor-default select-none"
                   />
                 </div>
-                <div className="px-1 text-center">
+                <div className="px-2 py-1 text-center flex items-center justify-center">
                   {parcels.length > 1 ? (
                     <button
                       type="button"
                       onClick={() => removeParcel(pIdx)}
-                      className="text-danger/70 hover:text-danger hover:bg-danger/10 p-1.5 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-danger/80 hover:text-danger hover:bg-danger/10 rounded-md transition-colors cursor-pointer border border-danger/25"
                       title={`Remove Box ${p.box_no || pIdx + 1}`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
+                      <span>Remove</span>
                     </button>
                   ) : (
-                    <span className="text-[11px] text-text-tertiary select-none">-</span>
+                    <span className="text-[12px] text-text-tertiary select-none font-medium">—</span>
                   )}
                 </div>
               </div>
@@ -2859,7 +2872,10 @@ export default function NewBookingPage() {
               {/* Invoice Items Table */}
               <div className="border border-border rounded-xl bg-surface">
                 {/* Table Header */}
-                <div className="bg-navy text-white grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] text-[10px] font-bold uppercase tracking-wider">
+                <div
+                  className="bg-navy text-white grid invoice-items-table-grid text-[10px] font-bold uppercase tracking-wider"
+                  style={{ gridTemplateColumns: '40px 45px 1fr 95px 70px 65px 80px 70px 80px 85px 45px' }}
+                >
                   <div className="px-1.5 py-2.5 text-center">SR</div>
                   <div className="px-1.5 py-2.5 text-center">Box</div>
                   <div className="px-1.5 py-2.5">Description</div>
@@ -2877,7 +2893,8 @@ export default function NewBookingPage() {
                 {invoiceItems.map((item, idx) => (
                   <div
                     key={idx}
-                    className={`grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] border-t border-border-light text-[13px] items-center hover:bg-surface-hover transition-colors py-1 ${activeItemSuggestionIndex === idx ? 'relative z-50' : 'relative z-0'}`}
+                    className={`grid invoice-items-table-grid border-t border-border-light text-[13px] items-center hover:bg-surface-hover transition-colors py-1 ${activeItemSuggestionIndex === idx ? 'relative z-50' : 'relative z-0'}`}
+                    style={{ gridTemplateColumns: '40px 45px 1fr 95px 70px 65px 80px 70px 80px 85px 45px' }}
                   >
                     <div className="px-1.5 py-1 text-center text-xs font-bold text-text-tertiary">{item.sr_no}</div>
                     <div className="px-1">
@@ -3064,7 +3081,10 @@ export default function NewBookingPage() {
                 ))}
 
                 {/* Totals Row */}
-                <div className="grid grid-cols-[40px_45px_1fr_95px_70px_65px_80px_70px_80px_85px_45px] border-t-2 border-border bg-surface-alt text-[11px] font-extrabold items-center py-2">
+                <div
+                  className="grid invoice-items-table-grid border-t-2 border-border bg-surface-alt text-[11px] font-extrabold items-center py-2"
+                  style={{ gridTemplateColumns: '40px 45px 1fr 95px 70px 65px 80px 70px 80px 85px 45px' }}
+                >
                   <div className="col-span-5"></div>
                   <div className="px-1.5 py-1 text-right text-navy uppercase tracking-wider">Total Wt</div>
                   <div className="px-1.5 py-1 text-right text-navy">{invoiceTotalWeight.toFixed(2)}</div>
