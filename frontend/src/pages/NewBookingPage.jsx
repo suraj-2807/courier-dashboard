@@ -2675,7 +2675,7 @@ export default function NewBookingPage() {
             </div>
 
             {/* Per-Parcel Table Header */}
-            <div className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr_45px] bg-surface-alt text-[10px] font-bold uppercase text-text-tertiary tracking-wider border-b border-border">
+            <div className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr_110px] bg-surface-alt text-[10px] font-bold uppercase text-text-tertiary tracking-wider border-b border-border">
               <div className="px-3 py-2 text-center border-r border-border">Box No.</div>
               <div className="px-3 py-2 text-center border-r border-border">Actual Wt(Kg.)</div>
               <div className="px-3 py-2 text-center border-r border-border">L(CM)</div>
@@ -2688,7 +2688,7 @@ export default function NewBookingPage() {
 
             {/* Per-Parcel Data Rows */}
             {parcels.map((p, pIdx) => (
-              <div key={pIdx} className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr_45px] text-[13px] items-center hover:bg-surface-hover transition-colors border-b border-border-light last:border-0 py-1">
+              <div key={pIdx} className="grid grid-cols-[1fr_1.2fr_1fr_1fr_1fr_1.2fr_1.2fr_110px] text-[13px] items-center hover:bg-surface-hover transition-colors border-b border-border-light last:border-0 py-1">
                 <div className="px-2 py-1 border-r border-border-light">
                   <input type="text" value={p.box_no} readOnly className="w-full bg-transparent focus:outline-none text-xs text-center font-bold text-text-secondary" />
                 </div>
