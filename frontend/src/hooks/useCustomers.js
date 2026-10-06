@@ -57,3 +57,35 @@ export const useDeleteCustomer = () => {
     }
   })
 }
+
+export const useCustomerLedger = (id) => {
+  return useQuery({
+    queryKey: ['customer-ledger', id],
+    queryFn: () => customersApi.getLedger(id).then((res) => res.data),
+    enabled: !!id
+  })
+}
+
+export const useCreateLedgerEntry = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }) => customersApi.createLedgerEntry(id, data).then((res) => res.data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['customer', variables.id] })
+      queryClient.invalidateQueries({ queryKey: ['customer-ledger', variables.id] })
+    }
+  })
+}
+
+export const useDeleteLedgerEntry = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, entryId }) => customersApi.deleteLedgerEntry(id, entryId).then((res) => res.data),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] })
+      queryClient.invalidateQueries({ queryKey: ['customer', variables.id] })
+      queryClient.invalidateQueries({ queryKey: ['customer-ledger', variables.id] })
+    }
+  })
+}

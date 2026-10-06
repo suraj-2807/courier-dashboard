@@ -68,6 +68,8 @@ export async function syncCustomerToRemoteDb(customerData) {
       phone = '',
       company = '',
       password,
+      credit_limit,
+      current_balance,
       status = 'active'
     } = customerData
 
@@ -85,21 +87,27 @@ export async function syncCustomerToRemoteDb(customerData) {
 
     if (existing && existing.length > 0) {
       const existingId = existing[0].id
+      let updateFields = ['name = ?', 'phone = ?', 'company = ?', 'status = ?']
+      let updateParams = [cleanName, cleanPhone, cleanCompany, cleanStatus]
+
       if (password) {
-        await pool.query(
-          `UPDATE tbl_customers 
-           SET name = ?, phone = ?, company = ?, password = ?, status = ? 
-           WHERE id = ?`,
-          [cleanName, cleanPhone, cleanCompany, password, cleanStatus, existingId]
-        )
-      } else {
-        await pool.query(
-          `UPDATE tbl_customers 
-           SET name = ?, phone = ?, company = ?, status = ? 
-           WHERE id = ?`,
-          [cleanName, cleanPhone, cleanCompany, cleanStatus, existingId]
-        )
+        updateFields.push('password = ?')
+        updateParams.push(password)
       }
+      if (credit_limit !== undefined) {
+        updateFields.push('credit_limit = ?')
+        updateParams.push(parseFloat(credit_limit) || 0)
+      }
+      if (current_balance !== undefined) {
+        updateFields.push('current_balance = ?')
+        updateParams.push(parseFloat(current_balance) || 0)
+      }
+
+      updateParams.push(existingId)
+      await pool.query(
+        `UPDATE tbl_customers SET ${updateFields.join(', ')} WHERE id = ?`,
+        updateParams
+      )
 
       // If an explicit ID was provided and differs, update it
       if (id && parseInt(id) > 0 && existingId !== parseInt(id)) {

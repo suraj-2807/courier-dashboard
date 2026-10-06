@@ -15,6 +15,8 @@ add_action('rest_api_init', function () {
 
     add_filter('rest_pre_serve_request', function ($value) {
         $allowed_origins = [
+            'https://purple-raccoon-753399.hostingersite.com',
+            'https://online.princeexp.com',
             'https://surajsabu.netlify.app',
             'http://localhost:5173',
             'http://localhost:3000',
@@ -36,7 +38,7 @@ add_action('rest_api_init', function () {
 // Handle OPTIONS preflight before WordPress boots
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-    $allowed = ['https://surajsabu.netlify.app', 'http://localhost:5173', 'http://localhost:3000'];
+    $allowed = ['https://purple-raccoon-753399.hostingersite.com', 'https://online.princeexp.com', 'https://surajsabu.netlify.app', 'http://localhost:5173', 'http://localhost:3000'];
     if (in_array($origin, $allowed)) {
         header('Access-Control-Allow-Origin: ' . $origin);
         header('Access-Control-Allow-Methods: POST, GET, OPTIONS');

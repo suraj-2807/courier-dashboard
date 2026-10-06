@@ -651,6 +651,11 @@ export async function initializeDb() {
           'allow_post_push_billing_edit',
           'true',
           'Allow editing Final Chargeable Weight, Rate/Kg, Shipping Charge, Extra Charge, and Final Shipping on locked/pushed shipments'
+        ],
+        [
+          'enable_accounting',
+          'false',
+          'Enable customer debit/credit accounting ledger, balance tracking, and customer accounting statements'
         ]
       ]
       for (const [key, val, desc] of defaultSettings) {
@@ -663,6 +668,32 @@ export async function initializeDb() {
     } catch (sysErr) {
       if (sysErr.code !== 'ER_TABLE_EXISTS_ERROR') {
         console.error('system_settings migration failed:', sysErr.message)
+      }
+    }
+
+    // ── Customer Ledger Table (Debit & Credit entries) ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS customer_ledger (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id INT NOT NULL,
+        customer_email VARCHAR(150) DEFAULT '',
+        entry_type ENUM('debit', 'credit') NOT NULL,
+        amount DECIMAL(12,2) NOT NULL,
+        balance_after DECIMAL(12,2) DEFAULT 0.00,
+        reference_no VARCHAR(100) DEFAULT '',
+        payment_mode VARCHAR(50) DEFAULT '',
+        description TEXT,
+        entry_date DATE NOT NULL,
+        created_by VARCHAR(100) DEFAULT 'Admin',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_ledger_cust_id (customer_id),
+        INDEX idx_ledger_cust_email (customer_email),
+        INDEX idx_ledger_date (entry_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+      console.log('customer_ledger table ready.')
+    } catch (clErr) {
+      if (clErr.code !== 'ER_TABLE_EXISTS_ERROR') {
+        console.error('customer_ledger migration error:', clErr.message)
       }
     }
 
@@ -748,6 +779,56 @@ export async function initializeDb() {
     } catch (prodErr) {
       if (prodErr.code !== 'ER_TABLE_EXISTS_ERROR') {
         console.error('products table migration failed:', prodErr.message)
+      }
+    }
+
+    // ── Isolated Vendor Rate Import Tables ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS vendor_rate_import_batches (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        vendor_name VARCHAR(150) NOT NULL,
+        file_name VARCHAR(255) NOT NULL,
+        file_size INT DEFAULT 0,
+        status ENUM('validating','validated','importing','imported','failed') DEFAULT 'imported',
+        total_sheets INT DEFAULT 0,
+        total_records INT DEFAULT 0,
+        total_errors INT DEFAULT 0,
+        validation_summary JSON DEFAULT NULL,
+        imported_by INT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_vrib_vendor (vendor_name),
+        INDEX idx_vrib_created (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+
+      await execute(`CREATE TABLE IF NOT EXISTS vendor_rate_import_records (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        batch_id INT NOT NULL,
+        vendor_name VARCHAR(150) NOT NULL,
+        record_type VARCHAR(50) DEFAULT 'rate',
+        service_code VARCHAR(100) DEFAULT '',
+        destination VARCHAR(255) DEFAULT '',
+        zone VARCHAR(50) DEFAULT '',
+        weight_bracket VARCHAR(100) DEFAULT '',
+        rate_inr DECIMAL(12,2) DEFAULT 0.00,
+        service VARCHAR(150) DEFAULT '',
+        transit_time VARCHAR(100) DEFAULT '',
+        postcode_prefix VARCHAR(100) DEFAULT '',
+        locality VARCHAR(255) DEFAULT '',
+        source_sheet VARCHAR(150) DEFAULT '',
+        source_row INT DEFAULT 0,
+        notes TEXT DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_vrir_batch (batch_id),
+        INDEX idx_vrir_vendor (vendor_name),
+        INDEX idx_vrir_service (service_code),
+        INDEX idx_vrir_dest (destination),
+        CONSTRAINT fk_vrir_batch FOREIGN KEY (batch_id) REFERENCES vendor_rate_import_batches(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+      console.log('vendor_rate_import tables ready.')
+    } catch (vriErr) {
+      if (vriErr.code !== 'ER_TABLE_EXISTS_ERROR') {
+        console.error('vendor_rate_import tables migration failed:', vriErr.message)
       }
     }
 

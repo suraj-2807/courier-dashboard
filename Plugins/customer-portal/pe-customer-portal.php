@@ -2131,6 +2131,338 @@ add_action('wp_ajax_pe_cp_delete_document', 'pe_cp_ajax_delete_document');
 add_action('wp_ajax_nopriv_pe_cp_delete_document', 'pe_cp_ajax_delete_document');
 
 // ══════════════════════════════════════
+//  AJAX: GET CUSTOMER ACCOUNT LEDGER
+// ══════════════════════════════════════
+
+function pe_cp_ajax_get_ledger()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+    $cust = pe_cp_get_user();
+    if (!$cust) {
+        wp_send_json_error(['message' => 'Unauthorized'], 401);
+    }
+
+    $custId = intval($cust['customer_id'] ?? 0);
+    $email = strtolower(trim($cust['email'] ?? ''));
+
+    // Check if customer_ledger table exists in WP database
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE 'customer_ledger'");
+    if (!$table_exists) {
+        $wpdb->query("CREATE TABLE IF NOT EXISTS customer_ledger (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            customer_id INT NOT NULL,
+            customer_email VARCHAR(150) DEFAULT '',
+            entry_type ENUM('debit', 'credit') NOT NULL,
+            amount DECIMAL(12,2) NOT NULL,
+            balance_after DECIMAL(12,2) DEFAULT 0.00,
+            reference_no VARCHAR(100) DEFAULT '',
+            payment_mode VARCHAR(50) DEFAULT '',
+            description TEXT,
+            entry_date DATE NOT NULL,
+            created_by VARCHAR(100) DEFAULT 'Admin',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_ledger_cust_id (customer_id),
+            INDEX idx_ledger_cust_email (customer_email),
+            INDEX idx_ledger_date (entry_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    }
+
+    // Query live customer balance from tbl_customers
+    $c_row = null;
+    if ($custId > 0) {
+        $c_row = $wpdb->get_row($wpdb->prepare("SELECT current_balance, credit_limit FROM tbl_customers WHERE id = %d LIMIT 1", $custId));
+    }
+    if (!$c_row && $email) {
+        $c_row = $wpdb->get_row($wpdb->prepare("SELECT current_balance, credit_limit FROM tbl_customers WHERE LOWER(TRIM(email)) = %s LIMIT 1", $email));
+    }
+
+    $cur_balance = floatval($c_row->current_balance ?? 0);
+    $credit_limit = floatval($c_row->credit_limit ?? 0);
+
+    $where_ledger = "1=0";
+    if ($custId > 0 && $email) {
+        $where_ledger = $wpdb->prepare("(customer_id = %d OR LOWER(TRIM(customer_email)) = %s)", $custId, $email);
+    } elseif ($custId > 0) {
+        $where_ledger = $wpdb->prepare("customer_id = %d", $custId);
+    } elseif ($email) {
+        $where_ledger = $wpdb->prepare("LOWER(TRIM(customer_email)) = %s", $email);
+    }
+
+    $entries = $wpdb->get_results("SELECT * FROM customer_ledger WHERE $where_ledger ORDER BY entry_date DESC, id DESC", ARRAY_A);
+
+    // Fallback: If no local entries, query Node backend API
+    if (empty($entries) && ($custId > 0 || $email)) {
+        $api_url = 'https://purple-raccoon-753399.hostingersite.com/api/customer/ledger?' . http_build_query([
+            'customer_id' => $custId,
+            'email' => $email
+        ]);
+        $resp = wp_remote_get($api_url, ['timeout' => 6, 'sslverify' => false]);
+        if (!is_wp_error($resp)) {
+            $body = json_decode(wp_remote_retrieve_body($resp), true);
+            if (!empty($body['success'])) {
+                if (!empty($body['entries'])) {
+                    $entries = $body['entries'];
+                }
+                if (isset($body['summary']['current_balance'])) {
+                    $cur_balance = floatval($body['summary']['current_balance']);
+                }
+            }
+        }
+    }
+
+    $total_debit = 0;
+    $total_credit = 0;
+    foreach ($entries as $e) {
+        $amt = floatval($e['amount'] ?? 0);
+        if (($e['entry_type'] ?? '') === 'debit') {
+            $total_debit += $amt;
+        } else {
+            $total_credit += $amt;
+        }
+    }
+
+    wp_send_json_success([
+        'entries' => $entries ?: [],
+        'current_balance' => $cur_balance,
+        'credit_limit' => $credit_limit,
+        'summary' => [
+            'total_debit' => round($total_debit, 2),
+            'total_credit' => round($total_credit, 2),
+            'current_balance' => $cur_balance,
+            'credit_limit' => $credit_limit
+        ]
+    ]);
+}
+add_action('wp_ajax_pe_cp_get_ledger', 'pe_cp_ajax_get_ledger');
+add_action('wp_ajax_nopriv_pe_cp_get_ledger', 'pe_cp_ajax_get_ledger');
+
+// ══════════════════════════════════════
+//  AJAX: EXPORT SHIPMENTS TO EXCEL/CSV
+// ══════════════════════════════════════
+
+function pe_cp_ajax_export_shipments_excel()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+    $cust = pe_cp_get_user();
+    if (!$cust) {
+        wp_die('Unauthorized', 'Unauthorized', ['response' => 403]);
+    }
+
+    $cust_id = intval($cust['customer_id'] ?? ($cust['id'] ?? 0));
+    $cust_email = strtolower(trim($cust['email'] ?? ''));
+    $cust_name = trim($cust['name'] ?? '');
+    $cust_company = trim($cust['company'] ?? '');
+    $cust_phone = trim($cust['phone'] ?? '');
+
+    $has_shipments_tbl = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
+    $has_booking_req_tbl = !empty($wpdb->get_var("SHOW TABLES LIKE 'booking_requests'"));
+
+    $match_clauses = [];
+    $match_params = [];
+
+    if ($cust_id > 0) {
+        $match_clauses[] = "(a.CUSTCODE IN (%s, %s, %s) AND a.CUSTCODE != 'W001' AND LOWER(COALESCE(a.CUSTNAME, '')) != 'walking customer')";
+        $match_params[] = strval($cust_id);
+        $match_params[] = 'CUST-' . $cust_id;
+        $match_params[] = 'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT);
+
+        if ($has_shipments_tbl) {
+            $match_clauses[] = "(a.AWBNO IN (SELECT tracking_number FROM shipments WHERE customer_id = %d) OR CAST(a.AWBNO AS CHAR) IN (SELECT tracking_number FROM shipments WHERE customer_id = %d))";
+            $match_params[] = $cust_id;
+            $match_params[] = $cust_id;
+        }
+    }
+
+    $clean_cust_p = preg_replace('/[^0-9]/', '', $cust_phone);
+    $cust_phone_10 = strlen($clean_cust_p) >= 10 ? substr($clean_cust_p, -10) : $clean_cust_p;
+    if ($cust_phone_10) {
+        $match_clauses[] = "(a.SPHONE1 LIKE %s)";
+        $match_params[] = '%' . $wpdb->esc_like($cust_phone_10) . '%';
+    }
+
+    if (!empty($cust_name) && strtolower($cust_name) !== 'walking customer' && strlen($cust_name) >= 3) {
+        $match_clauses[] = "(LOWER(TRIM(a.CUSTNAME)) = %s OR LOWER(TRIM(a.SNAME)) = %s)";
+        $match_params[] = strtolower($cust_name);
+        $match_params[] = strtolower($cust_name);
+    }
+    if (!empty($cust_company) && strtolower($cust_company) !== 'walking customer' && strtolower($cust_company) !== strtolower($cust_name) && strlen($cust_company) >= 3) {
+        $match_clauses[] = "(LOWER(TRIM(a.CUSTNAME)) = %s OR LOWER(TRIM(a.SNAME)) = %s)";
+        $match_params[] = strtolower($cust_company);
+        $match_params[] = strtolower($cust_company);
+    }
+
+    // Match shipments from converted booking requests
+    $breq_sub_conds = [];
+    $breq_sub_params = [];
+    if ($cust_id > 0) {
+        $breq_sub_conds[] = "customer_id = %d";
+        $breq_sub_params[] = $cust_id;
+    }
+    if ($cust_email !== '') {
+        $breq_sub_conds[] = "LOWER(TRIM(customer_email)) = %s OR LOWER(TRIM(sender_email)) = %s";
+        $breq_sub_params[] = $cust_email;
+        $breq_sub_params[] = $cust_email;
+    }
+    if ($cust_phone_10) {
+        $breq_sub_conds[] = "customer_phone LIKE %s OR sender_phone LIKE %s";
+        $like_p = '%' . $wpdb->esc_like($cust_phone_10) . '%';
+        $breq_sub_params[] = $like_p;
+        $breq_sub_params[] = $like_p;
+    }
+    if (strlen($cust_name) >= 3) {
+        $breq_sub_conds[] = "LOWER(TRIM(customer_name)) = %s OR LOWER(TRIM(sender_name)) = %s";
+        $breq_sub_params[] = strtolower($cust_name);
+        $breq_sub_params[] = strtolower($cust_name);
+    }
+    if (!empty($cust_company) && strlen($cust_company) >= 3) {
+        $breq_sub_conds[] = "LOWER(TRIM(customer_company)) = %s OR LOWER(TRIM(sender_company)) = %s";
+        $breq_sub_params[] = strtolower($cust_company);
+        $breq_sub_params[] = strtolower($cust_company);
+    }
+    if (!empty($breq_sub_conds)) {
+        $breq_where = $wpdb->prepare("(" . implode(" OR ", $breq_sub_conds) . ")", ...$breq_sub_params);
+        $match_clauses[] = "a.AWBNO IN (SELECT request_awb FROM booking_requests WHERE request_awb != '' AND $breq_where)";
+        $match_clauses[] = "a.AWBNO IN (SELECT tracking_number FROM booking_requests WHERE tracking_number IS NOT NULL AND tracking_number != '' AND $breq_where)";
+    }
+
+    if (empty($match_clauses)) {
+        wp_die('No records found for customer');
+    }
+
+    $where = "(" . implode(" OR ", $match_clauses) . ") AND a.AWBNO > 0";
+    if (!empty($match_params)) {
+        $where = $wpdb->prepare($where, ...$match_params);
+    }
+
+    // Apply Filter Options: monthly or custom dates
+    $filter_type = sanitize_text_field($_REQUEST['filter_type'] ?? 'all');
+    $filename_tag = 'All_Shipments';
+
+    if ($filter_type === 'month') {
+        $month = intval($_REQUEST['month'] ?? date('m'));
+        $year = intval($_REQUEST['year'] ?? date('Y'));
+        $month_pad = str_pad($month, 2, '0', STR_PAD_LEFT);
+        $where .= $wpdb->prepare(" AND a.AWBDATE >= %s AND a.AWBDATE <= %s", "$year-$month_pad-01", "$year-$month_pad-31");
+        $filename_tag = "Monthly_{$year}_{$month_pad}";
+    } elseif ($filter_type === 'custom') {
+        $from_date = sanitize_text_field($_REQUEST['from_date'] ?? '');
+        $to_date = sanitize_text_field($_REQUEST['to_date'] ?? '');
+        if ($from_date && $to_date) {
+            $where .= $wpdb->prepare(" AND a.AWBDATE >= %s AND a.AWBDATE <= %s", $from_date, $to_date);
+            $filename_tag = "Custom_{$from_date}_to_{$to_date}";
+        } elseif ($from_date) {
+            $where .= $wpdb->prepare(" AND a.AWBDATE >= %s", $from_date);
+            $filename_tag = "From_{$from_date}";
+        } elseif ($to_date) {
+            $where .= $wpdb->prepare(" AND a.AWBDATE <= %s", $to_date);
+            $filename_tag = "To_{$to_date}";
+        }
+    }
+
+    $rows = $wpdb->get_results(
+        "SELECT a.AWBID, a.AWBNO, a.AWBDATE, a.CNEENAME, a.DESTNAME, a.SNAME,
+                a.ACTUALWEIGHT, a.CHARGEWEIGHT, a.NOP, a.RATE, a.TOTAL, a.NETAMOUNT, a.CHARGES, a.RECEIPTAMOUNT,
+                a.VENDNAME, a.VENDORAWB1, a.VENDORAWB2, a.PODTOWEB, a.REMARKS
+         FROM AWBENTRY a
+         WHERE $where
+         ORDER BY a.AWBID DESC"
+    );
+
+    // Clean buffer
+    if (ob_get_level()) {
+        ob_end_clean();
+    }
+
+    $filename = "Prince_Express_Shipments_{$filename_tag}_" . date('Ymd_His') . ".csv";
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
+    $fp = fopen('php://output', 'w');
+    // Write UTF-8 BOM for Microsoft Excel compatibility
+    fwrite($fp, "\xEF\xBB\xBF");
+
+    // CSV Header row
+    fputcsv($fp, [
+        'AWB Number',
+        'Booking Date',
+        'Consignee (Receiver)',
+        'Destination',
+        'Shipper (Sender)',
+        'Pieces',
+        'Actual Weight (kg)',
+        'Chargeable Weight (kg)',
+        'Carrier / Vendor',
+        'Vendor AWB No',
+        'Forwarding Number',
+        'Delivery Status',
+        'Rate / Kg (INR)',
+        'Total Amount (INR)',
+        'Remarks'
+    ]);
+
+    foreach ($rows as $r) {
+        $status = 'Shipment Booked';
+        if (intval($r->PODTOWEB ?? 0) === 1 || strval($r->PODTOWEB ?? '') === '1') {
+            $status = 'Delivered';
+        } else {
+            $latest_ph = $wpdb->get_var($wpdb->prepare(
+                "SELECT activity FROM parcel_history WHERE AWBNO = %d OR CAST(AWBNO AS CHAR) = %s ORDER BY date DESC, time DESC LIMIT 1",
+                intval($r->AWBNO), strval($r->AWBNO)
+            ));
+            if ($latest_ph && trim($latest_ph)) {
+                $status = trim($latest_ph);
+            } elseif (!empty($r->VENDORAWB1)) {
+                $status = 'In Transit';
+            }
+        }
+
+        $amt = 0;
+        if (!empty($r->TOTAL) && floatval(str_replace(',', '', $r->TOTAL)) > 0) {
+            $amt = floatval(str_replace(',', '', $r->TOTAL));
+        } elseif (!empty($r->NETAMOUNT) && floatval(str_replace(',', '', $r->NETAMOUNT)) > 0) {
+            $amt = floatval(str_replace(',', '', $r->NETAMOUNT));
+        } elseif (!empty($r->CHARGES) && floatval(str_replace(',', '', $r->CHARGES)) > 0) {
+            $amt = floatval(str_replace(',', '', $r->CHARGES));
+        } elseif (!empty($r->RATE) && floatval($r->RATE) > 0) {
+            $w = floatval($r->CHARGEWEIGHT ?: $r->ACTUALWEIGHT);
+            $amt = round(floatval($r->RATE) * $w, 2);
+        }
+
+        $fwd = trim(strval($r->VENDORAWB2 ?? ''));
+        if ($fwd === strval($r->VENDORAWB1) || $fwd === strval($r->AWBNO)) {
+            $fwd = '';
+        }
+
+        fputcsv($fp, [
+            $r->AWBNO,
+            $r->AWBDATE && $r->AWBDATE !== '0000-00-00' ? date('d-m-Y', strtotime($r->AWBDATE)) : '—',
+            $r->CNEENAME ?: '—',
+            $r->DESTNAME ?: '—',
+            $r->SNAME ?: '—',
+            intval($r->NOP ?? 1) ?: 1,
+            number_format(floatval($r->ACTUALWEIGHT ?? 0), 2, '.', ''),
+            number_format(floatval($r->CHARGEWEIGHT ?? 0), 2, '.', ''),
+            $r->VENDNAME ?: '—',
+            $r->VENDORAWB1 ?: '—',
+            $fwd ?: '—',
+            $status,
+            number_format(floatval($r->RATE ?? 0), 2, '.', ''),
+            number_format($amt, 2, '.', ''),
+            $r->REMARKS ?: ''
+        ]);
+    }
+
+    fclose($fp);
+    exit;
+}
+add_action('wp_ajax_pe_cp_export_shipments_excel', 'pe_cp_ajax_export_shipments_excel');
+add_action('wp_ajax_nopriv_pe_cp_export_shipments_excel', 'pe_cp_ajax_export_shipments_excel');
+
+// ══════════════════════════════════════
 //  SHORTCODE: [pe_customer_portal]
 // ══════════════════════════════════════
 

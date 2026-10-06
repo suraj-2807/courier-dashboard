@@ -31,7 +31,8 @@ import {
   Save,
   FileText,
   ChevronDown,
-  Upload
+  Upload,
+  Wallet
 } from 'lucide-react'
 import {
   getApiSettings,
@@ -901,6 +902,80 @@ export default function ApiSettingsPage() {
               }}
             >
               {systemSettings.allow_post_push_billing_edit ? (
+                <>
+                  <ToggleRight style={{ width: '18px', height: '18px' }} />
+                  Enabled
+                </>
+              ) : (
+                <>
+                  <ToggleLeft style={{ width: '18px', height: '18px' }} />
+                  Disabled
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: '1px', background: 'var(--color-border-light)', margin: '18px 0' }} />
+
+          {/* Enable Customer Accounting & Ledger Setting */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', maxWidth: '800px' }}>
+              <div style={{
+                width: '36px', height: '36px', borderRadius: '10px',
+                background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Wallet style={{ width: '18px', height: '18px', color: '#fff' }} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-text-primary)' }}>
+                    Customer Accounting & Debit/Credit Ledger
+                  </h2>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    background: systemSettings.enable_accounting ? '#ecfdf5' : '#fef2f2',
+                    color: systemSettings.enable_accounting ? '#059669' : '#dc2626',
+                    border: `1px solid ${systemSettings.enable_accounting ? '#a7f3d0' : '#fecaca'}`
+                  }}>
+                    {systemSettings.enable_accounting ? 'ENABLED' : 'DISABLED (DEFAULT)'}
+                  </span>
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: 1.5 }}>
+                  Enables basic accounting module with customer account balance tracking, debit and credit ledger entries (payment recording, receipts, and invoice charges), balance adjustment, and live accounting statement on the customer dashboard. When disabled, customers see only their standard shipment portal.
+                </p>
+              </div>
+            </div>
+
+            {/* Accounting Toggle Button */}
+            <button
+              onClick={() => {
+                const newVal = !Boolean(systemSettings.enable_accounting)
+                updateSysSettingsMutation.mutate({
+                  key: 'enable_accounting',
+                  value: newVal,
+                  description: 'Enable customer debit/credit accounting ledger, balance tracking, and customer accounting statements'
+                })
+              }}
+              disabled={updateSysSettingsMutation.isPending || sysSettingsLoading}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '8px 16px',
+                borderRadius: '10px',
+                fontSize: '12px', fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                border: systemSettings.enable_accounting ? '1px solid #10b981' : '1px solid var(--color-border)',
+                background: systemSettings.enable_accounting ? '#10b981' : 'var(--color-surface-alt)',
+                color: systemSettings.enable_accounting ? '#ffffff' : 'var(--color-text-secondary)'
+              }}
+            >
+              {systemSettings.enable_accounting ? (
                 <>
                   <ToggleRight style={{ width: '18px', height: '18px' }} />
                   Enabled

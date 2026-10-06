@@ -31,7 +31,12 @@ import {
   SlidersHorizontal,
   ChevronRight,
   ClipboardList,
-  Wallet
+  Wallet,
+  Receipt,
+  PlusCircle,
+  ArrowDownLeft,
+  Calendar,
+  Download
 } from 'lucide-react'
 import {
   useCustomers,
@@ -39,7 +44,10 @@ import {
   useCreateCustomer,
   useUpdateCustomer,
   useToggleCustomerStatus,
-  useDeleteCustomer
+  useDeleteCustomer,
+  useCustomerLedger,
+  useCreateLedgerEntry,
+  useDeleteLedgerEntry
 } from '../hooks/useCustomers'
 import Pagination from '../components/ui/Pagination'
 import EmptyState from '../components/ui/EmptyState'
@@ -68,6 +76,7 @@ export default function CustomersPage() {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
   const [passwordTargetCustomer, setPasswordTargetCustomer] = useState(null)
   const [detailCustomerId, setDetailCustomerId] = useState(null)
+  const [ledgerCustomer, setLedgerCustomer] = useState(null)
 
   const navigate = useNavigate()
 
@@ -423,9 +432,25 @@ export default function CustomersPage() {
                       {/* Account Balance & Credit Limit */}
                       <td className="px-4 py-3.5 text-right">
                         <div>
-                          <span className={`font-mono font-bold text-[13px] ${parseFloat(c.current_balance) > 0 ? 'text-emerald-700' : (parseFloat(c.current_balance) < 0 ? 'text-red-600' : 'text-text-secondary')}`}>
-                            {formatCurrency(c.current_balance || 0)}
-                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setLedgerCustomer(c)}
+                            className="inline-flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer text-right group ml-auto"
+                            title="Click to view ledger and debit/credit entries"
+                          >
+                            <span className={`font-mono font-bold text-[13px] ${parseFloat(c.current_balance) > 0 ? 'text-amber-700' : (parseFloat(c.current_balance) < 0 ? 'text-emerald-700' : 'text-text-secondary')}`}>
+                              {formatCurrency(Math.abs(parseFloat(c.current_balance) || 0))}
+                            </span>
+                            <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border leading-none tracking-wider ${
+                              parseFloat(c.current_balance) > 0
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : parseFloat(c.current_balance) < 0
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-slate-50 text-slate-600 border-slate-200'
+                            }`}>
+                              {parseFloat(c.current_balance) > 0 ? 'DUE' : (parseFloat(c.current_balance) < 0 ? 'ADV' : '0')}
+                            </span>
+                          </button>
                           {parseFloat(c.credit_limit) > 0 && (
                             <p className="text-[10.5px] text-text-tertiary mt-0.5">
                               Limit: {formatCurrency(c.credit_limit)}
@@ -454,6 +479,16 @@ export default function CustomersPage() {
                       {/* Actions */}
                       <td className="px-4 py-3.5 text-center">
                         <div className="flex items-center justify-center gap-1">
+                          {/* Ledger & Debit/Credit */}
+                          <button
+                            type="button"
+                            onClick={() => setLedgerCustomer(c)}
+                            className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                            title="Accounting Ledger & Debit/Credit Entries"
+                          >
+                            <Receipt className="w-4 h-4" />
+                          </button>
+
                           {/* View details */}
                           <button
                             type="button"
@@ -555,6 +590,21 @@ export default function CustomersPage() {
               setDetailCustomerId(null)
               handleOpenEdit(cust)
             }
+          }}
+          onOpenLedger={(cust) => {
+            setDetailCustomerId(null)
+            setLedgerCustomer(cust)
+          }}
+        />
+      )}
+
+      {/* Customer Ledger & Accounting Modal */}
+      {ledgerCustomer && (
+        <CustomerLedgerModal
+          customer={ledgerCustomer}
+          onClose={() => {
+            setLedgerCustomer(null)
+            refetch()
           }}
         />
       )}
@@ -1046,7 +1096,7 @@ function PasswordResetModal({ isOpen, customer, onClose, onSaved }) {
 }
 
 // ─── Customer Detail Drawer ────────────────────────────────────────────────
-function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
+function CustomerDetailDrawer({ customerId, onClose, onEdit, onOpenLedger }) {
   const { data, isLoading } = useCustomerById(customerId)
   const customer = data?.customer
   const shipments = data?.recent_shipments || []
@@ -1114,19 +1164,43 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
           ) : (
             <>
               {/* Financial Summary Banner */}
-              <div className="grid grid-cols-2 gap-3 p-4 bg-surface-alt rounded-2xl border border-border shadow-2xs">
-                <div>
-                  <span className="text-[11px] font-bold text-text-tertiary uppercase tracking-wider">Current Balance</span>
-                  <p className={`text-[20px] font-mono font-extrabold mt-1 ${parseFloat(customer.current_balance) > 0 ? 'text-emerald-700' : 'text-navy'}`}>
-                    {formatCurrency(customer.current_balance || 0)}
-                  </p>
+              <div className="p-4 bg-surface-alt rounded-2xl border border-border shadow-2xs space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <span className="text-[11px] font-bold text-text-tertiary uppercase tracking-wider">Account Balance</span>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <p className={`text-[20px] font-mono font-extrabold ${parseFloat(customer.current_balance) > 0 ? 'text-amber-700' : (parseFloat(customer.current_balance) < 0 ? 'text-emerald-700' : 'text-navy')}`}>
+                        {formatCurrency(Math.abs(parseFloat(customer.current_balance) || 0))}
+                      </p>
+                      <span className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded border leading-none ${
+                        parseFloat(customer.current_balance) > 0
+                          ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : parseFloat(customer.current_balance) < 0
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-slate-50 text-slate-600 border-slate-200'
+                      }`}>
+                        {parseFloat(customer.current_balance) > 0 ? 'Due' : (parseFloat(customer.current_balance) < 0 ? 'Advance' : 'Cleared')}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-bold text-text-tertiary uppercase tracking-wider">Credit Limit</span>
+                    <p className="text-[20px] font-mono font-extrabold text-indigo-700 mt-1">
+                      {formatCurrency(customer.credit_limit || 0)}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[11px] font-bold text-text-tertiary uppercase tracking-wider">Credit Limit</span>
-                  <p className="text-[20px] font-mono font-extrabold text-indigo-700 mt-1">
-                    {formatCurrency(customer.credit_limit || 0)}
-                  </p>
-                </div>
+
+                {onOpenLedger && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenLedger(customer)}
+                    className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-[12px] font-extrabold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                  >
+                    <Receipt className="w-4 h-4 text-indigo-600" />
+                    <span>Open Account Ledger & Debit/Credit Entries</span>
+                  </button>
+                )}
               </div>
 
               {/* Contact Details */}
@@ -1232,3 +1306,455 @@ function CustomerDetailDrawer({ customerId, onClose, onEdit }) {
     document.body
   )
 }
+
+// ─── Customer Ledger & Debit/Credit Accounting Modal ─────────────────────────
+function CustomerLedgerModal({ customer, onClose }) {
+  const { data, isLoading, refetch } = useCustomerLedger(customer?.id)
+  const createMutation = useCreateLedgerEntry()
+  const deleteMutation = useDeleteLedgerEntry()
+
+  const entries = data?.entries || []
+  const summary = data?.summary || {
+    total_debit: 0,
+    total_credit: 0,
+    current_balance: parseFloat(customer?.current_balance) || 0,
+    credit_limit: parseFloat(customer?.credit_limit) || 0
+  }
+
+  const [entryType, setEntryType] = useState('credit') // default 'credit' (payment received)
+  const [amount, setAmount] = useState('')
+  const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10))
+  const [referenceNo, setReferenceNo] = useState('')
+  const [paymentMode, setPaymentMode] = useState('UPI')
+  const [description, setDescription] = useState('')
+  const [searchLedger, setSearchLedger] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const filteredEntries = useMemo(() => {
+    if (!searchLedger.trim()) return entries
+    const term = searchLedger.toLowerCase().trim()
+    return entries.filter(e =>
+      (e.description && e.description.toLowerCase().includes(term)) ||
+      (e.reference_no && e.reference_no.toLowerCase().includes(term)) ||
+      (e.payment_mode && e.payment_mode.toLowerCase().includes(term)) ||
+      String(e.amount).includes(term) ||
+      (e.entry_date && e.entry_date.includes(term))
+    )
+  }, [entries, searchLedger])
+
+  const handleAddEntry = async (e) => {
+    e.preventDefault()
+    const numAmt = parseFloat(amount)
+    if (isNaN(numAmt) || numAmt <= 0) {
+      toast.error('Please enter a valid amount greater than 0')
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      await createMutation.mutateAsync({
+        id: customer.id,
+        data: {
+          entry_type: entryType,
+          amount: numAmt,
+          description: description.trim(),
+          reference_no: referenceNo.trim(),
+          payment_mode: paymentMode,
+          entry_date: entryDate
+        }
+      })
+      toast.success(
+        entryType === 'credit'
+          ? `₹${numAmt.toFixed(2)} payment recorded! Customer balance reduced.`
+          : `₹${numAmt.toFixed(2)} charge recorded! Customer balance increased.`
+      )
+      setAmount('')
+      setDescription('')
+      setReferenceNo('')
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to record entry')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleDeleteEntry = async (entry) => {
+    if (!window.confirm(`Are you sure you want to delete this ${entry.entry_type} entry of ₹${entry.amount}? This will reverse the customer's balance.`)) {
+      return
+    }
+    try {
+      await deleteMutation.mutateAsync({ id: customer.id, entryId: entry.id })
+      toast.success('Entry deleted and customer balance adjusted')
+      refetch()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to delete entry')
+    }
+  }
+
+  const exportLedgerCSV = () => {
+    if (!entries.length) {
+      toast.error('No transactions to export')
+      return
+    }
+    const headers = ['Date', 'Type', 'Particulars / Description', 'Payment Mode', 'Reference / Receipt No', 'Debit (Charges)', 'Credit (Payment)', 'Balance After']
+    const rows = entries.map(e => [
+      e.entry_date,
+      e.entry_type.toUpperCase(),
+      `"${(e.description || '').replace(/"/g, '""')}"`,
+      `"${(e.payment_mode || '').replace(/"/g, '""')}"`,
+      `"${(e.reference_no || '').replace(/"/g, '""')}"`,
+      e.entry_type === 'debit' ? e.amount : '',
+      e.entry_type === 'credit' ? e.amount : '',
+      e.balance_after
+    ])
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', `Statement_${(customer?.name || 'Customer').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const curBal = parseFloat(summary.current_balance) || 0
+
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        className="relative bg-surface border border-border w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col my-auto z-10 max-h-[92vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-surface-alt/50 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-600 flex items-center justify-center text-[18px]">
+              <Receipt className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-[17px] font-extrabold text-navy">
+                  Account Ledger: {customer?.name}
+                </h2>
+                <span className="font-mono text-[11px] font-black bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded">
+                  CUST-{String(customer?.id || '').padStart(4, '0')}
+                </span>
+              </div>
+              <p className="text-[12px] text-text-secondary mt-0.5">
+                {customer?.company ? `${customer.company} · ` : ''}{customer?.email} {customer?.phone ? `· ${customer.phone}` : ''}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 text-text-tertiary hover:text-navy hover:bg-surface-hover rounded-xl cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content Body */}
+        <div className="p-6 overflow-y-auto space-y-5 flex-1">
+          {/* Top Balance Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            {/* Current Balance */}
+            <div className={`p-4 rounded-xl border ${curBal > 0 ? 'bg-amber-50/70 border-amber-200 text-amber-900' : (curBal < 0 ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900' : 'bg-surface-alt border-border text-navy')}`}>
+              <span className="text-[10.5px] font-bold uppercase tracking-wider block opacity-75">
+                Current Balance
+              </span>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-[22px] font-mono font-black">
+                  {formatCurrency(Math.abs(curBal))}
+                </span>
+                <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded leading-none ${
+                  curBal > 0
+                    ? 'bg-amber-200/60 text-amber-800'
+                    : curBal < 0
+                    ? 'bg-emerald-200/60 text-emerald-800'
+                    : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {curBal > 0 ? 'DUE / RECEIVABLE' : (curBal < 0 ? 'ADVANCE CREDIT' : 'CLEARED')}
+                </span>
+              </div>
+            </div>
+
+            {/* Total Charges / Debits */}
+            <div className="p-4 rounded-xl bg-surface-alt border border-border">
+              <span className="text-[10.5px] font-bold text-text-tertiary uppercase tracking-wider block">
+                Total Charges (Debits)
+              </span>
+              <span className="text-[20px] font-mono font-extrabold text-navy mt-1 block">
+                {formatCurrency(summary.total_debit || 0)}
+              </span>
+            </div>
+
+            {/* Total Payments / Credits */}
+            <div className="p-4 rounded-xl bg-surface-alt border border-border">
+              <span className="text-[10.5px] font-bold text-text-tertiary uppercase tracking-wider block">
+                Total Paid (Credits)
+              </span>
+              <span className="text-[20px] font-mono font-extrabold text-emerald-700 mt-1 block">
+                {formatCurrency(summary.total_credit || 0)}
+              </span>
+            </div>
+
+            {/* Credit Limit */}
+            <div className="p-4 rounded-xl bg-surface-alt border border-border">
+              <span className="text-[10.5px] font-bold text-text-tertiary uppercase tracking-wider block">
+                Credit Limit
+              </span>
+              <span className="text-[20px] font-mono font-extrabold text-indigo-700 mt-1 block">
+                {formatCurrency(summary.credit_limit || 0)}
+              </span>
+            </div>
+          </div>
+
+          {/* Add Debit / Credit Entry Form */}
+          <div className="bg-surface-alt/70 border border-border rounded-2xl p-4 sm:p-5">
+            <div className="flex items-center justify-between mb-3.5">
+              <h3 className="text-[13px] font-extrabold text-navy flex items-center gap-2">
+                <PlusCircle className="w-4 h-4 text-primary" />
+                Record Debit / Credit Entry
+              </h3>
+              <div className="flex items-center bg-surface border border-border rounded-xl p-0.5 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setEntryType('credit')}
+                  className={`px-3 py-1 rounded-lg text-[11.5px] font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    entryType === 'credit'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-navy'
+                  }`}
+                >
+                  <ArrowDownLeft className="w-3.5 h-3.5" />
+                  <span>Credit (-) Payment Received</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEntryType('debit')}
+                  className={`px-3 py-1 rounded-lg text-[11.5px] font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    entryType === 'debit'
+                      ? 'bg-amber-600 text-white shadow-xs'
+                      : 'text-text-secondary hover:text-navy'
+                  }`}
+                >
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  <span>Debit (+) Charge / Surcharge</span>
+                </button>
+              </div>
+            </div>
+
+            <form onSubmit={handleAddEntry} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                {/* Amount */}
+                <div>
+                  <label className="block text-[11px] font-extrabold text-text-tertiary uppercase mb-1">
+                    Amount (₹) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    required
+                    placeholder="0.00"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    className="w-full px-3 py-2 bg-surface border border-border rounded-xl text-[13px] font-mono font-bold text-navy outline-none focus:border-primary shadow-2xs"
+                  />
+                </div>
+
+                {/* Entry Date */}
+                <div>
+                  <label className="block text-[11px] font-extrabold text-text-tertiary uppercase mb-1">
+                    Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={entryDate}
+                    onChange={(e) => setEntryDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-surface border border-border rounded-xl text-[13px] font-medium text-text-primary outline-none focus:border-primary shadow-2xs"
+                  />
+                </div>
+
+                {/* Payment Mode */}
+                <div>
+                  <label className="block text-[11px] font-extrabold text-text-tertiary uppercase mb-1">
+                    Mode / Channel
+                  </label>
+                  <select
+                    value={paymentMode}
+                    onChange={(e) => setPaymentMode(e.target.value)}
+                    className="w-full px-3 py-2 bg-surface border border-border rounded-xl text-[13px] font-semibold text-text-primary outline-none focus:border-primary shadow-2xs cursor-pointer"
+                  >
+                    <option value="UPI">UPI (GPay / PhonePe / Paytm)</option>
+                    <option value="Bank Transfer">Bank Transfer (NEFT / RTGS / IMPS)</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Cheque">Cheque</option>
+                    <option value="Credit Note">Credit Note / Discount</option>
+                    <option value="Invoice Charge">Invoice Charge</option>
+                    <option value="Adjustment">Adjustment / Round-off</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                {/* Reference No */}
+                <div>
+                  <label className="block text-[11px] font-extrabold text-text-tertiary uppercase mb-1">
+                    Reference / Receipt #
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. UTR-98214, CHQ#1024"
+                    value={referenceNo}
+                    onChange={(e) => setReferenceNo(e.target.value)}
+                    className="w-full px-3 py-2 bg-surface border border-border rounded-xl text-[13px] font-mono text-text-primary outline-none focus:border-primary shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              {/* Description & Submit Button */}
+              <div className="flex flex-col sm:flex-row items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="Particulars / Description (e.g. Payment received for August bookings, Freight discount)"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="w-full sm:flex-1 px-3 py-2 bg-surface border border-border rounded-xl text-[13px] text-text-primary outline-none focus:border-primary shadow-2xs"
+                />
+                <button
+                  type="submit"
+                  disabled={submitting || !amount}
+                  className={`px-5 py-2 rounded-xl text-[12.5px] font-extrabold text-white transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50 whitespace-nowrap ${
+                    entryType === 'credit'
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      : 'bg-amber-600 hover:bg-amber-700'
+                  }`}
+                >
+                  <PlusCircle className="w-4 h-4" />
+                  <span>{entryType === 'credit' ? 'Post Payment (Credit)' : 'Post Charge (Debit)'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Statement / Ledger Table */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <h3 className="text-[13px] font-extrabold text-navy uppercase tracking-wider">
+                  Transaction Statement ({filteredEntries.length})
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="Filter entries..."
+                  value={searchLedger}
+                  onChange={(e) => setSearchLedger(e.target.value)}
+                  className="px-2.5 py-1 bg-surface-alt border border-border rounded-lg text-[12px] outline-none focus:border-primary"
+                />
+                <button
+                  type="button"
+                  onClick={exportLedgerCSV}
+                  disabled={!entries.length}
+                  className="px-3 py-1 bg-surface-alt hover:bg-surface-hover text-navy border border-border rounded-lg text-[12px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                  title="Download Statement CSV"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export CSV</span>
+                </button>
+              </div>
+            </div>
+
+            {isLoading ? (
+              <div className="p-8 text-center">
+                <div className="w-7 h-7 border-3 border-border border-t-primary rounded-full animate-spin mx-auto" />
+                <p className="text-[12px] text-text-tertiary mt-2">Loading transactions...</p>
+              </div>
+            ) : !filteredEntries.length ? (
+              <div className="p-8 text-center bg-surface-alt/40 border border-border rounded-xl text-text-tertiary text-[13px]">
+                No transaction entries found. Record a credit payment or debit entry above to manage this customer's balance.
+              </div>
+            ) : (
+              <div className="border border-border rounded-xl overflow-hidden shadow-2xs">
+                <div className="overflow-x-auto max-h-[300px]">
+                  <table className="w-full text-left text-[12px]">
+                    <thead className="bg-surface-alt/80 text-[10.5px] font-bold uppercase text-text-tertiary sticky top-0 z-10 border-b border-border">
+                      <tr>
+                        <th className="px-3.5 py-2.5">Date</th>
+                        <th className="px-3.5 py-2.5">Type</th>
+                        <th className="px-3.5 py-2.5">Particulars / Mode</th>
+                        <th className="px-3.5 py-2.5">Reference</th>
+                        <th className="px-3.5 py-2.5 text-right">Debit (+)</th>
+                        <th className="px-3.5 py-2.5 text-right">Credit (-)</th>
+                        <th className="px-3.5 py-2.5 text-right">Balance</th>
+                        <th className="px-2.5 py-2.5 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border bg-surface">
+                      {filteredEntries.map((e) => (
+                        <tr key={e.id} className="hover:bg-surface-hover/60 transition-colors">
+                          <td className="px-3.5 py-2.5 font-mono text-[11.5px] text-text-secondary whitespace-nowrap">
+                            {e.entry_date}
+                          </td>
+                          <td className="px-3.5 py-2.5 whitespace-nowrap">
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                              e.entry_type === 'credit'
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                : 'bg-amber-50 text-amber-800 border border-amber-200'
+                            }`}>
+                              {e.entry_type === 'credit' ? 'CREDIT' : 'DEBIT'}
+                            </span>
+                          </td>
+                          <td className="px-3.5 py-2.5 max-w-[220px]">
+                            <p className="font-medium text-text-primary truncate" title={e.description || '—'}>
+                              {e.description || '—'}
+                            </p>
+                            {e.payment_mode && (
+                              <span className="text-[10px] text-text-tertiary font-bold block">
+                                {e.payment_mode}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3.5 py-2.5 font-mono text-[11px] text-text-secondary max-w-[120px] truncate" title={e.reference_no}>
+                            {e.reference_no || '—'}
+                          </td>
+                          <td className="px-3.5 py-2.5 text-right font-mono font-bold text-amber-700 whitespace-nowrap">
+                            {e.entry_type === 'debit' ? formatCurrency(e.amount) : '—'}
+                          </td>
+                          <td className="px-3.5 py-2.5 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">
+                            {e.entry_type === 'credit' ? formatCurrency(e.amount) : '—'}
+                          </td>
+                          <td className="px-3.5 py-2.5 text-right font-mono font-black text-navy whitespace-nowrap">
+                            {formatCurrency(e.balance_after)}
+                          </td>
+                          <td className="px-2.5 py-2.5 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteEntry(e)}
+                              className="p-1 text-text-tertiary hover:text-red-600 rounded transition-colors cursor-pointer"
+                              title="Delete entry and revert balance"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )
+}
+

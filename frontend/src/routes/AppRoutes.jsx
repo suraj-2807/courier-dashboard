@@ -15,6 +15,7 @@ import BookingRequestsPage from '../pages/BookingRequestsPage'
 import UsersPage from '../pages/UsersPage'
 import ProductsPage from '../pages/ProductsPage'
 import CustomersPage from '../pages/CustomersPage'
+import VendorRateImportPage from '../pages/VendorRateImportPage'
 
 export default function AppRoutes() {
   return (
@@ -105,6 +106,16 @@ export default function AppRoutes() {
           <ProtectedRoute>
             <DashboardLayout>
               <RatesPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/vendor-rate-import"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <VendorRateImportPage />
             </DashboardLayout>
           </ProtectedRoute>
         }

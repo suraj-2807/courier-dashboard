@@ -521,3 +521,244 @@ export const deleteCustomer = async (req, res) => {
     return res.status(500).json({ success: false, message: error.message })
   }
 }
+
+/**
+ * GET /api/customers/:id/ledger
+ * Fetch customer ledger transactions, totals, and current balance
+ */
+export const getCustomerLedger = async (req, res) => {
+  try {
+    const { id } = req.params
+    const custRows = await query('SELECT id, name, email, phone, company, current_balance, credit_limit FROM tbl_customers WHERE id = ?', [id])
+    if (!custRows || custRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Customer not found' })
+    }
+
+    const customer = custRows[0]
+
+    // Ensure table exists
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS customer_ledger (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id INT NOT NULL,
+        customer_email VARCHAR(150) DEFAULT '',
+        entry_type ENUM('debit', 'credit') NOT NULL,
+        amount DECIMAL(12,2) NOT NULL,
+        balance_after DECIMAL(12,2) DEFAULT 0.00,
+        reference_no VARCHAR(100) DEFAULT '',
+        payment_mode VARCHAR(50) DEFAULT '',
+        description TEXT,
+        entry_date DATE NOT NULL,
+        created_by VARCHAR(100) DEFAULT 'Admin',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_ledger_cust_id (customer_id),
+        INDEX idx_ledger_cust_email (customer_email),
+        INDEX idx_ledger_date (entry_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+    } catch {}
+
+    const entries = await query(
+      `SELECT * FROM customer_ledger 
+       WHERE customer_id = ? OR (customer_email != '' AND LOWER(TRIM(customer_email)) = ?)
+       ORDER BY entry_date DESC, id DESC`,
+      [id, (customer.email || '').toLowerCase().trim()]
+    )
+
+    // Calculate totals
+    let totalDebit = 0
+    let totalCredit = 0
+    for (const e of entries) {
+      const amt = parseFloat(e.amount) || 0
+      if (e.entry_type === 'debit') {
+        totalDebit += amt
+      } else {
+        totalCredit += amt
+      }
+    }
+
+    return res.json({
+      success: true,
+      customer,
+      entries,
+      summary: {
+        total_debit: Math.round(totalDebit * 100) / 100,
+        total_credit: Math.round(totalCredit * 100) / 100,
+        current_balance: parseFloat(customer.current_balance) || 0.00,
+        credit_limit: parseFloat(customer.credit_limit) || 0.00
+      }
+    })
+  } catch (error) {
+    console.error('Error fetching customer ledger:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+/**
+ * POST /api/customers/:id/ledger
+ * Create a debit or credit entry for a customer and adjust their current_balance
+ */
+export const createCustomerLedgerEntry = async (req, res) => {
+  try {
+    const { id } = req.params
+    const {
+      entry_type,
+      amount,
+      description = '',
+      reference_no = '',
+      payment_mode = '',
+      entry_date
+    } = req.body
+
+    if (!entry_type || !['debit', 'credit'].includes(entry_type)) {
+      return res.status(400).json({ success: false, message: 'Invalid entry type. Must be "debit" or "credit".' })
+    }
+
+    const numAmount = Math.round(parseFloat(amount) * 100) / 100
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Amount must be greater than 0' })
+    }
+
+    const custRows = await query('SELECT * FROM tbl_customers WHERE id = ?', [id])
+    if (!custRows || custRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Customer not found' })
+    }
+    const customer = custRows[0]
+
+    // Ensure table exists
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS customer_ledger (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id INT NOT NULL,
+        customer_email VARCHAR(150) DEFAULT '',
+        entry_type ENUM('debit', 'credit') NOT NULL,
+        amount DECIMAL(12,2) NOT NULL,
+        balance_after DECIMAL(12,2) DEFAULT 0.00,
+        reference_no VARCHAR(100) DEFAULT '',
+        payment_mode VARCHAR(50) DEFAULT '',
+        description TEXT,
+        entry_date DATE NOT NULL,
+        created_by VARCHAR(100) DEFAULT 'Admin',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_ledger_cust_id (customer_id),
+        INDEX idx_ledger_cust_email (customer_email),
+        INDEX idx_ledger_date (entry_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+    } catch {}
+
+    const curBal = parseFloat(customer.current_balance) || 0.00
+    let newBal = 0.00
+
+    if (entry_type === 'debit') {
+      // Debit increases amount due (charges / billings)
+      newBal = Math.round((curBal + numAmount) * 100) / 100
+    } else {
+      // Credit decreases amount due (payments received / discounts)
+      newBal = Math.round((curBal - numAmount) * 100) / 100
+    }
+
+    const formattedDate = entry_date ? String(entry_date).slice(0, 10) : new Date().toISOString().slice(0, 10)
+    const creator = req.user?.name || req.user?.username || 'Admin'
+
+    const insertRes = await execute(
+      `INSERT INTO customer_ledger (
+        customer_id, customer_email, entry_type, amount, balance_after,
+        reference_no, payment_mode, description, entry_date, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        (customer.email || '').toLowerCase().trim(),
+        entry_type,
+        numAmount,
+        newBal,
+        (reference_no || '').trim(),
+        (payment_mode || '').trim(),
+        (description || '').trim(),
+        formattedDate,
+        creator
+      ]
+    )
+
+    // Update customer current_balance in local database
+    await execute('UPDATE tbl_customers SET current_balance = ? WHERE id = ?', [newBal, id])
+
+    // Sync updated customer to remote Hostinger DB & WP
+    syncCustomerToRemoteDb({
+      ...customer,
+      current_balance: newBal
+    }).catch(err => console.error('[Remote DB Customer Sync on Ledger]:', err.message))
+
+    syncCustomerToWP({
+      ...customer,
+      current_balance: newBal
+    }).catch(err => console.error('[WP Customer Sync on Ledger]:', err.message))
+
+    const [newEntry] = await query('SELECT * FROM customer_ledger WHERE id = ?', [insertRes.insertId])
+
+    return res.status(201).json({
+      success: true,
+      message: `${entry_type === 'credit' ? 'Credit (Payment Received)' : 'Debit (Charge)'} of ₹${numAmount.toFixed(2)} recorded successfully`,
+      entry: newEntry,
+      current_balance: newBal
+    })
+  } catch (error) {
+    console.error('Error creating ledger entry:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+/**
+ * DELETE /api/customers/:id/ledger/:entryId
+ * Delete a customer ledger entry and reverse its impact on current_balance
+ */
+export const deleteCustomerLedgerEntry = async (req, res) => {
+  try {
+    const { id, entryId } = req.params
+
+    const custRows = await query('SELECT * FROM tbl_customers WHERE id = ?', [id])
+    if (!custRows || custRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Customer not found' })
+    }
+    const customer = custRows[0]
+
+    const entryRows = await query('SELECT * FROM customer_ledger WHERE id = ? AND (customer_id = ? OR customer_email = ?)', [entryId, id, customer.email])
+    if (!entryRows || entryRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Ledger entry not found' })
+    }
+    const entry = entryRows[0]
+
+    const curBal = parseFloat(customer.current_balance) || 0.00
+    const numAmount = parseFloat(entry.amount) || 0.00
+    let newBal = curBal
+
+    // Reverse the balance impact
+    if (entry.entry_type === 'debit') {
+      newBal = Math.round((curBal - numAmount) * 100) / 100
+    } else {
+      newBal = Math.round((curBal + numAmount) * 100) / 100
+    }
+
+    await execute('DELETE FROM customer_ledger WHERE id = ?', [entryId])
+    await execute('UPDATE tbl_customers SET current_balance = ? WHERE id = ?', [newBal, id])
+
+    // Sync updated customer
+    syncCustomerToRemoteDb({
+      ...customer,
+      current_balance: newBal
+    }).catch(err => console.error('[Remote DB Customer Sync on Ledger Delete]:', err.message))
+
+    syncCustomerToWP({
+      ...customer,
+      current_balance: newBal
+    }).catch(err => console.error('[WP Customer Sync on Ledger Delete]:', err.message))
+
+    return res.json({
+      success: true,
+      message: 'Ledger entry deleted successfully and customer balance adjusted',
+      current_balance: newBal
+    })
+  } catch (error) {
+    console.error('Error deleting ledger entry:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+

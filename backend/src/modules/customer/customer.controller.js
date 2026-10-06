@@ -468,3 +468,92 @@ export const deleteCustomerDocument = async (req, res) => {
     return res.status(500).json({ success: false, message: 'Failed to delete document' })
   }
 }
+
+/**
+ * GET /api/customer/ledger
+ * Public / Customer Portal endpoint to fetch ledger entries and live account balance
+ */
+export const getCustomerPublicLedger = async (req, res) => {
+  try {
+    const { customer_id, email, phone } = req.query
+    if (!customer_id && !email && !phone) {
+      return res.status(400).json({ success: false, message: 'Customer identifier required' })
+    }
+
+    let customer = null
+    if (customer_id && parseInt(customer_id) > 0) {
+      const rows = await query('SELECT id, name, email, phone, company, current_balance, credit_limit FROM tbl_customers WHERE id = ?', [parseInt(customer_id)])
+      if (rows && rows.length > 0) customer = rows[0]
+    }
+    if (!customer && email && email.trim()) {
+      const rows = await query('SELECT id, name, email, phone, company, current_balance, credit_limit FROM tbl_customers WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))', [email.trim()])
+      if (rows && rows.length > 0) customer = rows[0]
+    }
+    if (!customer && phone && phone.trim()) {
+      const rows = await query('SELECT id, name, email, phone, company, current_balance, credit_limit FROM tbl_customers WHERE TRIM(phone) = TRIM(?)', [phone.trim()])
+      if (rows && rows.length > 0) customer = rows[0]
+    }
+
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'Customer account not found' })
+    }
+
+    // Ensure table exists
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS customer_ledger (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        customer_id INT NOT NULL,
+        customer_email VARCHAR(150) DEFAULT '',
+        entry_type ENUM('debit', 'credit') NOT NULL,
+        amount DECIMAL(12,2) NOT NULL,
+        balance_after DECIMAL(12,2) DEFAULT 0.00,
+        reference_no VARCHAR(100) DEFAULT '',
+        payment_mode VARCHAR(50) DEFAULT '',
+        description TEXT,
+        entry_date DATE NOT NULL,
+        created_by VARCHAR(100) DEFAULT 'Admin',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_ledger_cust_id (customer_id),
+        INDEX idx_ledger_cust_email (customer_email),
+        INDEX idx_ledger_date (entry_date)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+    } catch {}
+
+    const entries = await query(
+      `SELECT id, entry_type, amount, balance_after, reference_no, payment_mode, description, entry_date, created_at
+       FROM customer_ledger
+       WHERE customer_id = ? OR (customer_email != '' AND LOWER(TRIM(customer_email)) = ?)
+       ORDER BY entry_date DESC, id DESC`,
+      [customer.id, (customer.email || '').toLowerCase().trim()]
+    )
+
+    let totalDebit = 0
+    let totalCredit = 0
+    for (const e of entries) {
+      const a = parseFloat(e.amount) || 0
+      if (e.entry_type === 'debit') totalDebit += a
+      else totalCredit += a
+    }
+
+    return res.json({
+      success: true,
+      customer: {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        current_balance: parseFloat(customer.current_balance) || 0.00,
+        credit_limit: parseFloat(customer.credit_limit) || 0.00
+      },
+      entries,
+      summary: {
+        total_debit: Math.round(totalDebit * 100) / 100,
+        total_credit: Math.round(totalCredit * 100) / 100,
+        current_balance: parseFloat(customer.current_balance) || 0.00
+      }
+    })
+  } catch (err) {
+    console.error('Error fetching customer public ledger:', err)
+    return res.status(500).json({ success: false, message: 'Failed to fetch ledger' })
+  }
+}
+

@@ -6,7 +6,10 @@ import {
   createCustomer,
   updateCustomer,
   toggleCustomerStatus,
-  deleteCustomer
+  deleteCustomer,
+  getCustomerLedger,
+  createCustomerLedgerEntry,
+  deleteCustomerLedgerEntry
 } from './customers.controller.js'
 
 const router = express.Router()
@@ -17,5 +20,10 @@ router.post('/', authMiddleware, createCustomer)
 router.put('/:id', authMiddleware, updateCustomer)
 router.patch('/:id/status', authMiddleware, toggleCustomerStatus)
 router.delete('/:id', authMiddleware, deleteCustomer)
+
+// Customer Ledger (Debit & Credit entries)
+router.get('/:id/ledger', authMiddleware, getCustomerLedger)
+router.post('/:id/ledger', authMiddleware, createCustomerLedgerEntry)
+router.delete('/:id/ledger/:entryId', authMiddleware, deleteCustomerLedgerEntry)
 
 export default router

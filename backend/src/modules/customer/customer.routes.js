@@ -9,7 +9,8 @@ import {
   getCustomerDocuments,
   uploadCustomerDocument,
   saveCustomerDocument,
-  deleteCustomerDocument
+  deleteCustomerDocument,
+  getCustomerPublicLedger
 } from './customer.controller.js'
 
 const router = express.Router()
@@ -62,5 +63,8 @@ router.post('/documents', saveCustomerDocument)
 router.put('/documents/:id', saveCustomerDocument)
 router.delete('/documents/:id', deleteCustomerDocument)
 router.post('/upload-document', upload.single('file'), uploadCustomerDocument)
+
+// Public Customer Ledger & Balance endpoint
+router.get('/ledger', getCustomerPublicLedger)
 
 export default router

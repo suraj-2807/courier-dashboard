@@ -29,7 +29,8 @@ import {
   ArrowRight,
   CheckCircle2,
   Check,
-  CheckCheck
+  CheckCheck,
+  FileSpreadsheet
 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import api from '../api/axios'
@@ -43,6 +44,7 @@ const navItems = [
   { label: 'Users & Contacts', path: '/users', icon: Users },
   { label: 'Products & HSN', path: '/products', icon: Tag },
   { label: 'Rates', path: '/rates', icon: IndianRupee },
+  { label: 'Vendor Rate Import', path: '/vendor-rate-import', icon: FileSpreadsheet },
   { label: 'API Settings', path: '/api-settings', icon: Settings }
 ]
 

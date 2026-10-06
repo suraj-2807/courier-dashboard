@@ -207,6 +207,33 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     ) ?? 0);
   }
 }
+
+// Query individual customer balance from tbl_customers
+$cust_acc_balance = 0.00;
+$cust_credit_limit = 0.00;
+$c_acc_row = null;
+if ($cust_id > 0) {
+  $c_acc_row = $wpdb->get_row($wpdb->prepare("SELECT current_balance, credit_limit FROM tbl_customers WHERE id = %d LIMIT 1", $cust_id));
+}
+if (!$c_acc_row && !empty($cust_email)) {
+  $c_acc_row = $wpdb->get_row($wpdb->prepare("SELECT current_balance, credit_limit FROM tbl_customers WHERE LOWER(TRIM(email)) = %s LIMIT 1", $cust_email));
+}
+if ($c_acc_row) {
+  $cust_acc_balance = floatval($c_acc_row->current_balance ?? 0);
+  $cust_credit_limit = floatval($c_acc_row->credit_limit ?? 0);
+}
+
+// Check if accounting module is enabled in system_settings
+$is_accounting_enabled = false;
+$has_sys_tbl = !empty($wpdb->get_var("SHOW TABLES LIKE 'system_settings'"));
+if ($has_sys_tbl) {
+  $acc_setting = $wpdb->get_var("SELECT setting_value FROM system_settings WHERE setting_key = 'enable_accounting' LIMIT 1");
+  $is_accounting_enabled = ($acc_setting === 'true' || $acc_setting === '1' || $acc_setting === 1);
+}
+if (!$is_accounting_enabled) {
+  $opt_acc = get_option('pe_enable_accounting', 'false');
+  $is_accounting_enabled = ($opt_acc === 'true' || $opt_acc === '1' || $opt_acc === 1 || $opt_acc === true);
+}
 ?>
 <style>
   #wpadminbar {
@@ -1816,6 +1843,11 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       <button class="cp-nav-item" data-tooltip="My Documents" onclick="cpSwitchTab('documents', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-file-shield"></i> <span class="cp-nav-text">My Documents</span>
       </button>
+      <?php if (!empty($is_accounting_enabled)): ?>
+      <button class="cp-nav-item" data-tooltip="Account Statement" onclick="cpSwitchTab('ledger', this); cpCloseMobileSidebar();">
+        <i class="fa-solid fa-file-invoice-dollar"></i> <span class="cp-nav-text">Account Statement</span>
+      </button>
+      <?php endif; ?>
       <button class="cp-nav-item" data-tooltip="My Profile" onclick="cpSwitchTab('profile', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-user-gear"></i> <span class="cp-nav-text">My Profile</span>
       </button>
@@ -1887,6 +1919,21 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
           </div>
           <div class="cp-stat-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
         </div>
+        <div class="cp-stat" <?php if (!empty($is_accounting_enabled)): ?>onclick="cpSwitchTab('ledger')" style="cursor:pointer;" title="Click to view Statement"<?php endif; ?>>
+          <div>
+            <div class="cp-stat-label">Account Balance</div>
+            <div class="cp-stat-value" id="cp-stat-acc-balance" style="font-size:20px; font-weight:800; color:<?php echo $cust_acc_balance > 0 ? 'var(--cpred)' : ($cust_acc_balance < 0 ? 'var(--cpblue)' : 'var(--cpgreen)'); ?>;">
+              ₹<?php echo number_format(abs($cust_acc_balance), 2); ?></div>
+            <div class="cp-stat-desc <?php echo $cust_acc_balance > 0 ? 'r' : 'g'; ?>" id="cp-stat-acc-badge">
+              <?php
+                if ($cust_acc_balance > 0) echo '● Due Balance';
+                elseif ($cust_acc_balance < 0) echo '● Advance Balance';
+                else echo '● All Cleared';
+              ?>
+            </div>
+          </div>
+          <div class="cp-stat-icon" style="background:<?php echo $cust_acc_balance > 0 ? 'rgba(187,0,19,0.08)' : 'rgba(16,185,129,0.08)'; ?>; color:<?php echo $cust_acc_balance > 0 ? 'var(--cpred)' : 'var(--cpgreen)'; ?>;"><i class="fa-solid fa-wallet"></i></div>
+        </div>
       </div>
 
       <!-- Quick CTA -->
@@ -1902,7 +1949,7 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       </div>
 
       <!-- Search & Filters -->
-      <div class="cp-fb">
+      <div class="cp-fb" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
         <div class="cp-fs" style="position:relative; width: 100%; max-width: 450px;">
           <i class="fa-solid fa-magnifying-glass"></i>
           <input type="text" id="cp-search" placeholder="Search AWB, consignee, destination..."
@@ -1910,6 +1957,11 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
           <button type="button" id="cp-search-clear" onclick="cpClearShipmentsSearch()"
             style="display:none; position:absolute; right:12px; top:50%; transform:translateY(-50%); background:transparent; border:none; color:var(--cptext3); cursor:pointer; font-size:13px;"><i
               class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button type="button" class="cp-btn" onclick="cpOpenExportModal()" style="display:inline-flex; align-items:center; gap:8px; background:#10b981; color:#fff; border:none; padding:10px 18px; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; transition:all .2s ease; box-shadow:0 2px 6px rgba(16,185,129,.25);" title="Export all shipment details to Excel">
+            <i class="fa-solid fa-file-excel" style="font-size:15px;"></i> Export to Excel
+          </button>
         </div>
       </div>
       <div id="cp-shipments-container"></div>
@@ -2168,6 +2220,87 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
         </div>
       </div>
     </div>
+
+    <?php if (!empty($is_accounting_enabled)): ?>
+    <!-- TAB 7: ACCOUNT STATEMENT / LEDGER -->
+    <div class="cp-main-content" id="tab-ledger">
+      <div class="cp-hdr-wrap" style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h1 class="cp-page-title"><i class="fa-solid fa-file-invoice-dollar" style="color:var(--cpgreen); margin-right:8px;"></i> Account Statement & Ledger</h1>
+          <p class="cp-page-sub">View your complete transaction history, billing charges, and recorded payments.</p>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" onclick="cpExportLedgerCsv()" class="cp-btn" style="display:inline-flex; align-items:center; gap:8px; background:#10b981; color:#fff; border:none; padding:10px 18px; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:0 2px 6px rgba(16,185,129,.25);">
+            <i class="fa-solid fa-file-arrow-down" style="font-size:15px;"></i> Download Statement
+          </button>
+          <button type="button" onclick="cpLoadLedger()" class="cp-btn" style="display:inline-flex; align-items:center; gap:8px; background:#fff; color:var(--cptext2); border:1px solid var(--cpbdr); padding:10px 16px; border-radius:10px; font-size:13px; font-weight:700; cursor:pointer;">
+            <i class="fa-solid fa-rotate"></i> Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Ledger Summary Cards -->
+      <div class="cp-stats" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 24px;">
+        <div class="cp-stat">
+          <div>
+            <div class="cp-stat-label">Net Balance</div>
+            <div class="cp-stat-value" id="cp-tab-ledger-bal" style="font-size:22px; font-weight:800; color:<?php echo $cust_acc_balance > 0 ? 'var(--cpred)' : ($cust_acc_balance < 0 ? 'var(--cpblue)' : 'var(--cpgreen)'); ?>;">
+              ₹<?php echo number_format(abs($cust_acc_balance), 2); ?>
+            </div>
+            <div class="cp-stat-desc <?php echo $cust_acc_balance > 0 ? 'r' : 'g'; ?>" id="cp-tab-ledger-desc">
+              <?php 
+                if ($cust_acc_balance > 0) echo '● Current Balance Due';
+                elseif ($cust_acc_balance < 0) echo '● Advance Balance';
+                else echo '● All Cleared';
+              ?>
+            </div>
+          </div>
+          <div class="cp-stat-icon" style="background:<?php echo $cust_acc_balance > 0 ? 'rgba(187,0,19,0.08)' : 'rgba(16,185,129,0.08)'; ?>; color:<?php echo $cust_acc_balance > 0 ? 'var(--cpred)' : 'var(--cpgreen)'; ?>;"><i class="fa-solid fa-scale-balanced"></i></div>
+        </div>
+
+        <div class="cp-stat">
+          <div>
+            <div class="cp-stat-label">Total Debits</div>
+            <div class="cp-stat-value" id="cp-tab-ledger-debits" style="font-size:22px; font-weight:800; color:var(--cpred);">
+              ₹0.00
+            </div>
+            <div class="cp-stat-desc r">Charges & Invoices</div>
+          </div>
+          <div class="cp-stat-icon" style="background:rgba(187,0,19,0.08); color:var(--cpred);"><i class="fa-solid fa-arrow-trend-up"></i></div>
+        </div>
+
+        <div class="cp-stat">
+          <div>
+            <div class="cp-stat-label">Total Credits</div>
+            <div class="cp-stat-value" id="cp-tab-ledger-credits" style="font-size:22px; font-weight:800; color:var(--cpgreen);">
+              ₹0.00
+            </div>
+            <div class="cp-stat-desc g">Payments Received</div>
+          </div>
+          <div class="cp-stat-icon" style="background:rgba(16,185,129,0.08); color:var(--cpgreen);"><i class="fa-solid fa-arrow-trend-down"></i></div>
+        </div>
+
+        <div class="cp-stat">
+          <div>
+            <div class="cp-stat-label">Credit Limit</div>
+            <div class="cp-stat-value" id="cp-tab-ledger-limit" style="font-size:22px; font-weight:800; color:var(--cpblue);">
+              ₹<?php echo number_format($cust_credit_limit, 2); ?>
+            </div>
+            <div class="cp-stat-desc b">Approved Limit</div>
+          </div>
+          <div class="cp-stat-icon" style="background:rgba(59,130,246,0.08); color:var(--cpblue);"><i class="fa-solid fa-credit-card"></i></div>
+        </div>
+      </div>
+
+      <!-- Ledger Table Container -->
+      <div id="cp-ledger-container">
+        <div style="padding:40px; text-align:center;">
+          <div style="width:30px;height:30px;border:3px solid #e5e7eb;border-top-color:#10b981;border-radius:50%;animation:cp-spin .6s linear infinite;margin:0 auto 16px"></div>
+          <p style="color:#94a3b8;">Loading statement entries...</p>
+        </div>
+      </div>
+    </div>
+    <?php endif; ?>
 
   </main>
 </div>
@@ -2582,6 +2715,145 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
 <!-- TOAST CONTAINER -->
 <div class="cp-toast-container" id="cp-toast-container"></div>
 
+<!-- EXPORT TO EXCEL MODAL -->
+<div class="cp-do" id="cp-export-modal-overlay" onclick="if(event.target===this)cpCloseExportModal()">
+  <div class="cp-dp" style="max-width:540px; padding:0; border-radius:24px; background:#fff; margin:auto; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); overflow:hidden; border:1px solid var(--cpbdr); max-height:92vh; display:flex; flex-direction:column;">
+    
+    <!-- Top Green Gradient Accent -->
+    <div style="height:5px; background:linear-gradient(90deg, #059669, #10b981, #34d399); width:100%;"></div>
+
+    <!-- Modal Header -->
+    <div style="padding:22px 28px 18px; border-bottom:1px solid var(--cpbdr); display:flex; justify-content:space-between; align-items:center; background:linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div style="width:42px; height:42px; border-radius:12px; background:rgba(16,185,129,0.1); border:1px solid rgba(16,185,129,0.2); display:flex; align-items:center; justify-content:center; color:#059669; font-size:19px;">
+          <i class="fa-solid fa-file-excel"></i>
+        </div>
+        <div>
+          <h3 style="font-size:17px; font-weight:900; color:var(--cptext); margin:0; letter-spacing:-0.2px;">
+            Export Shipments to Excel
+          </h3>
+          <p style="font-size:11.5px; color:var(--cptext2); margin:2px 0 0;">
+            Download all visible columns & data into an Excel-ready CSV spreadsheet.
+          </p>
+        </div>
+      </div>
+      <button onclick="cpCloseExportModal()"
+        style="width:34px; height:34px; border-radius:10px; border:none; background:rgba(0,0,0,0.04); font-size:15px; color:var(--cptext3); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s;"
+        onmouseenter="this.style.background='rgba(0,0,0,0.08)';this.style.color='var(--cptext)'"
+        onmouseleave="this.style.background='rgba(0,0,0,0.04)';this.style.color='var(--cptext3)'"
+        title="Close">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+
+    <!-- Modal Body -->
+    <div style="padding:24px 28px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:18px;">
+      
+      <!-- Export Filter Options -->
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <label style="font-size:11.5px; font-weight:800; color:var(--cptext2); text-transform:uppercase; letter-spacing:0.5px;">Choose Date Scope</label>
+        
+        <!-- Option 1: All Time -->
+        <label style="display:flex; align-items:center; gap:12px; padding:12px 16px; border:1px solid var(--cpbdr); border-radius:12px; cursor:pointer; background:#fff; transition:all .15s;" id="label-export-all">
+          <input type="radio" name="cp_export_scope" value="all" checked onchange="cpToggleExportFields()" style="width:16px; height:16px; accent-color:#10b981;">
+          <div style="flex:1;">
+            <div style="font-size:13.5px; font-weight:700; color:var(--cptext);">All Shipments (Full History)</div>
+            <div style="font-size:11.5px; color:var(--cptext3);">Export every single shipment on your account</div>
+          </div>
+          <i class="fa-solid fa-layer-group" style="color:var(--cptext3); font-size:14px;"></i>
+        </label>
+
+        <!-- Option 2: Monthly -->
+        <label style="display:flex; align-items:center; gap:12px; padding:12px 16px; border:1px solid var(--cpbdr); border-radius:12px; cursor:pointer; background:#fff; transition:all .15s;" id="label-export-month">
+          <input type="radio" name="cp_export_scope" value="month" onchange="cpToggleExportFields()" style="width:16px; height:16px; accent-color:#10b981;">
+          <div style="flex:1;">
+            <div style="font-size:13.5px; font-weight:700; color:var(--cptext);">Monthly Report</div>
+            <div style="font-size:11.5px; color:var(--cptext3);">Filter shipments by specific calendar month & year</div>
+          </div>
+          <i class="fa-regular fa-calendar" style="color:var(--cptext3); font-size:14px;"></i>
+        </label>
+
+        <!-- Month & Year Selectors (Conditional) -->
+        <div id="cp-export-month-fields" style="display:none; padding:12px 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; margin-left:28px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); margin-bottom:4px;">Month</label>
+              <select id="cp-export-month-select" class="cp-form-input" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr); font-size:12.5px; font-weight:600;">
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="3">March</option>
+                <option value="4">April</option>
+                <option value="5">May</option>
+                <option value="6">June</option>
+                <option value="7">July</option>
+                <option value="8">August</option>
+                <option value="9">September</option>
+                <option value="10" selected>October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); margin-bottom:4px;">Year</label>
+              <select id="cp-export-year-select" class="cp-form-input" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr); font-size:12.5px; font-weight:600;">
+                <option value="2027">2027</option>
+                <option value="2026" selected>2026</option>
+                <option value="2025">2025</option>
+                <option value="2024">2024</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Option 3: Custom Date Range -->
+        <label style="display:flex; align-items:center; gap:12px; padding:12px 16px; border:1px solid var(--cpbdr); border-radius:12px; cursor:pointer; background:#fff; transition:all .15s;" id="label-export-custom">
+          <input type="radio" name="cp_export_scope" value="custom" onchange="cpToggleExportFields()" style="width:16px; height:16px; accent-color:#10b981;">
+          <div style="flex:1;">
+            <div style="font-size:13.5px; font-weight:700; color:var(--cptext);">Custom Date Range</div>
+            <div style="font-size:11.5px; color:var(--cptext3);">Select exact start and end booking dates</div>
+          </div>
+          <i class="fa-solid fa-calendar-week" style="color:var(--cptext3); font-size:14px;"></i>
+        </label>
+
+        <!-- Custom Dates Picker (Conditional) -->
+        <div id="cp-export-custom-fields" style="display:none; padding:12px 16px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; margin-left:28px;">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div>
+              <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); margin-bottom:4px;">From Date</label>
+              <input type="date" id="cp-export-from-date" class="cp-form-input" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr); font-size:12.5px;">
+            </div>
+            <div>
+              <label style="display:block; font-size:11px; font-weight:700; color:var(--cptext2); margin-bottom:4px;">To Date</label>
+              <input type="date" id="cp-export-to-date" class="cp-form-input" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--cpbdr); font-size:12.5px;">
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Columns included info badge -->
+      <div style="padding:12px 14px; background:#ecfdf5; border:1px solid #a7f3d0; border-radius:10px; font-size:11.5px; color:#065f46; display:flex; gap:8px; align-items:flex-start;">
+        <i class="fa-solid fa-circle-check" style="font-size:13px; color:#059669; margin-top:1px;"></i>
+        <span><strong>All data included:</strong> AWB, Booking Date, Consignee, Destination, Shipper, Piece Count, Actual & Chargeable Weights, Vendor/Carrier, Vendor AWB, Forwarding Number, Status, Rate, and Total Amount.</span>
+      </div>
+
+    </div>
+
+    <!-- Modal Footer -->
+    <div style="display:flex; justify-content:flex-end; align-items:center; gap:12px; padding:16px 28px; border-top:1px solid var(--cpbdr); background:#f8fafc;">
+      <button type="button" onclick="cpCloseExportModal()"
+        style="padding:10px 18px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:13px; font-weight:700; color:var(--cptext2); cursor:pointer; transition:all .15s;">
+        Cancel
+      </button>
+      <button type="button" onclick="cpTriggerShipmentExport()"
+        style="padding:10px 22px; border-radius:10px; border:none; background:linear-gradient(135deg, #059669, #10b981); color:#fff; font-size:13px; font-weight:800; cursor:pointer; box-shadow:0 4px 12px rgba(16,185,129,0.25); display:inline-flex; align-items:center; gap:8px;">
+        <i class="fa-solid fa-file-excel"></i> Download Excel (.CSV)
+      </button>
+    </div>
+
+  </div>
+</div>
+
 <script>
   var cpPage = 1, cpSearch = '', cpShipSearchTimer = null;
   var cpReqPage = 1, cpReqSearch = '', cpReqStatus = '', cpReqSearchTimer = null;
@@ -2748,6 +3020,9 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
     }
     if (tabId === 'requests') {
       cpLoadRequests(1);
+    }
+    if (tabId === 'ledger') {
+      cpLoadLedger();
     }
   }
 
@@ -3960,6 +4235,172 @@ if (!empty($where_cust) && $where_cust !== "1=0") {
       }
     } catch(e) {}
   })();
+
+  // ══════════════════════════════════════
+  //  EXPORT SHIPMENTS TO EXCEL
+  // ══════════════════════════════════════
+  function cpOpenExportModal() {
+    var modal = document.getElementById('cp-export-modal-overlay');
+    if (modal) modal.classList.add('show');
+  }
+
+  function cpCloseExportModal() {
+    var modal = document.getElementById('cp-export-modal-overlay');
+    if (modal) modal.classList.remove('show');
+  }
+
+  function cpToggleExportFields() {
+    var scope = document.querySelector('input[name="cp_export_scope"]:checked')?.value || 'all';
+    var monthFields = document.getElementById('cp-export-month-fields');
+    var customFields = document.getElementById('cp-export-custom-fields');
+
+    if (monthFields) monthFields.style.display = (scope === 'month') ? 'block' : 'none';
+    if (customFields) customFields.style.display = (scope === 'custom') ? 'block' : 'none';
+  }
+
+  function cpTriggerShipmentExport() {
+    var scope = document.querySelector('input[name="cp_export_scope"]:checked')?.value || 'all';
+    var url = PE_CP.ajax_url + '?action=pe_cp_export_shipments_excel&nonce=' + PE_CP.nonce + '&filter_type=' + encodeURIComponent(scope);
+
+    if (scope === 'month') {
+      var m = document.getElementById('cp-export-month-select')?.value || '';
+      var y = document.getElementById('cp-export-year-select')?.value || '';
+      url += '&month=' + encodeURIComponent(m) + '&year=' + encodeURIComponent(y);
+    } else if (scope === 'custom') {
+      var from = document.getElementById('cp-export-from-date')?.value || '';
+      var to = document.getElementById('cp-export-to-date')?.value || '';
+      if (!from && !to) {
+        alert('Please select at least a From Date or To Date.');
+        return;
+      }
+      if (from) url += '&from_date=' + encodeURIComponent(from);
+      if (to) url += '&to_date=' + encodeURIComponent(to);
+    }
+
+    cpCloseExportModal();
+    cpShowToast('info', 'Export Started', 'Your Excel file is being prepared and downloaded...');
+    window.location.href = url;
+  }
+
+  // ══════════════════════════════════════
+  //  ACCOUNT LEDGER & STATEMENT
+  // ══════════════════════════════════════
+  var cpLedgerData = [];
+
+  function cpLoadLedger() {
+    var cont = document.getElementById('cp-ledger-container');
+    if (!cont) return;
+    cont.innerHTML = '<div style="padding:40px; text-align:center;"><div style="width:30px;height:30px;border:3px solid #e5e7eb;border-top-color:#10b981;border-radius:50%;animation:cp-spin .6s linear infinite;margin:0 auto 16px"></div><p style="color:#94a3b8;">Loading statement entries...</p></div>';
+
+    cpAjax('pe_cp_get_ledger', {}, function (d) {
+      if (!d.success) {
+        cont.innerHTML = '<div style="text-align:center;padding:50px;color:var(--cptext3);"><i class="fa-solid fa-triangle-exclamation" style="font-size:28px;display:block;margin-bottom:10px;color:var(--cpred);"></i>' + (d.data?.message || 'Unable to load ledger statement.') + '<br><button class="cp-cta-btn-link" onclick="cpLoadLedger()" style="margin-top:14px;border:none;cursor:pointer;">Retry</button></div>';
+        return;
+      }
+
+      var data = d.data || {};
+      var summary = data.summary || {};
+      var entries = data.entries || [];
+      cpLedgerData = entries;
+
+      var curBal = Number(summary.current_balance || 0);
+      var totDeb = Number(summary.total_debit || 0);
+      var totCred = Number(summary.total_credit || 0);
+      var credLim = Number(summary.credit_limit || 0);
+
+      // Update KPI numbers
+      var balEl = document.getElementById('cp-tab-ledger-bal');
+      var descEl = document.getElementById('cp-tab-ledger-desc');
+      var statBalEl = document.getElementById('cp-stat-acc-balance');
+      var statBadgeEl = document.getElementById('cp-stat-acc-badge');
+
+      var balText = '₹' + Math.abs(curBal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      var balColor = curBal > 0 ? 'var(--cpred)' : (curBal < 0 ? 'var(--cpblue)' : 'var(--cpgreen)');
+      var badgeText = curBal > 0 ? '● Due Balance' : (curBal < 0 ? '● Advance Balance' : '● All Cleared');
+
+      if (balEl) { balEl.textContent = balText; balEl.style.color = balColor; }
+      if (descEl) { descEl.textContent = badgeText; descEl.className = 'cp-stat-desc ' + (curBal > 0 ? 'r' : 'g'); }
+      if (statBalEl) { statBalEl.textContent = balText; statBalEl.style.color = balColor; }
+      if (statBadgeEl) { statBadgeEl.textContent = badgeText; statBadgeEl.className = 'cp-stat-desc ' + (curBal > 0 ? 'r' : 'g'); }
+
+      var debEl = document.getElementById('cp-tab-ledger-debits');
+      if (debEl) debEl.textContent = '₹' + totDeb.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      var credEl = document.getElementById('cp-tab-ledger-credits');
+      if (credEl) credEl.textContent = '₹' + totCred.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      var limEl = document.getElementById('cp-tab-ledger-limit');
+      if (limEl) limEl.textContent = '₹' + credLim.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      // Render table
+      var h = '<div class="cp-tc"><div class="cp-th" style="display:flex; justify-content:space-between; align-items:center;">';
+      h += '<h3><i class="fa-solid fa-list-check"></i> Transactions (' + entries.length + ')</h3>';
+      h += '</div>';
+      h += '<div class="cp-tw"><table class="cp-t"><thead><tr>';
+      h += '<th>Date</th><th>Ref No / AWB</th><th>Type</th><th>Mode</th><th>Description</th><th style="text-align:right;">Debit (₹)</th><th style="text-align:right;">Credit (₹)</th><th style="text-align:right;">Balance After (₹)</th>';
+      h += '</tr></thead><tbody>';
+
+      if (!entries.length) {
+        h += '<tr><td colspan="8" style="text-align:center;padding:50px;color:var(--cptext3)"><i class="fa-solid fa-receipt" style="font-size:28px;display:block;margin-bottom:10px;opacity:.2"></i>No statement entries recorded yet.</td></tr>';
+      } else {
+        entries.forEach(function (rw) {
+          var isDeb = (rw.entry_type || '').toLowerCase() === 'debit';
+          var typeBadge = isDeb ?
+            '<span style="background:#fee2e2; color:#dc2626; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:800; border:1px solid #fecaca; display:inline-flex; align-items:center; gap:4px;"><i class="fa-solid fa-arrow-up" style="font-size:9px;"></i> DEBIT</span>' :
+            '<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:800; border:1px solid #bbf7d0; display:inline-flex; align-items:center; gap:4px;"><i class="fa-solid fa-arrow-down" style="font-size:9px;"></i> CREDIT</span>';
+          
+          var dAmt = isDeb ? Number(rw.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+          var cAmt = !isDeb ? Number(rw.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+          var balAfter = typeof rw.balance_after !== 'undefined' && rw.balance_after !== null ? '₹' + Number(rw.balance_after).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+          var dStr = rw.entry_date ? new Date(rw.entry_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+          h += '<tr>';
+          h += '<td style="font-weight:600; color:var(--cptext2); white-space:nowrap;">' + dStr + '</td>';
+          h += '<td style="font-family:monospace; font-weight:700; color:var(--cpblue);">' + (rw.reference_no || '—') + '</td>';
+          h += '<td>' + typeBadge + '</td>';
+          h += '<td style="text-transform:capitalize; font-size:12px; color:var(--cptext2);">' + (rw.payment_mode || '—') + '</td>';
+          h += '<td style="max-width:240px; font-size:12px; color:var(--cptext);">' + (rw.description || '—') + '</td>';
+          h += '<td style="text-align:right; font-weight:700; color:var(--cpred);">' + (isDeb ? '₹' + dAmt : '—') + '</td>';
+          h += '<td style="text-align:right; font-weight:700; color:var(--cpgreen);">' + (!isDeb ? '₹' + cAmt : '—') + '</td>';
+          h += '<td style="text-align:right; font-weight:800; color:var(--cptext);">' + balAfter + '</td>';
+          h += '</tr>';
+        });
+      }
+
+      h += '</tbody></table></div></div>';
+      cont.innerHTML = h;
+    });
+  }
+
+  function cpExportLedgerCsv() {
+    if (!cpLedgerData || !cpLedgerData.length) {
+      alert('No ledger transactions available to export.');
+      return;
+    }
+    var headers = ['Date', 'Reference / AWB', 'Type', 'Payment Mode', 'Description', 'Debit (INR)', 'Credit (INR)', 'Balance After (INR)'];
+    var rows = cpLedgerData.map(function (e) {
+      var isDeb = (e.entry_type || '').toLowerCase() === 'debit';
+      return [
+        e.entry_date || '',
+        e.reference_no || '',
+        (e.entry_type || '').toUpperCase(),
+        e.payment_mode || '',
+        (e.description || '').replace(/"/g, '""'),
+        isDeb ? Number(e.amount || 0).toFixed(2) : '0.00',
+        !isDeb ? Number(e.amount || 0).toFixed(2) : '0.00',
+        Number(e.balance_after || 0).toFixed(2)
+      ];
+    });
+
+    var csvContent = '\uFEFF' + [headers.join(','), ...rows.map(r => r.map(f => '"' + f + '"').join(','))].join('\r\n');
+    var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.setAttribute('download', 'Prince_Express_Statement_' + new Date().toISOString().slice(0, 10) + '.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
 
   // Init
   cpLoadShipments(1);

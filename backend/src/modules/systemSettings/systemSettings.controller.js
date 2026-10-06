@@ -1,4 +1,5 @@
 import { query, execute } from '../../config/db.js'
+import { queryRemote } from '../../services/remoteCustomer.service.js'
 
 /**
  * Get all system settings as a key-value object.
@@ -63,6 +64,26 @@ export async function updateSystemSettings(req, res) {
          ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), description = IF(VALUES(description) != '', VALUES(description), description)`,
         [item.key, item.value, item.desc]
       )
+    }
+
+    // Mirror to remote Hostinger DB if enabled
+    try {
+      await queryRemote(`CREATE TABLE IF NOT EXISTS system_settings (
+        setting_key VARCHAR(100) PRIMARY KEY,
+        setting_value TEXT NOT NULL,
+        description TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+      for (const item of entriesToUpdate) {
+        await queryRemote(
+          `INSERT INTO system_settings (setting_key, setting_value, description)
+           VALUES (?, ?, ?)
+           ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), description = IF(VALUES(description) != '', VALUES(description), description)`,
+          [item.key, item.value, item.desc]
+        )
+      }
+    } catch (remErr) {
+      console.warn('[Remote System Settings Sync Notice]:', remErr.message)
     }
 
     // Refetch updated settings

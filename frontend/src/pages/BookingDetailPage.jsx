@@ -322,8 +322,9 @@ export default function BookingDetailPage() {
     const amountVal = booking.total_amount || booking.shipping_charge
     const amountStr = amountVal ? `₹${parseFloat(amountVal).toLocaleString('en-IN')}` : ''
 
-    const labelUrl = `https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/${awb}`
-    const waybillUrl = `https://purple-raccoon-753399.hostingersite.com/api/customer/waybill-pdf/${awb}`
+    const baseOrigin = window.location.origin.includes('localhost') ? 'https://purple-raccoon-753399.hostingersite.com' : window.location.origin
+    const labelUrl = `${baseOrigin}/api/customer/labels-pdf/${awb}`
+    const waybillUrl = `${baseOrigin}/api/customer/waybill-pdf/${awb}`
 
     let text = `📦 *Prince Express Shipment Update*\n\n`
     text += `Dear *${customerName}*,\n`
