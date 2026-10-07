@@ -23,6 +23,7 @@ import {
   RotateCcw,
   AlertTriangle,
   DollarSign,
+  Receipt,
   Tag,
   Printer,
   RefreshCw,
@@ -346,6 +347,19 @@ export default function BookingsPage() {
       toast.success('Our Shipping Bill opened successfully', { id: toastId })
     } catch (err) {
       toast.error('Failed to open Shipping Bill', { id: toastId })
+    }
+  }
+
+  // Open Our Invoice (Prince Official Invoice PDF - works for drafts too)
+  const handleOpenOurInvoiceRow = async (b) => {
+    const toastId = toast.loading('Loading Our Invoice...')
+    try {
+      const res = await bookingsApi.downloadInvoice(b.id)
+      const awb = b.tracking_number || b.order_id || b.id
+      openPdfBlob(res.data, `PrinceInvoice_${awb}.pdf`)
+      toast.success('Our Invoice opened successfully', { id: toastId })
+    } catch (err) {
+      toast.error('Failed to open Our Invoice', { id: toastId })
     }
   }
 
@@ -1181,6 +1195,16 @@ export default function BookingsPage() {
                                 title="Our Shipping Bill / Waybill"
                               >
                                 <DollarSign className="w-4 h-4" />
+                              </button>
+
+                              {/* NEW: Receipt icon: Our Invoice (Commercial Invoice PDF - works for drafts too) */}
+                              <button
+                                type="button"
+                                onClick={() => handleOpenOurInvoiceRow(b)}
+                                className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Our Invoice (Prince Commercial Invoice PDF - available for drafts too)"
+                              >
+                                <Receipt className="w-4 h-4" />
                               </button>
 
                               {/* 3. File icon: Vendor Invoice */}

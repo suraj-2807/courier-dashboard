@@ -3265,11 +3265,13 @@ if (!$is_accounting_enabled) {
       var labelAwb = r.tracking_number || r.request_awb;
       var labelUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/' + encodeURIComponent(labelAwb);
       var waybillUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/waybill-pdf/' + encodeURIComponent(labelAwb);
+      var invoiceUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/invoice-pdf/' + encodeURIComponent(labelAwb);
 
       h += '<div class="cp-ds"><h4><i class="fa-solid fa-tags"></i> Official Labels & Documents</h4>';
       h += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">';
       h += '  <a href="' + labelUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#ebf5ff; color:#1e40af; border:1px solid #bfdbfe; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-tag"></i> Download Box Label</a>';
       h += '  <a href="' + waybillUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-file-invoice-dollar"></i> Download Shipping Bill</a>';
+      h += '  <a href="' + invoiceUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#fff1f2; color:#be123c; border:1px solid #fecdd3; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-receipt"></i> Download Our Invoice</a>';
       h += '</div></div>';
 
       // Timeline Section (Merges Status Changes + Shipping Events)
@@ -3717,11 +3719,13 @@ if (!$is_accounting_enabled) {
       // Official Box Labels & Shipping Documents
       var shpLabelUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/' + encodeURIComponent(s.awb);
       var shpWaybillUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/waybill-pdf/' + encodeURIComponent(s.awb);
+      var shpInvoiceUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/invoice-pdf/' + encodeURIComponent(s.awb);
 
       h += '<div class="cp-ds"><h4><i class="fa-solid fa-tags"></i> Official Labels & Documents</h4>';
       h += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">';
       h += '  <a href="' + shpLabelUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#ebf5ff; color:#1e40af; border:1px solid #bfdbfe; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-tag"></i> Download Box Label</a>';
       h += '  <a href="' + shpWaybillUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-file-invoice-dollar"></i> Download Shipping Bill</a>';
+      h += '  <a href="' + shpInvoiceUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#fff1f2; color:#be123c; border:1px solid #fecdd3; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-receipt"></i> Download Our Invoice</a>';
       h += '</div></div>';
 
       h += '<div class="cp-ds"><h4><i class="fa-solid fa-route"></i> Tracking History</h4>';

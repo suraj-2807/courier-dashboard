@@ -41,6 +41,7 @@ import {
   Globe,
   AlertCircle,
   DollarSign,
+  Receipt,
   Tag,
   Share2
 } from 'lucide-react'
@@ -285,6 +286,19 @@ export default function BookingDetailPage() {
     }
   }
 
+  // Official Commercial / Custom Invoice (Ours - works for drafts too)
+  const handleOpenOurInvoice = async () => {
+    const toastId = toast.loading('Loading Our Invoice...')
+    try {
+      const res = await bookingsApi.downloadInvoice(booking.id)
+      const awb = booking.tracking_number || booking.order_id || booking.id
+      openPdfBlob(res.data, `PrinceInvoice_${awb}.pdf`)
+      toast.success('Our Invoice opened successfully', { id: toastId })
+    } catch (err) {
+      toast.error('Failed to open Our Invoice', { id: toastId })
+    }
+  }
+
   // 2. Vendor Invoice (File icon)
   const handleOpenVendorInvoice = async () => {
     await openVendorDocument(booking, 'vendor_invoice')
@@ -469,6 +483,16 @@ export default function BookingDetailPage() {
           >
             <DollarSign className="w-3.5 h-3.5" />
             Our Bill
+          </button>
+
+          {/* NEW: Official Commercial Invoice (Ours - works for drafts too) */}
+          <button
+            onClick={handleOpenOurInvoice}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-900 text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
+            title="Open Our Invoice (Prince Commercial Invoice PDF - available for drafts too)"
+          >
+            <Receipt className="w-3.5 h-3.5 text-rose-700" />
+            Our Invoice
           </button>
 
           {/* 2. Vendor Invoice (File icon) */}
