@@ -8,7 +8,7 @@ import { decrypt } from '../utils/encryption.js'
  *   Inline authentication. Credentials (UserID, Password, CustomerCode) are sent
  *   directly inside the shipment request body (Awbentry).
  */
-function parseCredentials(raw) {
+export function parseCredentials(raw) {
   if (!raw) return {}
   if (typeof raw === 'object' && raw !== null) return raw
   if (typeof raw === 'string') {

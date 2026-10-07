@@ -280,4 +280,27 @@ export async function syncShipmentCustomerToWP(data) {
   }
 }
 
-
+/**
+ * Sync booking request deletion to WordPress REST API.
+ *
+ * @param {string} requestAwb - Request AWB to delete
+ */
+export async function syncDeleteBookingToWP(requestAwb) {
+  if (!WP_SYNC_URL || !WP_SYNC_KEY) {
+    return
+  }
+  try {
+    const url = `${WP_SYNC_URL}/wp-json/pe-cp/v1/sync-delete-booking`
+    await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Sync-Key': WP_SYNC_KEY
+      },
+      body: JSON.stringify({ request_awb: requestAwb })
+    })
+    console.log(`[WP Sync] Sent booking deletion sync for ${requestAwb} to WP`)
+  } catch (err) {
+    console.error('[WP Sync] Booking delete sync error:', err.message)
+  }
+}

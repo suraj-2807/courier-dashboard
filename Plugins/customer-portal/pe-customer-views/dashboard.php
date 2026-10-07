@@ -3085,10 +3085,12 @@ if (!$is_accounting_enabled) {
 
         var formattedDate = rw.created_at ? new Date(rw.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
-        var actionHtml = '';
+        var actionHtml = '<div style="display:inline-flex;align-items:center;gap:6px;">';
         if (rw.status !== 'confirmed' && rw.status !== 'cancelled' && rw.status !== 'rejected') {
-          actionHtml = '<button onclick="event.stopPropagation(); cpCancelBookingRequest(\'' + rw.request_awb + '\')" title="Cancel this request" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;"><i class="fa-solid fa-trash-can"></i> Cancel</button>';
+          actionHtml += '<button onclick="event.stopPropagation(); cpCancelBookingRequest(\'' + rw.request_awb + '\')" title="Cancel this request" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;"><i class="fa-solid fa-ban"></i> Cancel</button>';
         }
+        actionHtml += '<button onclick="event.stopPropagation(); cpDeleteBookingRequest(\'' + rw.request_awb + '\')" title="Delete this request" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:4px 9px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px;"><i class="fa-solid fa-trash-can"></i> Delete</button>';
+        actionHtml += '</div>';
 
         var statusHtml = '<div class="cp-st"><span class="cp-dot ' + dotClass + '"></span><span class="' + stClass + '">' + stLabel + '</span></div>';
         if (rw.status === 'rejected') {
@@ -3145,8 +3147,9 @@ if (!$is_accounting_enabled) {
       h += '<div class="cp-dh"><div style="display:flex;align-items:center;gap:8px;"><h3><i class="fa-solid fa-clipboard-list"></i> Request ' + r.request_awb + '</h3><button type="button" class="cp-copy-btn" onclick="cpCopyText(\'' + r.request_awb + '\', \'Request AWB\', event)" title="Copy Request AWB"><i class="fa-regular fa-copy"></i> Copy</button><span class="cp-live-badge" style="font-size:9px"><span class="cp-live-dot"></span>Live</span></div>';
       h += '<div style="display:flex;align-items:center;gap:8px;">';
       if (r.status !== 'confirmed' && r.status !== 'cancelled' && r.status !== 'rejected') {
-        h += '<button onclick="cpCancelBookingRequest(\'' + r.request_awb + '\')" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="fa-solid fa-trash-can"></i> Cancel Request</button>';
+        h += '<button onclick="cpCancelBookingRequest(\'' + r.request_awb + '\')" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="fa-solid fa-ban"></i> Cancel Request</button>';
       }
+      h += '<button onclick="cpDeleteBookingRequest(\'' + r.request_awb + '\')" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px;"><i class="fa-solid fa-trash-can"></i> Delete Request</button>';
       h += '<button class="cp-dc" onclick="cpCloseDetail()"><i class="fa-solid fa-xmark"></i></button></div></div>';
       h += '<div class="cp-db-body">';
 
@@ -3326,6 +3329,23 @@ if (!$is_accounting_enabled) {
         }
       } else {
         cpShowToast('error', 'Cancellation Failed', d.data?.message || 'Failed to cancel booking request.');
+      }
+    });
+  }
+
+  function cpDeleteBookingRequest(awb) {
+    if (!confirm('Are you sure you want to permanently delete booking request ' + awb + '? This cannot be undone.')) {
+      return;
+    }
+    cpAjax('pe_cp_delete_request', { request_awb: awb }, function (d) {
+      if (d.success) {
+        cpShowToast('success', 'Deleted', d.data?.message || 'Booking request has been deleted.');
+        cpLoadRequests(1);
+        if (cpDetailOpenAwb === awb) {
+          cpCloseDetail();
+        }
+      } else {
+        cpShowToast('error', 'Deletion Failed', d.data?.message || 'Failed to delete booking request.');
       }
     });
   }

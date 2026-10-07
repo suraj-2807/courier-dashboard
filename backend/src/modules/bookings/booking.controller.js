@@ -3018,14 +3018,15 @@ export const getInvoicePdf = async (req, res) => {
     const ctx = await getFullShipmentContext(id)
     if (!ctx) return res.status(404).json({ success: false, message: 'Shipment not found' })
 
+    const awbNo = ctx.b.tracking_number || ctx.b.order_id || id
     const pdfPath = await generateInvoicePdf({
-      awbNumber: ctx.b.tracking_number,
+      awbNumber: awbNo,
       sender: ctx.sender,
       receiver: ctx.receiver,
       shipment: ctx.b,
       invoiceItems: ctx.invoiceItems,
       invoiceMeta: {
-        invoice_no: ctx.b.invoice_no || ctx.b.tracking_number,
+        invoice_no: ctx.b.invoice_no || awbNo,
         invoice_type: ctx.b.invoice_type || 'INVOICE',
         currency: ctx.b.invoice_currency || 'INR',
         incoterms: ctx.b.terms_of_trade || 'CIF',
@@ -3033,7 +3034,9 @@ export const getInvoicePdf = async (req, res) => {
         total_amount: ctx.b.total_amount || ctx.b.declared_value || 0
       }
     })
-    return res.download(pdfPath, `Invoice_${ctx.b.tracking_number}.pdf`)
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="Invoice_${awbNo}.pdf"`)
+    return res.sendFile(pdfPath)
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message })
   }

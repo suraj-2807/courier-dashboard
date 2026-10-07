@@ -18,7 +18,8 @@ import {
   AlertCircle,
   Boxes,
   FileText,
-  Paperclip
+  Paperclip,
+  Trash2
 } from 'lucide-react'
 import api from '../api/axios'
 import { getFullCountryName } from '../utils/countryUtils'
@@ -125,6 +126,23 @@ export default function BookingRequestsPage() {
     } catch (err) {
       console.error('[BookingRequestsPage] ❌ Failed to update status:', err)
       toast.error('Failed to update status')
+    }
+  }
+
+  const handleDeleteRequest = async (id, requestAwb) => {
+    if (!window.confirm(`Are you sure you want to delete request ${requestAwb || id}? This cannot be undone.`)) {
+      return
+    }
+    try {
+      await api.delete(`/booking-requests/${id}`)
+      toast.success('Booking request deleted')
+      if (selectedRequest?.id === id) {
+        setSelectedRequest(null)
+      }
+      fetchRequests(pagination.page)
+    } catch (err) {
+      console.error('[BookingRequestsPage] ❌ Failed to delete request:', err)
+      toast.error('Failed to delete request')
     }
   }
 
@@ -330,6 +348,13 @@ export default function BookingRequestsPage() {
                               </button>
                             </>
                           )}
+                          <button
+                            onClick={() => handleDeleteRequest(req.id, req.request_awb)}
+                            className="p-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                            title="Delete Request"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -611,23 +636,33 @@ export default function BookingRequestsPage() {
               )}
 
               {/* Action Buttons */}
-              {(selectedRequest.status === 'pending' || selectedRequest.status === 'processing') && (
-                <div className="flex gap-3 pt-4 border-t border-border">
-                  <button
-                    onClick={() => handleConfirmAndBook(selectedRequest)}
-                    className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark text-white text-[13px] font-bold rounded-xl transition-all cursor-pointer shadow-md shadow-primary/20"
-                  >
-                    <ArrowRight className="w-4 h-4" />
-                    Process & Create Booking
-                  </button>
-                  <button
-                    onClick={() => setShowRejectModal(selectedRequest.id)}
-                    className="px-5 py-3 border border-red-200 text-red-600 text-[13px] font-bold rounded-xl hover:bg-red-50 transition-colors cursor-pointer"
-                  >
-                    Reject
-                  </button>
-                </div>
-              )}
+              <div className="flex gap-3 pt-4 border-t border-border flex-wrap">
+                {(selectedRequest.status === 'pending' || selectedRequest.status === 'processing') && (
+                  <>
+                    <button
+                      onClick={() => handleConfirmAndBook(selectedRequest)}
+                      className="flex-1 min-w-[180px] flex items-center justify-center gap-2 px-6 py-3 bg-primary hover:bg-primary-dark text-white text-[13px] font-bold rounded-xl transition-all cursor-pointer shadow-md shadow-primary/20"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      Process & Create Booking
+                    </button>
+                    <button
+                      onClick={() => setShowRejectModal(selectedRequest.id)}
+                      className="px-5 py-3 border border-red-200 text-red-600 text-[13px] font-bold rounded-xl hover:bg-red-50 transition-colors cursor-pointer"
+                    >
+                      Reject
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={() => handleDeleteRequest(selectedRequest.id, selectedRequest.request_awb)}
+                  className="px-4 py-3 border border-red-200 text-red-600 text-[13px] font-bold rounded-xl hover:bg-red-50 transition-colors cursor-pointer flex items-center gap-2"
+                  title="Delete Request"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Request
+                </button>
+              </div>
             </div>
           </div>
         </>

@@ -1,6 +1,69 @@
 import { decrypt } from '../utils/encryption.js'
 import { createAdapter } from '../courierAdapters/adapterRegistry.js'
+import { parseCredentials } from '../courierAdapters/PacificAdapter.js'
 import { query, execute } from '../config/db.js'
+
+/**
+ * Check if a shipment was already created in Pacific Express by querying their Tracking API.
+ * Uses CustomerRefNo / order_id / tracking_number with both Reference ('R') and AWB ('A') modes.
+ */
+async function checkPacificRecovery(config, shipmentData) {
+  try {
+    const creds = parseCredentials(config.auth_credentials)
+    const userId = creds.user_id || creds.username || creds.UserID || 'P0503'
+    const password = creds.password || creds.Password || 'P0503@7199'
+    let trackingUrl = config.tracking_api_url || 'https://eship.pacificexp.net/api/v1/Tracking/Tracking'
+    if (trackingUrl && !trackingUrl.startsWith('http://') && !trackingUrl.startsWith('https://')) {
+      trackingUrl = `https://${trackingUrl}`
+    }
+
+    const identifiers = [
+      shipmentData.tracking_number,
+      shipmentData.order_id,
+      shipmentData.reference_number
+    ].filter(Boolean)
+
+    for (const ref of identifiers) {
+      for (const queryType of ['R', 'A']) {
+        try {
+          const res = await fetch(trackingUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              UserID: userId,
+              Password: password,
+              AWBNo: String(ref).trim(),
+              Type: queryType
+            }),
+            signal: AbortSignal.timeout(12000)
+          })
+          if (!res.ok) continue
+          const rawText = await res.text().catch(() => '')
+          const data = rawText ? JSON.parse(rawText) : null
+          const resObj = data?.Response || data
+          if (resObj && (resObj.ErrorCode === '0' || resObj.ResponseCode === 'RT01' || String(resObj.ErrorDisc || '').toLowerCase() === 'success')) {
+            const tracking = (Array.isArray(resObj.Tracking) ? resObj.Tracking[0] : resObj.Tracking) || {}
+            const primaryAwb = tracking.AWBNo || tracking.AwbNo || tracking.awbNo || ref
+            const secondaryAwb = tracking.VendorAWBNo2 || tracking.VendorAWBNo1 || tracking.VendorAWBNo || ''
+            if (primaryAwb) {
+              return {
+                recovered: true,
+                awbNumber: primaryAwb,
+                forwardingNumber: secondaryAwb,
+                trackingUrl: `https://eship.pacificexp.net/`
+              }
+            }
+          }
+        } catch (e) {
+          // ignore and continue
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[checkPacificRecovery] Error:', err.message)
+  }
+  return { recovered: false }
+}
 
 /**
  * Vendor API Push Service
@@ -132,7 +195,7 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
       method: adapter.getHttpMethod(),
       headers,
       body: JSON.stringify(requestPayload),
-      signal: AbortSignal.timeout(30000)
+      signal: AbortSignal.timeout(90000)
     })
 
     responseStatus = response.status
@@ -149,6 +212,21 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
       parsed.success = false
       if (!parsed.errorMessage) {
         parsed.errorMessage = responseBody?.message || responseBody?.error || (rawText ? String(rawText).slice(0, 300) : `HTTP ${responseStatus} Error`)
+      }
+    }
+
+    // Check Pacific recovery if API returned duplicate or failure
+    const isPacific = (config?.vendor_code || '').toLowerCase().includes('pacific') || (config?.name || '').toLowerCase().includes('pacific')
+    if (!parsed.success && isPacific && /duplicate|already|exists|generated/i.test(parsed.errorMessage || '')) {
+      console.log('[pushShipmentToVendor] Pacific returned duplicate/already exists. Checking Pacific Tracking recovery...')
+      const recovery = await checkPacificRecovery(config, shipmentData)
+      if (recovery.recovered && recovery.awbNumber) {
+        console.log(`[pushShipmentToVendor] ✅ Successfully recovered shipment from Pacific! AWB: ${recovery.awbNumber}`)
+        parsed.success = true
+        parsed.awbNumber = recovery.awbNumber
+        parsed.forwardingNumber = recovery.forwardingNumber || parsed.forwardingNumber
+        parsed.trackingUrl = recovery.trackingUrl || parsed.trackingUrl
+        parsed.errorMessage = null
       }
     }
 
@@ -220,6 +298,57 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
     }
 
   } catch (error) {
+    const isPacific = (config?.vendor_code || '').toLowerCase().includes('pacific') || (config?.name || '').toLowerCase().includes('pacific')
+    const isTimeout = error.name === 'AbortError' || /timeout|aborted|ETIMEDOUT|ECONNRESET/i.test(error.message || '')
+
+    if (isPacific && isTimeout) {
+      console.log(`[pushShipmentToVendor] ⚠️ Pacific push timed out/aborted. Checking if Pacific created shipment anyway...`)
+      const recovery = await checkPacificRecovery(config, shipmentData)
+      if (recovery.recovered && recovery.awbNumber) {
+        console.log(`[pushShipmentToVendor] ✅ Successfully recovered shipment from Pacific after timeout! AWB: ${recovery.awbNumber}`)
+
+        await _logPushAttempt({
+          vendorConfigId,
+          shipmentId,
+          requestUrl: config?.shipment_api_url || '',
+          requestPayload,
+          responseStatus: 200,
+          responseBody: { recovered: true, note: 'Recovered via Pacific tracking after push timeout', ...recovery },
+          trackingNumber: recovery.awbNumber,
+          status: 'success',
+          errorMessage: null
+        })
+
+        const shipmentVendorUpdates = {
+          vendor_awb_number: recovery.awbNumber,
+          vendor_tracking_url: recovery.trackingUrl,
+          vendor_push_status: 'success',
+          vendor_raw_response: JSON.stringify({ recovered: true, ...recovery })
+        }
+        if (recovery.forwardingNumber) {
+          shipmentVendorUpdates.vendor_awb_number_2 = recovery.forwardingNumber
+          shipmentVendorUpdates.forwarding_no = recovery.forwardingNumber
+        }
+
+        if (shipmentId) {
+          await _updateShipmentVendorData(shipmentId, shipmentVendorUpdates)
+        }
+
+        return {
+          success: true,
+          awbNumber: recovery.awbNumber,
+          forwardingNumber: recovery.forwardingNumber || '',
+          secondaryCarrier: '',
+          trackingUrl: recovery.trackingUrl,
+          labelUrl: '',
+          requestPayload,
+          responseStatus: 200,
+          responseBody: { recovered: true, ...recovery },
+          error: null
+        }
+      }
+    }
+
     // Log failure
     await _logPushAttempt({
       vendorConfigId,

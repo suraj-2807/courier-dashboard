@@ -1,6 +1,6 @@
 import { query, execute } from '../../config/db.js'
-import { syncBookingToWP, syncStatusToWP } from '../../utils/wpSync.js'
-import { syncBookingRequestStatusToRemoteDb, syncBookingRequestToRemoteDb, syncInitialRequestToAwbEntry, cancelBookingRequestInRemoteDb } from '../../services/remoteAwbEntry.service.js'
+import { syncBookingToWP, syncStatusToWP, syncDeleteBookingToWP } from '../../utils/wpSync.js'
+import { syncBookingRequestStatusToRemoteDb, syncBookingRequestToRemoteDb, syncInitialRequestToAwbEntry, cancelBookingRequestInRemoteDb, deleteBookingRequestFromRemoteDb } from '../../services/remoteAwbEntry.service.js'
 
 /**
  * Generate a 7-digit random AWB number for booking requests.
@@ -715,6 +715,40 @@ export const cancelBookingRequest = async (req, res) => {
     return res.json({ success: true, message: 'Booking request cancelled successfully' })
   } catch (error) {
     console.error('cancelBookingRequest error:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  ADMIN: Delete a booking request
+// ═══════════════════════════════════════════════
+
+export const deleteBookingRequest = async (req, res) => {
+  try {
+    const { id } = req.params
+
+    const rows = await query('SELECT * FROM booking_requests WHERE id = ?', [id])
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Booking request not found' })
+    }
+
+    const booking = rows[0]
+
+    // Delete request updates
+    await execute('DELETE FROM request_updates WHERE request_id = ?', [id])
+
+    // Delete booking request
+    await execute('DELETE FROM booking_requests WHERE id = ?', [id])
+
+    // Sync deletion to WordPress
+    if (booking.request_awb) {
+      syncDeleteBookingToWP(booking.request_awb).catch(() => {})
+      deleteBookingRequestFromRemoteDb(booking.request_awb).catch(() => {})
+    }
+
+    return res.json({ success: true, message: 'Booking request deleted successfully' })
+  } catch (error) {
+    console.error('[deleteBookingRequest] ❌ Error:', error.message)
     return res.status(500).json({ success: false, message: error.message })
   }
 }

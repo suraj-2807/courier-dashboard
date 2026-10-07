@@ -1072,6 +1072,26 @@ export async function cancelBookingRequestInRemoteDb(requestAwb, customerId) {
 }
 
 /**
+ * Permanently delete a booking request from the remote Hostinger database.
+ */
+export async function deleteBookingRequestFromRemoteDb(requestAwb) {
+  try {
+    const pool = getRemotePool()
+    if (!pool || !requestAwb) return { success: false }
+
+    await pool.query('DELETE FROM request_updates WHERE request_id IN (SELECT id FROM booking_requests WHERE request_awb = ?)', [requestAwb]).catch(() => {})
+    await pool.query('DELETE FROM booking_requests WHERE request_awb = ?', [requestAwb])
+    await pool.query('DELETE FROM AWBENTRY WHERE AWBNO = ?', [requestAwb]).catch(() => {})
+
+    console.log(`[Remote DB] Booking request ${requestAwb} deleted`)
+    return { success: true }
+  } catch (err) {
+    console.error('[Remote DB Delete Request Error]:', err.message)
+    return { success: false, message: err.message }
+  }
+}
+
+/**
  * Permanently delete shipments from the remote Hostinger database (AWBENTRY, parcel_history, booking_requests, request_updates, shipments).
  *
  * @param {Array<Object|string|number>} shipments - List of shipment objects or tracking numbers/IDs

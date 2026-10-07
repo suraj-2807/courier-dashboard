@@ -4,7 +4,8 @@ import authMiddleware from '../../middlewares/auth.middleware.js'
 import {
   getBookingRequests,
   getBookingRequestById,
-  updateBookingRequestStatus
+  updateBookingRequestStatus,
+  deleteBookingRequest
 } from './bookingRequest.controller.js'
 
 const router = express.Router()
@@ -13,5 +14,6 @@ const router = express.Router()
 router.get('/', authMiddleware, getBookingRequests)
 router.get('/:id', authMiddleware, getBookingRequestById)
 router.patch('/:id/status', authMiddleware, updateBookingRequestStatus)
+router.delete('/:id', authMiddleware, deleteBookingRequest)
 
 export default router

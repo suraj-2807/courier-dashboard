@@ -1513,6 +1513,60 @@ add_action('wp_ajax_pe_cp_cancel_request', 'pe_cp_ajax_cancel_request');
 add_action('wp_ajax_nopriv_pe_cp_cancel_request', 'pe_cp_ajax_cancel_request');
 
 // ══════════════════════════════════════
+//  AJAX: CUSTOMER DELETE REQUEST
+// ══════════════════════════════════════
+
+function pe_cp_ajax_delete_request()
+{
+    pe_cp_check_ajax();
+    global $wpdb;
+
+    $cust = pe_cp_get_user();
+    $cust_id = intval($cust['customer_id'] ?? 0);
+    $cust_email = strtolower(trim($cust['email'] ?? ''));
+
+    $request_awb = sanitize_text_field($_POST['request_awb'] ?? '');
+    if (!$request_awb) {
+        wp_send_json_error(['message' => 'Request AWB is required']);
+    }
+
+    $req = $wpdb->get_row($wpdb->prepare(
+        "SELECT * FROM booking_requests WHERE request_awb = %s LIMIT 1",
+        $request_awb
+    ));
+
+    if (!$req) {
+        wp_send_json_error(['message' => 'Booking request not found']);
+    }
+
+    // Verify ownership
+    if ($cust_id > 0 && $req->customer_id && intval($req->customer_id) !== $cust_id) {
+        if ($cust_email === '' || strtolower(trim($req->customer_email)) !== $cust_email) {
+            wp_send_json_error(['message' => 'You do not have permission to delete this request']);
+        }
+    }
+
+    // Delete related request updates
+    $wpdb->delete('request_updates', ['request_id' => $req->id]);
+
+    // Delete from booking_requests
+    $wpdb->delete('booking_requests', ['request_awb' => $request_awb]);
+
+    // Remove from AWBENTRY if a draft row was inserted
+    $wpdb->query($wpdb->prepare(
+        "DELETE FROM AWBENTRY WHERE AWBNO = %s AND (CUSTCODE = %s OR CUSTCODE = %s OR CUSTCODE = %s OR CUSTCODE = '')",
+        $request_awb,
+        strval($cust_id),
+        'CUST-' . $cust_id,
+        'CUST-' . str_pad($cust_id, 4, '0', STR_PAD_LEFT)
+    ));
+
+    wp_send_json_success(['message' => 'Booking request deleted successfully']);
+}
+add_action('wp_ajax_pe_cp_delete_request', 'pe_cp_ajax_delete_request');
+add_action('wp_ajax_nopriv_pe_cp_delete_request', 'pe_cp_ajax_delete_request');
+
+// ══════════════════════════════════════
 //  AJAX: CUSTOMER REQUESTS
 // ══════════════════════════════════════
 
@@ -1560,8 +1614,8 @@ function pe_cp_ajax_my_requests()
     }
 
     $where_base = count($where_conds) > 0 ? $wpdb->prepare("(" . implode(" OR ", $where_conds) . ")", ...$params) : "1=1";
-    // Confirmed requests automatically become shipments and must not show in requests
-    $where_base .= " AND status != 'confirmed'";
+    // Confirmed and processed requests automatically become shipments and must not show in requests
+    $where_base .= " AND status NOT IN ('confirmed', 'processed', 'completed') AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')";
     // Filter out requests created before September 1, 2026
     $where_base .= " AND created_at >= '2026-09-01 00:00:00'";
     $where = $where_base;
@@ -2976,7 +3030,38 @@ add_action('rest_api_init', function () {
         'callback' => 'pe_cp_rest_sync_shipment_customer',
         'permission_callback' => 'pe_cp_rest_verify_sync_key',
     ]);
+
+    // Sync booking request deletion from Node.js backend
+    register_rest_route('pe-cp/v1', '/sync-delete-booking', [
+        'methods' => 'POST',
+        'callback' => 'pe_cp_rest_sync_delete_booking',
+        'permission_callback' => 'pe_cp_rest_verify_sync_key',
+    ]);
 });
+
+/**
+ * REST: Sync booking request deletion into WP database.
+ */
+function pe_cp_rest_sync_delete_booking($request)
+{
+    global $wpdb;
+    $d = $request->get_json_params();
+    $request_awb = sanitize_text_field($d['request_awb'] ?? '');
+
+    if (!$request_awb) {
+        return new WP_REST_Response(['success' => false, 'message' => 'request_awb required'], 400);
+    }
+
+    $req = $wpdb->get_row($wpdb->prepare("SELECT id FROM booking_requests WHERE request_awb = %s LIMIT 1", $request_awb));
+    if ($req) {
+        $wpdb->delete('request_updates', ['request_id' => $req->id]);
+    }
+    $wpdb->delete('booking_requests', ['request_awb' => $request_awb]);
+    $wpdb->query($wpdb->prepare("DELETE FROM AWBENTRY WHERE AWBNO = %s", $request_awb));
+
+    return new WP_REST_Response(['success' => true, 'message' => 'Booking request deleted from WP']);
+}
+
 
 /**
  * REST: Sync a customer address into WP customer_addresses table
