@@ -351,7 +351,7 @@ export async function generateInvoicePdf(params) {
     doc.end()
 
     stream.on('finish', () => {
-      resolve(relativePath)
+      resolve(filePath)
     })
     stream.on('error', (err) => {
       reject(err)

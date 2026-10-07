@@ -3034,10 +3034,12 @@ export const getInvoicePdf = async (req, res) => {
         total_amount: ctx.b.total_amount || ctx.b.declared_value || 0
       }
     })
+    const absolutePath = path.resolve(pdfPath)
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `inline; filename="Invoice_${awbNo}.pdf"`)
-    return res.sendFile(pdfPath)
+    return res.sendFile(absolutePath)
   } catch (error) {
+    console.error('[getInvoicePdf Error]:', error)
     return res.status(500).json({ success: false, message: error.message })
   }
 }
@@ -3060,10 +3062,12 @@ export const getWaybillPdf = async (req, res) => {
         invoice_no: ctx.b.invoice_no || awbNo
       }
     })
+    const absolutePath = path.resolve(pdfPath)
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `inline; filename="${awbNo}.pdf"`)
-    return res.download(pdfPath, `${awbNo}.pdf`)
+    return res.download(absolutePath, `${awbNo}.pdf`)
   } catch (error) {
+    console.error('[getWaybillPdf Error]:', error)
     return res.status(500).json({ success: false, message: error.message })
   }
 }
@@ -3081,8 +3085,10 @@ export const getBoxLabelsPdf = async (req, res) => {
       shipment: ctx.b,
       parcels: ctx.parcels
     })
-    return res.download(pdfPath, `BoxLabels_${ctx.b.tracking_number}.pdf`)
+    const absolutePath = path.resolve(pdfPath)
+    return res.download(absolutePath, `BoxLabels_${ctx.b.tracking_number}.pdf`)
   } catch (error) {
+    console.error('[getBoxLabelsPdf Error]:', error)
     return res.status(500).json({ success: false, message: error.message })
   }
 }
