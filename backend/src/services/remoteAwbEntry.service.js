@@ -830,12 +830,18 @@ export async function syncBookingRequestStatusToRemoteDb({ requestAwb, requestId
     if (updates.length === 0) return false
 
     let whereClause = ''
-    if (requestAwb) {
-      whereClause = 'request_awb = ?'
-      params.push(requestAwb)
-    } else if (requestId) {
+    if (requestId) {
       whereClause = 'id = ?'
       params.push(requestId)
+    } else if (requestAwb) {
+      whereClause = 'request_awb = ?'
+      params.push(requestAwb)
+    } else if (shipmentId) {
+      whereClause = 'shipment_id = ?'
+      params.push(shipmentId)
+    } else if (trackingNumber) {
+      whereClause = 'tracking_number = ? OR request_awb = ?'
+      params.push(trackingNumber, trackingNumber)
     } else {
       return false
     }

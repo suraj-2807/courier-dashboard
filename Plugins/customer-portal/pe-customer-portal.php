@@ -1614,14 +1614,42 @@ function pe_cp_ajax_my_requests()
     }
 
     $where_base = count($where_conds) > 0 ? $wpdb->prepare("(" . implode(" OR ", $where_conds) . ")", ...$params) : "1=1";
-    // Confirmed and processed requests automatically become shipments and must not show in requests
-    $where_base .= " AND status NOT IN ('confirmed', 'processed', 'completed') AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')";
     // Filter out requests created before September 1, 2026
     $where_base .= " AND created_at >= '2026-09-01 00:00:00'";
-    $where = $where_base;
 
-    if ($status && $status !== 'all') {
+    // Auto-reconcile: If any pending booking requests already have a matching shipment in AWBENTRY or shipments, auto-update them to confirmed!
+    $wpdb->query(
+        "UPDATE booking_requests br 
+         INNER JOIN AWBENTRY a ON (a.AWBNO > 0 AND (CAST(a.AWBNO AS CHAR) = br.request_awb OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND CAST(a.AWBNO AS CHAR) = br.tracking_number)))
+         SET br.status = 'confirmed', br.tracking_number = CAST(a.AWBNO AS CHAR)
+         WHERE br.status = 'pending'"
+    );
+    $has_shipments_table = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
+    if ($has_shipments_table) {
+        $wpdb->query(
+            "UPDATE booking_requests br
+             INNER JOIN shipments s ON (s.tracking_number = br.request_awb OR s.order_id = br.request_awb OR (s.order_reference IS NOT NULL AND s.order_reference != '' AND s.order_reference = br.request_awb) OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND s.tracking_number = br.tracking_number) OR (br.shipment_id IS NOT NULL AND br.shipment_id > 0 AND s.id = br.shipment_id))
+             SET br.status = 'confirmed',
+                 br.shipment_id = s.id,
+                 br.tracking_number = COALESCE(NULLIF(s.tracking_number, ''), br.request_awb)
+             WHERE br.status = 'pending'"
+        );
+    }
+
+    $where = $where_base;
+    if ($status === 'pending') {
+        $where .= " AND status = 'pending' AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')";
+    } elseif ($status === 'confirmed') {
+        $where .= " AND (status IN ('confirmed', 'processed', 'completed') OR (shipment_id IS NOT NULL AND shipment_id > 0) OR (tracking_number IS NOT NULL AND tracking_number != ''))";
+    } elseif ($status === 'processing') {
+        $where .= " AND status = 'processing'";
+    } elseif ($status === 'rejected') {
+        $where .= " AND status = 'rejected'";
+    } elseif ($status && $status !== 'all') {
         $where .= $wpdb->prepare(" AND status = %s", $status);
+    } else {
+        // All Active: show pending, processing, and confirmed requests (hide cancelled)
+        $where .= " AND status != 'cancelled'";
     }
 
     if ($search) {
@@ -1652,6 +1680,12 @@ function pe_cp_ajax_my_requests()
 
     $data = [];
     foreach ($rows as $r) {
+        $eff_status = $r->status;
+        $eff_tracking = $r->tracking_number;
+        // Safety check: if marked pending but has shipment_id or tracking_number, display as confirmed
+        if ($eff_status === 'pending' && (!empty($r->shipment_id) || !empty($r->tracking_number))) {
+            $eff_status = 'confirmed';
+        }
         $data[] = [
             'id' => $r->id,
             'request_awb' => $r->request_awb,
@@ -1662,16 +1696,17 @@ function pe_cp_ajax_my_requests()
             'receiver_city' => $r->receiver_city,
             'package_type' => $r->package_type,
             'weight' => $r->weight,
-            'status' => $r->status,
+            'status' => $eff_status,
             'admin_notes' => $r->admin_notes ?? '',
             'shipment_id' => $r->shipment_id,
-            'tracking_number' => $r->tracking_number,
+            'tracking_number' => $eff_tracking,
         ];
     }
 
-    // Get accurate count breakdown for requests tab badges (excluding confirmed which are in shipments)
-    $count_all = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base"));
-    $count_pending = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'pending'"));
+    // Accurate count breakdown for requests tab badges
+    $count_all = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status != 'cancelled'"));
+    $count_pending = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'pending' AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')"));
+    $count_confirmed = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND (status IN ('confirmed', 'processed', 'completed') OR (shipment_id IS NOT NULL AND shipment_id > 0) OR (tracking_number IS NOT NULL AND tracking_number != ''))"));
     $count_processing = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'processing'"));
     $count_rejected = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'rejected'"));
 
@@ -1684,7 +1719,7 @@ function pe_cp_ajax_my_requests()
             'all' => $count_all,
             'pending' => $count_pending,
             'processing' => $count_processing,
-            'confirmed' => 0,
+            'confirmed' => $count_confirmed,
             'rejected' => $count_rejected,
         ],
     ]);
@@ -1707,6 +1742,20 @@ function pe_cp_ajax_request_detail()
 
     if (!$request) {
         wp_send_json_error(['message' => 'Booking request not found']);
+    }
+
+    // Check if matching shipment exists in AWBENTRY or shipments to ensure status is confirmed
+    if ($request->status === 'pending') {
+        $matched_awb = $wpdb->get_var($wpdb->prepare(
+            "SELECT AWBNO FROM AWBENTRY WHERE AWBNO > 0 AND (CAST(AWBNO AS CHAR) = %s OR CAST(AWBNO AS CHAR) = %s) LIMIT 1",
+            $request->request_awb,
+            $request->tracking_number ?: $request->request_awb
+        ));
+        if ($matched_awb) {
+            $request->status = 'confirmed';
+            $request->tracking_number = strval($matched_awb);
+            $wpdb->update('booking_requests', ['status' => 'confirmed', 'tracking_number' => strval($matched_awb)], ['id' => $request->id]);
+        }
     }
 
     // Fetch request_updates
@@ -3413,12 +3462,21 @@ function pe_cp_rest_sync_status($request)
     $raw_digits = preg_replace('/\D/', '', $awb);
     $awb_no = $raw_digits ? intval($raw_digits) : 0;
 
-    // Find local booking request by AWB or tracking number
+    // Find local booking request by AWB, tracking number, request ID, or shipment ID
     $local = $wpdb->get_row($wpdb->prepare(
         "SELECT * FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
         $awb,
         $awb
     ));
+    if (!$local && !empty($d['request_id'])) {
+        $local = $wpdb->get_row($wpdb->prepare("SELECT * FROM booking_requests WHERE id = %d LIMIT 1", intval($d['request_id'])));
+    }
+    if (!$local && !empty($d['shipment_id'])) {
+        $local = $wpdb->get_row($wpdb->prepare("SELECT * FROM booking_requests WHERE shipment_id = %d LIMIT 1", intval($d['shipment_id'])));
+    }
+    if (!$local && !empty($d['tracking_number'])) {
+        $local = $wpdb->get_row($wpdb->prepare("SELECT * FROM booking_requests WHERE tracking_number = %s OR request_awb = %s LIMIT 1", sanitize_text_field($d['tracking_number']), sanitize_text_field($d['tracking_number'])));
+    }
 
     // Resolve customer info if provided
     $has_cust = isset($d['customer_id']) || isset($d['customer_name']) || isset($d['customer_type']);

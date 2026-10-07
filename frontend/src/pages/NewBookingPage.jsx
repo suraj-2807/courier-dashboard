@@ -1448,6 +1448,22 @@ export default function NewBookingPage() {
       const awb = result?.awb_number || result?.booking?.tracking_number || 'N/A'
       const savedId = result?.booking?.id || editId
       toast.success(editId ? `Booking updated! AWB: ${awb}` : `Booking saved as draft! AWB: ${awb}`)
+      // If booked from a customer request, explicitly ensure the request status is marked confirmed
+      const reqIdToConfirm = payload.from_request || form.from_request || fromRequestId
+      if (reqIdToConfirm) {
+        try {
+          console.log('[NewBookingPage] 🔄 Sending explicit PATCH /booking-requests/' + reqIdToConfirm + '/status to confirmed')
+          await api.patch(`/booking-requests/${reqIdToConfirm}/status`, {
+            status: 'confirmed',
+            shipment_id: savedId,
+            tracking_number: awb
+          })
+          console.log('[NewBookingPage] ✅ Explicit PATCH status confirmed SUCCESS for request:', reqIdToConfirm)
+        } catch (reqStatusErr) {
+          console.warn('[NewBookingPage] Explicit request status patch notice:', reqStatusErr.message)
+        }
+      }
+
       // Persist last-used invoice unit_type for next booking
       try {
         const lastUnit = invoiceItems.find(it => it.unit_type)?.unit_type

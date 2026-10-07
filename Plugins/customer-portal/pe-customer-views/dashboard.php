@@ -150,7 +150,32 @@ if (strlen($cust_name) >= 3) {
   $req_params[] = strtolower($cust_name);
 }
 $where_requests = !empty($req_conds) ? $wpdb->prepare("(" . implode(" OR ", $req_conds) . ")", ...$req_params) : "1=0";
-$pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE status = 'pending' AND created_at >= '2026-09-01 00:00:00' AND ($where_requests)"));
+
+// Auto-reconcile pending booking requests against AWBENTRY and shipments before counting
+$wpdb->query(
+    "UPDATE booking_requests br 
+     INNER JOIN AWBENTRY a ON (a.AWBNO > 0 AND (CAST(a.AWBNO AS CHAR) = br.request_awb OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND CAST(a.AWBNO AS CHAR) = br.tracking_number)))
+     SET br.status = 'confirmed', br.tracking_number = CAST(a.AWBNO AS CHAR)
+     WHERE br.status = 'pending'"
+);
+if ($has_shipments_tbl) {
+    $wpdb->query(
+        "UPDATE booking_requests br
+         INNER JOIN shipments s ON (s.tracking_number = br.request_awb OR s.order_id = br.request_awb OR (s.order_reference IS NOT NULL AND s.order_reference != '' AND s.order_reference = br.request_awb) OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND s.tracking_number = br.tracking_number) OR (br.shipment_id IS NOT NULL AND br.shipment_id > 0 AND s.id = br.shipment_id))
+         SET br.status = 'confirmed',
+             br.shipment_id = s.id,
+             br.tracking_number = COALESCE(NULLIF(s.tracking_number, ''), br.request_awb)
+         WHERE br.status = 'pending'"
+    );
+}
+
+$pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests br 
+WHERE br.status = 'pending' 
+AND (br.shipment_id IS NULL OR br.shipment_id = 0)
+AND (br.tracking_number IS NULL OR br.tracking_number = '')
+AND NOT EXISTS (SELECT 1 FROM AWBENTRY a WHERE a.AWBNO > 0 AND (CAST(a.AWBNO AS CHAR) = br.request_awb OR CAST(a.AWBNO AS CHAR) = br.tracking_number))
+" . ($has_shipments_tbl ? " AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.tracking_number = br.request_awb OR s.order_id = br.request_awb OR (s.order_reference IS NOT NULL AND s.order_reference != '' AND s.order_reference = br.request_awb) OR (br.shipment_id IS NOT NULL AND br.shipment_id > 0 AND s.id = br.shipment_id))" : "") . "
+AND br.created_at >= '2026-09-01 00:00:00' AND ($where_requests)"));
 
 // Fetch customer total amount across all shipments checking shipments, booking_requests, and AWBENTRY
 $cust_total_amount = 0.00;
@@ -1994,6 +2019,8 @@ if (!$is_accounting_enabled) {
             Active</button>
           <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('pending', this)"
             style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">Pending</button>
+          <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('confirmed', this)"
+            style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">Confirmed</button>
           <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('processing', this)"
             style="border:none; background:transparent; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; color:var(--cptext2); cursor:pointer;">Processing</button>
           <button class="cp-status-tab" onclick="cpSetRequestStatusFilter('rejected', this)"
@@ -3093,7 +3120,9 @@ if (!$is_accounting_enabled) {
         actionHtml += '</div>';
 
         var statusHtml = '<div class="cp-st"><span class="cp-dot ' + dotClass + '"></span><span class="' + stClass + '">' + stLabel + '</span></div>';
-        if (rw.status === 'rejected') {
+        if (rw.status === 'confirmed' && rw.tracking_number) {
+          statusHtml += '<div style="font-size:10.5px;font-weight:700;color:var(--cpblue);margin-top:2px;"><i class="fa-solid fa-truck-fast" style="font-size:9px;margin-right:3px;"></i>' + rw.tracking_number + '</div>';
+        } else if (rw.status === 'rejected') {
           statusHtml = '<div class="cp-st"><span class="cp-dot bg-rejected"></span><span class="st-rejected" style="font-weight:800;">Rejected</span></div>';
           if (rw.admin_notes) {
             statusHtml += '<div style="font-size:10.5px;color:var(--cpred);margin-top:2px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + rw.admin_notes.replace(/"/g, '&quot;') + '"><i class="fa-solid fa-circle-exclamation" style="font-size:9px;margin-right:2px;"></i>' + rw.admin_notes + '</div>';
