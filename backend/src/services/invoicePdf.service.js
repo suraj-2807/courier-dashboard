@@ -146,20 +146,15 @@ export async function generateInvoicePdf(params) {
     // Register line-height helper
     const lineH = 13
 
-    // ─── BRAND LOGO & COMPANY HEADER ───
-    doc.rect(leftMargin, y, pageWidth, 55).strokeColor(NAVY).lineWidth(1).stroke()
-    if (fs.existsSync(LOGO_PATH)) {
-      try {
-        doc.image(LOGO_PATH, leftMargin + 8, y + 6, { fit: [50, 42] })
-      } catch (e) {}
-    }
+    // ─── COMPANY HEADER (TEXT ONLY — NO FIRM LOGO) ───
+    doc.rect(leftMargin, y, pageWidth, 52).strokeColor(NAVY).lineWidth(1).stroke()
     doc.fillColor(RED).fontSize(14).font('Helvetica-Bold')
-       .text('PRINCE INTERNATIONAL COURIER SERVICE', leftMargin + 65, y + 8)
+       .text('PRINCE INTERNATIONAL COURIER SERVICE', leftMargin, y + 8, { width: pageWidth, align: 'center' })
     doc.fillColor(NAVY).fontSize(7.5).font('Helvetica')
-       .text('Shop No. 4, Al Marhaba Apt Opp. Sai Baba Eye Hospital, Machhlipith B/H Lalagate, Surat-395003.', leftMargin + 65, y + 27)
-       .text('Phone: +91 98987 87199  |  Website: www.princeexp.com', leftMargin + 65, y + 39)
+       .text('Shop No. 4, Al Marhaba Apt Opp. Sai Baba Eye Hospital, Machhlipith B/H Lalagate, Surat-395003.', leftMargin, y + 26, { width: pageWidth, align: 'center' })
+       .text('Phone: +91 98987 87199  |  Website: www.princeexp.com', leftMargin, y + 37, { width: pageWidth, align: 'center' })
 
-    y += 60
+    y += 58
 
     // ─── HEADER TITLE BAR ───
     doc.rect(leftMargin, y, pageWidth, 22).fillAndStroke(NAVY, NAVY)
