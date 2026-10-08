@@ -595,6 +595,7 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
       )
       console.log(`[Remote AWBENTRY Sync] Successfully updated AWBNO ${awbNo} in remote DB.`)
       await syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode, custName, isWalkin)
+      await autoConfirmBookingRequestInRemoteDb(pool, shipment, awbNo)
       return { success: true, action: 'updated', awbNo }
     }
 
@@ -719,12 +720,47 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
     const [result] = await pool.execute(insertSql, params)
     console.log(`[Remote AWBENTRY Sync] Successfully inserted AWBNO ${awbNo} (AWBID: ${result.insertId}) into remote DB.`)
     await syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode, custName, isWalkin)
+    await autoConfirmBookingRequestInRemoteDb(pool, shipment, awbNo)
 
     return { success: true, action: 'inserted', awbId: result.insertId, awbNo }
   } catch (err) {
     console.error('[Remote AWBENTRY Sync] Error syncing to AWBENTRY:', err.message)
     // Non-blocking: return error info without crashing
     return { success: false, error: err.message }
+  }
+}
+
+/**
+ * Automatically reconcile and confirm any pending booking_requests linked to this shipment on the remote DB.
+ */
+async function autoConfirmBookingRequestInRemoteDb(pool, shipment, awbNo) {
+  try {
+    const reqRef = shipment.request_awb || shipment.order_reference || null
+    const trk = String(shipment.tracking_number || awbNo || '')
+    const shId = shipment.id || null
+    if (reqRef || trk) {
+      const conds = []
+      const p = [trk, shId]
+      if (reqRef) {
+        conds.push('request_awb = ?', 'order_reference = ?')
+        p.push(reqRef, reqRef)
+      }
+      if (trk) {
+        conds.push('tracking_number = ?')
+        p.push(trk)
+      }
+      if (conds.length > 0) {
+        await pool.execute(
+          `UPDATE booking_requests 
+           SET status = 'confirmed', tracking_number = ?, shipment_id = COALESCE(shipment_id, ?) 
+           WHERE (${conds.join(' OR ')}) AND status = 'pending'`,
+          p
+        )
+        console.log(`[Remote DB Auto-Confirm] Reconciled booking request for ref: ${reqRef || trk} -> confirmed`)
+      }
+    }
+  } catch (err) {
+    // Non-blocking
   }
 }
 
@@ -829,28 +865,48 @@ export async function syncBookingRequestStatusToRemoteDb({ requestAwb, requestId
 
     if (updates.length === 0) return false
 
+    // Identify target row on remote Hostinger DB:
+    // request_awb is the canonical unique identifier between WP/Hostinger and local DB.
+    // Local requestId may not match remote auto-increment id, so request_awb MUST be prioritized.
     let whereClause = ''
-    if (requestId) {
-      whereClause = 'id = ?'
-      params.push(requestId)
-    } else if (requestAwb) {
+    if (requestAwb) {
       whereClause = 'request_awb = ?'
       params.push(requestAwb)
-    } else if (shipmentId) {
-      whereClause = 'shipment_id = ?'
-      params.push(shipmentId)
     } else if (trackingNumber) {
       whereClause = 'tracking_number = ? OR request_awb = ?'
       params.push(trackingNumber, trackingNumber)
+    } else if (shipmentId) {
+      whereClause = 'shipment_id = ?'
+      params.push(shipmentId)
+    } else if (requestId) {
+      whereClause = 'id = ?'
+      params.push(requestId)
     } else {
       return false
     }
 
-    await pool.execute(
+    const [updateResult] = await pool.execute(
       `UPDATE booking_requests SET ${updates.join(', ')} WHERE ${whereClause}`,
       params
     )
-    console.log(`[Remote DB Booking Request Sync] Status updated for ${requestAwb || requestId} -> ${status}`)
+    console.log(`[Remote DB Booking Request Sync] Status updated for ${requestAwb || requestId} -> ${status} (affectedRows: ${updateResult?.affectedRows ?? 0})`)
+
+    // Insert timeline entry into remote request_updates if row found
+    try {
+      let targetReqId = null
+      if (requestAwb) {
+        const [rRows] = await pool.query('SELECT id FROM booking_requests WHERE request_awb = ? LIMIT 1', [requestAwb])
+        if (rRows && rRows.length > 0) targetReqId = rRows[0].id
+      }
+      if (targetReqId) {
+        const desc = `Booking confirmed. Tracking Number: ${trackingNumber || ''}${parseFloat(totalAmount) > 0 ? ` · Total Bill: ₹${parseFloat(totalAmount).toFixed(2)}` : ''}`
+        await pool.query(
+          'INSERT INTO request_updates (request_id, update_type, title, description, metadata) VALUES (?, ?, ?, ?, ?)',
+          [targetReqId, 'shipment_created', 'Shipment Confirmed', desc, JSON.stringify({ shipment_id: shipmentId, tracking_number: trackingNumber, total_amount: totalAmount, shipping_charge: shippingCharge })]
+        )
+      }
+    } catch {}
+
     return true
   } catch (err) {
     console.warn('[Remote DB Booking Request Sync Warning]:', err.message)

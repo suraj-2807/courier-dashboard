@@ -1617,10 +1617,26 @@ function pe_cp_ajax_my_requests()
     // Filter out requests created before September 1, 2026
     $where_base .= " AND created_at >= '2026-09-01 00:00:00'";
 
-    // Auto-reconcile: If any pending booking requests already have a matching shipment in AWBENTRY or shipments, auto-update them to confirmed!
+    // Auto-reconcile Step 1: Any request that already has a shipment_id or tracking_number linked should be confirmed
+    // (handles cases where backend sync partially succeeded — set shipment_id/tracking_number but status update didn't persist)
+    $wpdb->query(
+        "UPDATE booking_requests 
+         SET status = 'confirmed' 
+         WHERE status = 'pending' 
+         AND ((shipment_id IS NOT NULL AND shipment_id > 0) 
+              OR (tracking_number IS NOT NULL AND tracking_number != ''))"
+    );
+
+    // Auto-reconcile Step 2: If any pending booking requests already have a matching shipment in AWBENTRY or shipments, auto-update them to confirmed!
     $wpdb->query(
         "UPDATE booking_requests br 
-         INNER JOIN AWBENTRY a ON (a.AWBNO > 0 AND (CAST(a.AWBNO AS CHAR) = br.request_awb OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND CAST(a.AWBNO AS CHAR) = br.tracking_number)))
+         INNER JOIN AWBENTRY a ON (a.AWBNO > 0 AND (
+             CAST(a.AWBNO AS CHAR) = br.request_awb 
+             OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND CAST(a.AWBNO AS CHAR) = br.tracking_number)
+             OR (a.VENDORAWB1 IS NOT NULL AND a.VENDORAWB1 != '' AND (a.VENDORAWB1 = br.request_awb OR (br.tracking_number IS NOT NULL AND a.VENDORAWB1 = br.tracking_number)))
+             OR (a.VENDORAWB2 IS NOT NULL AND a.VENDORAWB2 != '' AND (a.VENDORAWB2 = br.request_awb OR (br.tracking_number IS NOT NULL AND a.VENDORAWB2 = br.tracking_number)))
+             OR (a.REMARKS IS NOT NULL AND a.REMARKS != '' AND (a.REMARKS = br.request_awb OR a.REMARKS LIKE CONCAT('%', br.request_awb, '%')))
+         ))
          SET br.status = 'confirmed', br.tracking_number = CAST(a.AWBNO AS CHAR)
          WHERE br.status = 'pending'"
     );
@@ -1628,10 +1644,16 @@ function pe_cp_ajax_my_requests()
     if ($has_shipments_table) {
         $wpdb->query(
             "UPDATE booking_requests br
-             INNER JOIN shipments s ON (s.tracking_number = br.request_awb OR s.order_id = br.request_awb OR (s.order_reference IS NOT NULL AND s.order_reference != '' AND s.order_reference = br.request_awb) OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND s.tracking_number = br.tracking_number) OR (br.shipment_id IS NOT NULL AND br.shipment_id > 0 AND s.id = br.shipment_id))
+             INNER JOIN shipments s ON (
+                 s.tracking_number = br.request_awb 
+                 OR s.order_id = br.request_awb 
+                 OR (s.order_reference IS NOT NULL AND s.order_reference != '' AND s.order_reference = br.request_awb) 
+                 OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND (s.tracking_number = br.tracking_number OR s.order_id = br.tracking_number)) 
+                 OR (br.shipment_id IS NOT NULL AND br.shipment_id > 0 AND s.id = br.shipment_id)
+             )
              SET br.status = 'confirmed',
                  br.shipment_id = s.id,
-                 br.tracking_number = COALESCE(NULLIF(s.tracking_number, ''), br.request_awb)
+                 br.tracking_number = COALESCE(NULLIF(s.tracking_number, ''), NULLIF(s.order_id, ''), br.request_awb)
              WHERE br.status = 'pending'"
         );
     }

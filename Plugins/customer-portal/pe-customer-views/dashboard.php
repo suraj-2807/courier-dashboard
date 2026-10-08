@@ -151,20 +151,44 @@ if (strlen($cust_name) >= 3) {
 }
 $where_requests = !empty($req_conds) ? $wpdb->prepare("(" . implode(" OR ", $req_conds) . ")", ...$req_params) : "1=0";
 
-// Auto-reconcile pending booking requests against AWBENTRY and shipments before counting
+// Auto-reconcile pending booking requests before counting
+// Step 1: Any request that already has a shipment_id or tracking_number linked should be confirmed
+$wpdb->query(
+    "UPDATE booking_requests 
+     SET status = 'confirmed' 
+     WHERE status = 'pending' 
+     AND ((shipment_id IS NOT NULL AND shipment_id > 0) 
+          OR (tracking_number IS NOT NULL AND tracking_number != ''))"
+);
+
+// Step 2: Auto-reconcile against AWBENTRY (AWBNO, VENDORAWB1, VENDORAWB2, or REMARKS)
 $wpdb->query(
     "UPDATE booking_requests br 
-     INNER JOIN AWBENTRY a ON (a.AWBNO > 0 AND (CAST(a.AWBNO AS CHAR) = br.request_awb OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND CAST(a.AWBNO AS CHAR) = br.tracking_number)))
+     INNER JOIN AWBENTRY a ON (a.AWBNO > 0 AND (
+         CAST(a.AWBNO AS CHAR) = br.request_awb 
+         OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND CAST(a.AWBNO AS CHAR) = br.tracking_number)
+         OR (a.VENDORAWB1 IS NOT NULL AND a.VENDORAWB1 != '' AND (a.VENDORAWB1 = br.request_awb OR (br.tracking_number IS NOT NULL AND a.VENDORAWB1 = br.tracking_number)))
+         OR (a.VENDORAWB2 IS NOT NULL AND a.VENDORAWB2 != '' AND (a.VENDORAWB2 = br.request_awb OR (br.tracking_number IS NOT NULL AND a.VENDORAWB2 = br.tracking_number)))
+         OR (a.REMARKS IS NOT NULL AND a.REMARKS != '' AND (a.REMARKS = br.request_awb OR a.REMARKS LIKE CONCAT('%', br.request_awb, '%')))
+     ))
      SET br.status = 'confirmed', br.tracking_number = CAST(a.AWBNO AS CHAR)
      WHERE br.status = 'pending'"
 );
+
+// Step 3: Auto-reconcile against shipments table if present
 if ($has_shipments_tbl) {
     $wpdb->query(
         "UPDATE booking_requests br
-         INNER JOIN shipments s ON (s.tracking_number = br.request_awb OR s.order_id = br.request_awb OR (s.order_reference IS NOT NULL AND s.order_reference != '' AND s.order_reference = br.request_awb) OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND s.tracking_number = br.tracking_number) OR (br.shipment_id IS NOT NULL AND br.shipment_id > 0 AND s.id = br.shipment_id))
+         INNER JOIN shipments s ON (
+             s.tracking_number = br.request_awb 
+             OR s.order_id = br.request_awb 
+             OR (s.order_reference IS NOT NULL AND s.order_reference != '' AND s.order_reference = br.request_awb) 
+             OR (br.tracking_number IS NOT NULL AND br.tracking_number != '' AND (s.tracking_number = br.tracking_number OR s.order_id = br.tracking_number)) 
+             OR (br.shipment_id IS NOT NULL AND br.shipment_id > 0 AND s.id = br.shipment_id)
+         )
          SET br.status = 'confirmed',
              br.shipment_id = s.id,
-             br.tracking_number = COALESCE(NULLIF(s.tracking_number, ''), br.request_awb)
+             br.tracking_number = COALESCE(NULLIF(s.tracking_number, ''), NULLIF(s.order_id, ''), br.request_awb)
          WHERE br.status = 'pending'"
     );
 }
@@ -173,7 +197,13 @@ $pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_re
 WHERE br.status = 'pending' 
 AND (br.shipment_id IS NULL OR br.shipment_id = 0)
 AND (br.tracking_number IS NULL OR br.tracking_number = '')
-AND NOT EXISTS (SELECT 1 FROM AWBENTRY a WHERE a.AWBNO > 0 AND (CAST(a.AWBNO AS CHAR) = br.request_awb OR CAST(a.AWBNO AS CHAR) = br.tracking_number))
+AND NOT EXISTS (SELECT 1 FROM AWBENTRY a WHERE a.AWBNO > 0 AND (
+    CAST(a.AWBNO AS CHAR) = br.request_awb 
+    OR CAST(a.AWBNO AS CHAR) = br.tracking_number
+    OR a.VENDORAWB1 = br.request_awb
+    OR a.VENDORAWB2 = br.request_awb
+    OR (a.REMARKS IS NOT NULL AND a.REMARKS != '' AND (a.REMARKS = br.request_awb OR a.REMARKS LIKE CONCAT('%', br.request_awb, '%')))
+))
 " . ($has_shipments_tbl ? " AND NOT EXISTS (SELECT 1 FROM shipments s WHERE s.tracking_number = br.request_awb OR s.order_id = br.request_awb OR (s.order_reference IS NOT NULL AND s.order_reference != '' AND s.order_reference = br.request_awb) OR (br.shipment_id IS NOT NULL AND br.shipment_id > 0 AND s.id = br.shipment_id))" : "") . "
 AND br.created_at >= '2026-09-01 00:00:00' AND ($where_requests)"));
 
