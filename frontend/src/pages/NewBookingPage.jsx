@@ -1112,12 +1112,16 @@ export default function NewBookingPage() {
     if (isSkipBilling) {
       skipBillingRecalcRef.current = false
     }
+
+    // Never auto-recalculate shipping charge when editing an existing draft/booking
+    const shouldRecalcShipping = !editId && !isSkipBilling
+
     if (parcels.length > 1) {
       setForm(prev => {
         const chgWt = totalParcelChg > 0 ? String(totalParcelChg) : ''
         const rate = parseFloat(prev.rate_per_kg) || 0
         const chgNum = parseFloat(chgWt) || (totalParcelActual > 0 ? Math.ceil(totalParcelActual) : 0)
-        const updatedShipping = (!isSkipBilling && rate > 0 && chgNum > 0)
+        const updatedShipping = (shouldRecalcShipping && rate > 0 && chgNum > 0)
           ? (rate * chgNum).toFixed(2)
           : prev.shipping_charge
 
@@ -1146,7 +1150,7 @@ export default function NewBookingPage() {
       setForm(prev => {
         const rate = parseFloat(prev.rate_per_kg) || 0
         const chgNum = chg > 0 ? chg : (act > 0 ? Math.ceil(act) : 0)
-        const updatedShipping = (!isSkipBilling && rate > 0 && chgNum > 0)
+        const updatedShipping = (shouldRecalcShipping && rate > 0 && chgNum > 0)
           ? (rate * chgNum).toFixed(2)
           : prev.shipping_charge
 
@@ -1162,7 +1166,7 @@ export default function NewBookingPage() {
         }
       })
     }
-  }, [parcels, form.rate_per_kg])
+  }, [parcels, form.rate_per_kg, editId])
 
   // Auto-sync final chargeable weight from computed chargeable weight
   useEffect(() => {
@@ -2475,9 +2479,9 @@ export default function NewBookingPage() {
                       onChange={e => {
                         const val = e.target.value
                         setFinalChargeableWeight(val)
-                        // Recalculate shipping charge using rate_per_kg
+                        // Recalculate shipping charge using rate_per_kg only on new bookings, not drafts/edits
                         const rate = parseFloat(form.rate_per_kg) || 0
-                        if (rate > 0 && parseFloat(val) > 0) {
+                        if (!editId && rate > 0 && parseFloat(val) > 0) {
                           setForm(prev => ({
                             ...prev,
                             shipping_charge: String((rate * parseFloat(val)).toFixed(2))

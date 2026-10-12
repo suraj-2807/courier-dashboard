@@ -339,12 +339,12 @@ export default function BookingsPage() {
 
   // 1. Open our official Shipping Bill (Waybill) PDF (Dollar icon)
   const handleOpenOurBillRow = async (b) => {
-    const toastId = toast.loading('Loading Our Shipping Bill...')
+    const toastId = toast.loading('Loading PICS Bill...')
     try {
       const res = await bookingsApi.downloadWaybill(b.id)
       const awb = b.tracking_number || b.order_id || b.id
       openPdfBlob(res.data, `ShippingBill_${awb}.pdf`)
-      toast.success('Our Shipping Bill opened successfully', { id: toastId })
+      toast.success('PICS Bill opened successfully', { id: toastId })
     } catch (err) {
       toast.error('Failed to open Shipping Bill', { id: toastId })
     }
@@ -352,14 +352,14 @@ export default function BookingsPage() {
 
   // Open Our Invoice (Prince Official Invoice PDF - works for drafts too)
   const handleOpenOurInvoiceRow = async (b) => {
-    const toastId = toast.loading('Loading Our Invoice...')
+    const toastId = toast.loading('Loading PICS Invoice...')
     try {
       const res = await bookingsApi.downloadInvoice(b.id)
       const awb = b.tracking_number || b.order_id || b.id
       openPdfBlob(res.data, `PrinceInvoice_${awb}.pdf`)
-      toast.success('Our Invoice opened successfully', { id: toastId })
+      toast.success('PICS Invoice opened successfully', { id: toastId })
     } catch (err) {
-      toast.error('Failed to open Our Invoice', { id: toastId })
+      toast.error('Failed to open PICS Invoice', { id: toastId })
     }
   }
 
@@ -380,14 +380,14 @@ export default function BookingsPage() {
 
   // 5. Open Our Prince Official Box / Thermal Label PDF (Tag icon)
   const handleOpenPrinceLabelRow = async (b) => {
-    const toastId = toast.loading('Loading Our Box Label...')
+    const toastId = toast.loading('Loading PICS Label...')
     try {
       const res = await bookingsApi.downloadBoxLabels(b.id)
       const awb = b.tracking_number || b.order_id || b.id
       openPdfBlob(res.data, `BoxLabels_${awb}.pdf`)
-      toast.success('Our Box Label opened successfully', { id: toastId })
+      toast.success('PICS Label opened successfully', { id: toastId })
     } catch (err) {
-      toast.error('Failed to open Prince Label', { id: toastId })
+      toast.error('Failed to open PICS Label', { id: toastId })
     }
   }
 
@@ -1187,22 +1187,22 @@ export default function BookingsPage() {
                                 <Eye className="w-4 h-4" />
                               </Link>
 
-                              {/* 2. Dollar icon: Our Bill / Waybill */}
+                              {/* 2. Dollar icon: PICS Bill */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenOurBillRow(b)}
                                 className="p-1.5 text-navy hover:text-primary hover:bg-navy/5 rounded-lg transition-colors cursor-pointer"
-                                title="Our Shipping Bill / Waybill"
+                                title="PICS Bills"
                               >
                                 <DollarSign className="w-4 h-4" />
                               </button>
 
-                              {/* NEW: Receipt icon: Our Invoice (Commercial Invoice PDF - works for drafts too) */}
+                              {/* Receipt icon: PICS Invoice */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenOurInvoiceRow(b)}
                                 className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                title="Our Invoice (Prince Commercial Invoice PDF - available for drafts too)"
+                                title="PICS Invoice"
                               >
                                 <Receipt className="w-4 h-4" />
                               </button>
@@ -1237,12 +1237,12 @@ export default function BookingsPage() {
                                 <Package className="w-4 h-4" />
                               </button>
 
-                              {/* 6. Tag icon: Our Label (Prince Box / Thermal Label) */}
+                              {/* 6. Tag icon: PICS Label */}
                               <button
                                 type="button"
                                 onClick={() => handleOpenPrinceLabelRow(b)}
                                 className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                                title="Our Prince Box / Thermal Label"
+                                title="PICS Label"
                               >
                                 <Tag className="w-4 h-4" />
                               </button>

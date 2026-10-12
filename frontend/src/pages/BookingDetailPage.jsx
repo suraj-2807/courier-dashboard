@@ -275,12 +275,12 @@ export default function BookingDetailPage() {
 
   // 1. Official Shipping Bill (Ours - Dollar icon)
   const handleOpenOurBill = async () => {
-    const toastId = toast.loading('Loading Our Shipping Bill...')
+    const toastId = toast.loading('Loading PICS Bill...')
     try {
       const res = await bookingsApi.downloadWaybill(booking.id)
       const awb = booking.tracking_number || booking.order_id || booking.id
       openPdfBlob(res.data, `ShippingBill_${awb}.pdf`)
-      toast.success('Our Shipping Bill opened successfully', { id: toastId })
+      toast.success('PICS Bill opened successfully', { id: toastId })
     } catch (err) {
       toast.error('Failed to open Shipping Bill', { id: toastId })
     }
@@ -288,14 +288,14 @@ export default function BookingDetailPage() {
 
   // Official Commercial / Custom Invoice (Ours - works for drafts too)
   const handleOpenOurInvoice = async () => {
-    const toastId = toast.loading('Loading Our Invoice...')
+    const toastId = toast.loading('Loading PICS Invoice...')
     try {
       const res = await bookingsApi.downloadInvoice(booking.id)
       const awb = booking.tracking_number || booking.order_id || booking.id
       openPdfBlob(res.data, `PrinceInvoice_${awb}.pdf`)
-      toast.success('Our Invoice opened successfully', { id: toastId })
+      toast.success('PICS Invoice opened successfully', { id: toastId })
     } catch (err) {
-      toast.error('Failed to open Our Invoice', { id: toastId })
+      toast.error('Failed to open PICS Invoice', { id: toastId })
     }
   }
 
@@ -316,14 +316,14 @@ export default function BookingDetailPage() {
 
   // 5. Our Prince Box / Thermal Label (Tag icon)
   const handleOpenPrinceLabel = async () => {
-    const toastId = toast.loading('Loading Our Box Label...')
+    const toastId = toast.loading('Loading PICS Label...')
     try {
       const res = await bookingsApi.downloadBoxLabels(booking.id)
       const awb = booking.tracking_number || booking.order_id || booking.id
       openPdfBlob(res.data, `BoxLabels_${awb}.pdf`)
-      toast.success('Our Box Label opened successfully', { id: toastId })
+      toast.success('PICS Label opened successfully', { id: toastId })
     } catch (err) {
-      toast.error('Failed to open Prince Label', { id: toastId })
+      toast.error('Failed to open PICS Label', { id: toastId })
     }
   }
 
@@ -479,20 +479,20 @@ export default function BookingDetailPage() {
           <button
             onClick={handleOpenOurBill}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-navy hover:bg-navy-light text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-            title="Open Our Shipping Bill / Waybill"
+            title="PICS Bills"
           >
             <DollarSign className="w-3.5 h-3.5" />
-            Our Bill
+            PICS Bills
           </button>
 
           {/* NEW: Official Commercial Invoice (Ours - works for drafts too) */}
           <button
             onClick={handleOpenOurInvoice}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-900 text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
-            title="Open Our Invoice (Prince Commercial Invoice PDF - available for drafts too)"
+            title="PICS Invoice"
           >
             <Receipt className="w-3.5 h-3.5 text-rose-700" />
-            Our Invoice
+            PICS Invoice
           </button>
 
           {/* 2. Vendor Invoice (File icon) */}
@@ -529,10 +529,10 @@ export default function BookingDetailPage() {
           <button
             onClick={handleOpenPrinceLabel}
             className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-900 text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
-            title="Open Our Prince Box / Thermal Label"
+            title="PICS Label"
           >
             <Tag className="w-3.5 h-3.5 text-blue-700" />
-            Our Label
+            PICS Label
           </button>
 
           {/* 6. Share with Customer (WhatsApp / Link) */}
