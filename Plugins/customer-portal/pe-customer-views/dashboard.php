@@ -156,7 +156,7 @@ $where_requests = !empty($req_conds) ? $wpdb->prepare("(" . implode(" OR ", $req
 $wpdb->query(
     "UPDATE booking_requests 
      SET status = 'confirmed' 
-     WHERE status = 'pending' 
+     WHERE status IN ('pending', 'processing') 
      AND ((shipment_id IS NOT NULL AND shipment_id > 0) 
           OR (tracking_number IS NOT NULL AND tracking_number != ''))"
 );
@@ -172,7 +172,7 @@ $wpdb->query(
          OR (a.REMARKS IS NOT NULL AND a.REMARKS != '' AND (a.REMARKS = br.request_awb OR a.REMARKS LIKE CONCAT('%', br.request_awb, '%')))
      ))
      SET br.status = 'confirmed', br.tracking_number = CAST(a.AWBNO AS CHAR)
-     WHERE br.status = 'pending'"
+     WHERE br.status IN ('pending', 'processing')"
 );
 
 // Step 3: Auto-reconcile against shipments table if present
@@ -189,12 +189,12 @@ if ($has_shipments_tbl) {
          SET br.status = 'confirmed',
              br.shipment_id = s.id,
              br.tracking_number = COALESCE(NULLIF(s.tracking_number, ''), NULLIF(s.order_id, ''), br.request_awb)
-         WHERE br.status = 'pending'"
+         WHERE br.status IN ('pending', 'processing')"
     );
 }
 
 $pending_requests_count = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests br 
-WHERE br.status = 'pending' 
+WHERE br.status IN ('pending', 'processing') 
 AND (br.shipment_id IS NULL OR br.shipment_id = 0)
 AND (br.tracking_number IS NULL OR br.tracking_number = '')
 AND NOT EXISTS (SELECT 1 FROM AWBENTRY a WHERE a.AWBNO > 0 AND (

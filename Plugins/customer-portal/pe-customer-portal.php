@@ -1622,7 +1622,7 @@ function pe_cp_ajax_my_requests()
     $wpdb->query(
         "UPDATE booking_requests 
          SET status = 'confirmed' 
-         WHERE status = 'pending' 
+         WHERE status IN ('pending', 'processing') 
          AND ((shipment_id IS NOT NULL AND shipment_id > 0) 
               OR (tracking_number IS NOT NULL AND tracking_number != ''))"
     );
@@ -1638,7 +1638,7 @@ function pe_cp_ajax_my_requests()
              OR (a.REMARKS IS NOT NULL AND a.REMARKS != '' AND (a.REMARKS = br.request_awb OR a.REMARKS LIKE CONCAT('%', br.request_awb, '%')))
          ))
          SET br.status = 'confirmed', br.tracking_number = CAST(a.AWBNO AS CHAR)
-         WHERE br.status = 'pending'"
+         WHERE br.status IN ('pending', 'processing')"
     );
     $has_shipments_table = !empty($wpdb->get_var("SHOW TABLES LIKE 'shipments'"));
     if ($has_shipments_table) {
@@ -1654,7 +1654,7 @@ function pe_cp_ajax_my_requests()
              SET br.status = 'confirmed',
                  br.shipment_id = s.id,
                  br.tracking_number = COALESCE(NULLIF(s.tracking_number, ''), NULLIF(s.order_id, ''), br.request_awb)
-             WHERE br.status = 'pending'"
+             WHERE br.status IN ('pending', 'processing')"
         );
     }
 
@@ -1664,14 +1664,14 @@ function pe_cp_ajax_my_requests()
     } elseif ($status === 'confirmed') {
         $where .= " AND (status IN ('confirmed', 'processed', 'completed') OR (shipment_id IS NOT NULL AND shipment_id > 0) OR (tracking_number IS NOT NULL AND tracking_number != ''))";
     } elseif ($status === 'processing') {
-        $where .= " AND status = 'processing'";
+        $where .= " AND status = 'processing' AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')";
     } elseif ($status === 'rejected') {
         $where .= " AND status = 'rejected'";
     } elseif ($status && $status !== 'all') {
         $where .= $wpdb->prepare(" AND status = %s", $status);
     } else {
-        // All Active: show pending, processing, and confirmed requests (hide cancelled)
-        $where .= " AND status != 'cancelled'";
+        // All Active: show only open pending and processing requests (hide confirmed, completed, and cancelled)
+        $where .= " AND status NOT IN ('confirmed', 'cancelled', 'completed', 'processed') AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')";
     }
 
     if ($search) {
@@ -1705,7 +1705,7 @@ function pe_cp_ajax_my_requests()
         $eff_status = $r->status;
         $eff_tracking = $r->tracking_number;
         // Safety check: if marked pending but has shipment_id or tracking_number, display as confirmed
-        if ($eff_status === 'pending' && (!empty($r->shipment_id) || !empty($r->tracking_number))) {
+        if (($eff_status === 'pending' || $eff_status === 'processing') && (!empty($r->shipment_id) || !empty($r->tracking_number))) {
             $eff_status = 'confirmed';
         }
         $data[] = [
@@ -1726,10 +1726,10 @@ function pe_cp_ajax_my_requests()
     }
 
     // Accurate count breakdown for requests tab badges
-    $count_all = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status != 'cancelled'"));
+    $count_all = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status NOT IN ('confirmed', 'cancelled', 'completed', 'processed') AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')"));
     $count_pending = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'pending' AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')"));
     $count_confirmed = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND (status IN ('confirmed', 'processed', 'completed') OR (shipment_id IS NOT NULL AND shipment_id > 0) OR (tracking_number IS NOT NULL AND tracking_number != ''))"));
-    $count_processing = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'processing'"));
+    $count_processing = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'processing' AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')"));
     $count_rejected = intval($wpdb->get_var("SELECT COUNT(*) FROM booking_requests WHERE $where_base AND status = 'rejected'"));
 
     wp_send_json_success([

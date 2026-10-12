@@ -184,6 +184,8 @@ export default function NewBookingPage() {
 
   // Ref for auto-focus on new invoice row
   const invoiceDescRefs = useRef([])
+  const prevPiecesRef = useRef('1')
+  const isPopulatingFromRequestRef = useRef(false)
 
   // Parcels detail state synced with no_of_pieces
   const [parcels, setParcels] = useState([
@@ -747,6 +749,39 @@ export default function NewBookingPage() {
     const custType = custId ? 'registered' : (rd.customer_type || 'walkin')
     const custName = rd.customer_name || (custType === 'walkin' ? 'Walk-in Customer' : (rd.sender_name || 'Walk-in Customer'))
 
+    isPopulatingFromRequestRef.current = true
+
+    // Parse and populate parcels from request data (preserving all multi-box dimensions/weights)
+    let parsedParcels = null
+    if (rd.parcels) {
+      try {
+        let pList = rd.parcels
+        if (typeof pList === 'string') {
+          try { pList = JSON.parse(pList) } catch (e) {}
+        }
+        if (typeof pList === 'string') {
+          try { pList = JSON.parse(pList) } catch (e) {}
+        }
+        if (Array.isArray(pList) && pList.length > 0) {
+          parsedParcels = pList.map((p, i) => ({
+            parcel_no: p.parcel_no || i + 1,
+            box_no: String(p.box_no || i + 1),
+            weight: String(p.weight !== undefined && p.weight !== null ? p.weight : ''),
+            length: String(p.length !== undefined && p.length !== null ? p.length : ''),
+            breadth: String((p.breadth || p.width) !== undefined && (p.breadth || p.width) !== null ? (p.breadth || p.width) : ''),
+            height: String(p.height !== undefined && p.height !== null ? p.height : ''),
+            volumetric_weight: String(p.volumetric_weight !== undefined && p.volumetric_weight !== null ? p.volumetric_weight : ''),
+            chargeable_weight: String(p.chargeable_weight !== undefined && p.chargeable_weight !== null ? p.chargeable_weight : '')
+          }))
+        }
+      } catch (err) {
+        console.warn('Failed to parse parcels from request:', err)
+      }
+    }
+
+    const effectivePieces = Math.max(parsedParcels ? parsedParcels.length : 0, parseInt(rd.no_of_pieces) || 1)
+    prevPiecesRef.current = String(effectivePieces)
+
     setForm(prev => ({
       ...prev,
       customer_id: custId,
@@ -783,7 +818,7 @@ export default function NewBookingPage() {
       length: String(rd.length || ''),
       breadth: String(rd.breadth || rd.width || ''),
       height: String(rd.height || ''),
-      no_of_pieces: String(rd.no_of_pieces || '1'),
+      no_of_pieces: String(effectivePieces),
       content_description: rd.content_description || '',
       declared_value: String(rd.declared_value || ''),
       remarks: rd.remarks || '',
@@ -800,33 +835,8 @@ export default function NewBookingPage() {
       from_request: rd.id || fromRequestId
     }))
 
-    // Parse and populate parcels from request data (preserving all multi-box dimensions/weights)
-    if (rd.parcels) {
-      try {
-        let pList = rd.parcels
-        if (typeof pList === 'string') {
-          try { pList = JSON.parse(pList) } catch (e) {}
-        }
-        if (typeof pList === 'string') {
-          try { pList = JSON.parse(pList) } catch (e) {}
-        }
-        if (Array.isArray(pList) && pList.length > 0) {
-          const parsedParcels = pList.map((p, i) => ({
-            parcel_no: p.parcel_no || i + 1,
-            box_no: String(p.box_no || i + 1),
-            weight: String(p.weight !== undefined && p.weight !== null ? p.weight : ''),
-            length: String(p.length !== undefined && p.length !== null ? p.length : ''),
-            breadth: String((p.breadth || p.width) !== undefined && (p.breadth || p.width) !== null ? (p.breadth || p.width) : ''),
-            height: String(p.height !== undefined && p.height !== null ? p.height : ''),
-            volumetric_weight: String(p.volumetric_weight !== undefined && p.volumetric_weight !== null ? p.volumetric_weight : ''),
-            chargeable_weight: String(p.chargeable_weight !== undefined && p.chargeable_weight !== null ? p.chargeable_weight : '')
-          }))
-          setParcels(parsedParcels)
-          setForm(prev => ({ ...prev, no_of_pieces: String(parsedParcels.length) }))
-        }
-      } catch (err) {
-        console.warn('Failed to parse parcels from request:', err)
-      }
+    if (parsedParcels && parsedParcels.length > 0) {
+      setParcels(parsedParcels)
     }
 
     // Parse and populate invoice items from request data
@@ -846,6 +856,10 @@ export default function NewBookingPage() {
         console.warn('Failed to parse invoice_items from request:', err)
       }
     }
+
+    setTimeout(() => {
+      isPopulatingFromRequestRef.current = false
+    }, 150)
   }, [fromRequestId, location.state, fetchedRequestData])
 
   // Safe parsing helper functions
@@ -976,8 +990,12 @@ export default function NewBookingPage() {
 
   // Auto-sync parcels count with no_of_pieces if changed
   useEffect(() => {
+    if (isPopulatingFromRequestRef.current) return
     if (!form.no_of_pieces) return
     const count = Math.max(1, parseInt(form.no_of_pieces) || 1)
+    if (prevPiecesRef.current === form.no_of_pieces && parcels.length >= count) return
+    prevPiecesRef.current = form.no_of_pieces
+
     setParcels(prev => {
       if (prev.length === count) return prev
       const next = [...prev]

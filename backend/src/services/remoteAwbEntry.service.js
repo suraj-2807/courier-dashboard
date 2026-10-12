@@ -738,9 +738,14 @@ async function autoConfirmBookingRequestInRemoteDb(pool, shipment, awbNo) {
     const reqRef = shipment.request_awb || shipment.order_reference || null
     const trk = String(shipment.tracking_number || awbNo || '')
     const shId = shipment.id || null
-    if (reqRef || trk) {
+    const reqId = shipment.from_request || shipment.booking_request_id || null
+    if (reqRef || trk || reqId) {
       const conds = []
       const p = [trk, shId]
+      if (reqId) {
+        conds.push('id = ?')
+        p.push(reqId)
+      }
       if (reqRef) {
         conds.push('request_awb = ?', 'order_reference = ?')
         p.push(reqRef, reqRef)
@@ -753,10 +758,10 @@ async function autoConfirmBookingRequestInRemoteDb(pool, shipment, awbNo) {
         await pool.execute(
           `UPDATE booking_requests 
            SET status = 'confirmed', tracking_number = ?, shipment_id = COALESCE(shipment_id, ?) 
-           WHERE (${conds.join(' OR ')}) AND status = 'pending'`,
+           WHERE (${conds.join(' OR ')}) AND status IN ('pending', 'processing')`,
           p
         )
-        console.log(`[Remote DB Auto-Confirm] Reconciled booking request for ref: ${reqRef || trk} -> confirmed`)
+        console.log(`[Remote DB Auto-Confirm] Reconciled booking request for ref: ${reqId || reqRef || trk} -> confirmed`)
       }
     }
   } catch (err) {

@@ -27,21 +27,34 @@ class PE_Data {
     public static $status = '';
     public static $tracking = [];
     public static $searched = false;
+    public static $debug_logs = [];
+
+    public static function log($title, $data = null) {
+        self::$debug_logs[] = [
+            'time' => date('H:i:s') . '.' . sprintf('%03d', (microtime(true) - floor(microtime(true))) * 1000),
+            'title' => $title,
+            'data' => $data
+        ];
+    }
 
     public static function init() {
         if (self::$done) return;
         self::$done = true;
 
         $raw_awb = $_POST['awb'] ?? ($_GET['awb'] ?? ($_REQUEST['awb'] ?? ($_GET['tracking_number'] ?? ($_GET['search'] ?? ($_GET['q'] ?? '')))));
-        if (empty(trim($raw_awb))) return;
+        if (empty(trim($raw_awb))) {
+            self::log('No AWB search input found in POST or GET request.');
+            return;
+        }
+
         self::$searched = true;
         global $wpdb;
         self::$awb = sanitize_text_field(trim($raw_awb));
+        self::log('Tracking Search Initiated', ['search_term' => self::$awb, 'method' => $_SERVER['REQUEST_METHOD'] ?? 'GET']);
 
         // ── Try AWBENTRY first (new ERP table) ──
         $search_int = intval(preg_replace('/\D/', '', self::$awb));
-        $awb_row = $wpdb->get_row($wpdb->prepare(
-            "SELECT a.*,
+        $query_sql = "SELECT a.*,
                     a.AWBID as c_id, CAST(a.AWBNO AS CHAR) as AWBNO_STR,
                     a.CNEENAME as CONSIGNEE, a.DESTNAME as DESTINATION,
                     a.CHARGEWEIGHT as WEIGHT, COALESCE(a.SERVICE, 0) as SERVICE_INT,
@@ -52,9 +65,27 @@ class PE_Data {
                     a.CARTONS as PIECES
              FROM AWBENTRY a 
              WHERE a.AWBNO = %d OR a.VENDORAWB1 = %s OR a.VENDORAWB2 = %s OR CAST(a.AWBNO AS CHAR) = %s
-             ORDER BY a.AWBID DESC LIMIT 1",
-            $search_int, self::$awb, self::$awb, self::$awb
-        ));
+             ORDER BY a.AWBID DESC LIMIT 1";
+
+        $awb_row = $wpdb->get_row($wpdb->prepare($query_sql, $search_int, self::$awb, self::$awb, self::$awb));
+
+        self::log('AWBENTRY Query Executed', [
+            'search_int' => $search_int,
+            'search_str' => self::$awb,
+            'found' => (bool)$awb_row,
+            'matched_row' => $awb_row ? [
+                'AWBID' => $awb_row->AWBID ?? null,
+                'AWBNO' => $awb_row->AWBNO ?? null,
+                'VENDORAWB1' => $awb_row->VENDORAWB1 ?? null,
+                'VENDORAWB2' => $awb_row->VENDORAWB2 ?? null,
+                'VENDCODE' => $awb_row->VENDCODE ?? null,
+                'VENDNAME' => $awb_row->VENDNAME ?? null,
+                'SERVICE' => $awb_row->SERVICE_INT ?? null,
+                'AUTOTRACK' => $awb_row->API_VAL ?? null,
+                'TUSER' => $awb_row->TUSER ?? null,
+                'ACCODE' => $awb_row->ACCODE ?? null
+            ] : null
+        ]);
 
         if ($awb_row) {
             // Build consignee-compatible result object from AWBENTRY
@@ -69,6 +100,8 @@ class PE_Data {
             $r->BOOKINGDATE = $awb_row->BOOKINGDATE;
             $r->VENDORID1   = $awb_row->VENDORID1;
             $r->VENDORID2   = $awb_row->VENDORID2;
+            $r->VENDNAME    = $awb_row->VENDNAME ?? '';
+            $r->VENDCODE    = $awb_row->VENDCODE ?? '';
             $r->PHONE       = $awb_row->PHONE;
             $r->SHOWFWD     = $awb_row->SHOWFWD_INT;
             $r->API         = $awb_row->API_VAL;
@@ -78,40 +111,62 @@ class PE_Data {
             $r->ACCODE      = $awb_row->ACCODE;
             $r->APIKEY      = $awb_row->APIKEY;
             $r->PIECES      = $awb_row->PIECES;
+            $r->ORIGIN      = $awb_row->ORIGIN ?? 'SURAT';
             $r->DELIVERYDATE = '';
             $r->DELVTIME     = '';
             $r->RECEIVER     = '';
             $r->STATUS       = '';
 
             // Auto-create parcel_history "SHIPMENT BOOKED" if none exists
+            $history_awb_no = intval($awb_row->AWBNO);
             $has_history = $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM parcel_history WHERE AWBNO = %d", intval(self::$awb)
+                "SELECT COUNT(*) FROM parcel_history WHERE AWBNO = %d", $history_awb_no
             ));
             if (!$has_history) {
+                self::log('Creating Initial parcel_history Entry: SHIPMENT BOOKED', ['AWBNO' => $history_awb_no]);
                 $wpdb->insert('parcel_history', [
-                    'AWBNO'    => intval(self::$awb),
+                    'AWBNO'    => $history_awb_no,
                     'date'     => !empty($awb_row->BOOKINGDATE) ? $awb_row->BOOKINGDATE : current_time('Y-m-d'),
                     'time'     => current_time('H:i:s'),
                     'activity' => 'SHIPMENT BOOKED',
-                    'location' => strtoupper(trim($awb_row->ORIGIN ?: '')),
+                    'location' => strtoupper(trim($awb_row->ORIGIN ?: 'SURAT')),
                 ]);
             }
 
             self::$result = $r;
 
-            // Tracking: vendor APIs if AUTOTRACK=1, else parcel_history
+            // Tracking: check vendor API first if configured, else fallback to parcel_history
             $api = intval($r->API);
-            if ($api == 1) {
+            $svc = intval($r->SERVICE);
+            $vend = strtolower(trim(($r->VENDNAME ?? '') . ' ' . ($r->VENDCODE ?? '')));
+            $should_fetch_api = ($api == 1 || $svc > 0 || !empty($vend));
+
+            self::log('Evaluating API Tracking Eligibility', [
+                'AUTOTRACK' => $api,
+                'SERVICE' => $svc,
+                'VENDNAME' => $r->VENDNAME,
+                'VENDCODE' => $r->VENDCODE,
+                'should_fetch_api' => $should_fetch_api
+            ]);
+
+            if ($should_fetch_api) {
                 self::$tracking = pe_fetch_tracking($r);
-                // pe_fetch_tracking() updates $r->STATUS, $r->DELIVERYDATE, $r->RECEIVER directly
-                self::$status = !empty($r->STATUS) ? $r->STATUS : "In Transit";
-            } else {
+                if (!empty(self::$tracking)) {
+                    self::$status = !empty($r->STATUS) ? $r->STATUS : "In Transit";
+                    self::log('API Tracking Events Found', ['count' => count(self::$tracking), 'status' => self::$status]);
+                } else {
+                    self::log('API Tracking returned 0 events. Falling back to local parcel_history.');
+                }
+            }
+
+            // Fallback: if API returned no events, read from local parcel_history table
+            if (empty(self::$tracking)) {
                 $rows = $wpdb->get_results($wpdb->prepare(
-                    "SELECT * FROM parcel_history WHERE AWBNO = %d ORDER BY date ASC, time ASC", intval(self::$awb)
+                    "SELECT * FROM parcel_history WHERE AWBNO = %d ORDER BY date ASC, time ASC", $history_awb_no
                 ));
+                self::log('Local parcel_history Rows Fetched', ['count' => count($rows ?: [])]);
                 if ($rows) {
                     foreach ($rows as $rw) {
-                        // Skip locations that are just numbers (branch codes)
                         $loc = $rw->location ?? '';
                         if (preg_match('/^\d+$/', trim($loc))) $loc = '';
                         self::$tracking[] = [
@@ -122,7 +177,6 @@ class PE_Data {
                         ];
                     }
                 }
-                // For non-API tracking, derive status from latest parcel_history activity
                 if (!empty(self::$tracking)) {
                     $latest = end(self::$tracking);
                     self::$status = !empty($latest['activity']) ? $latest['activity'] : "In Transit";
@@ -136,12 +190,15 @@ class PE_Data {
             if (empty($r->DELIVERYDATE) || $r->DELIVERYDATE === '0000-00-00') {
                 $del_date = $wpdb->get_var($wpdb->prepare(
                     "SELECT date FROM parcel_history WHERE AWBNO = %d AND LOWER(activity) LIKE '%%delivered%%' ORDER BY date DESC LIMIT 1",
-                    intval(self::$awb)
+                    $history_awb_no
                 ));
                 if ($del_date) {
                     $r->DELIVERYDATE = $del_date;
                 }
             }
+
+            // Always ensure the company origin events exist
+            pe_attach_company_origin_events(self::$tracking, $r);
 
             // Filter out numeric-only locations from tracking
             foreach (self::$tracking as &$_t) {
@@ -149,14 +206,65 @@ class PE_Data {
             }
             unset($_t);
 
+            self::log('Tracking Processing Complete', ['total_events' => count(self::$tracking), 'final_status' => self::$status]);
             return;
         }
 
         // ── Fallback: old consignee table for legacy data ──
+        self::log('AWBENTRY not matched, trying legacy consignee table...');
         self::$result = $wpdb->get_row(
             $wpdb->prepare("SELECT * FROM consignee WHERE AWBNO = %s", self::$awb)
         );
-        if (!self::$result) return;
+
+        if (!self::$result) {
+            // Try checking booking_requests table for web booking requests
+            $bk_req = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM booking_requests WHERE request_awb = %s OR tracking_number = %s LIMIT 1",
+                self::$awb, self::$awb
+            ));
+            if ($bk_req) {
+                $r = new stdClass();
+                $r->c_id        = $bk_req->id;
+                $r->AWBNO       = $bk_req->request_awb;
+                $r->CONSIGNEE   = $bk_req->receiver_name;
+                $r->DESTINATION = $bk_req->receiver_city . (!empty($bk_req->receiver_country) ? ', ' . $bk_req->receiver_country : '');
+                $r->WEIGHT      = $bk_req->weight;
+                $r->ACTUALWEIGHT= $bk_req->weight;
+                $r->SERVICE     = 0;
+                $r->BOOKINGDATE = date('Y-m-d', strtotime($bk_req->created_at));
+                $r->VENDORID1   = $bk_req->tracking_number ?? '';
+                $r->VENDORID2   = '';
+                $r->VENDNAME    = '';
+                $r->VENDCODE    = '';
+                $r->PHONE       = $bk_req->receiver_phone;
+                $r->SHOWFWD     = 0;
+                $r->API         = 0;
+                $r->REMARKS     = $bk_req->remarks ?? '';
+                $r->STATUS      = ucfirst($bk_req->status);
+                $r->PIECES      = $bk_req->no_of_pieces ?? 1;
+                $r->ORIGIN      = $bk_req->sender_city ?? 'SURAT';
+                self::$result = $r;
+                self::$status = $r->STATUS;
+
+                $req_updates = $wpdb->get_results($wpdb->prepare(
+                    "SELECT * FROM request_updates WHERE request_id = %d ORDER BY created_at ASC",
+                    $bk_req->id
+                ));
+                if ($req_updates) {
+                    foreach ($req_updates as $up) {
+                        self::$tracking[] = [
+                            'date' => date('d M Y', strtotime($up->created_at)),
+                            'time' => date('h:i A', strtotime($up->created_at)),
+                            'location' => $bk_req->sender_city ?? 'Origin',
+                            'activity' => $up->title . (!empty($up->description) ? ' - ' . $up->description : '')
+                        ];
+                    }
+                }
+                pe_attach_company_origin_events(self::$tracking, $r);
+                return;
+            }
+            return;
+        }
 
         $r = self::$result;
         self::$status = !empty($r->STATUS) ? $r->STATUS : "In Transit";
@@ -180,7 +288,86 @@ class PE_Data {
                 }
             }
         }
+        pe_attach_company_origin_events(self::$tracking, $r);
     }
+}
+
+// ========================================
+// HELPERS
+// ========================================
+function pe_attach_company_origin_events(&$tracking, $result) {
+    if (!$result) return;
+
+    $origin_city = !empty($result->ORIGIN) ? strtoupper(trim($result->ORIGIN)) : 'SURAT';
+    if ($origin_city === 'SURAT' || empty($origin_city)) {
+        $origin_location = 'SURAT, INDIA';
+    } else {
+        $origin_location = $origin_city . ', INDIA';
+    }
+
+    $raw_bdate = !empty($result->BOOKINGDATE) && $result->BOOKINGDATE !== '0000-00-00' ? $result->BOOKINGDATE : current_time('Y-m-d');
+    $bdate = pe_fdate($raw_bdate);
+
+    if (!is_array($tracking)) {
+        $tracking = [];
+    }
+
+    // Filter out vendor generic placeholder events
+    $vendor_placeholder_patterns = [
+        'information received',
+        'data received',
+        'info received',
+        'order created',
+        'record created',
+        'shipment created',
+        'booking received',
+        'manifest received',
+        'shipment booked',
+    ];
+
+    $tracking = array_values(array_filter($tracking, function($ev) use ($vendor_placeholder_patterns) {
+        $act = strtolower(trim($ev['activity'] ?? ''));
+        $loc = strtolower(trim($ev['location'] ?? ''));
+        if (strpos($loc, 'prince express') !== false) {
+            return true;
+        }
+        foreach ($vendor_placeholder_patterns as $pattern) {
+            if (strpos($act, $pattern) !== false) {
+                return false;
+            }
+        }
+        return true;
+    }));
+
+    $company_events = [];
+    $is_dispatched = !empty($result->VENDORID1) || !empty($result->VENDORID2) || !empty($result->VENDNAME) || intval($result->SERVICE ?? 0) > 0 || !empty($tracking);
+
+    if ($is_dispatched) {
+        $company_events[] = [
+            'date' => $bdate,
+            'time' => '11:15 AM',
+            'location' => $origin_location . ' (PRINCE EXPRESS HUB)',
+            'activity' => 'Shipment Manifested & Dispatched from Origin Hub',
+            '_pe_origin' => 2,
+        ];
+    } else {
+        $company_events[] = [
+            'date' => $bdate,
+            'time' => '10:00 AM',
+            'location' => $origin_location . ' (PRINCE EXPRESS)',
+            'activity' => 'Shipment Booked & Order Created',
+            '_pe_origin' => 1,
+        ];
+    }
+
+    $tracking = array_values(array_filter($tracking, function($ev) {
+        $act = strtolower(trim($ev['activity'] ?? ''));
+        if (strpos($act, 'shipment booked & order created') !== false) return false;
+        if (strpos($act, 'manifested & dispatched from origin') !== false) return false;
+        return true;
+    }));
+
+    $tracking = array_merge($tracking, $company_events);
 }
 
 // ========================================
@@ -400,131 +587,310 @@ function pe_tl_dot_class($activity) {
 // Geocoding handled via wp_ajax endpoint (pe_ajax_geocode) — see map shortcode below.
 
 // ========================================
+// PARSE FLYSWIFT / ITD SERVICES API EVENTS
+// ========================================
+function pe_parse_flyswift_events($body, &$result, $vendor_label = 'FlySwift') {
+    $history = [];
+    if (empty($body)) return $history;
+
+    $body_clean = trim($body);
+    if (substr($body_clean, 0, 1) === '"' && substr($body_clean, -1) === '"') {
+        $body_clean = json_decode($body_clean);
+    }
+    $d = is_string($body_clean) ? json_decode($body_clean) : (is_object($body_clean) || is_array($body_clean) ? $body_clean : json_decode($body));
+
+    // Handle array wrapping e.g. [{"errors":false,"docket_events":[...]}]
+    if (is_array($d) && isset($d[0])) {
+        $d = $d[0];
+    }
+
+    $d_obj = is_object($d) ? $d : (is_array($d) ? (object)$d : null);
+    $d_data = null;
+    if ($d_obj && isset($d_obj->data)) {
+        $d_data = is_object($d_obj->data) ? $d_obj->data : (is_array($d_obj->data) ? (object)$d_obj->data : null);
+    }
+
+    // Extract forwarding number from root or data object if present
+    $cand_fwd = $d_obj->forwarding_no ?? ($d_obj->forwording_no ?? ($d_obj->vendor_awb_2 ?? ($d_obj->vendor_awb2 ?? ($d_obj->secondary_awb ?? ($d_data->forwarding_no ?? ($d_data->forwording_no ?? ($d_data->vendor_awb_2 ?? ($d_data->vendor_awb2 ?? ''))))))));
+    if (!empty($cand_fwd) && empty($result->VENDORID2)) {
+        $cand_str = trim((string)$cand_fwd);
+        if ($cand_str !== '' && stripos($cand_str, 'not found') === false && stripos($cand_str, 'error') === false && !in_array($cand_str, ['0', 'None', 'null', 'undefined', '-', '—'], true) && $cand_str !== ($result->VENDORID1 ?? '') && $cand_str !== strval($result->AWBNO ?? '')) {
+            $result->VENDORID2 = $cand_str;
+        }
+    }
+
+    $events = null;
+    if (is_object($d) && isset($d->docket_events) && is_array($d->docket_events)) {
+        $events = $d->docket_events;
+    } elseif (is_array($d) && isset($d['docket_events']) && is_array($d['docket_events'])) {
+        $events = $d['docket_events'];
+    } elseif ($d_data && isset($d_data->docket_events) && is_array($d_data->docket_events)) {
+        $events = $d_data->docket_events;
+    }
+
+    $info = null;
+    if (is_object($d) && isset($d->docket_info) && is_array($d->docket_info)) {
+        $info = $d->docket_info;
+    } elseif (is_array($d) && isset($d['docket_info']) && is_array($d['docket_info'])) {
+        $info = $d['docket_info'];
+    } elseif ($d_data && isset($d_data->docket_info) && is_array($d_data->docket_info)) {
+        $info = $d_data->docket_info;
+    }
+
+    if ($info) {
+        foreach ($info as $info_pair) {
+            $key = '';
+            $val = '';
+            if (is_array($info_pair) && count($info_pair) >= 2) {
+                $key = strtolower(trim((string)$info_pair[0]));
+                $val = trim((string)$info_pair[1]);
+            } elseif (is_object($info_pair) && isset($info_pair->key)) {
+                $key = strtolower(trim((string)$info_pair->key));
+                $val = trim((string)($info_pair->value ?? ''));
+            }
+            if ($key === 'status' && !empty($val)) {
+                $result->STATUS = $val;
+            } elseif (($key === 'delivery date and time' || $key === 'delivery date' || $key === 'delivery_date') && !empty($val)) {
+                $result->DELIVERYDATE = $val;
+            } elseif (($key === 'receiver name' || $key === 'receiver_name' || $key === 'recipient') && !empty($val)) {
+                $result->RECEIVER = $val;
+            } elseif ((preg_match('/forwarding.*(no|awb|num)|forwording.*(no|awb|num)|fwd.*(no|num)|carrier.*(no|num)|secondary.*awb|vendor.*awb.*2/i', $key) || strpos($key, 'forwarding') !== false || strpos($key, 'forwording') !== false) && !empty($val) && empty($result->VENDORID2)) {
+                if (stripos($val, 'not found') === false && stripos($val, 'error') === false && !in_array($val, ['0', 'None', 'null', 'undefined', '-', '—'], true) && $val !== ($result->VENDORID1 ?? '') && $val !== strval($result->AWBNO ?? '')) {
+                    $result->VENDORID2 = $val;
+                }
+            }
+        }
+    }
+
+    if ($events) {
+        foreach ($events as $s) {
+            $s_obj = (object)$s;
+            $ev_date = !empty($s_obj->event_at) ? $s_obj->event_at : ($s_obj->created_at ?? '');
+            $ev_loc = !empty($s_obj->event_location) ? $s_obj->event_location : (!empty($s_obj->add_city) ? $s_obj->add_city : '');
+            $ev_desc = !empty($s_obj->event_description) ? $s_obj->event_description : ($s_obj->event_remark ?? 'In Transit');
+
+            $history[] = [
+                'date' => !empty($ev_date) ? date("M d, Y", strtotime($ev_date)) : '',
+                'time' => !empty($ev_date) ? date("h:i A", strtotime($ev_date)) : '',
+                'location' => $ev_loc,
+                'activity' => str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'], 'Agent', $ev_desc)
+            ];
+        }
+
+        // If status wasn't in docket_info, take from latest event
+        if (empty($result->STATUS) && !empty($history)) {
+            $latest_ev = reset($history);
+            $result->STATUS = $latest_ev['activity'] ?? 'In Transit';
+        }
+        PE_Data::log($vendor_label . ' Events Parsed Successfully', ['events_count' => count($history), 'status' => $result->STATUS ?? '']);
+    } else {
+        PE_Data::log($vendor_label . ' API returned no docket_events', ['decoded_sample' => is_object($d) || is_array($d) ? array_keys((array)$d) : $d]);
+    }
+
+    return $history;
+}
+
+// ========================================
 // FETCH API TRACKING
 // ========================================
 function pe_fetch_tracking($result) {
     $history = [];
-    $svc = intval($result->SERVICE);
-    $api = intval($result->API);
-    if ($api != 1) return $history;
+    $svc = intval($result->SERVICE ?? 0);
+    $api = intval($result->API ?? 0);
+    $vend = strtolower(trim(($result->VENDNAME ?? '') . ' ' . ($result->VENDCODE ?? '')));
+    $vendor_awb = !empty($result->VENDORID1) ? trim($result->VENDORID1) : trim($result->AWBNO);
 
-    if ($svc < 1001) {
-        global $wpdb;
-        $ss = $wpdb->get_row("SELECT * FROM site_setting LIMIT 1");
-        $d = json_encode(["username"=>$ss->user_name,"password"=>$ss->licence_key,"order_id"=>$result->AWBNO]);
-        $r = wp_remote_post("https://shipway.in/api/getOrderShipmentDetails",['body'=>$d,'headers'=>['Content-Type'=>'text/plain'],'timeout'=>15]);
-        if (!is_wp_error($r)) {
-            $b = json_decode(wp_remote_retrieve_body($r));
-            if (isset($b->status)&&$b->status=="Success"&&isset($b->response->scan)) {
-                foreach ($b->response->scan as $s) {
-                    $history[] = ['date'=>date("M d, Y",strtotime($s->time)),'time'=>date("h:i A",strtotime($s->time)),
-                        'location'=>$s->location??'','activity'=>str_replace(['FedEx','DHL','Aramex','UPS','TNT','Atlantic'],'Agent',$s->status_detail??'')];
+    PE_Data::log('Starting pe_fetch_tracking', [
+        'SERVICE' => $svc,
+        'API' => $api,
+        'VENDNAME' => $result->VENDNAME ?? '',
+        'VENDCODE' => $result->VENDCODE ?? '',
+        'VENDORID1' => $result->VENDORID1 ?? '',
+        'AWBNO' => $result->AWBNO ?? '',
+        'TARGET_AWB' => $vendor_awb
+    ]);
+
+    if ($api != 1 && empty($svc) && empty($vend)) {
+        PE_Data::log('Skipping API fetch: API flag not 1 and no service/vendor configured');
+        return $history;
+    }
+
+    // 1. BHABANI EXPRESS
+    if ($svc == 1021 || strpos($vend, 'bhabani') !== false || strpos($vend, 'bhavani') !== false) {
+        $accode = !empty($result->ACCODE) ? trim($result->ACCODE) : '1050';
+        $company_id = '913';
+        $url = "https://bhabani.itdservices.in/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
+        PE_Data::log('Calling Bhabani Express Tracking API', ['url' => $url]);
+        
+        $r = wp_remote_get($url, ['timeout' => 15, 'sslverify' => false]);
+        if (is_wp_error($r)) {
+            PE_Data::log('Bhabani API HTTP Error', ['error' => $r->get_error_message()]);
+        } else {
+            $code = wp_remote_retrieve_response_code($r);
+            $body = wp_remote_retrieve_body($r);
+            PE_Data::log('Bhabani API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
+            $history = pe_parse_flyswift_events($body, $result, 'Bhabani Express');
+        }
+    }
+    // 2. ACX INTERNATIONAL
+    elseif ($svc == 1020 || strpos($vend, 'acx') !== false) {
+        $accode = !empty($result->ACCODE) ? trim($result->ACCODE) : 'A0872';
+        $company_id = '5';
+        $url = "https://admin.acxintl.in/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
+        PE_Data::log('Calling ACX International Tracking API', ['url' => $url]);
+        
+        $r = wp_remote_get($url, ['timeout' => 15, 'sslverify' => false]);
+        if (is_wp_error($r)) {
+            PE_Data::log('ACX API HTTP Error', ['error' => $r->get_error_message()]);
+        } else {
+            $code = wp_remote_retrieve_response_code($r);
+            $body = wp_remote_retrieve_body($r);
+            PE_Data::log('ACX API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
+            $history = pe_parse_flyswift_events($body, $result, 'ACX International');
+        }
+    }
+    // 3. FLYSWIFT / TRACKMATE
+    elseif ($svc == 1019 || strpos($vend, 'flyswift') !== false || strpos($vend, 'trackmate') !== false || strpos($vend, 'fly') !== false) {
+        $accode = !empty($result->ACCODE) ? trim($result->ACCODE) : '1032';
+        $company_id = '1614';
+        $url = "http://admin.flyswift.net/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
+        PE_Data::log('Calling FlySwift Tracking API', ['url' => $url]);
+        
+        $r = wp_remote_get($url, ['timeout' => 15, 'sslverify' => false]);
+        if (is_wp_error($r)) {
+            PE_Data::log('FlySwift API HTTP Error', ['error' => $r->get_error_message()]);
+        } else {
+            $code = wp_remote_retrieve_response_code($r);
+            $body = wp_remote_retrieve_body($r);
+            PE_Data::log('FlySwift API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
+            $history = pe_parse_flyswift_events($body, $result, 'FlySwift');
+        }
+    }
+    // 4. SAIRAJ INTERNATIONAL (ITDServices Platform)
+    elseif ($svc == 1009 || $svc == 1022 || strpos($vend, 'sairaj') !== false) {
+        $accode = (!empty($result->ACCODE) && $result->ACCODE !== 'T001' && $result->ACCODE !== '1032') ? trim($result->ACCODE) : '1447';
+        $company_id = '144';
+        $url = "http://admin.sairajinternational.online/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
+        PE_Data::log('Calling Sairaj International Tracking API', ['url' => $url]);
+        
+        $r = wp_remote_get($url, ['timeout' => 15, 'sslverify' => false]);
+        if (is_wp_error($r)) {
+            PE_Data::log('Sairaj API HTTP Error', ['error' => $r->get_error_message()]);
+        } else {
+            $code = wp_remote_retrieve_response_code($r);
+            $body = wp_remote_retrieve_body($r);
+            PE_Data::log('Sairaj API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
+            $history = pe_parse_flyswift_events($body, $result, 'Sairaj International');
+        }
+    }
+    // 5. PACIFIC EXPRESS
+    elseif ($svc == 1007 || $svc == 1008 || strpos($vend, 'pacific') !== false) {
+        $user_id = !empty($result->TUSER) ? trim($result->TUSER) : 'P0503';
+        $password = !empty($result->TPASS) ? trim($result->TPASS) : 'P0503@7199';
+        $d = json_encode([
+            "UserID" => $user_id,
+            "Password" => $password,
+            "AWBNo" => $vendor_awb,
+            "Type" => "A"
+        ]);
+        $url = ($svc == 1008) ? "http://cloud.pacegroupintl.com/api/v1/Tracking/Tracking" : "https://eship.pacificexp.net/api/v1/Tracking/Tracking";
+        PE_Data::log('Calling Pacific Express Tracking API', ['url' => $url, 'payload' => ["UserID" => $user_id, "AWBNo" => $vendor_awb, "Type" => "A"]]);
+        
+        $r = wp_remote_post($url, ['body' => $d, 'headers' => ['Content-Type' => 'application/json'], 'timeout' => 15, 'sslverify' => false]);
+        if (is_wp_error($r)) {
+            PE_Data::log('Pacific API HTTP Error', ['error' => $r->get_error_message()]);
+        } else {
+            $code = wp_remote_retrieve_response_code($r);
+            $body = wp_remote_retrieve_body($r);
+            PE_Data::log('Pacific API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
+            
+            $b = json_decode($body);
+            if ($b && isset($b->Response->ErrorDisc) && $b->Response->ErrorDisc == "Success") {
+                if (isset($b->Response->Events) && is_array($b->Response->Events)) {
+                    foreach ($b->Response->Events as $s) {
+                        $history[] = [
+                            'date' => date("M d, Y", strtotime($s->EventDate1)),
+                            'time' => date("h:i A", strtotime($s->EventTime1)),
+                            'location' => $s->Location ?? '',
+                            'activity' => str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'], 'Agent', $s->Status ?? '')
+                        ];
+                    }
                 }
-                if (isset($b->response->current_status_code)&&$b->response->current_status_code=='DEL') {
-                    $result->STATUS='Delivered'; $result->RECEIVER=$b->response->recipient??'';
-                    $result->DELIVERYDATE=date('Y-m-d',strtotime($b->response->time??''));
-                } elseif (isset($b->response->current_status)) $result->STATUS=$b->response->current_status;
+                if (isset($b->Response->Tracking[0])) {
+                    $t = $b->Response->Tracking[0];
+                    $result->STATUS = $t->Status ?? $result->STATUS;
+                    $result->RECEIVER = $t->ReceiverName ?? '';
+                    $result->DELIVERYDATE = $t->DeliveryDate1 ?? ($t->DeliveryDate ?? $result->DELIVERYDATE);
+                    if (!empty($t->VendorAWBNo2)) {
+                        $result->VENDORID2 = trim((string)$t->VendorAWBNo2);
+                    } elseif (!empty($t->VendorAWBNo1)) {
+                        $result->VENDORID2 = trim((string)$t->VendorAWBNo1);
+                    }
+                }
+                PE_Data::log('Pacific Events Parsed Successfully', ['events_count' => count($history), 'status' => $result->STATUS ?? '']);
+            } else {
+                PE_Data::log('Pacific API returned error/no events', ['response' => $b]);
             }
         }
     }
-    elseif ($svc==1001) {
-        $r = wp_remote_get("https://www.sain.in/api/tracking?awb=".$result->VENDORID1,['timeout'=>15]);
-        if (!is_wp_error($r)) {
-            $d = json_decode(wp_remote_retrieve_body($r),true);
-            if (isset($d['success'])&&isset($d['track_activity'])) {
+    // 6. SAIN
+    elseif ($svc == 1001) {
+        $url = "https://www.sain.in/api/tracking?awb=" . $vendor_awb;
+        PE_Data::log('Calling Sain Tracking API', ['url' => $url]);
+        $r = wp_remote_get($url, ['timeout' => 15]);
+        if (is_wp_error($r)) {
+            PE_Data::log('Sain API HTTP Error', ['error' => $r->get_error_message()]);
+        } else {
+            $d = json_decode(wp_remote_retrieve_body($r), true);
+            if (isset($d['success']) && isset($d['track_activity'])) {
                 foreach ($d['track_activity'] as $act) {
                     foreach ($act as $l) {
-                        $history[] = ['date'=>date("M d, Y",strtotime($l['date']??'')),'time'=>date("h:i A",strtotime($l['time']??$l['date']??'')),
-                            'location'=>strtoupper($l['location']??''),'activity'=>str_replace(['Sainx','SainX'],'AGENT',$l['description']??'')];
+                        $history[] = [
+                            'date' => date("M d, Y", strtotime($l['date'] ?? '')),
+                            'time' => date("h:i A", strtotime($l['time'] ?? $l['date'] ?? '')),
+                            'location' => strtoupper($l['location'] ?? ''),
+                            'activity' => str_replace(['Sainx','SainX'], 'AGENT', $l['description'] ?? '')
+                        ];
                     }
                 }
             }
         }
     }
-    elseif ($svc==1009||$svc==1019) {
-        $customerCode = (!empty($result->ACCODE) && $result->ACCODE !== 'T001' && $result->ACCODE !== '1032') ? $result->ACCODE : ($svc==1009 ? '1447' : '1032');
-        $url = ($svc==1009)
-            ? "http://admin.sairajinternational.online/api/tracking_api/get_tracking_data?api_company_id=144&customer_code={$customerCode}&tracking_no={$result->VENDORID1}"
-            : "http://admin.flyswift.net/api/tracking_api/get_tracking_data?api_company_id={$customerCode}&customer_code={$customerCode}&tracking_no={$result->VENDORID1}";
-        $r = wp_remote_get($url,['timeout'=>15]);
-        if (!is_wp_error($r)) {
-            $raw = wp_remote_retrieve_body($r);
-            $raw = trim($raw);
-            if (substr($raw, 0, 1) === '"' && substr($raw, -1) === '"') {
-                $raw = substr($raw, 1, -1);
-            }
-            $d = json_decode($raw);
-            if (is_array($d) && isset($d[0])) {
-                $d = $d[0];
-            }
-            if ($d && isset($d->docket_events) && is_array($d->docket_events)) {
-                foreach ($d->docket_events as $s) {
-                    $evDate = !empty($s->event_at) ? $s->event_at : (!empty($s->date) ? $s->date : '');
-                    $history[] = [
-                        'date' => date("M d, Y", strtotime($evDate)),
-                        'time' => date("h:i A", strtotime($evDate)),
-                        'location' => $s->event_location ?? '',
-                        'activity' => str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'],'Agent', $s->event_description ?? $s->event_state ?? '')
-                    ];
-                }
-                $d_obj = is_object($d) ? $d : (is_array($d) ? (object)$d : null);
-                $d_data = ($d_obj && isset($d_obj->data)) ? (is_object($d_obj->data) ? $d_obj->data : (is_array($d_obj->data) ? (object)$d_obj->data : null)) : null;
-                $cand_fwd = $d_obj->forwarding_no ?? ($d_obj->forwording_no ?? ($d_obj->vendor_awb_2 ?? ($d_obj->vendor_awb2 ?? ($d_obj->secondary_awb ?? ($d_data->forwarding_no ?? ($d_data->forwording_no ?? ($d_data->vendor_awb_2 ?? ($d_data->vendor_awb2 ?? ''))))))));
-                if (!empty($cand_fwd) && empty($result->VENDORID2)) {
-                    $cand_str = trim((string)$cand_fwd);
-                    if ($cand_str !== '' && stripos($cand_str, 'not found') === false && stripos($cand_str, 'error') === false && !in_array($cand_str, ['0', 'None', 'null', 'undefined', '-', '—'], true) && $cand_str !== ($result->VENDORID1 ?? '') && $cand_str !== strval($result->AWBNO ?? '')) {
-                        $result->VENDORID2 = $cand_str;
+    // 7. SHIPWAY (< 1001)
+    elseif ($svc < 1001 && $svc > 0) {
+        global $wpdb;
+        $ss = $wpdb->get_row("SELECT * FROM site_setting LIMIT 1");
+        if ($ss) {
+            $d = json_encode(["username" => $ss->user_name, "password" => $ss->licence_key, "order_id" => $result->AWBNO]);
+            PE_Data::log('Calling Shipway Tracking API', ['order_id' => $result->AWBNO]);
+            $r = wp_remote_post("https://shipway.in/api/getOrderShipmentDetails", ['body' => $d, 'headers' => ['Content-Type' => 'text/plain'], 'timeout' => 15]);
+            if (is_wp_error($r)) {
+                PE_Data::log('Shipway API HTTP Error', ['error' => $r->get_error_message()]);
+            } else {
+                $b = json_decode(wp_remote_retrieve_body($r));
+                if (isset($b->status) && $b->status == "Success" && isset($b->response->scan)) {
+                    foreach ($b->response->scan as $s) {
+                        $history[] = [
+                            'date' => date("M d, Y", strtotime($s->time)),
+                            'time' => date("h:i A", strtotime($s->time)),
+                            'location' => $s->location ?? '',
+                            'activity' => str_replace(['FedEx','DHL','Aramex','UPS','TNT','Atlantic'], 'Agent', $s->status_detail ?? '')
+                        ];
                     }
-                }
-                $d_info = (isset($d->docket_info) && is_array($d->docket_info)) ? $d->docket_info : (($d_data && isset($d_data->docket_info) && is_array($d_data->docket_info)) ? $d_data->docket_info : null);
-                if ($d_info) {
-                    foreach ($d_info as $info) {
-                        if (is_array($info) && count($info) >= 2) {
-                            $k = strtolower(trim($info[0]));
-                            $v = trim($info[1]);
-                            if (strpos($k, 'status') !== false && !empty($v)) $result->STATUS = $v;
-                            if (strpos($k, 'delivery date') !== false && !empty($v)) $result->DELIVERYDATE = $v;
-                            if (strpos($k, 'receiver name') !== false && !empty($v)) $result->RECEIVER = $v;
-                            if ((strpos($k, 'forwarding') !== false || strpos($k, 'forwording') !== false || strpos($k, 'secondary') !== false || strpos($k, 'fwd') !== false) && !empty($v) && empty($result->VENDORID2)) {
-                                if (stripos($v, 'not found') === false && stripos($v, 'error') === false && !in_array($v, ['0', 'None', 'null', 'undefined', '-', '—'], true) && $v !== ($result->VENDORID1 ?? '') && $v !== strval($result->AWBNO ?? '')) {
-                                    $result->VENDORID2 = $v;
-                                }
-                            }
-                        }
+                    if (isset($b->response->current_status_code) && $b->response->current_status_code == 'DEL') {
+                        $result->STATUS = 'Delivered';
+                        $result->RECEIVER = $b->response->recipient ?? '';
+                        $result->DELIVERYDATE = date('Y-m-d', strtotime($b->response->time ?? ''));
+                    } elseif (isset($b->response->current_status)) {
+                        $result->STATUS = $b->response->current_status;
                     }
                 }
             }
         }
+    } else {
+        PE_Data::log('No matching vendor API rule for this shipment.');
     }
-    elseif ($svc==1007||$svc==1008) {
-        $d = json_encode(["UserID"=>$result->TUSER,"Password"=>$result->TPASS,"AWBNo"=>$result->VENDORID1,"Type"=>"A"]);
-        $url = ($svc==1007) ? "https://eship.pacificexp.net/api/v1/Tracking/Tracking" : "https://cloud.pacegroupintl.com/api/v1/Tracking/Tracking";
-        $r = wp_remote_post($url,['body'=>$d,'headers'=>['Content-Type'=>'application/json'],'timeout'=>15]);
-        if (!is_wp_error($r)) {
-            $raw = wp_remote_retrieve_body($r);
-            $b = json_decode($raw);
-            $res = isset($b->Response) ? $b->Response : $b;
-            if (isset($res->ErrorDisc) && (strtolower($res->ErrorDisc)=="success" || (isset($res->ResponseCode) && $res->ResponseCode=="RT01") || (isset($res->ErrorCode) && $res->ErrorCode=="0"))) {
-                if (isset($res->Events) && is_array($res->Events)) {
-                    foreach ($res->Events as $s) {
-                        $history[] = ['date'=>date("M d, Y",strtotime($s->EventDate1 ?? $s->EventDate ?? '')),'time'=>date("h:i A",strtotime($s->EventTime1 ?? $s->EventTime ?? '')),
-                            'location'=>$s->Location??'','activity'=>str_replace(['FedEx','DHL','Aramex','UPS','TNT','ATLANTIC','atlantic','Atlantic'],'Agent',$s->Status??'')];
-                    }
-                }
-                if (isset($res->Tracking[0])) {
-                    $t=$res->Tracking[0];
-                    $result->STATUS=$t->Status??$result->STATUS;
-                    $result->RECEIVER=$t->ReceiverName??'';
-                    $result->DELIVERYDATE=$t->DeliveryDate1??$t->DeliveryDate??$result->DELIVERYDATE;
-                    if (!empty($t->VendorAWBNo2)) {
-                        $result->VENDORID2 = $t->VendorAWBNo2;
-                    } elseif (!empty($t->VendorAWBNo1)) {
-                        $result->VENDORID2 = $t->VendorAWBNo1;
-                    }
-                }
-            }
-        }
-    }
+
     return $history;
 }
 

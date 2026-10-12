@@ -290,9 +290,6 @@ export const createBookingRequest = async (req, res) => {
     syncBookingRequestToRemoteDb(bookingSyncPayload)
       .then(r => console.log('[createBookingRequest] syncBookingRequestToRemoteDb result:', r))
       .catch(e => console.error('[createBookingRequest] syncBookingRequestToRemoteDb ERROR:', e.message))
-    syncInitialRequestToAwbEntry(bookingSyncPayload)
-      .then(r => console.log('[createBookingRequest] syncInitialRequestToAwbEntry result:', r))
-      .catch(e => console.error('[createBookingRequest] syncInitialRequestToAwbEntry ERROR:', e.message))
     syncBookingToWP(bookingSyncPayload)
       .then(r => console.log('[createBookingRequest] syncBookingToWP result:', r))
       .catch(e => console.error('[createBookingRequest] syncBookingToWP ERROR:', e.message))
@@ -333,6 +330,24 @@ export const getBookingRequests = async (req, res) => {
     const safeSortBy = allowedSortColumns.includes(sort_by) ? sort_by : 'created_at'
     const safeSortOrder = sort_order === 'asc' ? 'ASC' : 'DESC'
 
+    // Auto-reconcile requests that have linked shipments
+    try {
+      await execute(
+        `UPDATE booking_requests br
+         INNER JOIN shipments s ON (
+           (br.shipment_id IS NOT NULL AND br.shipment_id > 0 AND s.id = br.shipment_id)
+           OR (br.request_awb != '' AND (s.tracking_number = br.request_awb OR s.order_id = br.request_awb OR s.order_reference = br.request_awb))
+           OR (br.tracking_number != '' AND (s.tracking_number = br.tracking_number OR s.order_id = br.tracking_number))
+         )
+         SET br.status = 'confirmed',
+             br.shipment_id = s.id,
+             br.tracking_number = COALESCE(NULLIF(s.tracking_number, ''), NULLIF(s.order_id, ''), br.request_awb)
+         WHERE br.status IN ('pending', 'processing')`
+      )
+    } catch (rcErr) {
+      // Non-blocking
+    }
+
     let whereClauses = []
     const params = []
 
@@ -340,7 +355,7 @@ export const getBookingRequests = async (req, res) => {
       whereClauses.push('status = ?')
       params.push(status)
     } else {
-      whereClauses.push("status != 'confirmed'")
+      whereClauses.push("status NOT IN ('confirmed', 'cancelled', 'completed') AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')")
     }
     if (search && search.trim()) {
       const term = `%${search.trim()}%`
@@ -381,9 +396,9 @@ export const getBookingRequests = async (req, res) => {
     )
     const total = countRows[0].total
 
-    // Status counts (excluding confirmed which are now in shipments)
-    const countPending = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'pending'`))[0].c
-    const countProcessing = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'processing'`))[0].c
+    // Status counts (excluding confirmed and converted requests which are now in shipments)
+    const countPending = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'pending' AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')`))[0].c
+    const countProcessing = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'processing' AND (shipment_id IS NULL OR shipment_id = 0) AND (tracking_number IS NULL OR tracking_number = '')`))[0].c
     const countRejected = (await query(`SELECT COUNT(*) as c FROM booking_requests WHERE status = 'rejected'`))[0].c
 
     const rows = await query(
