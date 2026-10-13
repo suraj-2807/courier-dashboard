@@ -84,15 +84,21 @@ export const ISO_COUNTRY_MAP = {
 // Inverted Map: Name -> Code
 export const COUNTRY_NAME_TO_CODE = {}
 Object.entries(ISO_COUNTRY_MAP).forEach(([k, v]) => {
-  if (k.length === 2) {
+  if (k.length === 2 && k !== 'UK') {
     COUNTRY_NAME_TO_CODE[v.toUpperCase()] = k.toUpperCase()
   }
 })
-// Common aliases
-COUNTRY_NAME_TO_CODE['UNITED STATES OF AMERICA'] = 'US'
-COUNTRY_NAME_TO_CODE['AMERICA'] = 'US'
+// Common aliases & explicit ISO locks
+COUNTRY_NAME_TO_CODE['UNITED KINGDOM'] = 'GB'
+COUNTRY_NAME_TO_CODE['UK'] = 'GB'
+COUNTRY_NAME_TO_CODE['GB'] = 'GB'
+COUNTRY_NAME_TO_CODE['GBR'] = 'GB'
 COUNTRY_NAME_TO_CODE['GREAT BRITAIN'] = 'GB'
 COUNTRY_NAME_TO_CODE['ENGLAND'] = 'GB'
+COUNTRY_NAME_TO_CODE['UNITED STATES'] = 'US'
+COUNTRY_NAME_TO_CODE['UNITED STATES OF AMERICA'] = 'US'
+COUNTRY_NAME_TO_CODE['USA'] = 'US'
+COUNTRY_NAME_TO_CODE['AMERICA'] = 'US'
 COUNTRY_NAME_TO_CODE['DUBAI'] = 'AE'
 COUNTRY_NAME_TO_CODE['DXB'] = 'AE'
 COUNTRY_NAME_TO_CODE['ABU DHABI'] = 'AE'
@@ -172,7 +178,15 @@ export function getCountryCode(codeOrName, customCountryList = []) {
   if (clean === '—' || clean === '–' || clean === '-' || clean === 'NULL' || clean === 'UNDEFINED' || clean === 'N/A' || clean === 'NONE') return ''
 
   clean = clean.replace(/\s*[-–—]\s*[A-Z]{2,3}$/i, '').replace(/^[\s\-–—]+|[\s\-–—]+$/g, '').trim()
-  if (!clean || clean === '-' || clean === '–' || clean === '—') return ''
+  // Handle United Kingdom / UK / GB explicitly so UK never overrides official ISO code GB
+  if (clean === 'UK' || clean === 'GB' || clean === 'GBR' || clean === 'UNITED KINGDOM' || clean === 'GREAT BRITAIN' || clean === 'ENGLAND') {
+    return 'GB'
+  }
+
+  // Handle United States & USA aliases explicitly
+  if (clean === 'USA' || clean === 'US' || clean === 'UNITED STATES' || clean === 'UNITED STATES OF AMERICA' || clean === 'AMERICA') {
+    return 'US'
+  }
 
   // If already a 2-letter code in our map
   if (clean.length === 2 && ISO_COUNTRY_MAP[clean]) {

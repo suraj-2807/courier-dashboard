@@ -41,9 +41,11 @@ export default function CountryAutocompleteInput({
         // Strip trailing "- XX" from country name
         rawName = rawName.replace(/\s*[-—–]\s*[A-Z]{2,3}$/i, '').trim()
         if (!rawName || rawName === '-' || rawName === '–' || rawName === '—') return
+        if (code === 'UK') code = 'GB'
         // Resolve short codes (FRA→FRANCE, DEU→GERMANY, CAN→CANADA, SGP→SINGAPORE, DUBAI→UNITED ARAB EMIRATES, etc.)
         const resolvedName = getFullCountryName(rawName) || getFullCountryName(code) || rawName
-        const resolvedCode = getCountryCode(code) || getCountryCode(resolvedName) || (code.length === 2 ? code : '')
+        let resolvedCode = getCountryCode(code) || getCountryCode(resolvedName) || (code.length === 2 ? code : '')
+        if (resolvedCode === 'UK') resolvedCode = 'GB'
         if (resolvedCode && resolvedName && !seenCodes.has(resolvedCode) && !seenNames.has(resolvedName)) {
           seenCodes.add(resolvedCode)
           seenNames.add(resolvedName)
@@ -54,6 +56,7 @@ export default function CountryAutocompleteInput({
 
     // 2. Add fallback items from ISO_COUNTRY_MAP for any missing common 2-letter codes
     Object.entries(ISO_COUNTRY_MAP).forEach(([code, name]) => {
+      if (code === 'UK') return // Skip UK alias, official ISO 3166-1 alpha-2 code is GB
       if (code.length === 2 && !seenCodes.has(code) && !seenNames.has(name)) {
         seenCodes.add(code)
         seenNames.add(name)
@@ -69,7 +72,9 @@ export default function CountryAutocompleteInput({
   const currentCode = useMemo(() => {
     const cleanVal = stripHyphen(value)
     if (!cleanVal) return ''
-    return getCountryCode(cleanVal, combinedList) || (cleanVal.length === 2 ? cleanVal.toUpperCase() : '')
+    let code = getCountryCode(cleanVal, combinedList) || (cleanVal.length === 2 ? cleanVal.toUpperCase() : '')
+    if (code === 'UK') code = 'GB'
+    return code
   }, [value, combinedList])
 
   const currentFullName = useMemo(() => {
@@ -107,7 +112,8 @@ export default function CountryAutocompleteInput({
 
   const handleSelect = useCallback((item) => {
     if (disabled || !item) return
-    const code = (getCountryCode(item.country_code) || item.country_code || '').toUpperCase()
+    let code = (getCountryCode(item.country_code) || item.country_code || '').toUpperCase()
+    if (code === 'UK') code = 'GB'
     const name = stripHyphen(item.country_name) || ''
     setSearch(name)
     setIsOpen(false)

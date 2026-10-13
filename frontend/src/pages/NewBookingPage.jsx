@@ -478,7 +478,16 @@ export default function NewBookingPage() {
   }
   const resolveCountryCode = (val) => {
     if (!val) return ''
-    return getCountryCode(val, countryList) || countryLookupMap[val.trim().toUpperCase()] || val.trim().toUpperCase()
+    const clean = val.trim().toUpperCase()
+    if (clean === 'UK' || clean === 'GB' || clean === 'GBR' || clean === 'UNITED KINGDOM' || clean === 'GREAT BRITAIN' || clean === 'ENGLAND') {
+      return 'GB'
+    }
+    if (clean === 'USA' || clean === 'US' || clean === 'UNITED STATES' || clean === 'UNITED STATES OF AMERICA' || clean === 'AMERICA') {
+      return 'US'
+    }
+    const res = getCountryCode(val, countryList) || countryLookupMap[clean] || clean
+    if (res === 'UK') return 'GB'
+    return res
   }
 
   // Edit Mode or Pre-fill from URL params

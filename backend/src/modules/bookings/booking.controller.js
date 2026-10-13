@@ -2280,11 +2280,12 @@ export const getBookings = async (req, res) => {
     }
 
     // Destination Country filter — match against both rcv.country (join) and s.receiver_country (inline snapshot)
-    // Also resolve ISO code variants (e.g. "UNITED STATES" → also match "US", "USA")
+    // Also resolve ISO code variants (e.g. "UNITED STATES" → also match "US", "USA", "UNITED STATES OF AMERICA")
     if (country && country.trim()) {
       const cTerm = country.trim().toUpperCase()
       const ISO_COUNTRY_MAP = {
-        IN: 'INDIA', IND: 'INDIA', US: 'UNITED STATES', USA: 'UNITED STATES',
+        IN: 'INDIA', IND: 'INDIA',
+        US: 'UNITED STATES', USA: 'UNITED STATES', 'UNITED STATES OF AMERICA': 'UNITED STATES',
         GB: 'UNITED KINGDOM', GBR: 'UNITED KINGDOM', UK: 'UNITED KINGDOM',
         CA: 'CANADA', CAN: 'CANADA', AU: 'AUSTRALIA', AUS: 'AUSTRALIA',
         AE: 'UNITED ARAB EMIRATES', ARE: 'UNITED ARAB EMIRATES', UAE: 'UNITED ARAB EMIRATES',
@@ -2301,6 +2302,29 @@ export const getBookings = async (req, res) => {
       }
       const cleanTerm = cTerm.replace(/\s*-\s*[A-Z]{2,3}$/, '').trim()
       const variants = new Set([cTerm, cleanTerm])
+
+      // Handle United States & USA aliases explicitly
+      if (
+        cTerm === 'UNITED STATES' || cTerm === 'UNITED STATES OF AMERICA' || cTerm === 'USA' || cTerm === 'US' ||
+        cleanTerm === 'UNITED STATES' || cleanTerm === 'UNITED STATES OF AMERICA' || cleanTerm === 'USA' || cleanTerm === 'US'
+      ) {
+        variants.add('UNITED STATES')
+        variants.add('UNITED STATES OF AMERICA')
+        variants.add('USA')
+        variants.add('US')
+      }
+
+      // Handle United Kingdom & UK aliases explicitly
+      if (
+        cTerm === 'UNITED KINGDOM' || cTerm === 'UK' || cTerm === 'GB' || cTerm === 'GBR' || cTerm === 'GREAT BRITAIN' ||
+        cleanTerm === 'UNITED KINGDOM' || cleanTerm === 'UK' || cleanTerm === 'GB' || cleanTerm === 'GBR' || cleanTerm === 'GREAT BRITAIN'
+      ) {
+        variants.add('UNITED KINGDOM')
+        variants.add('UK')
+        variants.add('GB')
+        variants.add('GBR')
+      }
+
       for (const [code, name] of Object.entries(ISO_COUNTRY_MAP)) {
         if (name === cTerm || name === cleanTerm) variants.add(code)
         if (code === cTerm || code === cleanTerm) variants.add(name)
@@ -2602,7 +2626,13 @@ export const getBookings = async (req, res) => {
            AND (s.is_trashed = 0 OR s.is_trashed IS NULL)
          ORDER BY country_name ASC`
       )
-      distinctCountries = countryRows.map(r => r.country_name).filter(Boolean)
+      distinctCountries = countryRows.map(r => {
+        const val = r.country_name?.trim()
+        if (val === 'UNITED STATES OF AMERICA' || val === 'USA' || val === 'US') return 'UNITED STATES'
+        if (val === 'UK' || val === 'GB' || val === 'GBR' || val === 'GREAT BRITAIN') return 'UNITED KINGDOM'
+        return val
+      }).filter(Boolean)
+      distinctCountries = Array.from(new Set(distinctCountries)).sort()
     } catch (e) {
       // Silently ignore — dropdown will remain empty
     }

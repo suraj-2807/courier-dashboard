@@ -1367,6 +1367,29 @@ if (!$is_accounting_enabled) {
     grid-column: 1/-1
   }
 
+  /* ── ROUTE & ADDRESS TABLE ── */
+  .cp-address-table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--cpbdr);
+    border-radius: 12px;
+    background: #ffffff;
+    margin-bottom: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  }
+  .cp-address-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .cp-address-table th,
+  .cp-address-table td {
+    padding: 9px 14px;
+    vertical-align: top;
+  }
+  .cp-address-table tr:not(:last-child) {
+    border-bottom: 1px solid var(--cpbdr);
+  }
+
   /* ── ADMIN PORTAL STYLE PERSONCARD ADDRESSES ── */
   .cp-address-grid {
     display: grid;
@@ -2306,8 +2329,8 @@ if (!$is_accounting_enabled) {
         </div>
       </div>
 
-      <!-- Address Filter Tabs -->
-      <div style="margin-bottom:16px;">
+      <!-- Address Filter Tabs & Search -->
+      <div style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
         <div class="cp-addr-filters" style="display:inline-flex;">
           <button class="cp-addr-filter active" onclick="cpSetAddrFilter('all', this)"><i
               class="fa-solid fa-layer-group" style="font-size:11px;"></i> All</button>
@@ -2317,6 +2340,11 @@ if (!$is_accounting_enabled) {
               class="fa-solid fa-arrow-down-to-bracket" style="font-size:11px; color:#10b981;"></i> Receiver</button>
           <button class="cp-addr-filter" onclick="cpSetAddrFilter('both', this)"><i
               class="fa-solid fa-arrows-left-right" style="font-size:11px; color:#f59e0b;"></i> Both</button>
+        </div>
+        <div style="position:relative; width:100%; max-width:320px;">
+          <i class="fa-solid fa-magnifying-glass" style="position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--cptext3); font-size:12px; pointer-events:none;"></i>
+          <input type="text" id="cp-addr-search" oninput="cpRenderAddresses()" placeholder="Search name, phone, city, company..."
+            style="width:100%; padding:9px 12px 9px 34px; border-radius:10px; border:1px solid var(--cpbdr); background:#fff; font-size:12.5px; color:var(--cptext); outline:none; box-sizing:border-box;" />
         </div>
       </div>
 
@@ -3137,6 +3165,121 @@ if (!$is_accounting_enabled) {
     return (simplified || clean).replace(/^[\s\-–—]+|[\s\-–—]+$/g, '');
   }
 
+  function cpRenderAddressTable(s, r) {
+    s = s || {};
+    r = r || {};
+
+    function parsePerson(opt, isShipper) {
+      var rawCountry = opt.country || (isShipper ? 'INDIA' : '');
+      var country = rawCountry ? cpGetFullCountryName(rawCountry) : '';
+      var name = (opt.name || opt.company || '—').trim();
+      var company = (opt.company && opt.company !== opt.name) ? String(opt.company).trim() : '';
+      var phones = [opt.phone, opt.phone_2].filter(Boolean).map(function(p){ return String(p).trim(); }).filter(Boolean).join(' / ');
+      var email = (opt.email || '').trim();
+      var addr1 = (opt.address || '').trim();
+      var addr2 = (opt.address_2 || '').trim();
+      var addr = [addr1, addr2].filter(Boolean).join(', ');
+      var cityState = [opt.city, opt.state].filter(Boolean).map(function(c){ return String(c).trim(); }).join(', ');
+      var pin = (opt.pincode || '').toString().trim();
+      var cityStatePin = cityState + (pin ? (cityState ? ' — ' : '') + pin : '');
+      var taxLabel = (opt.gst_type || 'Tax ID / GST').trim();
+      var taxNo = (opt.gst_no || opt.gstin || opt.gst || '').trim();
+
+      return {
+        name: name,
+        company: company,
+        phone: phones,
+        email: email,
+        address: addr,
+        cityStatePin: cityStatePin,
+        country: country,
+        taxLabel: taxLabel,
+        taxNo: taxNo
+      };
+    }
+
+    var shp = parsePerson(s, true);
+    var rcv = parsePerson(r, false);
+
+    var h = '';
+    h += '<div class="cp-address-table-wrapper">';
+    h += '<table class="cp-address-table">';
+    h += '  <thead>';
+    h += '    <tr style="background:#f8fafc; border-bottom:1px solid var(--cpbdr);">';
+    h += '      <th style="padding:10px 14px; text-align:left; font-size:10px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:0.6px; width:130px; border-right:1px solid var(--cpbdr);">Field</th>';
+    h += '      <th style="padding:10px 14px; text-align:left; font-size:12px; font-weight:800; color:#1e293b; border-right:1px solid var(--cpbdr); width:43%;">';
+    h += '        <div style="display:inline-flex; align-items:center; gap:8px;">';
+    h += '          <div class="cp-person-icon-box shipper" style="width:22px; height:22px; border-radius:6px; background:#eff6ff; color:#2563eb; display:inline-flex; align-items:center; justify-content:center; font-size:11px;"><i class="fa-solid fa-arrow-up-from-bracket"></i></div>';
+    h += '          <span>Pickup — Shipper</span>';
+    h += '        </div>';
+    h += '      </th>';
+    h += '      <th style="padding:10px 14px; text-align:left; font-size:12px; font-weight:800; color:#1e293b; width:43%;">';
+    h += '        <div style="display:inline-flex; align-items:center; gap:8px;">';
+    h += '          <div class="cp-person-icon-box receiver" style="width:22px; height:22px; border-radius:6px; background:#ecfdf5; color:#059669; display:inline-flex; align-items:center; justify-content:center; font-size:11px;"><i class="fa-solid fa-location-dot"></i></div>';
+    h += '          <span>Destination — Receiver</span>';
+    h += '        </div>';
+    h += '      </th>';
+    h += '    </tr>';
+    h += '  </thead>';
+    h += '  <tbody>';
+
+    var rows = [
+      {
+        label: 'Name / Person',
+        s: '<strong style="font-size:13px; color:var(--cptext); font-weight:800;">' + (shp.name || '—') + '</strong>',
+        r: '<strong style="font-size:13px; color:var(--cptext); font-weight:800;">' + (rcv.name || '—') + '</strong>'
+      },
+      {
+        label: 'Company',
+        s: shp.company ? '<span style="font-weight:600; color:var(--cptext2);">' + shp.company + '</span>' : '<span style="color:var(--cptext3);">—</span>',
+        r: rcv.company ? '<span style="font-weight:600; color:var(--cptext2);">' + rcv.company + '</span>' : '<span style="color:var(--cptext3);">—</span>'
+      },
+      {
+        label: 'Contact Info',
+        s: (shp.phone ? '<div><i class="fa-solid fa-phone" style="color:var(--cptext3); font-size:10px; margin-right:5px;"></i>' + shp.phone + '</div>' : '') +
+           (shp.email ? '<div style="margin-top:2px;"><i class="fa-solid fa-envelope" style="color:var(--cptext3); font-size:10px; margin-right:5px;"></i>' + shp.email + '</div>' : '') || '<span style="color:var(--cptext3);">—</span>',
+        r: (rcv.phone ? '<div><i class="fa-solid fa-phone" style="color:var(--cptext3); font-size:10px; margin-right:5px;"></i>' + rcv.phone + '</div>' : '') +
+           (rcv.email ? '<div style="margin-top:2px;"><i class="fa-solid fa-envelope" style="color:var(--cptext3); font-size:10px; margin-right:5px;"></i>' + rcv.email + '</div>' : '') || '<span style="color:var(--cptext3);">—</span>'
+      },
+      {
+        label: 'Address',
+        s: shp.address ? '<div style="line-height:1.45; color:var(--cptext1);">' + shp.address + '</div>' : '<span style="color:var(--cptext3);">—</span>',
+        r: rcv.address ? '<div style="line-height:1.45; color:var(--cptext1);">' + rcv.address + '</div>' : '<span style="color:var(--cptext3);">—</span>'
+      },
+      {
+        label: 'City / State / Pin',
+        s: shp.cityStatePin ? '<div style="color:var(--cptext1); font-weight:500;">' + shp.cityStatePin + '</div>' : '<span style="color:var(--cptext3);">—</span>',
+        r: rcv.cityStatePin ? '<div style="color:var(--cptext1); font-weight:500;">' + rcv.cityStatePin + '</div>' : '<span style="color:var(--cptext3);">—</span>'
+      },
+      {
+        label: 'Country',
+        s: shp.country ? '<span class="cp-country-badge" style="display:inline-block; font-size:11px; font-weight:700; color:#1e293b; background:#f1f5f9; padding:2px 8px; border-radius:6px; border:1px solid rgba(0,0,0,0.08);">' + shp.country + '</span>' : '<span style="color:var(--cptext3);">—</span>',
+        r: rcv.country ? '<span class="cp-country-badge" style="display:inline-block; font-size:11px; font-weight:700; color:#1e293b; background:#f1f5f9; padding:2px 8px; border-radius:6px; border:1px solid rgba(0,0,0,0.08);">' + rcv.country + '</span>' : '<span style="color:var(--cptext3);">—</span>'
+      },
+      {
+        label: 'Tax ID / GST',
+        s: shp.taxNo ? '<span style="font-family:monospace; font-size:11px; font-weight:600; color:var(--cptext2);"><strong style="color:var(--cptext3);">' + shp.taxLabel + ':</strong> ' + shp.taxNo + '</span>' : '<span style="color:var(--cptext3);">—</span>',
+        r: rcv.taxNo ? '<span style="font-family:monospace; font-size:11px; font-weight:600; color:var(--cptext2);"><strong style="color:var(--cptext3);">' + rcv.taxLabel + ':</strong> ' + rcv.taxNo + '</span>' : '<span style="color:var(--cptext3);">—</span>'
+      }
+    ];
+
+    rows.forEach(function(row, idx) {
+      var isLast = idx === rows.length - 1;
+      var borderBottom = isLast ? '' : 'border-bottom:1px solid var(--cpbdr);';
+      h += '  <tr style="' + borderBottom + '">';
+      h += '    <td style="padding:9px 14px; font-weight:700; color:var(--cptext3); font-size:10.5px; text-transform:uppercase; letter-spacing:0.4px; border-right:1px solid var(--cpbdr); background:#fafbfc; vertical-align:top; white-space:nowrap;">' + row.label + '</td>';
+      h += '    <td style="padding:9px 14px; border-right:1px solid var(--cpbdr); vertical-align:top;">' + row.s + '</td>';
+      h += '    <td style="padding:9px 14px; vertical-align:top;">' + row.r + '</td>';
+      h += '  </tr>';
+    });
+
+    h += '  </tbody>';
+    h += '</table>';
+    h += '</div>';
+
+    return h;
+  }
+
   function cpRenderPersonCard(opt) {
     if (!opt) return '';
     var role = opt.role || 'shipper';
@@ -3409,9 +3552,9 @@ if (!$is_accounting_enabled) {
       }
       h += '</div>';
 
-      // Sender & Receiver Route and Address Details (Admin Portal Style PersonCard)
-      h += '<div class="cp-ds"><h4><i class="fa-solid fa-route"></i> Route & Address Information</h4><div class="cp-address-grid">';
-      h += cpRenderPersonCard({
+      // Sender & Receiver Route and Address Details (Table Format)
+      h += '<div class="cp-ds"><h4><i class="fa-solid fa-route"></i> Route & Address Information</h4>';
+      h += cpRenderAddressTable({
         role: 'shipper',
         name: r.sender_name,
         company: r.sender_company,
@@ -3426,8 +3569,7 @@ if (!$is_accounting_enabled) {
         country: r.sender_country || 'INDIA',
         gst_type: r.sender_gst_type,
         gst_no: r.sender_gst || r.sender_gstin
-      });
-      h += cpRenderPersonCard({
+      }, {
         role: 'receiver',
         name: r.receiver_name,
         company: r.receiver_company,
@@ -3443,7 +3585,7 @@ if (!$is_accounting_enabled) {
         gst_type: r.receiver_gst_type,
         gst_no: r.receiver_gst || r.receiver_gstin
       });
-      h += '</div></div>';
+      h += '</div>';
 
       // Package Details
       h += '<div class="cp-ds"><h4><i class="fa-solid fa-box"></i> Package Details</h4><div class="cp-dg">';
@@ -3971,9 +4113,9 @@ if (!$is_accounting_enabled) {
         h += '</tbody></table></div></div>';
       }
 
-      // Sender & Receiver Route and Address Details (Admin Portal Style PersonCard)
-      h += '<div class="cp-ds"><h4><i class="fa-solid fa-location-dot"></i> Route & Address Information</h4><div class="cp-address-grid">';
-      h += cpRenderPersonCard({
+      // Sender & Receiver Route and Address Details (Table Format)
+      h += '<div class="cp-ds"><h4><i class="fa-solid fa-location-dot"></i> Route & Address Information</h4>';
+      h += cpRenderAddressTable({
         role: 'shipper',
         name: s.shipper || s.sender_name,
         company: s.shipper_company || s.sender_company,
@@ -3988,8 +4130,7 @@ if (!$is_accounting_enabled) {
         country: s.origin || s.shipper_country || 'INDIA',
         gst_type: s.shipper_gst_type || s.sender_gst_type,
         gst_no: s.shipper_gst || s.sender_gst
-      });
-      h += cpRenderPersonCard({
+      }, {
         role: 'receiver',
         name: s.consignee || s.receiver_name,
         company: s.consignee_company || s.receiver_company,
@@ -4005,7 +4146,7 @@ if (!$is_accounting_enabled) {
         gst_type: s.consignee_gst_type || s.receiver_gst_type,
         gst_no: s.consignee_gst || s.receiver_gst
       });
-      h += '</div></div>';
+      h += '</div>';
 
       // Official Box Labels & Shipping Documents
       var shpLabelUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/' + encodeURIComponent(s.awb);
@@ -4243,8 +4384,24 @@ if (!$is_accounting_enabled) {
       });
     }
 
+    // Filter by Search Query
+    var searchInput = document.getElementById('cp-addr-search');
+    var searchVal = (searchInput ? searchInput.value : '').trim().toLowerCase();
+    if (searchVal) {
+      filtered = filtered.filter(function (a) {
+        var str = [
+          a.name, a.company, a.phone, a.phone_2, a.email,
+          a.address, a.address_2, a.city, a.state, a.pincode,
+          a.country, a.gstin_no
+        ].filter(Boolean).join(' ').toLowerCase();
+        return str.indexOf(searchVal) >= 0;
+      });
+    }
+
     if (!filtered.length) {
-      var emptyMsg = cpSavedAddresses.length ? 'No <strong>' + cpAddrFilter + '</strong> addresses found.' : 'Save your pickup and delivery contacts here to quickly autofill them when creating shipments.';
+      var emptyMsg = cpSavedAddresses.length
+        ? (searchVal ? 'No addresses matching "' + searchVal + '".' : 'No <strong>' + cpAddrFilter + '</strong> addresses found.')
+        : 'Save your pickup and delivery contacts here to quickly autofill them when creating shipments.';
       var emptyTitle = cpSavedAddresses.length ? 'No Matching Addresses' : 'No Saved Addresses';
       c.innerHTML = '<div style="background:var(--cpcard); border-radius:16px; border:1px dashed var(--cpbdr); padding:48px 24px; text-align:center;">' +
         '<div style="width:48px; height:48px; border-radius:12px; background:rgba(187,0,19,0.08); color:var(--cpred); display:flex; align-items:center; justify-content:center; margin:0 auto 12px; font-size:20px;"><i class="fa-solid fa-address-book"></i></div>' +
@@ -4257,34 +4414,105 @@ if (!$is_accounting_enabled) {
       return;
     }
 
-    var h = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:16px;">';
+    var h = '<div class="cp-tc" style="background:#fff; border-radius:16px; border:1px solid var(--cpbdr); overflow:hidden; box-shadow:var(--cpsh); margin-top:0;">';
+    h += '<div class="cp-tw">';
+    h += '<table class="cp-t" style="min-width:920px; width:100%;">';
+    h += '<thead><tr>';
+    h += '<th style="width:115px; padding:13px 16px;">Type</th>';
+    h += '<th style="padding:13px 16px;">Contact & Company</th>';
+    h += '<th style="padding:13px 16px;">Phone & Email</th>';
+    h += '<th style="padding:13px 16px;">Address Details</th>';
+    h += '<th style="padding:13px 16px;">Location</th>';
+    h += '<th style="padding:13px 16px;">Tax / GSTIN</th>';
+    h += '<th style="padding:13px 16px; text-align:right; width:90px;">Actions</th>';
+    h += '</tr></thead>';
+    h += '<tbody>';
+
     filtered.forEach(function (a) {
       var rawType = (a.address_type || 'both').toLowerCase();
-      var typeColors = { sender: { bg: 'rgba(59,130,246,0.08)', color: '#1e40af', border: 'rgba(59,130,246,0.2)' }, receiver: { bg: 'rgba(16,185,129,0.08)', color: '#047857', border: 'rgba(16,185,129,0.2)' }, both: { bg: 'rgba(245,158,11,0.08)', color: '#92400e', border: 'rgba(245,158,11,0.2)' } };
+      var typeColors = {
+        sender: { bg: 'rgba(59,130,246,0.08)', color: '#1e40af', border: 'rgba(59,130,246,0.2)' },
+        receiver: { bg: 'rgba(16,185,129,0.08)', color: '#047857', border: 'rgba(16,185,129,0.2)' },
+        both: { bg: 'rgba(245,158,11,0.08)', color: '#92400e', border: 'rgba(245,158,11,0.2)' }
+      };
       var tc = typeColors[rawType] || typeColors.both;
       var typeIcon = rawType === 'sender' ? 'fa-arrow-up-from-bracket' : rawType === 'receiver' ? 'fa-arrow-down-to-bracket' : 'fa-arrows-left-right';
-      var typeBadge = '<span style="background:' + tc.bg + '; color:' + tc.color + '; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:800; text-transform:uppercase; display:inline-flex; align-items:center; gap:4px;"><i class="fa-solid ' + typeIcon + '" style="font-size:9px;"></i>' + (a.address_type || 'BOTH') + '</span>';
+      var typeBadge = '<span style="background:' + tc.bg + '; color:' + tc.color + '; border:1px solid ' + tc.border + '; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:800; text-transform:uppercase; display:inline-flex; align-items:center; gap:4px;"><i class="fa-solid ' + typeIcon + '" style="font-size:9px;"></i>' + (a.address_type || 'BOTH') + '</span>';
       if (a.is_default) {
-        typeBadge += ' <span style="background:#ecfdf5; color:#059669; padding:3px 8px; border-radius:6px; font-size:10px; font-weight:800; text-transform:uppercase;">DEFAULT</span>';
+        typeBadge += '<div style="margin-top:4px;"><span style="background:#ecfdf5; color:#059669; border:1px solid #bbf7d0; padding:2px 6px; border-radius:5px; font-size:9px; font-weight:800; text-transform:uppercase;">DEFAULT</span></div>';
       }
-      h += '<div style="background:var(--cpcard); border-radius:16px; border:1px solid var(--cpbdr); border-left:4px solid ' + tc.color + '; padding:20px; box-shadow:var(--cpsh); display:flex; flex-direction:column; justify-content:space-between; transition:all .2s;" onmouseenter="this.style.transform=\'translateY(-2px)\';this.style.boxShadow=\'var(--cpsh2)\'" onmouseleave="this.style.transform=\'none\';this.style.boxShadow=\'var(--cpsh)\'">';
-      h += '<div>';
-      h += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">' + typeBadge + '<div style="display:flex; gap:6px;">' +
-        '<button onclick="cpEditAddress(' + a.id + ')" title="Edit" style="border:none; background:rgba(0,0,0,0.04); width:28px; height:28px; border-radius:6px; color:var(--cptext2); cursor:pointer; transition:all .15s;" onmouseenter="this.style.background=\'rgba(59,130,246,0.1)\';this.style.color=\'#1e40af\'" onmouseleave="this.style.background=\'rgba(0,0,0,0.04)\';this.style.color=\'var(--cptext2)\'"><i class="fa-solid fa-pen" style="font-size:11px;"></i></button>' +
-        '<button onclick="cpDeleteAddress(' + a.id + ')" title="Delete" style="border:none; background:rgba(220,38,38,0.08); width:28px; height:28px; border-radius:6px; color:#dc2626; cursor:pointer; transition:all .15s;" onmouseenter="this.style.background=\'rgba(220,38,38,0.15)\'" onmouseleave="this.style.background=\'rgba(220,38,38,0.08)\'"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button>' +
-        '</div></div>';
-      h += '<h4 style="font-size:15px; font-weight:800; color:var(--cptext); margin:0 0 2px;">' + (a.name || '—') + '</h4>';
-      if (a.company) h += '<div style="font-size:12px; font-weight:600; color:var(--cpred); margin-bottom:8px; text-transform:uppercase;">' + a.company + '</div>';
-      h += '<div style="font-size:13px; color:var(--cptext2); line-height:1.4; margin-bottom:12px;">' + (a.address || '') + (a.address_2 ? ', ' + a.address_2 : '') + '<br><strong>' + (a.city || '') + '</strong>' + (a.state ? ', ' + a.state : '') + (a.pincode ? ' - ' + a.pincode : '') + '<br><span style="font-weight:700; color:var(--cptext);">' + cpGetFullCountryName(a.country || 'INDIA') + '</span></div>';
-      h += '</div>';
-      h += '<div style="border-top:1px solid var(--cpbdr); padding-top:10px; font-size:12px; color:var(--cptext2); display:flex; flex-direction:column; gap:4px;">';
-      if (a.phone) h += '<div><i class="fa-solid fa-phone" style="width:14px; margin-right:6px; color:var(--cptext3);"></i>' + a.phone + (a.phone_2 ? ' / ' + a.phone_2 : '') + '</div>';
-      if (a.email) h += '<div><i class="fa-solid fa-envelope" style="width:14px; margin-right:6px; color:var(--cptext3);"></i>' + a.email + '</div>';
-      if (a.gstin_no) h += '<div><i class="fa-solid fa-id-card" style="width:14px; margin-right:6px; color:var(--cptext3);"></i>' + (a.gstin_type ? a.gstin_type + ': ' : '') + a.gstin_no + '</div>';
-      h += '</div>';
-      h += '</div>';
+
+      var phones = [a.phone, a.phone_2].filter(Boolean).map(function(p){ return String(p).trim(); }).filter(Boolean).join(' / ');
+      var fullAddr = [a.address, a.address_2].filter(Boolean).map(function(s){ return String(s).trim(); }).filter(Boolean).join(', ');
+      var cityStatePin = [a.city, a.state].filter(Boolean).map(function(s){ return String(s).trim(); }).join(', ');
+      if (a.pincode) {
+        cityStatePin += (cityStatePin ? ' - ' : '') + String(a.pincode).trim();
+      }
+      var countryName = cpGetFullCountryName(a.country || (rawType === 'sender' ? 'INDIA' : ''));
+
+      h += '<tr style="border-bottom:1px solid #f1f5f9; cursor:default;">';
+
+      // Type & Default
+      h += '<td style="vertical-align:top; padding:14px 16px;">' + typeBadge + '</td>';
+
+      // Contact & Company
+      h += '<td style="vertical-align:top; padding:14px 16px;">';
+      h += '  <div style="font-weight:800; color:var(--cptext); font-size:14px; line-height:1.3;">' + (a.name || '—') + '</div>';
+      if (a.company) {
+        h += '  <div style="font-size:11px; font-weight:700; color:var(--cptext3); display:flex; align-items:center; gap:5px; margin-top:3px; text-transform:uppercase;"><i class="fa-solid fa-building" style="font-size:10px; opacity:0.8;"></i>' + a.company + '</div>';
+      }
+      h += '</td>';
+
+      // Phone & Email
+      h += '<td style="vertical-align:top; padding:14px 16px;">';
+      if (phones) {
+        h += '  <div style="font-family:monospace; font-size:12px; font-weight:700; color:var(--cptext); display:flex; align-items:center; gap:6px;"><i class="fa-solid fa-phone" style="color:#059669; font-size:10px;"></i>' + phones + '</div>';
+      }
+      if (a.email) {
+        h += '  <div style="font-size:12px; color:var(--cptext2); display:flex; align-items:center; gap:6px; margin-top:3px;"><i class="fa-solid fa-envelope" style="color:var(--cpblue); font-size:10px;"></i>' + a.email + '</div>';
+      }
+      if (!phones && !a.email) {
+        h += '  <span style="color:var(--cptext3);">—</span>';
+      }
+      h += '</td>';
+
+      // Address Details
+      h += '<td style="vertical-align:top; padding:14px 16px; max-width:260px;">';
+      h += '  <div style="font-size:12.5px; color:var(--cptext1); line-height:1.45; word-break:break-word;">' + (fullAddr || '—') + '</div>';
+      h += '</td>';
+
+      // Location
+      h += '<td style="vertical-align:top; padding:14px 16px;">';
+      h += '  <div style="font-weight:700; color:var(--cptext); font-size:12.5px;">' + (cityStatePin || '—') + '</div>';
+      if (countryName) {
+        h += '  <span class="cp-country-badge" style="display:inline-block; margin-top:4px; font-size:11px; font-weight:700; color:#1e293b; background:#f1f5f9; padding:2px 8px; border-radius:6px; border:1px solid rgba(0,0,0,0.08);">' + countryName + '</span>';
+      }
+      h += '</td>';
+
+      // Tax / GSTIN
+      h += '<td style="vertical-align:top; padding:14px 16px;">';
+      if (a.gstin_no) {
+        h += '  <div style="font-family:monospace; font-size:11.5px; font-weight:700; color:var(--cptext);">' + a.gstin_no + '</div>';
+        if (a.gstin_type) {
+          h += '  <div style="font-size:10px; font-weight:700; color:var(--cptext3); text-transform:uppercase; margin-top:1px;">' + a.gstin_type + '</div>';
+        }
+      } else {
+        h += '  <span style="color:var(--cptext3);">—</span>';
+      }
+      h += '</td>';
+
+      // Actions
+      h += '<td style="vertical-align:top; padding:14px 16px; text-align:right;">';
+      h += '  <div style="display:inline-flex; gap:6px;">';
+      h += '    <button onclick="cpEditAddress(' + a.id + ')" title="Edit" style="border:none; background:rgba(0,0,0,0.04); width:30px; height:30px; border-radius:8px; color:var(--cptext2); cursor:pointer; transition:all .15s; display:inline-flex; align-items:center; justify-content:center;" onmouseenter="this.style.background=\'rgba(59,130,246,0.1)\';this.style.color=\'#1e40af\'" onmouseleave="this.style.background=\'rgba(0,0,0,0.04)\';this.style.color=\'var(--cptext2)\'"><i class="fa-solid fa-pen" style="font-size:11px;"></i></button>';
+      h += '    <button onclick="cpDeleteAddress(' + a.id + ')" title="Delete" style="border:none; background:rgba(220,38,38,0.08); width:30px; height:30px; border-radius:8px; color:#dc2626; cursor:pointer; transition:all .15s; display:inline-flex; align-items:center; justify-content:center;" onmouseenter="this.style.background=\'rgba(220,38,38,0.18)\'" onmouseleave="this.style.background=\'rgba(220,38,38,0.08)\'"><i class="fa-solid fa-trash" style="font-size:11px;"></i></button>';
+      h += '  </div>';
+      h += '</td>';
+
+      h += '</tr>';
     });
-    h += '</div>';
+
+    h += '</tbody></table></div></div>';
     c.innerHTML = h;
   }
 

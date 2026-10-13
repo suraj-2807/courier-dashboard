@@ -213,9 +213,17 @@ export default function BookingsPage() {
     const list = countryCodesData?.countryCodes || []
     list.forEach(item => {
       if (item.country_code && item.country_name) {
-        map[item.country_code.trim().toUpperCase()] = item.country_name.trim().toUpperCase()
+        let name = item.country_name.trim().toUpperCase()
+        if (name === 'UNITED STATES OF AMERICA' || name === 'USA' || name === 'U.S.A.') name = 'UNITED STATES'
+        if (name === 'GREAT BRITAIN' || name === 'ENGLAND') name = 'UNITED KINGDOM'
+        map[item.country_code.trim().toUpperCase()] = name
       }
     })
+    map['US'] = 'UNITED STATES'
+    map['USA'] = 'UNITED STATES'
+    map['GB'] = 'UNITED KINGDOM'
+    map['UK'] = 'UNITED KINGDOM'
+    map['GBR'] = 'UNITED KINGDOM'
     return map
   }, [countryCodesData])
 
@@ -239,7 +247,13 @@ export default function BookingsPage() {
       apiCountries.forEach(c => {
         if (c) {
           // Resolve ISO codes to full names using the map
-          const resolved = countryCodeToNameMap[c.trim().toUpperCase()] || c.trim().toUpperCase()
+          let resolved = countryCodeToNameMap[c.trim().toUpperCase()] || c.trim().toUpperCase()
+          if (resolved === 'UNITED STATES OF AMERICA' || resolved === 'USA' || resolved === 'US' || resolved === 'U.S.A.') {
+            resolved = 'UNITED STATES'
+          }
+          if (resolved === 'UK' || resolved === 'GB' || resolved === 'GBR' || resolved === 'GREAT BRITAIN') {
+            resolved = 'UNITED KINGDOM'
+          }
           set.add(resolved)
         }
       })
