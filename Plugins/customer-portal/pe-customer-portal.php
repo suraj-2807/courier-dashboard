@@ -2635,10 +2635,7 @@ function pe_cp_ajax_export_shipments_excel()
         }
 
         $fwd = trim(strval($r->VENDORAWB2 ?? ''));
-        if (empty($fwd) && !empty($r->VENDORAWB1) && strval($r->VENDORAWB1) !== strval($r->AWBNO)) {
-            $fwd = trim(strval($r->VENDORAWB1));
-        }
-        if ($fwd === strval($r->AWBNO)) {
+        if ($fwd === strval($r->VENDORAWB1) || $fwd === strval($r->AWBNO)) {
             $fwd = '';
         }
 
