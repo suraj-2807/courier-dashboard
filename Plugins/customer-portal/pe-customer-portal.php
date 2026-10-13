@@ -2591,7 +2591,6 @@ function pe_cp_ajax_export_shipments_excel()
         'Declared Value (INR)',
         'Content Description',
         'Forwarding Number',
-        'Rate / Kg (INR)',
         'Shipping Charge (INR)',
         'Extra Charge (INR)',
         'Total Amount (INR)',
@@ -2667,7 +2666,6 @@ function pe_cp_ajax_export_shipments_excel()
         echo '<td class="num">0.00</td>';
         echo '<td>' . htmlspecialchars($r->CONTENTDESC ?: ($r->DESCRIPTION ?: '—'), ENT_QUOTES, 'UTF-8') . '</td>';
         echo '<td class="text">' . htmlspecialchars($fwd ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
-        echo '<td class="num">' . number_format(floatval($r->RATE ?? 0), 2, '.', '') . '</td>';
         echo '<td class="num">' . number_format(floatval($r->CHARGES ?? 0), 2, '.', '') . '</td>';
         echo '<td class="num">' . number_format(floatval($r->ADJUSTMENT ?? 0), 2, '.', '') . '</td>';
         echo '<td class="num">' . number_format($amt, 2, '.', '') . '</td>';
@@ -2707,7 +2705,6 @@ function pe_cp_ajax_export_shipments_excel()
         echo '<td class="num">' . number_format(floatval($ur->declared_value ?? 0), 2, '.', '') . '</td>';
         echo '<td>' . htmlspecialchars($ur->content_description ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
         echo '<td class="text">—</td>';
-        echo '<td class="num">0.00</td>';
         echo '<td class="num">' . number_format(floatval($ur->shipping_charge ?? 0), 2, '.', '') . '</td>';
         echo '<td class="num">0.00</td>';
         echo '<td class="num">' . number_format($u_amt, 2, '.', '') . '</td>';

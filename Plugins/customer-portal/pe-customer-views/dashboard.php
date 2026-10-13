@@ -3165,121 +3165,6 @@ if (!$is_accounting_enabled) {
     return (simplified || clean).replace(/^[\s\-–—]+|[\s\-–—]+$/g, '');
   }
 
-  function cpRenderAddressTable(s, r) {
-    s = s || {};
-    r = r || {};
-
-    function parsePerson(opt, isShipper) {
-      var rawCountry = opt.country || (isShipper ? 'INDIA' : '');
-      var country = rawCountry ? cpGetFullCountryName(rawCountry) : '';
-      var name = (opt.name || opt.company || '—').trim();
-      var company = (opt.company && opt.company !== opt.name) ? String(opt.company).trim() : '';
-      var phones = [opt.phone, opt.phone_2].filter(Boolean).map(function(p){ return String(p).trim(); }).filter(Boolean).join(' / ');
-      var email = (opt.email || '').trim();
-      var addr1 = (opt.address || '').trim();
-      var addr2 = (opt.address_2 || '').trim();
-      var addr = [addr1, addr2].filter(Boolean).join(', ');
-      var cityState = [opt.city, opt.state].filter(Boolean).map(function(c){ return String(c).trim(); }).join(', ');
-      var pin = (opt.pincode || '').toString().trim();
-      var cityStatePin = cityState + (pin ? (cityState ? ' — ' : '') + pin : '');
-      var taxLabel = (opt.gst_type || 'Tax ID / GST').trim();
-      var taxNo = (opt.gst_no || opt.gstin || opt.gst || '').trim();
-
-      return {
-        name: name,
-        company: company,
-        phone: phones,
-        email: email,
-        address: addr,
-        cityStatePin: cityStatePin,
-        country: country,
-        taxLabel: taxLabel,
-        taxNo: taxNo
-      };
-    }
-
-    var shp = parsePerson(s, true);
-    var rcv = parsePerson(r, false);
-
-    var h = '';
-    h += '<div class="cp-address-table-wrapper">';
-    h += '<table class="cp-address-table">';
-    h += '  <thead>';
-    h += '    <tr style="background:#f8fafc; border-bottom:1px solid var(--cpbdr);">';
-    h += '      <th style="padding:10px 14px; text-align:left; font-size:10px; font-weight:800; color:var(--cptext3); text-transform:uppercase; letter-spacing:0.6px; width:130px; border-right:1px solid var(--cpbdr);">Field</th>';
-    h += '      <th style="padding:10px 14px; text-align:left; font-size:12px; font-weight:800; color:#1e293b; border-right:1px solid var(--cpbdr); width:43%;">';
-    h += '        <div style="display:inline-flex; align-items:center; gap:8px;">';
-    h += '          <div class="cp-person-icon-box shipper" style="width:22px; height:22px; border-radius:6px; background:#eff6ff; color:#2563eb; display:inline-flex; align-items:center; justify-content:center; font-size:11px;"><i class="fa-solid fa-arrow-up-from-bracket"></i></div>';
-    h += '          <span>Pickup — Shipper</span>';
-    h += '        </div>';
-    h += '      </th>';
-    h += '      <th style="padding:10px 14px; text-align:left; font-size:12px; font-weight:800; color:#1e293b; width:43%;">';
-    h += '        <div style="display:inline-flex; align-items:center; gap:8px;">';
-    h += '          <div class="cp-person-icon-box receiver" style="width:22px; height:22px; border-radius:6px; background:#ecfdf5; color:#059669; display:inline-flex; align-items:center; justify-content:center; font-size:11px;"><i class="fa-solid fa-location-dot"></i></div>';
-    h += '          <span>Destination — Receiver</span>';
-    h += '        </div>';
-    h += '      </th>';
-    h += '    </tr>';
-    h += '  </thead>';
-    h += '  <tbody>';
-
-    var rows = [
-      {
-        label: 'Name / Person',
-        s: '<strong style="font-size:13px; color:var(--cptext); font-weight:800;">' + (shp.name || '—') + '</strong>',
-        r: '<strong style="font-size:13px; color:var(--cptext); font-weight:800;">' + (rcv.name || '—') + '</strong>'
-      },
-      {
-        label: 'Company',
-        s: shp.company ? '<span style="font-weight:600; color:var(--cptext2);">' + shp.company + '</span>' : '<span style="color:var(--cptext3);">—</span>',
-        r: rcv.company ? '<span style="font-weight:600; color:var(--cptext2);">' + rcv.company + '</span>' : '<span style="color:var(--cptext3);">—</span>'
-      },
-      {
-        label: 'Contact Info',
-        s: (shp.phone ? '<div><i class="fa-solid fa-phone" style="color:var(--cptext3); font-size:10px; margin-right:5px;"></i>' + shp.phone + '</div>' : '') +
-           (shp.email ? '<div style="margin-top:2px;"><i class="fa-solid fa-envelope" style="color:var(--cptext3); font-size:10px; margin-right:5px;"></i>' + shp.email + '</div>' : '') || '<span style="color:var(--cptext3);">—</span>',
-        r: (rcv.phone ? '<div><i class="fa-solid fa-phone" style="color:var(--cptext3); font-size:10px; margin-right:5px;"></i>' + rcv.phone + '</div>' : '') +
-           (rcv.email ? '<div style="margin-top:2px;"><i class="fa-solid fa-envelope" style="color:var(--cptext3); font-size:10px; margin-right:5px;"></i>' + rcv.email + '</div>' : '') || '<span style="color:var(--cptext3);">—</span>'
-      },
-      {
-        label: 'Address',
-        s: shp.address ? '<div style="line-height:1.45; color:var(--cptext1);">' + shp.address + '</div>' : '<span style="color:var(--cptext3);">—</span>',
-        r: rcv.address ? '<div style="line-height:1.45; color:var(--cptext1);">' + rcv.address + '</div>' : '<span style="color:var(--cptext3);">—</span>'
-      },
-      {
-        label: 'City / State / Pin',
-        s: shp.cityStatePin ? '<div style="color:var(--cptext1); font-weight:500;">' + shp.cityStatePin + '</div>' : '<span style="color:var(--cptext3);">—</span>',
-        r: rcv.cityStatePin ? '<div style="color:var(--cptext1); font-weight:500;">' + rcv.cityStatePin + '</div>' : '<span style="color:var(--cptext3);">—</span>'
-      },
-      {
-        label: 'Country',
-        s: shp.country ? '<span class="cp-country-badge" style="display:inline-block; font-size:11px; font-weight:700; color:#1e293b; background:#f1f5f9; padding:2px 8px; border-radius:6px; border:1px solid rgba(0,0,0,0.08);">' + shp.country + '</span>' : '<span style="color:var(--cptext3);">—</span>',
-        r: rcv.country ? '<span class="cp-country-badge" style="display:inline-block; font-size:11px; font-weight:700; color:#1e293b; background:#f1f5f9; padding:2px 8px; border-radius:6px; border:1px solid rgba(0,0,0,0.08);">' + rcv.country + '</span>' : '<span style="color:var(--cptext3);">—</span>'
-      },
-      {
-        label: 'Tax ID / GST',
-        s: shp.taxNo ? '<span style="font-family:monospace; font-size:11px; font-weight:600; color:var(--cptext2);"><strong style="color:var(--cptext3);">' + shp.taxLabel + ':</strong> ' + shp.taxNo + '</span>' : '<span style="color:var(--cptext3);">—</span>',
-        r: rcv.taxNo ? '<span style="font-family:monospace; font-size:11px; font-weight:600; color:var(--cptext2);"><strong style="color:var(--cptext3);">' + rcv.taxLabel + ':</strong> ' + rcv.taxNo + '</span>' : '<span style="color:var(--cptext3);">—</span>'
-      }
-    ];
-
-    rows.forEach(function(row, idx) {
-      var isLast = idx === rows.length - 1;
-      var borderBottom = isLast ? '' : 'border-bottom:1px solid var(--cpbdr);';
-      h += '  <tr style="' + borderBottom + '">';
-      h += '    <td style="padding:9px 14px; font-weight:700; color:var(--cptext3); font-size:10.5px; text-transform:uppercase; letter-spacing:0.4px; border-right:1px solid var(--cpbdr); background:#fafbfc; vertical-align:top; white-space:nowrap;">' + row.label + '</td>';
-      h += '    <td style="padding:9px 14px; border-right:1px solid var(--cpbdr); vertical-align:top;">' + row.s + '</td>';
-      h += '    <td style="padding:9px 14px; vertical-align:top;">' + row.r + '</td>';
-      h += '  </tr>';
-    });
-
-    h += '  </tbody>';
-    h += '</table>';
-    h += '</div>';
-
-    return h;
-  }
-
   function cpRenderPersonCard(opt) {
     if (!opt) return '';
     var role = opt.role || 'shipper';
@@ -3552,40 +3437,18 @@ if (!$is_accounting_enabled) {
       }
       h += '</div>';
 
-      // Sender & Receiver Route and Address Details (Table Format)
-      h += '<div class="cp-ds"><h4><i class="fa-solid fa-route"></i> Route & Address Information</h4>';
-      h += cpRenderAddressTable({
-        role: 'shipper',
-        name: r.sender_name,
-        company: r.sender_company,
-        phone: r.sender_phone,
-        phone_2: r.sender_phone_2,
-        email: r.sender_email,
-        address: r.sender_address,
-        address_2: r.sender_address_2,
-        city: r.sender_city,
-        state: r.sender_state,
-        pincode: r.sender_pincode,
-        country: r.sender_country || 'INDIA',
-        gst_type: r.sender_gst_type,
-        gst_no: r.sender_gst || r.sender_gstin
-      }, {
-        role: 'receiver',
-        name: r.receiver_name,
-        company: r.receiver_company,
-        phone: r.receiver_phone,
-        phone_2: r.receiver_phone_2,
-        email: r.receiver_email,
-        address: r.receiver_address,
-        address_2: r.receiver_address_2,
-        city: r.receiver_city,
-        state: r.receiver_state,
-        pincode: r.receiver_pincode,
-        country: r.receiver_country,
-        gst_type: r.receiver_gst_type,
-        gst_no: r.receiver_gst || r.receiver_gstin
-      });
-      h += '</div>';
+      // Sender & Receiver Route and Address Details
+      h += '<div class="cp-ds"><h4><i class="fa-solid fa-route"></i> Route & Address Information</h4><div class="cp-dg">';
+      var reqSAddr = [r.sender_address, r.sender_address_2, r.sender_city, r.sender_state, r.sender_pincode].filter(Boolean).join(', ');
+      var reqSCountry = cpGetFullCountryName(r.sender_country || 'INDIA');
+      if (reqSCountry) reqSAddr += (reqSAddr ? ' — ' : '') + reqSCountry;
+      var reqRAddr = [r.receiver_address, r.receiver_address_2, r.receiver_city, r.receiver_state, r.receiver_pincode].filter(Boolean).join(', ');
+      var reqRCountry = cpGetFullCountryName(r.receiver_country || '');
+      if (reqRCountry) reqRAddr += (reqRAddr ? ' — ' : '') + reqRCountry;
+
+      h += '<div class="cp-df fl"><div class="l">Sender (Shipper)</div><div class="v" style="font-weight:700;">' + (r.sender_name || '—') + (r.sender_phone ? ' (' + r.sender_phone + ')' : '') + (r.sender_company ? ' · <span style="font-weight:600;color:var(--cptext2);">' + r.sender_company + '</span>' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (reqSAddr || '—') + '</div></div></div>';
+      h += '<div class="cp-df fl"><div class="l">Receiver (Consignee)</div><div class="v" style="font-weight:700;">' + (r.receiver_name || '—') + (r.receiver_phone ? ' (' + r.receiver_phone + ')' : '') + (r.receiver_company ? ' · <span style="font-weight:600;color:var(--cptext2);">' + r.receiver_company + '</span>' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (reqRAddr || '—') + '</div></div></div>';
+      h += '</div></div>';
 
       // Package Details
       h += '<div class="cp-ds"><h4><i class="fa-solid fa-box"></i> Package Details</h4><div class="cp-dg">';
@@ -4113,40 +3976,23 @@ if (!$is_accounting_enabled) {
         h += '</tbody></table></div></div>';
       }
 
-      // Sender & Receiver Route and Address Details (Table Format)
-      h += '<div class="cp-ds"><h4><i class="fa-solid fa-location-dot"></i> Route & Address Information</h4>';
-      h += cpRenderAddressTable({
-        role: 'shipper',
-        name: s.shipper || s.sender_name,
-        company: s.shipper_company || s.sender_company,
-        phone: s.shipper_phone || s.sender_phone,
-        phone_2: s.shipper_phone_2 || s.sender_phone_2,
-        email: s.shipper_email || s.sender_email,
-        address: s.shipper_address || s.sender_address,
-        address_2: s.shipper_address_2 || s.sender_address_2,
-        city: s.shipper_city || s.sender_city,
-        state: s.shipper_state || s.sender_state,
-        pincode: s.shipper_pincode || s.sender_pincode,
-        country: s.origin || s.shipper_country || 'INDIA',
-        gst_type: s.shipper_gst_type || s.sender_gst_type,
-        gst_no: s.shipper_gst || s.sender_gst
-      }, {
-        role: 'receiver',
-        name: s.consignee || s.receiver_name,
-        company: s.consignee_company || s.receiver_company,
-        phone: s.consignee_phone || s.receiver_phone,
-        phone_2: s.consignee_phone_2 || s.receiver_phone_2,
-        email: s.consignee_email || s.receiver_email,
-        address: s.consignee_address || s.receiver_address,
-        address_2: s.consignee_address_2 || s.receiver_address_2,
-        city: s.consignee_city || s.receiver_city,
-        state: s.consignee_state || s.receiver_state,
-        pincode: s.consignee_pincode || s.receiver_pincode,
-        country: s.destination || s.consignee_country,
-        gst_type: s.consignee_gst_type || s.receiver_gst_type,
-        gst_no: s.consignee_gst || s.receiver_gst
-      });
-      h += '</div>';
+      // Sender & Receiver Route and Address Details
+      h += '<div class="cp-ds"><h4><i class="fa-solid fa-location-dot"></i> Route & Address Information</h4><div class="cp-dg">';
+      var sAddrFull = [s.shipper_address || s.sender_address, s.shipper_address_2 || s.sender_address_2, s.shipper_city || s.sender_city, s.shipper_state || s.sender_state, s.shipper_pincode || s.sender_pincode].filter(Boolean).join(', ');
+      var sCountry = cpGetFullCountryName(s.origin || s.shipper_country || 'INDIA');
+      if (sCountry) sAddrFull += (sAddrFull ? ' — ' : '') + sCountry;
+      var sPhone = s.shipper_phone || s.sender_phone;
+      var sComp = s.shipper_company || s.sender_company;
+
+      var rAddrFull = [s.consignee_address || s.receiver_address, s.consignee_address_2 || s.receiver_address_2, s.consignee_city || s.receiver_city, s.consignee_state || s.receiver_state, s.consignee_pincode || s.receiver_pincode].filter(Boolean).join(', ');
+      var rCountry = cpGetFullCountryName(s.destination || s.consignee_country || '');
+      if (rCountry) rAddrFull += (rAddrFull ? ' — ' : '') + rCountry;
+      var rPhone = s.consignee_phone || s.receiver_phone;
+      var rComp = s.consignee_company || s.receiver_company;
+
+      h += '<div class="cp-df fl"><div class="l">Shipper (Sender)</div><div class="v" style="font-weight:700;">' + (s.shipper || s.sender_name || '—') + (sPhone ? ' (' + sPhone + ')' : '') + (sComp ? ' · <span style="font-weight:600;color:var(--cptext2);">' + sComp + '</span>' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (sAddrFull || '—') + '</div></div></div>';
+      h += '<div class="cp-df fl"><div class="l">Consignee (Receiver)</div><div class="v" style="font-weight:700;">' + (s.consignee || s.receiver_name || '—') + (rPhone ? ' (' + rPhone + ')' : '') + (rComp ? ' · <span style="font-weight:600;color:var(--cptext2);">' + rComp + '</span>' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (rAddrFull || '—') + '</div></div></div>';
+      h += '</div></div>';
 
       // Official Box Labels & Shipping Documents
       var shpLabelUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/' + encodeURIComponent(s.awb);
