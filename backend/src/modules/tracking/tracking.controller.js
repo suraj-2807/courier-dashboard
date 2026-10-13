@@ -577,6 +577,17 @@ export const liveTrack = async (req, res) => {
           config = configRows[0]
         }
       }
+
+      // Populate push date from tracking_events for accurate dispatch date
+      try {
+        const pushEv = await query(
+          "SELECT event_time FROM tracking_events WHERE shipment_id = ? AND status LIKE '%Manifested%' ORDER BY id DESC LIMIT 1",
+          [matchedShipment.id]
+        )
+        if (pushEv.length > 0 && pushEv[0].event_time) {
+          matchedShipment.pushed_at = pushEv[0].event_time
+        }
+      } catch {}
     }
 
     // ── 2. If no shipment found yet, check booking_requests ──
@@ -682,21 +693,20 @@ function attachCompanyOriginEvents(result, matchedShipment) {
   const originCity = (matchedShipment?.s_city || matchedShipment?.sender_city || matchedShipment?.origin || result.shipmentInfo?.origin || 'SURAT').toUpperCase()
   const originCountry = (matchedShipment?.s_country || matchedShipment?.sender_country || result.shipmentInfo?.originCountry || 'INDIA').toUpperCase()
 
-  let dateStr = ''
-  let timeStr = ''
+  // Original draft / booking date
+  let bookedDateStr = ''
+  let bookedTimeStr = '10:00 AM'
   const bDate = matchedShipment?.created_at || matchedShipment?.booking_date || result.shipmentInfo?.bookingDate
   if (bDate) {
     const d = new Date(bDate)
     if (!isNaN(d.getTime())) {
-      dateStr = d.toLocaleDateString('en-GB') // dd/mm/yyyy
-      timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      bookedDateStr = d.toLocaleDateString('en-GB') // dd/mm/yyyy
+      bookedTimeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     } else {
-      dateStr = String(bDate).split('T')[0]
-      timeStr = '10:00 AM'
+      bookedDateStr = String(bDate).split('T')[0]
     }
   } else {
-    dateStr = new Date().toLocaleDateString('en-GB')
-    timeStr = '10:00 AM'
+    bookedDateStr = new Date().toLocaleDateString('en-GB')
   }
 
   // Check if shipment is pushed to vendor API or still in draft
@@ -707,6 +717,23 @@ function attachCompanyOriginEvents(result, matchedShipment) {
     (matchedShipment?.vendor_awb_number && String(matchedShipment.vendor_awb_number).trim() !== '' && matchedShipment.vendor_awb_number !== matchedShipment.tracking_number) ||
     (result.vendor && result.vendor !== 'Prince Express' && result.vendorCode !== 'prince')
   )
+
+  // Dispatch / Push Date
+  // If shipment was drafted for many days and pushed later, the push date is the dispatch date
+  let dispatchDateStr = ''
+  let dispatchTimeStr = '11:15 AM'
+  const pDate = matchedShipment?.pushed_at || matchedShipment?.last_push_at || (matchedShipment?.vendor_push_status === 'success' ? matchedShipment?.updated_at : null)
+  if (pDate) {
+    const pd = new Date(pDate)
+    if (!isNaN(pd.getTime())) {
+      dispatchDateStr = pd.toLocaleDateString('en-GB')
+      dispatchTimeStr = pd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    } else {
+      dispatchDateStr = String(pDate).split('T')[0]
+    }
+  } else {
+    dispatchDateStr = new Date().toLocaleDateString('en-GB')
+  }
 
   let currentEvents = Array.isArray(result.events) ? result.events.slice() : []
 
@@ -755,24 +782,34 @@ function attachCompanyOriginEvents(result, matchedShipment) {
   const companyEvents = []
 
   if (isApiPushed) {
-    // After API push: ONLY show "Shipment Manifested & Dispatched from Origin Hub"
+    // Both entries are ours:
+    // 1. Shipment Manifested & Dispatched from Origin Hub (push date)
     companyEvents.push({
-      date: dateStr,
-      time: timeStr,
+      date: dispatchDateStr,
+      time: dispatchTimeStr,
       location: `${originCity}, ${originCountry} (PRINCE EXPRESS HUB)`,
       status: 'Shipment Manifested & Dispatched from Origin Hub',
-      rawDate: dateStr,
-      rawTime: timeStr
+      rawDate: dispatchDateStr,
+      rawTime: dispatchTimeStr
+    })
+    // 2. Shipment Booked & Order Created (original draft date)
+    companyEvents.push({
+      date: bookedDateStr,
+      time: bookedTimeStr,
+      location: `${originCity}, ${originCountry} (PRINCE EXPRESS)`,
+      status: 'Shipment Booked & Order Created',
+      rawDate: bookedDateStr,
+      rawTime: bookedTimeStr
     })
   } else {
     // Draft: ONLY show "Shipment Booked & Order Created"
     companyEvents.push({
-      date: dateStr,
-      time: timeStr,
+      date: bookedDateStr,
+      time: bookedTimeStr,
       location: `${originCity}, ${originCountry} (PRINCE EXPRESS)`,
       status: 'Shipment Booked & Order Created',
-      rawDate: dateStr,
-      rawTime: timeStr
+      rawDate: bookedDateStr,
+      rawTime: bookedTimeStr
     })
   }
 

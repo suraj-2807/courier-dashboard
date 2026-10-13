@@ -784,7 +784,7 @@ async function autoConfirmBookingRequestInRemoteDb(pool, shipment, awbNo) {
  * @param {string} activity - Status/activity text e.g. 'SHIPMENT BOOKED' (max 30 chars)
  * @param {string} location - Location string e.g. 'SURAT' (max 30 chars)
  */
-export async function syncToRemoteParcelHistory(shipment, activity = 'SHIPMENT BOOKED', location = '') {
+export async function syncToRemoteParcelHistory(shipment, activity = 'SHIPMENT BOOKED', location = '', eventDateOverride = null) {
   try {
     const pool = getRemotePool()
     if (!pool) {
@@ -799,11 +799,17 @@ export async function syncToRemoteParcelHistory(shipment, activity = 'SHIPMENT B
       return { success: false, message: 'Invalid AWBNO' }
     }
 
-    const bookingDate = formatToYMD(shipment.booking_date || shipment.invoice_date || shipment.created_at)
+    const act = (activity || 'SHIPMENT BOOKED').toUpperCase().slice(0, 80)
+    const isManifestOrDispatch = act.includes('MANIFEST') || act.includes('DISPATCH')
+    
+    // For dispatch/manifested events, use push date (today or eventDateOverride)
+    // For booked events, keep original booking/draft date
+    const bookingDate = eventDateOverride
+      ? formatToYMD(eventDateOverride)
+      : (isManifestOrDispatch ? formatToYMD(shipment.pushed_at || shipment.last_push_at || new Date()) : formatToYMD(shipment.booking_date || shipment.invoice_date || shipment.created_at))
     const now = new Date()
     const currentTime = now.toTimeString().split(' ')[0] // HH:MM:SS
     const loc = (location || shipment.s_city || shipment.sender_city || 'SURAT').toUpperCase().slice(0, 80)
-    const act = (activity || 'SHIPMENT BOOKED').toUpperCase().slice(0, 80)
 
     // Check if entry with identical AWBNO and activity already exists to avoid redundant rows
     const [existing] = await pool.execute(
@@ -816,7 +822,7 @@ export async function syncToRemoteParcelHistory(shipment, activity = 'SHIPMENT B
       return { success: true, action: 'already_exists', historyId: existing[0].HISTORYID }
     }
 
-    console.log(`[Remote parcel_history Sync] Inserting '${act}' into parcel_history for AWBNO ${awbNo}...`)
+    console.log(`[Remote parcel_history Sync] Inserting '${act}' into parcel_history for AWBNO ${awbNo} on date ${bookingDate}...`)
     const [result] = await pool.execute(
       'INSERT INTO parcel_history (AWBNO, `date`, `time`, activity, location) VALUES (?, ?, ?, ?, ?)',
       [awbNo, bookingDate, currentTime, act, loc]

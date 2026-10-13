@@ -1367,6 +1367,127 @@ if (!$is_accounting_enabled) {
     grid-column: 1/-1
   }
 
+  /* ── ADMIN PORTAL STYLE PERSONCARD ADDRESSES ── */
+  .cp-address-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  @media (max-width: 680px) {
+    .cp-address-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+  .cp-person-card {
+    background: #ffffff;
+    border: 1px solid var(--cpbdr);
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .cp-person-card-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  }
+  .cp-person-card-title {
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--cptext3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+  }
+  .cp-person-icon-box {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .cp-person-icon-box.shipper {
+    background: #eff6ff;
+    color: #2563eb;
+  }
+  .cp-person-icon-box.receiver {
+    background: #ecfdf5;
+    color: #059669;
+  }
+  .cp-country-badge {
+    font-size: 11px;
+    font-weight: 700;
+    color: #1e293b;
+    background: #f1f5f9;
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+  .cp-person-name {
+    font-size: 15px;
+    font-weight: 800;
+    color: var(--cptext);
+    line-height: 1.3;
+    margin-bottom: 2px;
+  }
+  .cp-person-company {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cptext2);
+    margin-bottom: 8px;
+  }
+  .cp-person-details {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    font-size: 12px;
+    margin-top: 8px;
+  }
+  .cp-person-detail-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: var(--cptext2);
+    line-height: 1.4;
+  }
+  .cp-person-detail-row i {
+    color: var(--cptext3);
+    font-size: 12px;
+    margin-top: 2px;
+    flex-shrink: 0;
+    width: 14px;
+    text-align: center;
+  }
+  .cp-person-detail-row span {
+    font-weight: 500;
+    color: var(--cptext1);
+    word-break: break-word;
+  }
+  .cp-person-tax-id {
+    font-size: 11px;
+    font-family: monospace;
+    color: var(--cptext3);
+    padding-top: 6px;
+    margin-top: 2px;
+    border-top: 1px dashed rgba(0, 0, 0, 0.08);
+  }
+  .cp-person-tax-id strong {
+    color: var(--cptext2);
+  }
+
   /* ── TIMELINE ── */
   .cp-tl {
     list-style: none;
@@ -2790,7 +2911,7 @@ if (!$is_accounting_enabled) {
             Export Shipments to Excel
           </h3>
           <p style="font-size:11.5px; color:var(--cptext2); margin:2px 0 0;">
-            Download all visible columns & data into an Excel-ready CSV spreadsheet.
+            Download your shipments history directly into an Excel (.xls) spreadsheet.
           </p>
         </div>
       </div>
@@ -3016,6 +3137,63 @@ if (!$is_accounting_enabled) {
     return (simplified || clean).replace(/^[\s\-–—]+|[\s\-–—]+$/g, '');
   }
 
+  function cpRenderPersonCard(opt) {
+    if (!opt) return '';
+    var role = opt.role || 'shipper';
+    var isShipper = role === 'shipper';
+    var title = isShipper ? 'Pickup — Shipper' : 'Destination — Receiver';
+    var iconClass = isShipper ? 'fa-solid fa-arrow-up-from-bracket' : 'fa-solid fa-location-dot';
+    var boxClass = isShipper ? 'shipper' : 'receiver';
+    var rawCountry = opt.country || (isShipper ? 'INDIA' : '');
+    var country = rawCountry ? cpGetFullCountryName(rawCountry) : '';
+    var name = (opt.name || opt.company || '—').trim();
+    var company = (opt.company && opt.company !== opt.name) ? String(opt.company).trim() : '';
+    var phones = [opt.phone, opt.phone_2].filter(Boolean).map(function(p){ return String(p).trim(); }).filter(Boolean).join(' / ');
+    var email = (opt.email || '').trim();
+    var addrParts = [opt.address, opt.address_2, opt.city, opt.state].filter(Boolean).map(function(a){ return String(a).trim(); }).filter(Boolean);
+    var fullAddr = addrParts.join(', ');
+    if (opt.pincode) {
+      var pin = String(opt.pincode).trim();
+      if (pin) fullAddr += (fullAddr ? ' — ' : '') + pin;
+    }
+    var taxLabel = (opt.gst_type || 'Tax ID / GST').trim();
+    var taxNo = (opt.gst_no || opt.gstin || opt.gst || '').trim();
+
+    var h = '';
+    h += '<div class="cp-person-card">';
+    h += '  <div>';
+    h += '    <div class="cp-person-card-hdr">';
+    h += '      <h5 class="cp-person-card-title">';
+    h += '        <div class="cp-person-icon-box ' + boxClass + '"><i class="' + iconClass + '"></i></div>';
+    h += '        ' + title;
+    h += '      </h5>';
+    if (country) {
+      h += '      <span class="cp-country-badge">' + country + '</span>';
+    }
+    h += '    </div>';
+    h += '    <div class="cp-person-name">' + name + '</div>';
+    if (company) {
+      h += '    <div class="cp-person-company">' + company + '</div>';
+    }
+    h += '    <div class="cp-person-details">';
+    if (phones) {
+      h += '      <div class="cp-person-detail-row"><i class="fa-solid fa-phone"></i><span>' + phones + '</span></div>';
+    }
+    if (email) {
+      h += '      <div class="cp-person-detail-row"><i class="fa-solid fa-envelope"></i><span>' + email + '</span></div>';
+    }
+    if (fullAddr) {
+      h += '      <div class="cp-person-detail-row"><i class="fa-solid fa-location-dot"></i><span>' + fullAddr + '</span></div>';
+    }
+    if (taxNo) {
+      h += '      <div class="cp-person-tax-id"><strong>' + taxLabel + ':</strong> ' + taxNo + '</div>';
+    }
+    h += '    </div>';
+    h += '  </div>';
+    h += '</div>';
+    return h;
+  }
+
   function cpDebounceShipmentsSearch() {
     var val = (document.getElementById('cp-search')?.value || '').trim();
     var clearBtn = document.getElementById('cp-search-clear');
@@ -3231,14 +3409,40 @@ if (!$is_accounting_enabled) {
       }
       h += '</div>';
 
-      // Sender/Receiver Details
-      h += '<div class="cp-ds"><h4><i class="fa-solid fa-route"></i> Route Details</h4><div class="cp-dg">';
-      h += '<div class="cp-df"><div class="l">Sender Name</div><div class="v">' + (r.sender_name || '—') + '</div></div>';
-      h += '<div class="cp-df"><div class="l">Receiver Name</div><div class="v">' + (r.receiver_name || '—') + '</div></div>';
-      h += '<div class="cp-df"><div class="l">Sender City</div><div class="v">' + (r.sender_city || '—') + '</div></div>';
-      h += '<div class="cp-df"><div class="l">Receiver City</div><div class="v">' + (r.receiver_city || '—') + '</div></div>';
-      h += '<div class="cp-df fl"><div class="l">Sender Address</div><div class="v">' + [r.sender_address, r.sender_address_2, r.sender_city, r.sender_pincode, r.sender_state, cpGetFullCountryName(r.sender_country || 'INDIA')].filter(Boolean).join(', ') + '</div></div>';
-      h += '<div class="cp-df fl"><div class="l">Receiver Address</div><div class="v">' + [r.receiver_address, r.receiver_address_2, r.receiver_city, r.receiver_pincode, r.receiver_state, cpGetFullCountryName(r.receiver_country)].filter(Boolean).join(', ') + '</div></div>';
+      // Sender & Receiver Route and Address Details (Admin Portal Style PersonCard)
+      h += '<div class="cp-ds"><h4><i class="fa-solid fa-route"></i> Route & Address Information</h4><div class="cp-address-grid">';
+      h += cpRenderPersonCard({
+        role: 'shipper',
+        name: r.sender_name,
+        company: r.sender_company,
+        phone: r.sender_phone,
+        phone_2: r.sender_phone_2,
+        email: r.sender_email,
+        address: r.sender_address,
+        address_2: r.sender_address_2,
+        city: r.sender_city,
+        state: r.sender_state,
+        pincode: r.sender_pincode,
+        country: r.sender_country || 'INDIA',
+        gst_type: r.sender_gst_type,
+        gst_no: r.sender_gst || r.sender_gstin
+      });
+      h += cpRenderPersonCard({
+        role: 'receiver',
+        name: r.receiver_name,
+        company: r.receiver_company,
+        phone: r.receiver_phone,
+        phone_2: r.receiver_phone_2,
+        email: r.receiver_email,
+        address: r.receiver_address,
+        address_2: r.receiver_address_2,
+        city: r.receiver_city,
+        state: r.receiver_state,
+        pincode: r.receiver_pincode,
+        country: r.receiver_country,
+        gst_type: r.receiver_gst_type,
+        gst_no: r.receiver_gst || r.receiver_gstin
+      });
       h += '</div></div>';
 
       // Package Details
@@ -3324,13 +3528,11 @@ if (!$is_accounting_enabled) {
       var labelAwb = r.tracking_number || r.request_awb;
       var labelUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/' + encodeURIComponent(labelAwb);
       var waybillUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/waybill-pdf/' + encodeURIComponent(labelAwb);
-      var invoiceUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/invoice-pdf/' + encodeURIComponent(labelAwb);
 
       h += '<div class="cp-ds"><h4><i class="fa-solid fa-tags"></i> Official Labels & Documents</h4>';
       h += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">';
       h += '  <a href="' + labelUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#ebf5ff; color:#1e40af; border:1px solid #bfdbfe; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-tag"></i> Download Box Label</a>';
       h += '  <a href="' + waybillUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-file-invoice-dollar"></i> Download Shipping Bill</a>';
-      h += '  <a href="' + invoiceUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#fff1f2; color:#be123c; border:1px solid #fecdd3; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-receipt"></i> Download Our Invoice</a>';
       h += '</div></div>';
 
       // Timeline Section (Merges Status Changes + Shipping Events)
@@ -3769,22 +3971,50 @@ if (!$is_accounting_enabled) {
         h += '</tbody></table></div></div>';
       }
 
-      // Sender & Receiver Route and Address Details
-      h += '<div class="cp-ds"><h4><i class="fa-solid fa-location-dot"></i> Route & Address Information</h4><div class="cp-dg">';
-      h += '<div class="cp-df fl"><div class="l">Shipper (Sender)</div><div class="v" style="font-weight:700;">' + (s.shipper || '—') + (s.shipper_phone ? ' (' + s.shipper_phone + ')' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (s.shipper_address || cpGetFullCountryName(s.origin || '') || '—') + '</div></div></div>';
-      h += '<div class="cp-df fl"><div class="l">Consignee (Receiver)</div><div class="v" style="font-weight:700;">' + (s.consignee || '—') + (s.consignee_phone ? ' (' + s.consignee_phone + ')' : '') + '<div style="font-size:12px;font-weight:500;color:var(--cptext2);margin-top:2px;">' + (s.consignee_address || cpGetFullCountryName(s.destination || '') || '—') + '</div></div></div>';
+      // Sender & Receiver Route and Address Details (Admin Portal Style PersonCard)
+      h += '<div class="cp-ds"><h4><i class="fa-solid fa-location-dot"></i> Route & Address Information</h4><div class="cp-address-grid">';
+      h += cpRenderPersonCard({
+        role: 'shipper',
+        name: s.shipper || s.sender_name,
+        company: s.shipper_company || s.sender_company,
+        phone: s.shipper_phone || s.sender_phone,
+        phone_2: s.shipper_phone_2 || s.sender_phone_2,
+        email: s.shipper_email || s.sender_email,
+        address: s.shipper_address || s.sender_address,
+        address_2: s.shipper_address_2 || s.sender_address_2,
+        city: s.shipper_city || s.sender_city,
+        state: s.shipper_state || s.sender_state,
+        pincode: s.shipper_pincode || s.sender_pincode,
+        country: s.origin || s.shipper_country || 'INDIA',
+        gst_type: s.shipper_gst_type || s.sender_gst_type,
+        gst_no: s.shipper_gst || s.sender_gst
+      });
+      h += cpRenderPersonCard({
+        role: 'receiver',
+        name: s.consignee || s.receiver_name,
+        company: s.consignee_company || s.receiver_company,
+        phone: s.consignee_phone || s.receiver_phone,
+        phone_2: s.consignee_phone_2 || s.receiver_phone_2,
+        email: s.consignee_email || s.receiver_email,
+        address: s.consignee_address || s.receiver_address,
+        address_2: s.consignee_address_2 || s.receiver_address_2,
+        city: s.consignee_city || s.receiver_city,
+        state: s.consignee_state || s.receiver_state,
+        pincode: s.consignee_pincode || s.receiver_pincode,
+        country: s.destination || s.consignee_country,
+        gst_type: s.consignee_gst_type || s.receiver_gst_type,
+        gst_no: s.consignee_gst || s.receiver_gst
+      });
       h += '</div></div>';
 
       // Official Box Labels & Shipping Documents
       var shpLabelUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/labels-pdf/' + encodeURIComponent(s.awb);
       var shpWaybillUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/waybill-pdf/' + encodeURIComponent(s.awb);
-      var shpInvoiceUrl = 'https://purple-raccoon-753399.hostingersite.com/api/customer/invoice-pdf/' + encodeURIComponent(s.awb);
 
       h += '<div class="cp-ds"><h4><i class="fa-solid fa-tags"></i> Official Labels & Documents</h4>';
       h += '<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">';
       h += '  <a href="' + shpLabelUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#ebf5ff; color:#1e40af; border:1px solid #bfdbfe; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-tag"></i> Download Box Label</a>';
       h += '  <a href="' + shpWaybillUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-file-invoice-dollar"></i> Download Shipping Bill</a>';
-      h += '  <a href="' + shpInvoiceUrl + '" target="_blank" rel="noopener noreferrer" download style="display:inline-flex; align-items:center; gap:6px; background:#fff1f2; color:#be123c; border:1px solid #fecdd3; padding:8px 14px; border-radius:8px; font-size:12px; font-weight:700; text-decoration:none;"><i class="fa-solid fa-receipt"></i> Download Our Invoice</a>';
       h += '</div></div>';
 
       h += '<div class="cp-ds"><h4><i class="fa-solid fa-route"></i> Tracking History</h4>';

@@ -351,13 +351,39 @@ function pe_attach_company_origin_events(&$tracking, $result) {
     $is_dispatched = !empty($result->VENDORID1) || !empty($result->VENDORID2) || !empty($result->VENDNAME) || intval($result->SERVICE ?? 0) > 0 || !empty($tracking);
 
     if ($is_dispatched) {
-        // After API push: ONLY show "Shipment Manifested & Dispatched from Origin Hub"
+        // Query parcel_history for manifest/dispatch event date, fallback to current date
+        global $wpdb;
+        $disp_date = current_time('M d, Y');
+        $disp_time = '11:15 AM';
+        if (!empty($result->AWBNO)) {
+            $disp_row = $wpdb->get_row($wpdb->prepare(
+                "SELECT date, time FROM parcel_history WHERE (AWBNO = %d OR CAST(AWBNO AS CHAR) = %s) AND (LOWER(activity) LIKE '%manifest%' OR LOWER(activity) LIKE '%dispatch%') ORDER BY date DESC, time DESC LIMIT 1",
+                intval($result->AWBNO), strval($result->AWBNO)
+            ));
+            if ($disp_row && !empty($disp_row->date) && $disp_row->date !== '0000-00-00') {
+                $disp_date = pe_fdate($disp_row->date);
+                if (!empty($disp_row->time) && $disp_row->time !== '00:00:00') {
+                    $disp_time = date('h:i A', strtotime($disp_row->time));
+                }
+            }
+        }
+
+        // Two entries are ours:
+        // 1. Shipment Manifested & Dispatched from Origin Hub (push date)
         $company_events[] = [
-            'date' => $bdate,
-            'time' => '11:15 AM',
+            'date' => $disp_date,
+            'time' => $disp_time,
             'location' => $origin_location . ' (PRINCE EXPRESS HUB)',
             'activity' => 'Shipment Manifested & Dispatched from Origin Hub',
             '_pe_origin' => 2,
+        ];
+        // 2. Shipment Booked & Order Created (original draft date)
+        $company_events[] = [
+            'date' => $bdate,
+            'time' => '10:00 AM',
+            'location' => $origin_location . ' (PRINCE EXPRESS)',
+            'activity' => 'Shipment Booked & Order Created',
+            '_pe_origin' => 1,
         ];
     } else {
         // Draft: ONLY show "Shipment Booked & Order Created"

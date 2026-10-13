@@ -1555,14 +1555,37 @@ export const pushBookingToApi = async (req, res) => {
 
     if (vendorResult.success) {
       // Success → update status to booked, lock the booking
-      await execute(
-        `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ? WHERE id = ?`,
-        [targetVendorCode, targetServiceCode, targetProductCode, id]
-      )
+      try {
+        await execute(
+          `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ?, pushed_at = NOW() WHERE id = ?`,
+          [targetVendorCode, targetServiceCode, targetProductCode, id]
+        )
+      } catch (colErr) {
+        await execute(
+          `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ? WHERE id = ?`,
+          [targetVendorCode, targetServiceCode, targetProductCode, id]
+        )
+      }
 
+      // Ensure initial booked event exists with original draft date
+      try {
+        const existingBooked = await query(
+          `SELECT id FROM tracking_events WHERE shipment_id = ? AND status LIKE '%Booked%' LIMIT 1`,
+          [id]
+        )
+        if (existingBooked.length === 0) {
+          await execute(
+            `INSERT INTO tracking_events (shipment_id, status, description, location, event_time)
+             VALUES (?, ?, ?, ?, ?)`,
+            [id, 'Shipment Booked & Order Created', 'Shipment booked & order created', booking.s_city || booking.sender_city || 'Origin Hub', booking.created_at || booking.booking_date || new Date()]
+          )
+        }
+      } catch {}
+
+      // Second tracking entry: Shipment Manifested & Dispatched from Origin Hub (push date)
       await execute(
-        `INSERT INTO tracking_events (shipment_id, status, description, location)
-         VALUES (?, ?, ?, ?)`,
+        `INSERT INTO tracking_events (shipment_id, status, description, location, event_time)
+         VALUES (?, ?, ?, ?, NOW())`,
         [id, 'Shipment Manifested & Dispatched from Origin Hub', `Pushed to vendor API. Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Origin Hub']
       )
 
@@ -1594,12 +1617,13 @@ export const pushBookingToApi = async (req, res) => {
         console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
       }
 
-      // Second tracking entry: Shipment Manifested & Dispatched
+      // Second tracking entry: Shipment Manifested & Dispatched with push date
       try {
         await syncToRemoteParcelHistory(
           updated,
           'Shipment Manifested & Dispatched from Origin Hub',
-          (updated.s_city || updated.sender_city || 'SURAT') + ' HUB'
+          (updated.s_city || updated.sender_city || 'SURAT') + ' HUB',
+          new Date()
         )
       } catch (syncErr) {
         console.error('[Remote parcel_history Sync Error]:', syncErr.message)
@@ -1979,11 +2003,30 @@ export const createBooking = async (req, res) => {
       )
 
       if (vendorResult.success) {
-        await execute('UPDATE shipments SET status = ?, is_locked = TRUE WHERE id = ?', ['booked', shipmentId])
+        try {
+          await execute('UPDATE shipments SET status = ?, is_locked = TRUE, pushed_at = NOW() WHERE id = ?', ['booked', shipmentId])
+        } catch {
+          await execute('UPDATE shipments SET status = ?, is_locked = TRUE WHERE id = ?', ['booked', shipmentId])
+        }
+
+        // Ensure initial booked event exists
+        try {
+          const existingBooked = await query(
+            `SELECT id FROM tracking_events WHERE shipment_id = ? AND status LIKE '%Booked%' LIMIT 1`,
+            [shipmentId]
+          )
+          if (existingBooked.length === 0) {
+            await execute(
+              `INSERT INTO tracking_events (shipment_id, status, description, location, event_time)
+               VALUES (?, ?, ?, ?, ?)`,
+              [shipmentId, 'Shipment Booked & Order Created', 'Shipment booked & order created', fields.sender_city || 'Origin Hub', fields.booking_date || fields.created_at || new Date()]
+            )
+          }
+        } catch {}
 
         await execute(
-          `INSERT INTO tracking_events (shipment_id, status, description, location)
-           VALUES (?, ?, ?, ?)`,
+          `INSERT INTO tracking_events (shipment_id, status, description, location, event_time)
+           VALUES (?, ?, ?, ?, NOW())`,
           [shipmentId, 'Shipment Manifested & Dispatched from Origin Hub', `Vendor AWB: ${vendorResult.awbNumber || 'N/A'}`, 'Origin Hub']
         )
 
@@ -2014,14 +2057,15 @@ export const createBooking = async (req, res) => {
             order_id,
             from_request: req.body.from_request || req.body.booking_request_id || fields.from_request,
             request_awb: req.body.request_awb || fields.request_awb,
-            vendor_awb_number: vendorResult.awbNumber || fields.vendor_code || ''
+            vendor_awb_number: vendorResult.awbNumber || fields.vendor_code || '',
+            pushed_at: new Date()
           }
           await syncToRemoteAwbEntry(syncShipment, vendorResult)
         } catch (syncErr) {
           console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
         }
 
-        // Second tracking entry: Shipment Manifested & Dispatched
+        // Second tracking entry: Shipment Manifested & Dispatched with push date
         try {
           await syncToRemoteParcelHistory(
             {
@@ -2030,7 +2074,8 @@ export const createBooking = async (req, res) => {
               order_id
             },
             'Shipment Manifested & Dispatched from Origin Hub',
-            (fields.sender_city || 'SURAT') + ' HUB'
+            (fields.sender_city || 'SURAT') + ' HUB',
+            new Date()
           )
         } catch (syncErr) {
           console.error('[Remote parcel_history Sync Error]:', syncErr.message)

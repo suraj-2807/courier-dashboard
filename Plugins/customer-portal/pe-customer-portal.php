@@ -1368,14 +1368,29 @@ function pe_cp_ajax_shipment_detail()
 
     // Initial fallback if still completely empty
     if (empty($tracking_events)) {
-        $bDate = !empty($row->AWBDATE) ? date('d/m/Y', strtotime($row->AWBDATE)) : date('d/m/Y');
+        $bDate = (!empty($row->AWBDATE) && $row->AWBDATE !== '0000-00-00') ? date('d/m/Y', strtotime($row->AWBDATE)) : date('d/m/Y');
         $is_dispatched = !empty($row->VENDORID1) || !empty($row->VENDORID2) || !empty($row->VENDNAME) || intval($row->SERVICE ?? 0) > 0;
         if ($is_dispatched) {
+            $disp_row = $wpdb->get_row($wpdb->prepare(
+                "SELECT date, time FROM parcel_history WHERE (AWBNO = %d OR CAST(AWBNO AS CHAR) = %s) AND (LOWER(activity) LIKE '%manifest%' OR LOWER(activity) LIKE '%dispatch%') ORDER BY date DESC, time DESC LIMIT 1",
+                intval($row->AWBNO), strval($row->AWBNO)
+            ));
+            $disp_date = ($disp_row && !empty($disp_row->date) && $disp_row->date !== '0000-00-00') ? date('d/m/Y', strtotime($disp_row->date)) : date('d/m/Y');
+            $disp_time = ($disp_row && !empty($disp_row->time) && $disp_row->time !== '00:00:00') ? date('h:i A', strtotime($disp_row->time)) : '11:15 AM';
+
+            // Manifested & Dispatched (push date)
             $tracking_events[] = [
                 'activity' => 'Shipment Manifested & Dispatched from Origin Hub',
-                'date' => $bDate,
-                'time' => '11:15 AM',
+                'date' => $disp_date,
+                'time' => $disp_time,
                 'location' => 'SURAT, INDIA (PRINCE EXPRESS HUB)'
+            ];
+            // Shipment Booked & Order Created (original draft date)
+            $tracking_events[] = [
+                'activity' => 'Shipment Booked & Order Created',
+                'date' => $bDate,
+                'time' => '10:00 AM',
+                'location' => 'SURAT, INDIA (PRINCE EXPRESS)'
             ];
             if (empty($live_status)) {
                 $live_status = 'Shipment Manifested & Dispatched from Origin Hub';
@@ -1405,11 +1420,19 @@ function pe_cp_ajax_shipment_detail()
             'date' => !empty($row->AWBDATE) ? date('d M Y', strtotime($row->AWBDATE)) : '',
             'raw_date' => $row->AWBDATE,
             'shipper' => $row->SNAME,
+            'shipper_company' => $breq->sender_company ?? ($shp->sender_company ?? ''),
+            'shipper_email' => $breq->sender_email ?? ($shp->sender_email ?? ''),
             'shipper_address' => $s_addr,
             'shipper_phone' => $row->SPHONE1 ?? ($breq->sender_phone ?? ''),
+            'shipper_gst' => $row->GSTNO ?? ($row->SAADHARNO ?? ($breq->sender_gstin_no ?? '')),
+            'shipper_gst_type' => !empty($row->GSTNO) ? 'GSTIN' : (!empty($row->SAADHARNO) ? 'Aadhaar' : ($breq->sender_gstin_type ?? 'Tax ID / GST')),
             'consignee' => $row->CNEENAME,
+            'consignee_company' => $breq->receiver_company ?? ($shp->receiver_company ?? ''),
+            'consignee_email' => $breq->receiver_email ?? ($shp->receiver_email ?? ''),
             'consignee_address' => $c_addr,
             'consignee_phone' => $row->CNEEPHONE1 ?? ($breq->receiver_phone ?? ''),
+            'consignee_gst' => $breq->receiver_gstin_no ?? ($shp->receiver_gstin_no ?? ''),
+            'consignee_gst_type' => $breq->receiver_gstin_type ?? ($shp->receiver_gstin_type ?? 'Tax ID / GST'),
             'destination' => $row->DESTNAME,
             'origin' => $row->ORIGIN ?? '',
             'weight' => $actual_weight ?: ($row->ACTUALWEIGHT ?: $row->CHARGEWEIGHT),
@@ -2487,48 +2510,102 @@ function pe_cp_ajax_export_shipments_excel()
     }
 
     $rows = $wpdb->get_results(
-        "SELECT a.AWBID, a.AWBNO, a.AWBDATE, a.CNEENAME, a.DESTNAME, a.SNAME,
-                a.ACTUALWEIGHT, a.CHARGEWEIGHT, a.NOP, a.RATE, a.TOTAL, a.NETAMOUNT, a.CHARGES, a.RECEIPTAMOUNT,
-                a.VENDNAME, a.VENDORAWB1, a.VENDORAWB2, a.PODTOWEB, a.REMARKS
+        "SELECT a.*
          FROM AWBENTRY a
          WHERE $where
          ORDER BY a.AWBID DESC"
     );
 
-    // Clean buffer
+    // Also fetch booking requests for this customer that are not in AWBENTRY so 100% of customer data is exported
+    $exported_awbs = [];
+    foreach ($rows as $r) {
+        if (!empty($r->AWBNO)) {
+            $exported_awbs[strval($r->AWBNO)] = true;
+        }
+    }
+
+    $extra_requests = [];
+    if (!empty($breq_sub_conds)) {
+        $extra_breq_where = $wpdb->prepare("(" . implode(" OR ", $breq_sub_conds) . ")", ...$breq_sub_params);
+        $unlinked_reqs = $wpdb->get_results("SELECT * FROM booking_requests WHERE $extra_breq_where ORDER BY id DESC");
+        if (!empty($unlinked_reqs)) {
+            foreach ($unlinked_reqs as $ur) {
+                $chk_a = strval($ur->tracking_number ?: ($ur->request_awb ?: ''));
+                if ($chk_a && isset($exported_awbs[$chk_a])) {
+                    continue;
+                }
+                $extra_requests[] = $ur;
+            }
+        }
+    }
+
+    // Clean output buffer
     if (ob_get_level()) {
         ob_end_clean();
     }
 
-    $filename = "Prince_Express_Shipments_{$filename_tag}_" . date('Ymd_His') . ".csv";
-    header('Content-Type: text/csv; charset=utf-8');
+    $filename = "Prince_Express_Shipments_{$filename_tag}_" . date('Ymd_His') . ".xls";
+    header('Content-Type: application/vnd.ms-excel; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     header('Pragma: no-cache');
     header('Expires: 0');
 
-    $fp = fopen('php://output', 'w');
-    // Write UTF-8 BOM for Microsoft Excel compatibility
-    fwrite($fp, "\xEF\xBB\xBF");
+    // Output Excel XML / HTML Spreadsheet
+    echo '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">' . "\n";
+    echo '<head>' . "\n";
+    echo '<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />' . "\n";
+    echo '<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Customer Shipments</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->' . "\n";
+    echo '<style>' . "\n";
+    echo 'th { background-color: #1e3a8a; color: #ffffff; font-weight: bold; border: 1px solid #cbd5e1; padding: 10px 12px; font-family: Calibri, Arial, sans-serif; font-size: 11pt; }' . "\n";
+    echo 'td { border: 1px solid #e2e8f0; padding: 8px 12px; font-family: Calibri, Arial, sans-serif; font-size: 10pt; vertical-align: middle; }' . "\n";
+    echo '.num { mso-number-format: "\#\,\#\#0\.00"; text-align: right; }' . "\n";
+    echo '.int { mso-number-format: "0"; text-align: center; }' . "\n";
+    echo '.text { mso-number-format: "\@"; }' . "\n";
+    echo '.date { mso-number-format: "yyyy-mm-dd"; text-align: center; }' . "\n";
+    echo '</style>' . "\n";
+    echo '</head>' . "\n";
+    echo '<body>' . "\n";
+    echo '<table border="1">' . "\n";
+    echo '<thead><tr>';
 
-    // CSV Header row
-    fputcsv($fp, [
+    $headers = [
+        'Sr. No',
         'AWB Number',
         'Booking Date',
-        'Consignee (Receiver)',
-        'Destination',
+        'Status',
         'Shipper (Sender)',
-        'Pieces',
-        'Actual Weight (kg)',
+        'Shipper Phone',
+        'Shipper Address',
+        'Shipper City',
+        'Shipper Pincode',
+        'Shipper Country',
+        'Consignee (Receiver)',
+        'Consignee Phone',
+        'Consignee Address',
+        'Consignee City',
+        'Consignee Pincode',
+        'Destination Country',
+        'Package Type',
+        'Pieces (Boxes)',
         'Chargeable Weight (kg)',
-        'Carrier / Vendor',
-        'Vendor AWB No',
+        'Declared Value (INR)',
+        'Content Description',
         'Forwarding Number',
-        'Delivery Status',
         'Rate / Kg (INR)',
+        'Shipping Charge (INR)',
+        'Extra Charge (INR)',
         'Total Amount (INR)',
-        'Remarks'
-    ]);
+        'Special Instructions / Remarks'
+    ];
 
+    foreach ($headers as $h) {
+        echo '<th>' . htmlspecialchars($h, ENT_QUOTES, 'UTF-8') . '</th>';
+    }
+    echo '</tr></thead><tbody>' . "\n";
+
+    $sr_no = 1;
+
+    // Output AWBENTRY rows
     foreach ($rows as $r) {
         $status = 'Shipment Booked';
         if (intval($r->PODTOWEB ?? 0) === 1 || strval($r->PODTOWEB ?? '') === '1') {
@@ -2558,30 +2635,91 @@ function pe_cp_ajax_export_shipments_excel()
         }
 
         $fwd = trim(strval($r->VENDORAWB2 ?? ''));
-        if ($fwd === strval($r->VENDORAWB1) || $fwd === strval($r->AWBNO)) {
+        if (empty($fwd) && !empty($r->VENDORAWB1) && strval($r->VENDORAWB1) !== strval($r->AWBNO)) {
+            $fwd = trim(strval($r->VENDORAWB1));
+        }
+        if ($fwd === strval($r->AWBNO)) {
             $fwd = '';
         }
 
-        fputcsv($fp, [
-            $r->AWBNO,
-            $r->AWBDATE && $r->AWBDATE !== '0000-00-00' ? date('d-m-Y', strtotime($r->AWBDATE)) : '—',
-            $r->CNEENAME ?: '—',
-            $r->DESTNAME ?: '—',
-            $r->SNAME ?: '—',
-            intval($r->NOP ?? 1) ?: 1,
-            number_format(floatval($r->ACTUALWEIGHT ?? 0), 2, '.', ''),
-            number_format(floatval($r->CHARGEWEIGHT ?? 0), 2, '.', ''),
-            $r->VENDNAME ?: '—',
-            $r->VENDORAWB1 ?: '—',
-            $fwd ?: '—',
-            $status,
-            number_format(floatval($r->RATE ?? 0), 2, '.', ''),
-            number_format($amt, 2, '.', ''),
-            $r->REMARKS ?: ''
-        ]);
+        $s_addr = trim(implode(', ', array_filter([$r->SADDRESS1 ?? '', $r->SADDRESS2 ?? '', $r->SADDRESS3 ?? ''])));
+        $c_addr = trim(implode(', ', array_filter([$r->CNEEADDRESS1 ?? '', $r->CNEEADDRESS2 ?? '', $r->CNEEADDRESS3 ?? '', $r->CNEEADDRESS4 ?? ''])));
+        $bdate_formatted = ($r->AWBDATE && $r->AWBDATE !== '0000-00-00') ? date('Y-m-d', strtotime($r->AWBDATE)) : '—';
+        $chg_wt = floatval($r->CHARGEWEIGHT ?? 0) > 0 ? floatval($r->CHARGEWEIGHT) : floatval($r->WEIGHT ?? 0);
+
+        echo '<tr>';
+        echo '<td class="int">' . $sr_no++ . '</td>';
+        echo '<td class="text">' . htmlspecialchars(strval($r->AWBNO), ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="date">' . htmlspecialchars($bdate_formatted, ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($status, ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($r->SNAME ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="text">' . htmlspecialchars($r->SPHONE1 ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($s_addr ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($r->SCITY ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="text">' . htmlspecialchars($r->SPINCODE ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>INDIA</td>';
+        echo '<td>' . htmlspecialchars($r->CNEENAME ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="text">' . htmlspecialchars($r->CNEEPHONE1 ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($c_addr ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($r->CNEECITY ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="text">' . htmlspecialchars($r->CNEEPINCODE ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($r->DESTNAME ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($r->PRODNAME ?: 'Parcel', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="int">' . (intval($r->NOP ?? 1) ?: 1) . '</td>';
+        echo '<td class="num">' . number_format($chg_wt, 2, '.', '') . '</td>';
+        echo '<td class="num">0.00</td>';
+        echo '<td>' . htmlspecialchars($r->CONTENTDESC ?: ($r->DESCRIPTION ?: '—'), ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="text">' . htmlspecialchars($fwd ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="num">' . number_format(floatval($r->RATE ?? 0), 2, '.', '') . '</td>';
+        echo '<td class="num">' . number_format(floatval($r->CHARGES ?? 0), 2, '.', '') . '</td>';
+        echo '<td class="num">' . number_format(floatval($r->ADJUSTMENT ?? 0), 2, '.', '') . '</td>';
+        echo '<td class="num">' . number_format($amt, 2, '.', '') . '</td>';
+        echo '<td>' . htmlspecialchars($r->REMARKS ?: '', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '</tr>' . "\n";
     }
 
-    fclose($fp);
+    // Output unlinked booking requests so all customer requests are included
+    foreach ($extra_requests as $ur) {
+        $u_awb = $ur->tracking_number ?: ($ur->request_awb ?: 'REQ-' . $ur->id);
+        $u_date = !empty($ur->created_at) ? date('Y-m-d', strtotime($ur->created_at)) : '—';
+        $u_status = ucfirst(strtolower($ur->status ?: 'pending'));
+        $u_amt = floatval($ur->total_amount ?: ($ur->shipping_charge ?: 0));
+        $u_s_addr = trim(implode(', ', array_filter([$ur->sender_address ?? '', $ur->sender_address_2 ?? ''])));
+        $u_c_addr = trim(implode(', ', array_filter([$ur->receiver_address ?? '', $ur->receiver_address_2 ?? ''])));
+
+        echo '<tr>';
+        echo '<td class="int">' . $sr_no++ . '</td>';
+        echo '<td class="text">' . htmlspecialchars($u_awb, ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="date">' . htmlspecialchars($u_date, ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($u_status, ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($ur->sender_name ?: ($ur->customer_name ?: '—'), ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="text">' . htmlspecialchars($ur->sender_phone ?: ($ur->customer_phone ?: '—'), ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($u_s_addr ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($ur->sender_city ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="text">' . htmlspecialchars($ur->sender_pincode ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($ur->sender_country ?: 'INDIA', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($ur->receiver_name ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="text">' . htmlspecialchars($ur->receiver_phone ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($u_c_addr ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($ur->receiver_city ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="text">' . htmlspecialchars($ur->receiver_pincode ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($ur->receiver_country ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td>' . htmlspecialchars($ur->package_type ?: 'Parcel', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="int">' . (intval($ur->no_of_pieces ?? 1) ?: 1) . '</td>';
+        echo '<td class="num">' . number_format(floatval($ur->weight ?? 0), 2, '.', '') . '</td>';
+        echo '<td class="num">' . number_format(floatval($ur->declared_value ?? 0), 2, '.', '') . '</td>';
+        echo '<td>' . htmlspecialchars($ur->content_description ?: '—', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '<td class="text">—</td>';
+        echo '<td class="num">0.00</td>';
+        echo '<td class="num">' . number_format(floatval($ur->shipping_charge ?? 0), 2, '.', '') . '</td>';
+        echo '<td class="num">0.00</td>';
+        echo '<td class="num">' . number_format($u_amt, 2, '.', '') . '</td>';
+        echo '<td>' . htmlspecialchars($ur->remarks ?: '', ENT_QUOTES, 'UTF-8') . '</td>';
+        echo '</tr>' . "\n";
+    }
+
+    echo '</tbody></table>' . "\n";
+    echo '</body></html>' . "\n";
     exit;
 }
 add_action('wp_ajax_pe_cp_export_shipments_excel', 'pe_cp_ajax_export_shipments_excel');
