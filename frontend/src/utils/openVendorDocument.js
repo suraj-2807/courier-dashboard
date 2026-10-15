@@ -204,16 +204,33 @@ export async function openVendorDocument(booking, docType = 'document') {
 
       // Check Pacific Express / direct response properties
       if (type.includes('invoice')) {
-        const invVal = resp.Performa || resp.performa ||
-                       resp.Pdfdownload || resp.pdfdownload || resp.PdfDownload || resp.Invoice || resp.invoice || resp.pdf || resp.Pdf ||
-                       raw.Performa || raw.performa ||
-                       raw.Pdfdownload || raw.pdfdownload || raw.Invoice || raw.invoice
-        if (invVal) {
-          const valStr = String(invVal).trim()
-          if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
-            return openPdfUrl(valStr, fileName)
+        // Detect Pacific-style response (has Response wrapper with Label/ForwardingNo/AuxLbl/Performa)
+        const isPacificResponse = !!(resp.Label || resp.ForwardingNo || resp.AuxLbl || resp.Performa !== undefined)
+
+        if (isPacificResponse) {
+          // Pacific: Use ONLY Performa for vendor invoice (Label/AuxLbl/Pdfdownload are shipping labels, not invoices)
+          const performaVal = resp.Performa || resp.performa || raw?.Response?.Performa || ''
+          if (performaVal) {
+            const valStr = String(performaVal).trim()
+            if (valStr.length > 50) {
+              if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
+                return openPdfUrl(valStr, fileName)
+              }
+              if (openBase64Pdf(valStr, fileName)) return true
+            }
           }
-          if (openBase64Pdf(valStr, fileName)) return true
+          // Pacific Performa not available — don't fall through to Label/Pdfdownload (those are shipping labels)
+        } else {
+          // Non-Pacific vendors: use existing fallback chain
+          const invVal = resp.Pdfdownload || resp.pdfdownload || resp.PdfDownload || resp.Invoice || resp.invoice || resp.pdf || resp.Pdf ||
+                         raw.Pdfdownload || raw.pdfdownload || raw.Invoice || raw.invoice
+          if (invVal) {
+            const valStr = String(invVal).trim()
+            if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
+              return openPdfUrl(valStr, fileName)
+            }
+            if (openBase64Pdf(valStr, fileName)) return true
+          }
         }
       } else if (type.includes('shipper') || type.includes('bill') || type.includes('copy')) {
         const shipVal = resp.AuxLbl || resp.auxlbl || resp.Pdfdownload || resp.pdfdownload || resp.Pdf || resp.pdf ||

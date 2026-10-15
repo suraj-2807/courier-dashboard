@@ -3276,16 +3276,33 @@ export const getVendorDocument = async (req, res) => {
 
         // Check Pacific Express / direct response properties
         if (reqType.includes('invoice')) {
-          const invVal = resp.Performa || resp.performa ||
-                         resp.Pdfdownload || resp.pdfdownload || resp.PdfDownload || resp.Invoice || resp.invoice || resp.pdf || resp.Pdf ||
-                         raw.Performa || raw.performa ||
-                         raw.Pdfdownload || raw.pdfdownload || raw.Invoice || raw.invoice
-          if (invVal) {
-            const valStr = String(invVal).trim()
-            if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
-              return res.redirect(valStr)
+          // Detect Pacific-style response (has Response wrapper with Label/ForwardingNo/AuxLbl/Performa)
+          const isPacificResponse = !!(resp.Label || resp.ForwardingNo || resp.AuxLbl || resp.Performa !== undefined)
+
+          if (isPacificResponse) {
+            // Pacific: Use ONLY Performa for vendor invoice (Label/AuxLbl/Pdfdownload are shipping labels, not invoices)
+            const performaVal = resp.Performa || resp.performa || raw?.Response?.Performa || ''
+            if (performaVal) {
+              const valStr = String(performaVal).trim()
+              if (valStr.length > 50) {
+                if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
+                  return res.redirect(valStr)
+                }
+                return serveBase64Pdf(valStr, `Performa_${b.tracking_number || b.id}.pdf`)
+              }
             }
-            return serveBase64Pdf(valStr, `Invoice_${b.tracking_number || b.id}.pdf`)
+            // Pacific Performa not available — don't fall through to Label/Pdfdownload (those are shipping labels)
+          } else {
+            // Non-Pacific vendors: use existing fallback chain
+            const invVal = resp.Pdfdownload || resp.pdfdownload || resp.PdfDownload || resp.Invoice || resp.invoice || resp.pdf || resp.Pdf ||
+                           raw.Pdfdownload || raw.pdfdownload || raw.Invoice || raw.invoice
+            if (invVal) {
+              const valStr = String(invVal).trim()
+              if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
+                return res.redirect(valStr)
+              }
+              return serveBase64Pdf(valStr, `Invoice_${b.tracking_number || b.id}.pdf`)
+            }
           }
         } else if (reqType.includes('shipper') || reqType.includes('bill') || reqType.includes('copy')) {
           const shipVal = resp.AuxLbl || resp.auxlbl || resp.Pdfdownload || resp.pdfdownload || resp.Pdf || resp.pdf ||
