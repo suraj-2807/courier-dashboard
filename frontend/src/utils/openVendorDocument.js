@@ -204,7 +204,9 @@ export async function openVendorDocument(booking, docType = 'document') {
 
       // Check Pacific Express / direct response properties
       if (type.includes('invoice')) {
-        const invVal = resp.Pdfdownload || resp.pdfdownload || resp.PdfDownload || resp.Invoice || resp.invoice || resp.pdf || resp.Pdf ||
+        const invVal = resp.Performa || resp.performa ||
+                       resp.Pdfdownload || resp.pdfdownload || resp.PdfDownload || resp.Invoice || resp.invoice || resp.pdf || resp.Pdf ||
+                       raw.Performa || raw.performa ||
                        raw.Pdfdownload || raw.pdfdownload || raw.Invoice || raw.invoice
         if (invVal) {
           const valStr = String(invVal).trim()

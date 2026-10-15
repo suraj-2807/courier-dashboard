@@ -438,6 +438,16 @@ export default class PacificAdapter extends BaseAdapter {
       // If it's raw base64 data, convert to data URI
       labelUrl = `data:application/pdf;base64,${labelUrl}`
     }
+
+    // Extract Performa invoice PDF (Pacific returns this as base64 in the "Performa" field)
+    let performaUrl = response.Performa || response.performa || ''
+    if (performaUrl && typeof performaUrl === 'string' && performaUrl.trim().length > 50) {
+      if (!performaUrl.startsWith('http') && !performaUrl.startsWith('data:')) {
+        performaUrl = `data:application/pdf;base64,${performaUrl.trim()}`
+      }
+    } else {
+      performaUrl = ''
+    }
     
     // Fallback tracking url
     const trackingUrl = String(response.TrackingUrl || response.trackingUrl || '')
@@ -460,6 +470,7 @@ export default class PacificAdapter extends BaseAdapter {
       secondaryCarrier,
       trackingUrl, 
       labelUrl, 
+      performaUrl,
       errorMessage 
     }
   }
