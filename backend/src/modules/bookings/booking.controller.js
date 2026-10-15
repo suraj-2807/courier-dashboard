@@ -3227,7 +3227,52 @@ export const getVendorDocument = async (req, res) => {
       return res.send(buffer)
     }
 
-    // 1. Check vendor_raw_response first for exact document matching
+    // 0. Check explicit stored URLs first
+    if (reqType.includes('invoice') && b.vendor_invoice_url) {
+      const vUrl = String(b.vendor_invoice_url).trim()
+      if (vUrl.startsWith('data:application/pdf;base64,') || (vUrl.length > 200 && !vUrl.startsWith('http') && !vUrl.startsWith('/'))) {
+        return serveBase64Pdf(vUrl, `VendorInvoice_${b.tracking_number || b.id}.pdf`)
+      }
+      if (vUrl.startsWith('http://') || vUrl.startsWith('https://')) {
+        return res.redirect(vUrl)
+      }
+      const localPath = path.resolve(process.cwd(), vUrl.replace(/^\//, ''))
+      if (fs.existsSync(localPath)) {
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `inline; filename="VendorInvoice_${b.tracking_number || b.id}.pdf"`)
+        return res.sendFile(localPath)
+      }
+      const backendLocalPath = path.resolve(__dirname, '..', '..', vUrl.replace(/^\//, ''))
+      if (fs.existsSync(backendLocalPath)) {
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `inline; filename="VendorInvoice_${b.tracking_number || b.id}.pdf"`)
+        return res.sendFile(backendLocalPath)
+      }
+    }
+
+    if ((reqType.includes('shipper') || reqType.includes('bill') || reqType.includes('copy')) && b.vendor_shipper_copy_url) {
+      const vUrl = String(b.vendor_shipper_copy_url).trim()
+      if (vUrl.startsWith('http://') || vUrl.startsWith('https://')) return res.redirect(vUrl)
+      const localPath = path.resolve(process.cwd(), vUrl.replace(/^\//, ''))
+      if (fs.existsSync(localPath)) {
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `inline; filename="ShipperCopy_${b.tracking_number || b.id}.pdf"`)
+        return res.sendFile(localPath)
+      }
+    }
+
+    if ((reqType.includes('box') || reqType.includes('label')) && b.vendor_box_label_url) {
+      const vUrl = String(b.vendor_box_label_url).trim()
+      if (vUrl.startsWith('http://') || vUrl.startsWith('https://')) return res.redirect(vUrl)
+      const localPath = path.resolve(process.cwd(), vUrl.replace(/^\//, ''))
+      if (fs.existsSync(localPath)) {
+        res.setHeader('Content-Type', 'application/pdf')
+        res.setHeader('Content-Disposition', `inline; filename="BoxLabel_${b.tracking_number || b.id}.pdf"`)
+        return res.sendFile(localPath)
+      }
+    }
+
+    // 1. Check vendor_raw_response for exact document matching
     if (b.vendor_raw_response) {
       let raw = b.vendor_raw_response
       if (typeof raw === 'string') {
@@ -3276,22 +3321,44 @@ export const getVendorDocument = async (req, res) => {
 
         // Check Pacific Express / direct response properties
         if (reqType.includes('invoice')) {
-          // Detect Pacific-style response (has Response wrapper with Label/ForwardingNo/AuxLbl/Performa)
-          const isPacificResponse = !!(resp.Label || resp.ForwardingNo || resp.AuxLbl || resp.Performa !== undefined)
+          // Detect Pacific-style response
+          const isPacificResponse = !!(
+            /pacific/i.test(b.vendor_code || '') ||
+            /pacific/i.test(b.service_code || '') ||
+            String(resp?.ResponseCode || '').toLowerCase() === 'rt01' ||
+            (resp?.AWBNo && resp?.RefNo) ||
+            resp?.Performa !== undefined ||
+            raw?.Response?.Performa !== undefined
+          )
 
           if (isPacificResponse) {
             // Pacific: Use ONLY Performa for vendor invoice (Label/AuxLbl/Pdfdownload are shipping labels, not invoices)
-            const performaVal = resp.Performa || resp.performa || raw?.Response?.Performa || ''
+            const performaVal = resp?.Performa || resp?.performa || raw?.Response?.Performa || ''
             if (performaVal) {
               const valStr = String(performaVal).trim()
               if (valStr.length > 50) {
                 if (valStr.startsWith('http://') || valStr.startsWith('https://')) {
                   return res.redirect(valStr)
                 }
+                // Save to file cache so future requests don't need decoding
+                try {
+                  const subDir = 'vendor_invoices'
+                  const uploadsDir = path.resolve(process.cwd(), 'uploads', subDir)
+                  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
+                  const fName = `vendor_invoice_${b.tracking_number || b.id}.pdf`
+                  fs.writeFileSync(path.join(uploadsDir, fName), Buffer.from(valStr.replace(/^data:application\/pdf;base64,/, ''), 'base64'))
+                  const savedPath = `/uploads/${subDir}/${fName}`
+                  execute('UPDATE shipments SET vendor_invoice_url = ? WHERE id = ?', [savedPath, b.id]).catch(() => {})
+                } catch {}
+
                 return serveBase64Pdf(valStr, `Performa_${b.tracking_number || b.id}.pdf`)
               }
             }
-            // Pacific Performa not available — don't fall through to Label/Pdfdownload (those are shipping labels)
+            // Pacific Performa not available — do NOT fall through to Pdfdownload (that is the shipping bill)
+            return res.status(404).json({
+              success: false,
+              message: 'No Performa invoice returned by Pacific API for this shipment.'
+            })
           } else {
             // Non-Pacific vendors: use existing fallback chain
             const invVal = resp.Pdfdownload || resp.pdfdownload || resp.PdfDownload || resp.Invoice || resp.invoice || resp.pdf || resp.Pdf ||

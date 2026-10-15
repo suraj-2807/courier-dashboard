@@ -137,6 +137,9 @@ CREATE TABLE IF NOT EXISTS shipments (
   vendor_awb_number VARCHAR(255) DEFAULT '',
   vendor_tracking_url VARCHAR(500) DEFAULT '',
   vendor_label_url VARCHAR(500) DEFAULT '',
+  vendor_invoice_url VARCHAR(500) DEFAULT '',
+  vendor_box_label_url VARCHAR(500) DEFAULT '',
+  vendor_shipper_copy_url VARCHAR(500) DEFAULT '',
   vendor_push_status ENUM('pending', 'success', 'failed', 'skipped') DEFAULT 'pending',
   vendor_raw_response JSON DEFAULT NULL,
 

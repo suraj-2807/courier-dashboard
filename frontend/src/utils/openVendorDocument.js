@@ -152,6 +152,31 @@ export async function openVendorDocument(booking, docType = 'document') {
   const awb = booking.tracking_number || booking.order_id || booking.id
   const fileName = `${type}_${awb}.pdf`
 
+  // 0. Check explicit stored URLs first
+  if (type.includes('invoice') && booking.vendor_invoice_url) {
+    const vUrl = String(booking.vendor_invoice_url).trim()
+    if (vUrl.startsWith('data:application/pdf;base64,') || (vUrl.length > 200 && !vUrl.startsWith('http') && !vUrl.startsWith('/'))) {
+      if (openBase64Pdf(vUrl, fileName)) return true
+    }
+    if (vUrl.startsWith('http://') || vUrl.startsWith('https://') || vUrl.startsWith('/')) {
+      return openPdfUrl(vUrl, fileName)
+    }
+  }
+
+  if ((type.includes('shipper') || type.includes('bill') || type.includes('copy')) && booking.vendor_shipper_copy_url) {
+    const vUrl = String(booking.vendor_shipper_copy_url).trim()
+    if (vUrl.startsWith('http://') || vUrl.startsWith('https://') || vUrl.startsWith('/')) {
+      return openPdfUrl(vUrl, fileName)
+    }
+  }
+
+  if ((type.includes('box') || type.includes('label')) && booking.vendor_box_label_url) {
+    const vUrl = String(booking.vendor_box_label_url).trim()
+    if (vUrl.startsWith('http://') || vUrl.startsWith('https://') || vUrl.startsWith('/')) {
+      return openPdfUrl(vUrl, fileName)
+    }
+  }
+
   // 1. Check vendor_raw_response in memory first with smart docType matching
   if (booking.vendor_raw_response) {
     let raw = booking.vendor_raw_response
@@ -204,12 +229,20 @@ export async function openVendorDocument(booking, docType = 'document') {
 
       // Check Pacific Express / direct response properties
       if (type.includes('invoice')) {
-        // Detect Pacific-style response (has Response wrapper with Label/ForwardingNo/AuxLbl/Performa)
-        const isPacificResponse = !!(resp.Label || resp.ForwardingNo || resp.AuxLbl || resp.Performa !== undefined)
+        // Detect Pacific-style response
+        const isPacificResponse = !!(
+          /pacific/i.test(booking.vendor_code || '') ||
+          /pacific/i.test(booking.vac_vendor_code || '') ||
+          /pacific/i.test(booking.vendor_name || '') ||
+          String(resp?.ResponseCode || '').toLowerCase() === 'rt01' ||
+          (resp?.AWBNo && resp?.RefNo) ||
+          resp?.Performa !== undefined ||
+          raw?.Response?.Performa !== undefined
+        )
 
         if (isPacificResponse) {
           // Pacific: Use ONLY Performa for vendor invoice (Label/AuxLbl/Pdfdownload are shipping labels, not invoices)
-          const performaVal = resp.Performa || resp.performa || raw?.Response?.Performa || ''
+          const performaVal = resp?.Performa || resp?.performa || raw?.Response?.Performa || ''
           if (performaVal) {
             const valStr = String(performaVal).trim()
             if (valStr.length > 50) {
@@ -219,7 +252,7 @@ export async function openVendorDocument(booking, docType = 'document') {
               if (openBase64Pdf(valStr, fileName)) return true
             }
           }
-          // Pacific Performa not available — don't fall through to Label/Pdfdownload (those are shipping labels)
+          // Pacific Performa not available — do NOT fall through to Label/Pdfdownload (those are shipping labels)
         } else {
           // Non-Pacific vendors: use existing fallback chain
           const invVal = resp.Pdfdownload || resp.pdfdownload || resp.PdfDownload || resp.Invoice || resp.invoice || resp.pdf || resp.Pdf ||

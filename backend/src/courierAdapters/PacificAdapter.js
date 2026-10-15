@@ -1,5 +1,41 @@
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import BaseAdapter from './BaseAdapter.js'
 import { decrypt } from '../utils/encryption.js'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+
+function saveBase64Pdf(base64Data, subDir, fileName) {
+  if (!base64Data || typeof base64Data !== 'string') return ''
+  const clean = base64Data.replace(/^data:application\/pdf;base64,/, '').trim()
+  if (clean.length < 50) return ''
+
+  try {
+    const backendUploads = path.resolve(__dirname, '..', '..', 'uploads', subDir)
+    const cwdUploads = path.resolve(process.cwd(), 'uploads', subDir)
+
+    for (const dir of [backendUploads, cwdUploads]) {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true })
+      }
+    }
+
+    const buffer = Buffer.from(clean, 'base64')
+    fs.writeFileSync(path.join(backendUploads, fileName), buffer)
+    if (backendUploads !== cwdUploads) {
+      try {
+        fs.writeFileSync(path.join(cwdUploads, fileName), buffer)
+      } catch {}
+    }
+
+    return `/uploads/${subDir}/${fileName}`
+  } catch (err) {
+    console.error(`Failed to save base64 PDF (${fileName}):`, err.message)
+    return ''
+  }
+}
 
 /**
  * PacificAdapter — Adapter for Pacific Express courier API.
@@ -429,26 +465,70 @@ export default class PacificAdapter extends BaseAdapter {
       else if (/^[0-9]{10}$/.test(forwardingNumber)) secondaryCarrier = 'DHL'
     }
 
-    // Extract Label URL / Base64 pdf data (Pacific sends Pdfdownload or BoxLabel)
-    let labelUrl = response.Label || response.AuxLbl || response.label || response.BoxLabel || response.boxlabel || response.Pdfdownload || response.pdfdownload || ''
-    if (!labelUrl && Array.isArray(response.labels) && response.labels.length > 0) {
-      labelUrl = response.labels[0]?.label || ''
-    }
-    if (labelUrl && !labelUrl.startsWith('http') && !labelUrl.startsWith('data:')) {
-      // If it's raw base64 data, convert to data URI
-      labelUrl = `data:application/pdf;base64,${labelUrl}`
+    const fileId = awbNumber || `pacific_${Date.now()}`
+
+    // 1. Extract and store Performa invoice PDF (Pacific returns this in "Performa" field)
+    let invoiceUrl = ''
+    let performaUrl = ''
+    const rawPerforma = response.Performa || response.performa || ''
+    if (rawPerforma && typeof rawPerforma === 'string' && rawPerforma.trim().length > 50) {
+      if (rawPerforma.startsWith('http://') || rawPerforma.startsWith('https://')) {
+        invoiceUrl = rawPerforma.trim()
+        performaUrl = invoiceUrl
+      } else {
+        const savedInvoice = saveBase64Pdf(rawPerforma, 'vendor_invoices', `vendor_invoice_${fileId}.pdf`)
+        if (savedInvoice) {
+          invoiceUrl = savedInvoice
+          performaUrl = savedInvoice
+        } else {
+          performaUrl = `data:application/pdf;base64,${rawPerforma.trim()}`
+        }
+      }
     }
 
-    // Extract Performa invoice PDF (Pacific returns this as base64 in the "Performa" field)
-    let performaUrl = response.Performa || response.performa || ''
-    if (performaUrl && typeof performaUrl === 'string' && performaUrl.trim().length > 50) {
-      if (!performaUrl.startsWith('http') && !performaUrl.startsWith('data:')) {
-        performaUrl = `data:application/pdf;base64,${performaUrl.trim()}`
+    // 2. Extract and store Shipping Bill / Waybill (Pacific sends Pdfdownload as shipping bill)
+    let shipperCopyUrl = ''
+    const rawPdfDownload = response.Pdfdownload || response.pdfdownload || ''
+    if (rawPdfDownload && typeof rawPdfDownload === 'string' && rawPdfDownload.trim().length > 50) {
+      if (rawPdfDownload.startsWith('http://') || rawPdfDownload.startsWith('https://')) {
+        shipperCopyUrl = rawPdfDownload.trim()
+      } else {
+        const savedBill = saveBase64Pdf(rawPdfDownload, 'vendor_labels', `vendor_shipping_bill_${fileId}.pdf`)
+        if (savedBill) {
+          shipperCopyUrl = savedBill
+        }
       }
-    } else {
-      performaUrl = ''
     }
-    
+
+    // 3. Extract and store Box / Barcode Label (Pacific sends BoxLabel)
+    let boxLabelUrl = ''
+    const rawBoxLabel = response.BoxLabel || response.boxlabel || ''
+    if (rawBoxLabel && typeof rawBoxLabel === 'string' && rawBoxLabel.trim().length > 50) {
+      if (rawBoxLabel.startsWith('http://') || rawBoxLabel.startsWith('https://')) {
+        boxLabelUrl = rawBoxLabel.trim()
+      } else {
+        const savedBox = saveBase64Pdf(rawBoxLabel, 'vendor_labels', `vendor_box_label_${fileId}.pdf`)
+        if (savedBox) {
+          boxLabelUrl = savedBox
+        }
+      }
+    }
+
+    // 4. Extract Shipping Label (response.Label or fallback to boxLabel / shipperCopy)
+    let labelUrl = ''
+    const rawLabel = response.Label || response.AuxLbl || response.label || ''
+    if (rawLabel && typeof rawLabel === 'string' && rawLabel.trim().length > 50) {
+      if (rawLabel.startsWith('http://') || rawLabel.startsWith('https://')) {
+        labelUrl = rawLabel.trim()
+      } else {
+        const savedLabel = saveBase64Pdf(rawLabel, 'vendor_labels', `vendor_label_${fileId}.pdf`)
+        if (savedLabel) labelUrl = savedLabel
+      }
+    }
+    if (!labelUrl) {
+      labelUrl = boxLabelUrl || shipperCopyUrl || ''
+    }
+
     // Fallback tracking url
     const trackingUrl = String(response.TrackingUrl || response.trackingUrl || '')
 
@@ -470,7 +550,10 @@ export default class PacificAdapter extends BaseAdapter {
       secondaryCarrier,
       trackingUrl, 
       labelUrl, 
-      performaUrl,
+      invoiceUrl: invoiceUrl || performaUrl,
+      performaUrl: invoiceUrl || performaUrl,
+      shipperCopyUrl,
+      boxLabelUrl,
       errorMessage 
     }
   }

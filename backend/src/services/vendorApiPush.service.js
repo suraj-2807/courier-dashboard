@@ -1,3 +1,5 @@
+import fs from 'fs'
+import path from 'path'
 import { decrypt } from '../utils/encryption.js'
 import { createAdapter } from '../courierAdapters/adapterRegistry.js'
 import { parseCredentials } from '../courierAdapters/PacificAdapter.js'
@@ -244,12 +246,23 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
     })
 
     // Step 9: Update shipment with vendor response
+    const invoiceUrl = parsed.invoiceUrl || parsed.performaUrl || ''
     const shipmentVendorUpdates = {
       vendor_awb_number: parsed.awbNumber,
       vendor_tracking_url: parsed.trackingUrl,
-      vendor_label_url: parsed.labelUrl,
+      vendor_label_url: parsed.labelUrl || parsed.shipperCopyUrl || '',
       vendor_push_status: parsed.success ? 'success' : 'failed',
       vendor_raw_response: JSON.stringify(responseBody)
+    }
+
+    if (invoiceUrl) {
+      shipmentVendorUpdates.vendor_invoice_url = invoiceUrl
+    }
+    if (parsed.boxLabelUrl) {
+      shipmentVendorUpdates.vendor_box_label_url = parsed.boxLabelUrl
+    }
+    if (parsed.shipperCopyUrl) {
+      shipmentVendorUpdates.vendor_shipper_copy_url = parsed.shipperCopyUrl
     }
 
     if (parsed.forwardingNumber) {
@@ -291,6 +304,10 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
       secondaryCarrier: parsed.secondaryCarrier || '',
       trackingUrl: parsed.trackingUrl,
       labelUrl: parsed.labelUrl,
+      invoiceUrl: invoiceUrl || parsed.performaUrl || '',
+      performaUrl: invoiceUrl || parsed.performaUrl || '',
+      shipperCopyUrl: parsed.shipperCopyUrl || '',
+      boxLabelUrl: parsed.boxLabelUrl || '',
       requestPayload,
       responseStatus,
       responseBody,
@@ -510,6 +527,20 @@ async function _updateShipmentVendorData(shipmentId, updateData) {
   try {
     if (!shipmentId) return
 
+    // Ensure long base64 strings don't crash VARCHAR columns by saving them to disk first
+    for (const [k, v] of Object.entries(updateData)) {
+      if (typeof v === 'string' && v.startsWith('data:application/pdf;base64,') && v.length > 500) {
+        try {
+          const subDir = k.includes('invoice') ? 'vendor_invoices' : 'vendor_labels'
+          const uploadsDir = path.resolve(process.cwd(), 'uploads', subDir)
+          if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true })
+          const fName = `${k}_${shipmentId}_${Date.now()}.pdf`
+          fs.writeFileSync(path.join(uploadsDir, fName), Buffer.from(v.replace(/^data:application\/pdf;base64,/, ''), 'base64'))
+          updateData[k] = `/uploads/${subDir}/${fName}`
+        } catch {}
+      }
+    }
+
     const setClauses = []
     const values = []
 
@@ -526,5 +557,23 @@ async function _updateShipmentVendorData(shipmentId, updateData) {
     )
   } catch (updateError) {
     console.error('Failed to update shipment vendor data:', updateError.message)
+    // Fallback: If newer columns failed (e.g. vendor_invoice_url not yet created in MySQL), update essential columns
+    try {
+      const coreKeys = ['vendor_awb_number', 'vendor_tracking_url', 'vendor_label_url', 'vendor_push_status', 'vendor_raw_response']
+      const fallbackClauses = []
+      const fallbackVals = []
+      for (const k of coreKeys) {
+        if (updateData[k] !== undefined) {
+          fallbackClauses.push(`${k} = ?`)
+          fallbackVals.push(updateData[k])
+        }
+      }
+      if (fallbackClauses.length > 0) {
+        fallbackVals.push(shipmentId)
+        await execute(`UPDATE shipments SET ${fallbackClauses.join(', ')} WHERE id = ?`, fallbackVals)
+      }
+    } catch (fbErr) {
+      console.error('Fallback shipment vendor update also failed:', fbErr.message)
+    }
   }
 }
