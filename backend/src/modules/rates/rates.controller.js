@@ -5,7 +5,9 @@ import {
   saveVendorRateSheet,
   getVendorSheetDetails,
   calculateRateFromExcelSheet,
-  getWorkbookPathForVendor
+  getWorkbookPathForVendor,
+  getVendorWorkbookData,
+  saveVendorWorkbookData
 } from '../../services/excelRateSheet.service.js'
 import { query } from '../../config/db.js'
 
@@ -168,6 +170,50 @@ export const getDestinations = async (req, res) => {
       services: details.all_services || []
     })
   } catch (error) {
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+/**
+ * Get workbook sheets and cell grid for in-browser spreadsheet editor
+ */
+export const getVendorWorkbook = async (req, res) => {
+  try {
+    const vendorCode = req.params.vendorCode || 'pacific'
+    const data = getVendorWorkbookData(vendorCode)
+    if (!data.success) {
+      return res.status(404).json(data)
+    }
+    return res.json(data)
+  } catch (error) {
+    console.error('Error fetching vendor workbook data:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+/**
+ * Save updated workbook sheets and cells from browser spreadsheet editor
+ */
+export const saveVendorWorkbook = async (req, res) => {
+  try {
+    const vendorCode = req.params.vendorCode || 'pacific'
+    const { sheets, vendor_name } = req.body || {}
+
+    if (!sheets || !Array.isArray(sheets)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid sheets data payload. Array of sheets is required.'
+      })
+    }
+
+    const result = saveVendorWorkbookData(vendorCode, sheets, vendor_name)
+    if (!result.success) {
+      return res.status(400).json(result)
+    }
+
+    return res.json(result)
+  } catch (error) {
+    console.error('Error saving vendor workbook data:', error)
     return res.status(500).json({ success: false, message: error.message })
   }
 }

@@ -7,7 +7,9 @@ import {
   getVendorSheetInfo,
   downloadVendorSheet,
   calculateVendorRate,
-  getDestinations
+  getDestinations,
+  getVendorWorkbook,
+  saveVendorWorkbook
 } from './rates.controller.js'
 
 const router = express.Router()
@@ -34,10 +36,14 @@ router.get('/vendors/:vendorCode/details', authMiddleware, getVendorSheetInfo)
 router.get('/vendors/:vendorCode/sheet-info', authMiddleware, getVendorSheetInfo) // Alias
 router.get('/vendors/:vendorCode/destinations', authMiddleware, getDestinations)
 
-// 4. Download active Excel rate sheet
+// 4. In-Browser Spreadsheet Editor: Get & Save live workbook data
+router.get('/vendors/:vendorCode/sheet-data', authMiddleware, getVendorWorkbook)
+router.post('/vendors/:vendorCode/save-sheet-data', authMiddleware, saveVendorWorkbook)
+
+// 5. Download active Excel rate sheet
 router.get('/vendors/:vendorCode/download', downloadVendorSheet)
 
-// 5. Calculate Vendor Rate (Sets C4, C5, C6, C7 and returns C10)
+// 6. Calculate Vendor Rate (Sets C4, C5, C6, C7 and returns C10)
 router.post('/calculate', authMiddleware, calculateVendorRate)
 router.get('/calculate', authMiddleware, calculateVendorRate) // Also allow GET for quick checks
 

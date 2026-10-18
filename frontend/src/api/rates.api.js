@@ -43,3 +43,15 @@ export const calculateVendorRate = (params) =>
  */
 export const getVendorSheetDownloadUrl = (vendorCode = 'pacific') =>
   `${api.defaults.baseURL || '/api'}/rates/vendors/${vendorCode}/download`
+
+/**
+ * Get raw workbook sheets and cells for in-browser spreadsheet editor
+ */
+export const getVendorWorkbookData = (vendorCode = 'pacific') =>
+  api.get(`/rates/vendors/${vendorCode}/sheet-data`).then((res) => res.data)
+
+/**
+ * Save updated sheets and cells from in-browser spreadsheet editor
+ */
+export const saveVendorWorkbookData = (vendorCode, sheets, vendorName = '') =>
+  api.post(`/rates/vendors/${vendorCode}/save-sheet-data`, { sheets, vendor_name: vendorName }).then((res) => res.data)

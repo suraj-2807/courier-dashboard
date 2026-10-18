@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
@@ -20,7 +21,8 @@ import {
   MapPin,
   Check,
   X,
-  FileCheck
+  FileCheck,
+  Edit3
 } from 'lucide-react'
 import {
   getVendorsWithSheets,
@@ -29,15 +31,19 @@ import {
   calculateVendorRate,
   getVendorSheetDownloadUrl
 } from '../api/rates.api'
+import ExcelSheetEditor from '../components/ExcelSheetEditor'
 
 export default function RatesPage() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef(null)
+  const [searchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const vendorParam = searchParams.get('vendor')
 
   // ── States ──
-  const [selectedVendorCode, setSelectedVendorCode] = useState('pacific')
+  const [selectedVendorCode, setSelectedVendorCode] = useState(vendorParam || 'pacific')
   const [showImportModal, setShowImportModal] = useState(false)
-  const [importVendorTarget, setImportVendorTarget] = useState('pacific')
+  const [importVendorTarget, setImportVendorTarget] = useState(vendorParam || 'pacific')
   const [selectedFile, setSelectedFile] = useState(null)
   const [dragActive, setDragActive] = useState(false)
 
@@ -53,7 +59,7 @@ export default function RatesPage() {
 
   // Explorer filter
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeTab, setActiveTab] = useState('calculator') // 'calculator' | 'explorer' | 'sheets'
+  const [activeTab, setActiveTab] = useState(tabParam === 'editor' ? 'editor' : 'calculator') // 'calculator' | 'editor' | 'explorer' | 'sheets'
 
   // ── Queries ──
   const { data: vendorsData, isLoading: vendorsLoading, refetch: refetchVendors } = useQuery({
@@ -291,15 +297,26 @@ export default function RatesPage() {
             Import New Vendor Rate Sheet
           </button>
           {selectedVendorCode && (
-            <a
-              href={getVendorSheetDownloadUrl(selectedVendorCode)}
-              download
-              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition cursor-pointer shadow-sm"
-              title="Download active Excel rate sheet"
-            >
-              <Download className="w-3.5 h-3.5 text-gray-500" />
-              Download .xlsx
-            </a>
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveTab('editor')}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition cursor-pointer shadow-sm"
+                title="Open and edit active Excel rate sheet in the browser"
+              >
+                <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                Edit in Browser
+              </button>
+              <a
+                href={getVendorSheetDownloadUrl(selectedVendorCode)}
+                download
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition cursor-pointer shadow-sm"
+                title="Download active Excel rate sheet"
+              >
+                <Download className="w-3.5 h-3.5 text-gray-500" />
+                Download .xlsx
+              </a>
+            </>
           )}
         </div>
       </div>
@@ -346,7 +363,7 @@ export default function RatesPage() {
       </div>
 
       {/* ── Tabs Navigation ── */}
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
+      <div className="flex items-center gap-2 border-b border-gray-200 pb-2 flex-wrap">
         <button
           onClick={() => setActiveTab('calculator')}
           className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
@@ -357,6 +374,22 @@ export default function RatesPage() {
         >
           <Calculator className="w-3.5 h-3.5" />
           First Tab: Rate Calculator (C4 ➔ C10)
+        </button>
+        <button
+          onClick={() => setActiveTab('editor')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+            activeTab === 'editor'
+              ? 'bg-red-600 text-white shadow-sm'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+          }`}
+        >
+          <Edit3 className="w-3.5 h-3.5 text-blue-500" />
+          In-Browser Sheet Editor
+          {currentVendor?.has_sheet && (
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800">
+              Live
+            </span>
+          )}
         </button>
         <button
           onClick={() => setActiveTab('explorer')}
@@ -862,6 +895,21 @@ export default function RatesPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {/* TAB: IN-BROWSER EXCEL SPREADSHEET EDITOR                       */}
+      {/* ═══════════════════════════════════════════════════════════════ */}
+      {activeTab === 'editor' && (
+        <ExcelSheetEditor
+          vendorCode={selectedVendorCode}
+          vendorName={currentVendor?.name || selectedVendorCode.toUpperCase()}
+          onSaved={() => {
+            refetchVendors()
+            queryClient.invalidateQueries({ queryKey: ['vendor-sheet-details', selectedVendorCode] })
+            queryClient.invalidateQueries({ queryKey: ['vendor-workbook-data', selectedVendorCode] })
+          }}
+        />
       )}
 
       {/* ═══════════════════════════════════════════════════════════════ */}

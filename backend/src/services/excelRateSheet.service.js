@@ -497,6 +497,137 @@ export function saveVendorRateSheet(vendorCode, vendorName, fileBuffer, original
 }
 
 /**
+ * Get complete workbook data (all sheets, rows, and cells) for browser viewing and editing
+ */
+export function getVendorWorkbookData(vendorCode) {
+  const wbInfo = getWorkbookPathForVendor(vendorCode)
+  if (!wbInfo || !fs.existsSync(wbInfo.path)) {
+    return {
+      success: false,
+      message: `Rate sheet file not found for vendor "${vendorCode || 'pacific'}"`
+    }
+  }
+
+  const wb = XLSX.readFile(wbInfo.path, { cellFormula: true, cellStyles: true })
+  const sheets = wb.SheetNames.map(sheetName => {
+    const ws = wb.Sheets[sheetName]
+    // Get raw 2D array of cells
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+
+    // Replace formula cells with '=FORMULA' string for viewing & editing
+    for (const cellRef of Object.keys(ws)) {
+      if (cellRef[0] === '!') continue
+      const cell = ws[cellRef]
+      if (cell && cell.f) {
+        const decoded = XLSX.utils.decode_cell(cellRef)
+        if (rows[decoded.r] && rows[decoded.r][decoded.c] !== undefined) {
+          rows[decoded.r][decoded.c] = `=${cell.f}`
+        }
+      }
+    }
+
+    // Determine max columns
+    let maxCols = 0
+    rows.forEach(r => {
+      if (Array.isArray(r) && r.length > maxCols) maxCols = r.length
+    })
+
+    return {
+      name: sheetName,
+      rows: rows.length > 0 ? rows : [['']],
+      rowCount: rows.length,
+      colCount: maxCols
+    }
+  })
+
+  return {
+    success: true,
+    vendor_code: wbInfo.code,
+    filename: path.basename(wbInfo.path),
+    is_default: wbInfo.isDefault,
+    sheets
+  }
+}
+
+/**
+ * Save updated workbook sheets and cells from the browser editor directly to server
+ */
+export function saveVendorWorkbookData(vendorCode, sheetsData, vendorName = '') {
+  const code = (vendorCode || 'pacific').toLowerCase().trim()
+  const customPath = path.resolve(UPLOADS_DIR, `${code}.xlsx`)
+
+  if (!sheetsData || !Array.isArray(sheetsData) || sheetsData.length === 0) {
+    return {
+      success: false,
+      message: 'No sheets data provided for saving'
+    }
+  }
+
+  const wb = XLSX.utils.book_new()
+
+  for (const s of sheetsData) {
+    const rawRows = (s.rows || [[]]).map(row => {
+      if (!Array.isArray(row)) return []
+      return row.map(cell => {
+        if (cell === null || cell === undefined) return ''
+        const str = String(cell).trim()
+        // If it starts with '=', keep as formula string for next pass
+        if (str.startsWith('=')) return str
+        // Check if numeric
+        if (str !== '' && !isNaN(Number(str)) && !str.startsWith('+') && !str.includes(':')) {
+          return Number(str)
+        }
+        return cell
+      })
+    })
+
+    const ws = XLSX.utils.aoa_to_sheet(rawRows)
+
+    // Convert formula strings '=...' to active XLSX formula objects
+    for (const cellRef of Object.keys(ws)) {
+      if (cellRef[0] === '!') continue
+      const cell = ws[cellRef]
+      if (cell && typeof cell.v === 'string' && cell.v.startsWith('=')) {
+        cell.f = cell.v.slice(1)
+        cell.t = 'n'
+        delete cell.v
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, s.name || 'Sheet')
+  }
+
+  // Write to disk
+  XLSX.writeFile(wb, customPath)
+
+  // Update registry
+  const selfNet = wb.Sheets['Self Network'] || wb.Sheets[wb.SheetNames[0]]
+  const destinations = extractCleanDestinations(selfNet)
+  const registry = readRegistry()
+  registry[code] = {
+    vendor_code: code,
+    vendor_name: vendorName || (registry[code]?.vendor_name || code.toUpperCase()),
+    filename: `${code}.xlsx`,
+    filepath: customPath,
+    is_default: false,
+    first_tab: wb.SheetNames[0],
+    sheets: wb.SheetNames,
+    destinations_count: destinations.length,
+    uploaded_at: new Date().toISOString()
+  }
+  writeRegistry(registry)
+
+  return {
+    success: true,
+    message: `Rate sheet for ${vendorName || code.toUpperCase()} successfully saved to server!`,
+    vendor_code: code,
+    filename: `${code}.xlsx`,
+    sheets: wb.SheetNames,
+    destinations_count: destinations.length
+  }
+}
+
+/**
  * Resolve destination name against known aliases and list
  */
 function resolveDestinationInput(destInput, destinationList) {

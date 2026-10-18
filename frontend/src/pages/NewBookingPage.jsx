@@ -960,19 +960,20 @@ export default function NewBookingPage() {
   })()
 
   // ── Take Rate from Rate Sheet (Excel C10 calculation) ──
-  const [takeRateFromSheet, setTakeRateFromSheet] = useState(() => {
-    try {
-      const saved = localStorage.getItem('take_rate_from_sheet')
-      return saved !== null ? saved === 'true' : true
-    } catch {
-      return true
-    }
-  })
+  // By default false: uses default rate calculation, only calculates from sheet when checked and vendor selected
+  const [takeRateFromSheet, setTakeRateFromSheet] = useState(false)
   const [rateSheetResult, setRateSheetResult] = useState(null)
   const [rateSheetLoading, setRateSheetLoading] = useState(false)
 
   // Fetch rate from rate sheet helper
   const fetchRateFromSheet = async (showToast = false) => {
+    if (!form.vendor_config_id) {
+      if (showToast) {
+        toast.error('Please select a Vendor first to calculate rate from rate sheet')
+      }
+      return
+    }
+
     const destCountry = (form.receiver_country || '').trim()
     const chgWt = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
 
@@ -984,7 +985,7 @@ export default function NewBookingPage() {
       return
     }
 
-    const vendorCode = selectedVendor?.vendor_code || (isPacificVendor ? 'pacific' : 'pacific')
+    const vendorCode = selectedVendor?.vendor_code || (isPacificVendor ? 'pacific' : (selectedVendor?.name?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'pacific'))
 
     setRateSheetLoading(true)
     try {
@@ -1004,7 +1005,7 @@ export default function NewBookingPage() {
           rate_per_kg: res.rate_per_kg ? String(res.rate_per_kg) : prev.rate_per_kg
         }))
         if (showToast) {
-          toast.success(`Rate sheet C10: ₹${res.vendor_rate} (${res.rate_basis || res.matched_country})`)
+          toast.success(`${selectedVendor?.name || vendorCode.toUpperCase()} sheet C10: ₹${res.vendor_rate} (${res.rate_basis || res.matched_country})`)
         }
       } else if (showToast) {
         toast.error(res?.message || 'Rate not found in rate sheet')
@@ -1018,9 +1019,10 @@ export default function NewBookingPage() {
     }
   }
 
-  // Auto-fetch rate from rate sheet when enabled and relevant fields change (only on new bookings)
+  // Auto-fetch rate from rate sheet when enabled and relevant fields change (once vendor is selected)
   useEffect(() => {
     if (!takeRateFromSheet) return
+    if (!form.vendor_config_id) return
     const destCountry = (form.receiver_country || '').trim()
     const chgWt = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
 
@@ -1032,10 +1034,10 @@ export default function NewBookingPage() {
     return () => clearTimeout(timer)
   }, [
     takeRateFromSheet,
+    form.vendor_config_id,
     form.receiver_country,
     form.service_code,
     form.receiver_state,
-    form.vendor_config_id,
     form.receiver_pincode,
     finalChargeableWeight,
     form.chargeable_weight,
@@ -2589,7 +2591,11 @@ export default function NewBookingPage() {
                   </CompactField>
 
                   {/* ── Take Rate from Rate Sheet Checkmark (Excel C10) ── */}
-                  <div className="bg-gradient-to-r from-red-50 to-rose-50 border border-red-200/90 rounded-xl p-2.5 my-1 shadow-xs">
+                  <div className={`border rounded-xl p-2.5 my-1 shadow-xs transition ${
+                    takeRateFromSheet
+                      ? 'bg-gradient-to-r from-red-50 to-rose-50 border-red-300'
+                      : 'bg-gray-50/70 border-gray-200'
+                  }`}>
                     <div className="flex items-center justify-between gap-2">
                       <label className="flex items-center gap-2 cursor-pointer select-none">
                         <input
@@ -2598,45 +2604,84 @@ export default function NewBookingPage() {
                           onChange={(e) => {
                             const val = e.target.checked
                             setTakeRateFromSheet(val)
-                            try { localStorage.setItem('take_rate_from_sheet', String(val)) } catch {}
                             if (val) {
-                              fetchRateFromSheet(true)
+                              if (form.vendor_config_id) {
+                                fetchRateFromSheet(true)
+                              } else {
+                                toast('Select a Vendor above to calculate rate from the rate sheet', { icon: 'ℹ️' })
+                              }
+                            } else {
+                              setRateSheetResult(null)
+                              // Revert to default rate calculation
+                              const rate = parseFloat(form.rate_per_kg) || 0
+                              const w = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
+                              if (rate > 0 && w > 0) {
+                                setForm(prev => ({ ...prev, shipping_charge: (rate * w).toFixed(2) }))
+                              }
                             }
                           }}
                           className="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500 cursor-pointer accent-red-600"
                         />
                         <span className="text-[12px] font-bold text-gray-900 flex items-center gap-1.5">
-                          <FileSpreadsheet className="w-3.5 h-3.5 text-red-600" />
+                          <FileSpreadsheet className={`w-3.5 h-3.5 ${takeRateFromSheet ? 'text-red-600' : 'text-gray-400'}`} />
                           Take rate from rate sheet
                         </span>
                       </label>
 
-                      <button
-                        type="button"
-                        onClick={() => fetchRateFromSheet(true)}
-                        disabled={rateSheetLoading}
-                        className="text-[10px] font-bold text-red-700 bg-white border border-red-200 hover:bg-red-50 px-2 py-0.5 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                        title="Evaluate C4, C5, C6, C7 and read rate from C10"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${rateSheetLoading ? 'animate-spin' : ''}`} />
-                        {rateSheetLoading ? 'Evaluating...' : 'Recalculate (C10)'}
-                      </button>
+                      {takeRateFromSheet && (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => fetchRateFromSheet(true)}
+                            disabled={rateSheetLoading}
+                            className="text-[10px] font-bold text-red-700 bg-white border border-red-200 hover:bg-red-50 px-2 py-0.5 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
+                            title="Evaluate C4, C5, C6, C7 and read rate from C10"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${rateSheetLoading ? 'animate-spin' : ''}`} />
+                            {rateSheetLoading ? 'Evaluating...' : 'Recalculate (C10)'}
+                          </button>
+                          {selectedVendor && (
+                            <a
+                              href={`/rates?vendor=${selectedVendor.vendor_code || 'pacific'}&tab=editor`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] font-bold text-blue-700 bg-white border border-blue-200 hover:bg-blue-50 px-2 py-0.5 rounded-lg transition cursor-pointer shadow-xs"
+                              title="Open this vendor's Excel rate sheet in the browser editor"
+                            >
+                              Edit Sheet ↗
+                            </a>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {takeRateFromSheet && rateSheetResult?.vendor_rate !== undefined && (
+                    {!takeRateFromSheet && (
+                      <p className="text-[10px] text-gray-500 mt-1 pl-6">
+                        Default calculation active (Rate/Kg × Chargeable Weight)
+                      </p>
+                    )}
+
+                    {takeRateFromSheet && !form.vendor_config_id && (
+                      <div className="mt-1.5 pt-1.5 border-t border-amber-200 text-[11px] text-amber-800 flex items-center gap-1.5 font-medium pl-1">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        Please select a Vendor above — sheet rates will generate automatically.
+                      </div>
+                    )}
+
+                    {takeRateFromSheet && form.vendor_config_id && rateSheetResult?.vendor_rate !== undefined && (
                       <div className="mt-1.5 pt-1.5 border-t border-red-200/60 flex items-center justify-between text-[11px]">
                         <div className="flex items-center gap-1.5 truncate">
                           <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
                           <span className="font-bold text-emerald-800">
-                            Sheet C10: ₹{rateSheetResult.vendor_rate}
+                            {selectedVendor?.name || 'Vendor'} C10: ₹{rateSheetResult.vendor_rate}
                           </span>
                           <span className="text-gray-500 text-[10px] truncate">
                             ({rateSheetResult.rate_basis || rateSheetResult.matched_service})
                           </span>
                         </div>
-                        {rateSheetResult.output?.c12_source_row && (
+                        {rateSheetResult.source_row && (
                           <span className="text-gray-400 font-mono text-[9px] shrink-0">
-                            Row #{rateSheetResult.output.c12_source_row}
+                            Row #{rateSheetResult.source_row}
                           </span>
                         )}
                       </div>
