@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
+import * as XLSX from 'xlsx'
 import {
   Save,
   RotateCcw,
@@ -17,7 +18,12 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  Lock,
+  Unlock,
+  ClipboardPaste,
+  ExternalLink,
+  Upload
 } from 'lucide-react'
 import {
   getVendorWorkbookData,
@@ -35,10 +41,52 @@ function getColName(n) {
   return s
 }
 
+/**
+ * Robust parser for Excel clipboard data (HTML table or TSV plain text).
+ */
+function parseExcelClipboardData(clipboardData) {
+  const html = clipboardData?.getData ? clipboardData.getData('text/html') : ''
+  if (html && html.includes('<table')) {
+    try {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(html, 'text/html')
+      const table = doc.querySelector('table')
+      if (table) {
+        const rows = []
+        table.querySelectorAll('tr').forEach(tr => {
+          const cells = []
+          tr.querySelectorAll('td, th').forEach(cell => {
+            cells.push(cell.innerText.replace(/\r?\n/g, ' ').trim())
+          })
+          if (cells.length > 0) rows.push(cells)
+        })
+        if (rows.length > 0) return rows
+      }
+    } catch (err) {
+      console.warn('HTML table parsing fallback to plain text:', err)
+    }
+  }
+
+  const text = typeof clipboardData === 'string'
+    ? clipboardData
+    : (clipboardData?.getData ? clipboardData.getData('text/plain') : '')
+
+  if (!text || !text.trim()) return []
+
+  const rawLines = text.split(/\r?\n/)
+  const rows = []
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i]
+    if (i === rawLines.length - 1 && line.trim() === '') continue
+    rows.push(line.split('\t').map(c => c.trim()))
+  }
+  return rows
+}
+
 export default function ExcelSheetEditor({ vendorCode = 'pacific', vendorName = 'Pacific Express', onSaved }) {
   const queryClient = useQueryClient()
-  const inlineInputRef = useRef(null)
-  const formulaInputRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const pasteModalTextareaRef = useRef(null)
 
   // ── Query live workbook data ──
   const { data, isLoading, isError, refetch } = useQuery({
@@ -50,20 +98,26 @@ export default function ExcelSheetEditor({ vendorCode = 'pacific', vendorName = 
   // ── Local Editable Sheets State ──
   const [sheets, setSheets] = useState([])
   const [activeSheetIdx, setActiveSheetIdx] = useState(0)
-  const [activeCell, setActiveCell] = useState({ r: 3, c: 2 }) // Default to C4 (r=3, c=2)
-  const [isEditing, setIsEditing] = useState(false)
-  const [editValue, setEditValue] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [activeCell, setActiveCell] = useState({ r: 0, c: 0 })
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(100)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-  const pageSize = 50
+
+  // ── Paste Table Modal State ──
+  const [showPasteModal, setShowPasteModal] = useState(false)
+  const [pastedRawText, setPastedRawText] = useState('')
+  const [parsedPreviewRows, setParsedPreviewRows] = useState([])
+  const [pasteMode, setPasteMode] = useState('cell') // 'cell' | 'replace' | 'append'
 
   // Populate local sheets state when server data is loaded
   useEffect(() => {
     if (data?.sheets) {
       setSheets(JSON.parse(JSON.stringify(data.sheets)))
       setHasUnsavedChanges(false)
-      setIsEditing(false)
+      // Auto-select first non-calculator tab if available
+      if (data.sheets.length > 1) {
+        setActiveSheetIdx(1)
+      }
     }
   }, [data])
 
@@ -71,78 +125,209 @@ export default function ExcelSheetEditor({ vendorCode = 'pacific', vendorName = 
   const sheetName = activeSheet?.name || ''
   const isRateCalculatorTab = sheetName.toLowerCase().includes('rate calculator') || activeSheetIdx === 0
 
-  // Max columns for active sheet (minimum 10 columns for a clean spreadsheet appearance)
+  // Max columns for active sheet
   const totalCols = useMemo(() => {
     if (!activeSheet?.rows) return 10
     let max = 10
     activeSheet.rows.forEach(r => {
       if (Array.isArray(r) && r.length > max) max = r.length
     })
-    return max
+    return Math.max(max, 12)
   }, [activeSheet])
 
-  // Current cell value helper
+  // Paginated rows
+  const totalRows = activeSheet?.rows?.length || 0
+  const maxPage = pageSize === 0 ? 1 : Math.max(1, Math.ceil(totalRows / pageSize))
+  const startRow = pageSize === 0 ? 0 : (page - 1) * pageSize
+  const visibleRows = pageSize === 0
+    ? (activeSheet?.rows || [])
+    : (activeSheet?.rows?.slice(startRow, startRow + pageSize) || [])
+
+  // Get cell value
   const getCellValue = (r, c) => {
     if (!activeSheet?.rows?.[r]) return ''
     const val = activeSheet.rows[r][c]
-    return val !== undefined && val !== null ? String(val) : ''
+    if (val === undefined || val === null) return ''
+    return String(val)
   }
 
-  // Update cell value
-  const updateCellValue = (r, c, val) => {
-    setSheets(prevSheets => {
-      const nextSheets = [...prevSheets]
-      const current = { ...nextSheets[activeSheetIdx] }
-      const newRows = current.rows.map(row => [...row])
-
-      // Ensure row exists
-      while (newRows.length <= r) {
-        newRows.push([])
+  // Set cell value (Direct typing without double-click)
+  const setCellValue = (r, c, value) => {
+    if (isRateCalculatorTab) return // Read-only
+    setSheets(prev => {
+      const next = JSON.parse(JSON.stringify(prev))
+      if (!next[activeSheetIdx].rows[r]) {
+        next[activeSheetIdx].rows[r] = []
       }
-      // Ensure column exists
-      while (newRows[r].length <= c) {
-        newRows[r].push('')
+      while (next[activeSheetIdx].rows[r].length <= c) {
+        next[activeSheetIdx].rows[r].push('')
       }
-
-      newRows[r][c] = val
-      current.rows = newRows
-      nextSheets[activeSheetIdx] = current
-      return nextSheets
+      next[activeSheetIdx].rows[r][c] = value
+      return next
     })
     setHasUnsavedChanges(true)
   }
 
-  // Active cell coordinate string e.g. "C4"
-  const activeCellCoord = `${getColName(activeCell.c)}${activeCell.r + 1}`
-  const activeCellValue = getCellValue(activeCell.r, activeCell.c)
+  // ── Direct on-cell paste handler (Ctrl+V into any cell) ──
+  const handleCellPaste = (e, startR, startC) => {
+    if (isRateCalculatorTab) {
+      e.preventDefault()
+      toast('Rate Calculator tab is read-only. Edit other tabs to modify data.', { icon: '🔒' })
+      return
+    }
 
-  // Start editing active cell
-  const startEditing = (initialVal) => {
-    setEditValue(initialVal !== undefined ? initialVal : activeCellValue)
-    setIsEditing(true)
-    setTimeout(() => {
-      inlineInputRef.current?.focus()
-      inlineInputRef.current?.select()
-    }, 10)
+    const rows = parseExcelClipboardData(e.clipboardData)
+    if (!rows || rows.length === 0 || (rows.length === 1 && rows[0].length <= 1)) {
+      return
+    }
+
+    e.preventDefault()
+    applyPastedMatrix(rows, startR, startC)
+    toast.success(`📋 Pasted ${rows.length} rows × ${Math.max(...rows.map(r => r.length))} cols from Excel!`)
   }
 
-  // Commit editing
-  const commitEditing = () => {
-    updateCellValue(activeCell.r, activeCell.c, editValue)
-    setIsEditing(false)
+  // Apply a 2D matrix of values starting at (startR, startC)
+  const applyPastedMatrix = (matrix, startR, startC) => {
+    if (isRateCalculatorTab) return
+    setSheets(prev => {
+      const next = JSON.parse(JSON.stringify(prev))
+      const targetRows = next[activeSheetIdx].rows
+
+      matrix.forEach((row, ri) => {
+        const targetR = startR + ri
+        if (!targetRows[targetR]) {
+          targetRows[targetR] = []
+        }
+        row.forEach((val, ci) => {
+          const targetC = startC + ci
+          while (targetRows[targetR].length <= targetC) {
+            targetRows[targetR].push('')
+          }
+          targetRows[targetR][targetC] = val
+        })
+      })
+
+      return next
+    })
+    setHasUnsavedChanges(true)
   }
 
-  // Cancel editing
-  const cancelEditing = () => {
-    setIsEditing(false)
-    setEditValue(activeCellValue)
+  // Handle Paste in Modal
+  const handleModalTextareaPaste = (e) => {
+    const rows = parseExcelClipboardData(e.clipboardData)
+    if (rows && rows.length > 0) {
+      setParsedPreviewRows(rows)
+    }
   }
 
-  // Save Mutation
+  const handleApplyModalPaste = () => {
+    if (isRateCalculatorTab) {
+      toast.error('Cannot paste into the read-only Rate Calculator tab')
+      return
+    }
+
+    let rowsToApply = parsedPreviewRows
+    if (rowsToApply.length === 0 && pastedRawText.trim()) {
+      rowsToApply = parseExcelClipboardData(pastedRawText)
+    }
+
+    if (!rowsToApply || rowsToApply.length === 0) {
+      toast.error('No table data detected. Copy cells in Excel (Ctrl+C) and paste here.')
+      return
+    }
+
+    if (pasteMode === 'replace') {
+      setSheets(prev => {
+        const next = JSON.parse(JSON.stringify(prev))
+        next[activeSheetIdx].rows = rowsToApply
+        return next
+      })
+      toast.success(`Replaced sheet with ${rowsToApply.length} rows from Excel!`)
+    } else if (pasteMode === 'append') {
+      setSheets(prev => {
+        const next = JSON.parse(JSON.stringify(prev))
+        next[activeSheetIdx].rows.push(...rowsToApply)
+        return next
+      })
+      toast.success(`Appended ${rowsToApply.length} rows to bottom of sheet!`)
+    } else {
+      applyPastedMatrix(rowsToApply, activeCell.r, activeCell.c)
+      toast.success(`Pasted ${rowsToApply.length} rows starting at row ${activeCell.r + 1}!`)
+    }
+
+    setHasUnsavedChanges(true)
+    setShowPasteModal(false)
+    setPastedRawText('')
+    setParsedPreviewRows([])
+  }
+
+  // ── Open local .xlsx file directly ──
+  const handleOpenLocalXlsx = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      try {
+        const buffer = evt.target.result
+        const wb = XLSX.read(buffer, { type: 'array' })
+        const newSheets = []
+        wb.SheetNames.forEach((sName) => {
+          const ws = wb.Sheets[sName]
+          const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+          newSheets.push({
+            name: sName,
+            rows: data
+          })
+        })
+        if (newSheets.length > 0) {
+          setSheets(newSheets)
+          setHasUnsavedChanges(true)
+          toast.success(`Loaded ${newSheets.length} tabs from ${file.name}. Click Save to apply!`)
+        }
+      } catch (err) {
+        toast.error('Failed to parse Excel file: ' + err.message)
+      }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  // Keyboard navigation between cells
+  const handleCellKeyDown = (e, r, c) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const nextR = Math.min(r + 1, totalRows - 1)
+      setActiveCell({ r: nextR, c })
+      focusCellInput(nextR, c)
+    } else if (e.key === 'Tab') {
+      e.preventDefault()
+      const nextC = e.shiftKey ? Math.max(0, c - 1) : Math.min(c + 1, totalCols - 1)
+      setActiveCell({ r, c: nextC })
+      focusCellInput(r, nextC)
+    } else if (e.key === 'ArrowDown') {
+      if (r < totalRows - 1) {
+        e.preventDefault()
+        setActiveCell({ r: r + 1, c })
+        focusCellInput(r + 1, c)
+      }
+    } else if (e.key === 'ArrowUp') {
+      if (r > 0) {
+        e.preventDefault()
+        setActiveCell({ r: r - 1, c })
+        focusCellInput(r - 1, c)
+      }
+    }
+  }
+
+  const focusCellInput = (r, c) => {
+    const el = document.getElementById(`emb-cell-${r}-${c}`)
+    if (el) el.focus()
+  }
+
+  // Save mutation
   const saveMutation = useMutation({
     mutationFn: () => saveVendorWorkbookData(vendorCode, sheets, vendorName),
     onSuccess: (res) => {
-      toast.success(res.message || 'Excel rate sheet saved to server!')
+      toast.success(res.message || 'Excel rate sheet saved successfully!')
       setHasUnsavedChanges(false)
       queryClient.invalidateQueries({ queryKey: ['vendor-workbook-data', vendorCode] })
       queryClient.invalidateQueries({ queryKey: ['vendor-sheet-details', vendorCode] })
@@ -150,470 +335,313 @@ export default function ExcelSheetEditor({ vendorCode = 'pacific', vendorName = 
       if (onSaved) onSaved(res)
     },
     onError: (err) => {
-      toast.error(err.response?.data?.message || err.message || 'Failed to save rate sheet')
+      toast.error(err.response?.data?.message || err.message || 'Failed to save')
     }
   })
 
-  // Add row to current sheet
-  const handleAddRow = () => {
-    setSheets(prevSheets => {
-      const nextSheets = [...prevSheets]
-      const current = { ...nextSheets[activeSheetIdx] }
-      const newRows = [...current.rows, new Array(totalCols).fill('')]
-      current.rows = newRows
-      nextSheets[activeSheetIdx] = current
-      return nextSheets
+  // Add row
+  const addRow = () => {
+    if (isRateCalculatorTab) return
+    setSheets(prev => {
+      const next = JSON.parse(JSON.stringify(prev))
+      const newRow = Array(totalCols).fill('')
+      next[activeSheetIdx].rows.push(newRow)
+      return next
     })
     setHasUnsavedChanges(true)
-    toast.success('Row added to bottom of sheet')
+    toast.success('Row added to bottom')
   }
 
-  // Delete active row
-  const handleDeleteActiveRow = () => {
-    if (!activeSheet?.rows || activeSheet.rows.length <= 1) {
-      toast.error('Cannot delete the only row in sheet')
-      return
-    }
-    const rowIdx = activeCell.r
-    setSheets(prevSheets => {
-      const nextSheets = [...prevSheets]
-      const current = { ...nextSheets[activeSheetIdx] }
-      const newRows = current.rows.filter((_, idx) => idx !== rowIdx)
-      current.rows = newRows
-      nextSheets[activeSheetIdx] = current
-      return nextSheets
+  // Delete row
+  const deleteRow = (r) => {
+    if (isRateCalculatorTab) return
+    setSheets(prev => {
+      const next = JSON.parse(JSON.stringify(prev))
+      next[activeSheetIdx].rows.splice(r, 1)
+      return next
     })
     setHasUnsavedChanges(true)
-    setActiveCell(prev => ({ ...prev, r: Math.max(0, prev.r - 1) }))
-    toast.success(`Row #${rowIdx + 1} deleted`)
   }
-
-  // Add column to current sheet
-  const handleAddColumn = () => {
-    setSheets(prevSheets => {
-      const nextSheets = [...prevSheets]
-      const current = { ...nextSheets[activeSheetIdx] }
-      const newRows = current.rows.map(r => [...r, ''])
-      current.rows = newRows
-      nextSheets[activeSheetIdx] = current
-      return nextSheets
-    })
-    setHasUnsavedChanges(true)
-    toast.success('Column added to right of sheet')
-  }
-
-  // Keyboard navigation on grid
-  const handleKeyDown = (e) => {
-    if (isEditing) {
-      if (e.key === 'Enter') {
-        e.preventDefault()
-        commitEditing()
-        // Move selection down 1 row
-        setActiveCell(prev => ({ ...prev, r: prev.r + 1 }))
-      } else if (e.key === 'Tab') {
-        e.preventDefault()
-        commitEditing()
-        // Move selection right 1 column
-        setActiveCell(prev => ({ ...prev, c: prev.c + 1 }))
-      } else if (e.key === 'Escape') {
-        e.preventDefault()
-        cancelEditing()
-      }
-      return
-    }
-
-    if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      setActiveCell(prev => ({ ...prev, r: Math.max(0, prev.r - 1) }))
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      setActiveCell(prev => ({ ...prev, r: Math.min((activeSheet?.rows?.length || 1) - 1, prev.r + 1) }))
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault()
-      setActiveCell(prev => ({ ...prev, c: Math.max(0, prev.c - 1) }))
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault()
-      setActiveCell(prev => ({ ...prev, c: Math.min(totalCols - 1, prev.c + 1) }))
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      startEditing()
-    } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      // Type directly into active cell
-      startEditing(e.key)
-    }
-  }
-
-  // Filtered rows based on search
-  const filteredRowIndices = useMemo(() => {
-    if (!activeSheet?.rows) return []
-    if (!searchQuery.trim()) {
-      return activeSheet.rows.map((_, i) => i)
-    }
-    const q = searchQuery.toLowerCase().trim()
-    const matches = []
-    activeSheet.rows.forEach((row, idx) => {
-      const match = (row || []).some(cell => String(cell || '').toLowerCase().includes(q))
-      if (match) matches.push(idx)
-    })
-    return matches
-  }, [activeSheet, searchQuery])
-
-  // Paginated visible row indices
-  const totalPages = Math.max(1, Math.ceil(filteredRowIndices.length / pageSize))
-  const paginatedRowIndices = useMemo(() => {
-    const start = (page - 1) * pageSize
-    return filteredRowIndices.slice(start, start + pageSize)
-  }, [filteredRowIndices, page, pageSize])
-
-  // Reset page when search or sheet changes
-  useEffect(() => {
-    setPage(1)
-  }, [searchQuery, activeSheetIdx])
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center space-y-3">
+      <div className="bg-white border border-gray-200 rounded-2xl p-12 text-center space-y-3 shadow-sm">
         <RefreshCw className="w-8 h-8 text-red-600 animate-spin mx-auto" />
-        <h3 className="text-sm font-bold text-gray-800">Opening Excel Workbook in Browser...</h3>
-        <p className="text-xs text-gray-500">Loading sheets, rows, and formulas for {vendorName}...</p>
+        <p className="text-sm font-bold text-gray-700">Loading workbook data for {vendorName}...</p>
       </div>
     )
   }
 
-  if (isError || !data?.sheets) {
+  if (isError || !data?.success) {
     return (
-      <div className="bg-white rounded-2xl border border-rose-200 p-8 text-center space-y-3">
-        <AlertCircle className="w-8 h-8 text-rose-600 mx-auto" />
-        <h3 className="text-sm font-bold text-gray-900">Failed to load Excel rate sheet</h3>
-        <p className="text-xs text-gray-500">Could not read workbook file for vendor "{vendorCode}".</p>
-        <button
-          onClick={() => refetch()}
-          className="px-4 py-2 bg-gray-900 text-white rounded-xl text-xs font-bold hover:bg-black transition cursor-pointer"
-        >
-          Try Again
-        </button>
+      <div className="bg-white border border-red-200 rounded-2xl p-12 text-center space-y-3 shadow-sm">
+        <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
+        <h2 className="text-base font-bold text-gray-900">Workbook Data Not Available</h2>
+        <p className="text-xs text-gray-600 max-w-md mx-auto">
+          Could not load sheet data for <strong>{vendorName}</strong>. Please ensure an Excel rate sheet has been imported.
+        </p>
       </div>
     )
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden animate-fade-in" onKeyDown={handleKeyDown} tabIndex={0}>
-      {/* ── Top Header Toolbar ── */}
-      <div className="p-4 border-b border-gray-200 bg-gray-50/80 flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-green-500 text-white flex items-center justify-center shadow-md shadow-emerald-600/20">
+    <div className="bg-white border border-gray-200/90 rounded-2xl shadow-sm overflow-hidden flex flex-col font-sans">
+      {/* Hidden file input for opening .xlsx directly */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        className="hidden"
+        onChange={handleOpenLocalXlsx}
+      />
+
+      {/* ── Editor Ribbon ── */}
+      <div className="p-3.5 bg-gray-50/80 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
             <FileSpreadsheet className="w-4 h-4" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-gray-900">
-                In-Browser Excel Sheet Editor: <span className="text-red-600">{vendorName}</span>
-              </h2>
+            <h3 className="text-xs font-extrabold text-gray-900 flex items-center gap-2">
+              Excel Spreadsheet Editor
               {hasUnsavedChanges && (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
                   Unsaved Changes
                 </span>
               )}
-            </div>
-            <p className="text-[11px] text-gray-500">
-              Active file: <strong className="text-gray-700">{data.filename}</strong> • Click any cell to view/edit • Changes save directly to server
+            </h3>
+            <p className="text-[11px] text-gray-500 flex items-center gap-1.5">
+              <span>Tab: <strong className="text-gray-800">{sheetName}</strong></span>
+              {isRateCalculatorTab ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                  <Lock className="w-2.5 h-2.5" /> Read-Only
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                  <Unlock className="w-2.5 h-2.5" /> Direct Edit & Paste
+                </span>
+              )}
             </p>
           </div>
         </div>
 
-        {/* Action Controls */}
+        {/* Toolbar Controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Search in active sheet */}
-          <div className="relative min-w-[200px]">
-            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search in sheet..."
-              className="w-full bg-white border border-gray-300 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-red-500"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
+          {/* Cell Reference */}
+          <span className="text-[11px] font-mono font-bold bg-white border border-gray-200 rounded-lg px-2 py-1 text-gray-700 min-w-[50px] text-center shadow-2xs">
+            {getColName(activeCell.c)}{activeCell.r + 1}
+          </span>
 
-          {/* Add Row */}
-          <button
-            type="button"
-            onClick={handleAddRow}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition cursor-pointer shadow-xs"
-            title="Add a new row at the bottom of sheet"
-          >
-            <Plus className="w-3.5 h-3.5 text-emerald-600" />
-            Add Row
-          </button>
+          {/* Value bar */}
+          <input
+            type="text"
+            value={getCellValue(activeCell.r, activeCell.c)}
+            onChange={(e) => {
+              if (isRateCalculatorTab) return
+              setCellValue(activeCell.r, activeCell.c, e.target.value)
+            }}
+            readOnly={isRateCalculatorTab}
+            placeholder={isRateCalculatorTab ? 'Read-only formula...' : 'Click cell to type or edit...'}
+            className={`bg-white border rounded-lg px-2.5 py-1 text-xs font-mono w-[220px] focus:outline-none transition shadow-2xs ${
+              isRateCalculatorTab
+                ? 'border-gray-200 text-gray-500 cursor-not-allowed bg-gray-100'
+                : 'border-gray-300 text-gray-900 focus:ring-1 focus:ring-emerald-500'
+            }`}
+          />
 
-          {/* Delete Row */}
-          <button
-            type="button"
-            onClick={handleDeleteActiveRow}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-rose-50 hover:text-rose-700 transition cursor-pointer shadow-xs"
-            title={`Delete active row #${activeCell.r + 1}`}
-          >
-            <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-            Del Row #{activeCell.r + 1}
-          </button>
-
-          {/* Add Column */}
-          <button
-            type="button"
-            onClick={handleAddColumn}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition cursor-pointer shadow-xs"
-            title="Add a new column to the right"
-          >
-            <Plus className="w-3.5 h-3.5 text-blue-600" />
-            Add Col
-          </button>
-
-          {/* Discard / Reload */}
-          {hasUnsavedChanges && (
+          {/* ── PASTE TABLE FROM EXCEL BUTTON ── */}
+          {!isRateCalculatorTab && (
             <button
-              type="button"
               onClick={() => {
-                if (confirm('Discard unsaved edits and reload original rate sheet?')) {
-                  refetch()
-                }
+                setPastedRawText('')
+                setParsedPreviewRows([])
+                setShowPasteModal(true)
+                setTimeout(() => pasteModalTextareaRef.current?.focus(), 100)
               }}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-600 text-xs font-semibold hover:bg-gray-100 transition cursor-pointer shadow-xs"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-xs transition cursor-pointer"
+              title="Copy table in Excel and paste directly into this sheet"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-gray-500" />
-              Discard
+              <ClipboardPaste className="w-3.5 h-3.5" />
+              Paste Table from Excel
             </button>
           )}
 
-          {/* Save to Server Button */}
+          {/* Open local .xlsx */}
           <button
-            type="button"
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending || !hasUnsavedChanges}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer shadow-md ${
-              hasUnsavedChanges
-                ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
-                : 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none'
-            }`}
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-[11px] font-bold hover:bg-gray-50 transition cursor-pointer shadow-2xs"
+            title="Open an updated .xlsx file from your computer"
           >
-            <Save className={`w-3.5 h-3.5 ${saveMutation.isPending ? 'animate-spin' : ''}`} />
-            {saveMutation.isPending ? 'Saving to .xlsx...' : 'Save Sheet to Server'}
+            <Upload className="w-3 h-3 text-blue-600" />
+            Open .xlsx
           </button>
 
-          {/* Download Original */}
+          {/* Open in full new tab */}
           <a
-            href={getVendorSheetDownloadUrl(vendorCode)}
-            download
-            className="p-1.5 text-gray-500 hover:text-gray-800 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition cursor-pointer shadow-xs"
-            title="Download .xlsx file"
+            href={`/rates/editor?vendor=${vendorCode}&name=${encodeURIComponent(vendorName)}`}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-bold hover:bg-blue-100 transition cursor-pointer shadow-2xs"
+            title="Open sheet editor in a separate full browser tab"
           >
-            <Download className="w-4 h-4" />
+            <ExternalLink className="w-3 h-3" />
+            New Tab ↗
           </a>
-        </div>
-      </div>
 
-      {/* ── Sheet Tabs Bar (like Excel bottom tabs) ── */}
-      <div className="flex items-center gap-1 px-4 py-2 border-b border-gray-200 bg-gray-100/70 overflow-x-auto text-xs">
-        <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mr-2 shrink-0">
-          Worksheets:
-        </span>
-        {sheets.map((s, idx) => (
+          {/* Add Row */}
+          {!isRateCalculatorTab && (
+            <button
+              onClick={addRow}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-[11px] font-bold hover:bg-gray-50 transition cursor-pointer shadow-2xs"
+              title="Add row at bottom"
+            >
+              <Plus className="w-3 h-3" />
+              Row
+            </button>
+          )}
+
+          {/* Reload */}
           <button
-            key={s.name || idx}
-            type="button"
-            onClick={() => {
-              setActiveSheetIdx(idx)
-              setActiveCell({ r: 0, c: 0 })
-              setIsEditing(false)
-            }}
-            className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold transition cursor-pointer shrink-0 ${
-              activeSheetIdx === idx
-                ? 'bg-white text-gray-900 border border-gray-300 shadow-xs'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-white/60'
-            }`}
+            onClick={() => refetch()}
+            className="p-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 transition cursor-pointer shadow-2xs"
+            title="Reload from server"
           >
-            <Table2 className={`w-3.5 h-3.5 ${activeSheetIdx === idx ? 'text-red-600' : 'text-gray-400'}`} />
-            <span>{s.name || `Sheet${idx + 1}`}</span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-gray-100 text-gray-500">
-              {s.rows?.length || 0} rows
-            </span>
+            <RotateCcw className="w-3 h-3" />
           </button>
-        ))}
+
+          {/* Save */}
+          <button
+            onClick={() => saveMutation.mutate()}
+            disabled={!hasUnsavedChanges || saveMutation.isPending}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold shadow-xs disabled:opacity-50 transition cursor-pointer"
+          >
+            <Save className="w-3.5 h-3.5" />
+            {saveMutation.isPending ? 'Saving...' : 'Save Sheet'}
+          </button>
+        </div>
       </div>
 
-      {/* ── Formula Bar ── */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 bg-white text-xs">
-        {/* Cell Coordinate Badge e.g. "C4" */}
-        <div className="flex items-center gap-1 px-2.5 py-1 rounded bg-gray-100 border border-gray-300 font-mono font-bold text-gray-700 min-w-[70px] justify-center">
-          <span className="text-[10px] text-gray-400">Cell:</span>
-          <span>{activeCellCoord}</span>
+      {/* ── Sheet Tabs ── */}
+      <div className="bg-white border-b border-gray-200 px-3 py-1.5 flex items-center justify-between gap-2 overflow-x-auto">
+        <div className="flex items-center gap-1">
+          {sheets.map((sh, idx) => (
+            <button
+              key={idx}
+              onClick={() => { setActiveSheetIdx(idx); setPage(1) }}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer whitespace-nowrap border ${
+                idx === activeSheetIdx
+                  ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                  : idx === 0
+                  ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                  : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+              }`}
+            >
+              {idx === 0 && <Lock className="w-2.5 h-2.5" />}
+              {sh.name || `Sheet ${idx + 1}`}
+            </button>
+          ))}
         </div>
 
-        {/* fx label */}
-        <span className="text-gray-400 font-serif italic font-bold select-none text-sm">fx</span>
-
-        {/* Formula Input */}
-        <div className="flex-1 relative">
-          <input
-            ref={formulaInputRef}
-            type="text"
-            value={isEditing ? editValue : activeCellValue}
-            onChange={(e) => {
-              if (!isEditing) setIsEditing(true)
-              setEditValue(e.target.value)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                commitEditing()
-              } else if (e.key === 'Escape') {
-                e.preventDefault()
-                cancelEditing()
-              }
-            }}
-            placeholder="Type cell value, number, or formula starting with '=' (e.g. =VLOOKUP(...))"
-            className="w-full bg-gray-50/50 border border-gray-200 rounded-lg px-3 py-1 font-mono text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:bg-white"
-          />
-        </div>
-
-        {isEditing && (
-          <div className="flex items-center gap-1">
-            <button
-              onClick={commitEditing}
-              className="p-1 rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 cursor-pointer"
-              title="Commit (Enter)"
-            >
-              <Check className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={cancelEditing}
-              className="p-1 rounded bg-rose-50 text-rose-700 hover:bg-rose-100 cursor-pointer"
-              title="Cancel (Esc)"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-
-        {/* Special cell notice if Rate Calculator */}
-        {isRateCalculatorTab && (
-          <div className="hidden lg:flex items-center gap-1 text-[11px] text-gray-500 shrink-0">
-            {activeCellCoord === 'C4' && <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">B4/C4: Country Input</span>}
-            {activeCellCoord === 'C5' && <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">B5/C5: Service Input</span>}
-            {activeCellCoord === 'C6' && <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">B6/C6: Weight Input</span>}
-            {activeCellCoord === 'C7' && <span className="font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">B7/C7: Postcode / State Input</span>}
-            {activeCellCoord === 'C10' && <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-300">B10/C10: Output Rate Fetched by System</span>}
-          </div>
+        {!isRateCalculatorTab && (
+          <span className="text-[10px] text-gray-500 font-medium shrink-0 hidden lg:inline">
+            Direct cell typing & Ctrl+V table pasting active
+          </span>
         )}
       </div>
 
-      {/* ── Spreadsheet Grid ── */}
-      <div className="overflow-auto max-h-[600px] border-b border-gray-200 select-none">
-        <table className="border-collapse w-full text-xs font-sans">
-          {/* Column Header Row (A, B, C, D...) */}
-          <thead className="bg-gray-100 sticky top-0 z-20 text-gray-600 font-bold text-[11px]">
-            <tr>
-              {/* Corner header */}
-              <th className="w-12 min-w-[48px] py-1 px-2 border-r border-b border-gray-300 text-center bg-gray-200 text-gray-500 font-mono text-[10px] sticky left-0 z-30">
+      {/* ── Main Spreadsheet Grid ── */}
+      <div className="overflow-auto max-h-[600px] bg-white">
+        <table className="w-full border-collapse text-[11px]">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-gray-100 border-b border-gray-300">
+              <th className="w-10 text-center py-1 px-1 font-bold text-gray-500 border-r border-gray-200 bg-gray-100 sticky left-0 z-20">
                 #
               </th>
-              {Array.from({ length: totalCols }).map((_, cIdx) => (
+              {Array.from({ length: totalCols }, (_, c) => (
                 <th
-                  key={cIdx}
-                  className={`min-w-[120px] max-w-[240px] py-1 px-2.5 border-r border-b border-gray-300 text-center font-mono transition ${
-                    activeCell.c === cIdx ? 'bg-blue-100 text-blue-900 font-black' : 'bg-gray-100'
+                  key={c}
+                  className={`py-1 px-2 font-bold text-center border-r border-gray-200 min-w-[85px] ${
+                    activeCell.c === c ? 'bg-emerald-100 text-emerald-800' : 'text-gray-600'
                   }`}
                 >
-                  {getColName(cIdx)}
+                  {getColName(c)}
                 </th>
               ))}
+              {!isRateCalculatorTab && <th className="w-7 py-1 px-1 bg-gray-100"></th>}
             </tr>
           </thead>
+          <tbody>
+            {visibleRows.map((row, ri) => {
+              const actualRowIdx = startRow + ri
+              const isSelectedRow = actualRowIdx === activeCell.r
 
-          <tbody className="divide-y divide-gray-200 bg-white">
-            {paginatedRowIndices.map(rIdx => {
-              const isRowActive = activeCell.r === rIdx
               return (
-                <tr key={rIdx} className={isRowActive ? 'bg-blue-50/20' : 'hover:bg-gray-50/50'}>
-                  {/* Row Number (1, 2, 3...) */}
+                <tr
+                  key={actualRowIdx}
+                  className={`border-b border-gray-100 hover:bg-blue-50/20 ${
+                    isSelectedRow ? 'bg-blue-50/30' : ''
+                  }`}
+                >
+                  {/* Row index */}
                   <td
-                    onClick={() => setActiveCell({ r: rIdx, c: activeCell.c })}
-                    className={`py-1 px-2 border-r border-b border-gray-300 text-center font-mono text-[10px] sticky left-0 z-10 cursor-pointer ${
-                      isRowActive ? 'bg-blue-200 text-blue-950 font-black' : 'bg-gray-100 text-gray-500'
+                    className={`text-center py-0.5 px-1 font-mono font-bold border-r border-gray-200 sticky left-0 z-10 bg-gray-50 ${
+                      isSelectedRow ? 'bg-emerald-100 text-emerald-800' : 'text-gray-400'
                     }`}
                   >
-                    {rIdx + 1}
+                    {actualRowIdx + 1}
                   </td>
 
-                  {/* Row Cells */}
-                  {Array.from({ length: totalCols }).map((_, cIdx) => {
-                    const isCellActive = activeCell.r === rIdx && activeCell.c === cIdx
-                    const val = getCellValue(rIdx, cIdx)
-                    const cellCoord = `${getColName(cIdx)}${rIdx + 1}`
-
-                    // Highlighting key template cells on Rate Calculator tab
-                    const isInputCell = isRateCalculatorTab && ['C4', 'C5', 'C6', 'C7'].includes(cellCoord)
-                    const isOutputCell = isRateCalculatorTab && cellCoord === 'C10'
-                    const isLabelCell = isRateCalculatorTab && ['B4', 'B5', 'B6', 'B7', 'B10'].includes(cellCoord)
+                  {/* Cell Inputs (Instant single-click typing + Ctrl+V paste) */}
+                  {Array.from({ length: totalCols }, (_, c) => {
+                    const val = getCellValue(actualRowIdx, c)
+                    const isActive = actualRowIdx === activeCell.r && c === activeCell.c
+                    const isFormula = typeof val === 'string' && val.startsWith('=')
 
                     return (
                       <td
-                        key={cIdx}
-                        onClick={() => {
-                          if (isEditing && (activeCell.r !== rIdx || activeCell.c !== cIdx)) {
-                            commitEditing()
-                          }
-                          setActiveCell({ r: rIdx, c: cIdx })
-                        }}
-                        onDoubleClick={() => {
-                          setActiveCell({ r: rIdx, c: cIdx })
-                          startEditing()
-                        }}
-                        className={`min-w-[120px] max-w-[240px] p-1 border-r border-b border-gray-200 text-xs truncate transition relative cursor-cell ${
-                          isCellActive
-                            ? 'ring-2 ring-blue-600 ring-inset bg-blue-50/40 z-10'
-                            : isOutputCell
-                            ? 'bg-emerald-50 text-emerald-950 font-extrabold'
-                            : isInputCell
-                            ? 'bg-blue-50/60 font-bold text-blue-950'
-                            : isLabelCell
-                            ? 'bg-gray-50 font-bold text-gray-800'
-                            : 'text-gray-800'
-                        }`}
+                        key={c}
+                        className={`p-0 border-r border-gray-100 transition-colors relative ${
+                          isActive ? 'ring-2 ring-emerald-500 z-[5]' : ''
+                        } ${isFormula ? 'bg-purple-50/40' : ''}`}
                       >
-                        {isCellActive && isEditing ? (
-                          <input
-                            ref={inlineInputRef}
-                            type="text"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            className="w-full bg-white text-xs font-mono px-1 py-0.5 outline-none border border-blue-500 rounded"
-                          />
-                        ) : (
-                          <div className="flex items-center justify-between gap-1 overflow-hidden">
-                            <span className="truncate font-mono text-xs">
-                              {val || <span className="text-gray-300">·</span>}
-                            </span>
-                            {/* Special badges */}
-                            {isOutputCell && (
-                              <span className="text-[9px] font-bold px-1 rounded bg-emerald-200 text-emerald-900 shrink-0">
-                                Output C10
-                              </span>
-                            )}
-                            {isInputCell && (
-                              <span className="text-[9px] font-bold px-1 rounded bg-blue-200 text-blue-900 shrink-0">
-                                Input
-                              </span>
-                            )}
-                          </div>
-                        )}
+                        <input
+                          id={`emb-cell-${actualRowIdx}-${c}`}
+                          type="text"
+                          value={val}
+                          readOnly={isRateCalculatorTab}
+                          onChange={(e) => {
+                            if (isRateCalculatorTab) return
+                            setCellValue(actualRowIdx, c, e.target.value)
+                          }}
+                          onFocus={() => {
+                            setActiveCell({ r: actualRowIdx, c })
+                          }}
+                          onKeyDown={(e) => handleCellKeyDown(e, actualRowIdx, c)}
+                          onPaste={(e) => handleCellPaste(e, actualRowIdx, c)}
+                          title={isFormula ? `Formula: ${val}` : undefined}
+                          className={`w-full h-7 px-2 py-0.5 bg-transparent text-[11px] font-mono border-none outline-none focus:bg-white text-gray-900 ${
+                            isRateCalculatorTab
+                              ? 'cursor-not-allowed text-gray-500 bg-gray-50/30'
+                              : 'cursor-text'
+                          } ${isFormula ? 'text-purple-700 font-bold' : ''}`}
+                        />
                       </td>
                     )
                   })}
+
+                  {!isRateCalculatorTab && (
+                    <td className="p-0 text-center w-7">
+                      {isSelectedRow && (
+                        <button
+                          onClick={() => deleteRow(actualRowIdx)}
+                          className="text-red-400 hover:text-red-600 p-0.5 cursor-pointer"
+                          title="Delete this row"
+                        >
+                          <Trash2 className="w-3 h-3 mx-auto" />
+                        </button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               )
             })}
@@ -621,42 +649,211 @@ export default function ExcelSheetEditor({ vendorCode = 'pacific', vendorName = 
         </table>
       </div>
 
-      {/* ── Bottom Pagination & Footer Status ── */}
-      <div className="p-3 bg-gray-50 border-t border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-gray-600">
-        <div className="flex items-center gap-3">
+      {/* ── Bottom Controls ── */}
+      <div className="bg-gray-50 border-t border-gray-200 px-4 py-2 flex items-center justify-between text-xs">
+        <div className="flex items-center gap-3 text-gray-500">
           <span>
-            Showing rows <strong>{(page - 1) * pageSize + 1}</strong> - <strong>{Math.min(filteredRowIndices.length, page * pageSize)}</strong> of <strong>{filteredRowIndices.length}</strong>
-            {searchQuery && ` (filtered from ${activeSheet?.rows?.length || 0})`}
+            Rows {startRow + 1}–{Math.min(startRow + (pageSize || totalRows), totalRows)} of {totalRows}
           </span>
           <span className="text-gray-300">|</span>
-          <span className="text-gray-500">
-            Total Columns: <strong>{totalCols}</strong>
-          </span>
+          <span>{totalCols} columns</span>
+
+          <div className="flex items-center gap-1 ml-2">
+            <span className="text-gray-400 text-[11px]">Rows/page:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
+              className="bg-white border border-gray-300 rounded px-1.5 py-0.5 text-[11px] font-semibold text-gray-700"
+            >
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="250">250</option>
+              <option value="500">500</option>
+              <option value="0">All Rows</option>
+            </select>
+          </div>
         </div>
 
-        {/* Pagination buttons */}
-        {totalPages > 1 && (
-          <div className="flex items-center gap-1">
+        {pageSize > 0 && maxPage > 1 && (
+          <div className="flex items-center gap-1.5">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="p-1 rounded bg-white border border-gray-200 text-gray-700 disabled:opacity-40 cursor-pointer shadow-xs"
+              disabled={page <= 1}
+              className="px-2 py-0.5 rounded border border-gray-300 bg-white text-gray-700 font-bold hover:bg-gray-50 transition cursor-pointer disabled:opacity-40"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
+              <ChevronLeft className="w-3 h-3" />
             </button>
-            <span className="px-2 font-bold text-gray-800">
-              Page {page} / {totalPages}
+            <span className="text-gray-600 font-bold px-2 text-[11px]">
+              Page {page} / {maxPage}
             </span>
             <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="p-1 rounded bg-white border border-gray-200 text-gray-700 disabled:opacity-40 cursor-pointer shadow-xs"
+              onClick={() => setPage(p => Math.min(maxPage, p + 1))}
+              disabled={page >= maxPage}
+              className="px-2 py-0.5 rounded border border-gray-300 bg-white text-gray-700 font-bold hover:bg-gray-50 transition cursor-pointer disabled:opacity-40"
             >
-              <ChevronRight className="w-3.5 h-3.5" />
+              <ChevronRight className="w-3 h-3" />
             </button>
           </div>
         )}
       </div>
+
+      {/* ── MODAL: PASTE TABLE FROM EXCEL ── */}
+      {showPasteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shadow-xs">
+                  <ClipboardPaste className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-gray-900">
+                    Paste Table from Excel
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Target Sheet: <strong className="text-gray-800">{sheetName}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPasteModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg hover:bg-gray-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-emerald-50/60 border border-emerald-200/80 rounded-xl p-3 text-xs text-emerald-950 flex items-start gap-2.5">
+              <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <strong>Instructions:</strong> In Microsoft Excel, select your table and press <strong>Ctrl+C</strong>. Then click below and press <strong>Ctrl+V</strong>.
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1">
+                Paste Excel Content Here (Ctrl+V):
+              </label>
+              <textarea
+                ref={pasteModalTextareaRef}
+                rows={6}
+                value={pastedRawText}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setPastedRawText(val)
+                  const rows = parseExcelClipboardData(val)
+                  setParsedPreviewRows(rows)
+                }}
+                onPaste={handleModalTextareaPaste}
+                placeholder="Click here and press Ctrl+V to paste table from Excel..."
+                className="w-full bg-gray-50 border border-gray-300 rounded-xl p-3 text-xs font-mono text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition"
+              />
+            </div>
+
+            {parsedPreviewRows.length > 0 && (
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-extrabold text-emerald-800 flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    Detected: {parsedPreviewRows.length} rows × {Math.max(...parsedPreviewRows.map(r => r.length))} columns
+                  </span>
+                  <span className="text-gray-500 text-[11px]">Previewing first 3 rows:</span>
+                </div>
+
+                <div className="overflow-x-auto border border-gray-200 rounded-lg bg-white max-h-32">
+                  <table className="w-full border-collapse text-[10px] font-mono">
+                    <tbody>
+                      {parsedPreviewRows.slice(0, 3).map((r, ri) => (
+                        <tr key={ri} className="border-b border-gray-100">
+                          {r.slice(0, 8).map((c, ci) => (
+                            <td key={ci} className="px-2 py-1 border-r border-gray-100 truncate max-w-[120px]">
+                              {c || '\u00A0'}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                Where should this table be inserted?
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <label className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition ${
+                  pasteMode === 'replace'
+                    ? 'bg-emerald-50 border-emerald-500 text-emerald-900'
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                }`}>
+                  <input
+                    type="radio"
+                    name="embPasteMode"
+                    value="replace"
+                    checked={pasteMode === 'replace'}
+                    onChange={() => setPasteMode('replace')}
+                    className="accent-emerald-600"
+                  />
+                  <span>Replace Entire Tab</span>
+                </label>
+
+                <label className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition ${
+                  pasteMode === 'cell'
+                    ? 'bg-emerald-50 border-emerald-500 text-emerald-900'
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                }`}>
+                  <input
+                    type="radio"
+                    name="embPasteMode"
+                    value="cell"
+                    checked={pasteMode === 'cell'}
+                    onChange={() => setPasteMode('cell')}
+                    className="accent-emerald-600"
+                  />
+                  <span>At Cell ({getColName(activeCell.c)}{activeCell.r + 1})</span>
+                </label>
+
+                <label className={`flex items-center gap-2 p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition ${
+                  pasteMode === 'append'
+                    ? 'bg-emerald-50 border-emerald-500 text-emerald-900'
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                }`}>
+                  <input
+                    type="radio"
+                    name="embPasteMode"
+                    value="append"
+                    checked={pasteMode === 'append'}
+                    onChange={() => setPasteMode('append')}
+                    className="accent-emerald-600"
+                  />
+                  <span>Append to Bottom</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowPasteModal(false)}
+                className="px-4 py-2 rounded-xl border border-gray-200 text-gray-600 text-xs font-semibold hover:bg-gray-50 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyModalPaste}
+                disabled={parsedPreviewRows.length === 0 && !pastedRawText.trim()}
+                className="flex items-center gap-1.5 px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-600/20 disabled:opacity-50 transition cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                Apply Table to {sheetName}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
