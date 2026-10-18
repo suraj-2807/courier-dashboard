@@ -118,7 +118,7 @@ export const downloadVendorSheet = async (req, res) => {
 export const calculateVendorRate = async (req, res) => {
   try {
     const params = { ...(req.body || {}), ...(req.query || {}) }
-    const { vendor_code, country, service_code, weight, postcode } = params
+    const { vendor_code, country, service_code, weight, postcode, state } = params
 
     if (!country) {
       return res.status(400).json({
@@ -139,11 +139,13 @@ export const calculateVendorRate = async (req, res) => {
       country: String(country),
       service_code: service_code ? String(service_code) : '',
       weight: parseFloat(weight),
-      postcode: postcode ? String(postcode) : ''
+      postcode: postcode ? String(postcode) : '',
+      state: state ? String(state) : ''
     })
 
     if (!result.success) {
-      return res.status(404).json(result)
+      const statusCode = (result.reason === 'STATE_REQUIRED' || result.reason === 'STATE_NOT_FOUND' || result.reason === 'WEIGHT_LIMIT_EXCEEDED') ? 400 : 404
+      return res.status(statusCode).json(result)
     }
 
     return res.json(result)

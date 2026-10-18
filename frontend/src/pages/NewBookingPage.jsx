@@ -993,7 +993,8 @@ export default function NewBookingPage() {
         country: destCountry,
         service_code: form.service_code || '',
         weight: chgWt,
-        postcode: form.receiver_pincode || ''
+        postcode: form.receiver_pincode || '',
+        state: form.receiver_state || ''
       })
       if (res && res.success && res.vendor_rate !== undefined) {
         setRateSheetResult(res)
@@ -1033,6 +1034,7 @@ export default function NewBookingPage() {
     takeRateFromSheet,
     form.receiver_country,
     form.service_code,
+    form.receiver_state,
     form.vendor_config_id,
     form.receiver_pincode,
     finalChargeableWeight,

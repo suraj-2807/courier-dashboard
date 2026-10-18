@@ -45,8 +45,10 @@ export default function RatesPage() {
   const [calcCountry, setCalcCountry] = useState('U.A.E.')
   const [calcService, setCalcService] = useState('PXC-SELF')
   const [calcWeight, setCalcWeight] = useState('1.5')
+  const [calcState, setCalcState] = useState('')
   const [calcPostcode, setCalcPostcode] = useState('')
   const [calcResult, setCalcResult] = useState(null)
+  const [calcError, setCalcError] = useState(null)
   const [calcLoading, setCalcLoading] = useState(false)
 
   // Explorer filter
@@ -79,25 +81,58 @@ export default function RatesPage() {
 
   const destinations = sheetDetailsData?.destinations || []
   const allServices = sheetDetailsData?.all_services || []
+  const stateOptions = sheetDetailsData?.state_options || []
   const sheets = sheetDetailsData?.sheets || []
   const calculatorTemplate = sheetDetailsData?.calculator || {}
+
+  // Check if chosen destination is USA
+  const isUSADestination = useMemo(() => {
+    const c = (calcCountry || '').toLowerCase().trim()
+    return c === 'united states' || c === 'usa' || c.includes('united states') || c === 'u.s.a.'
+  }, [calcCountry])
+
+  // Check if chosen destination is Australia
+  const isAustraliaDestination = useMemo(() => {
+    const c = (calcCountry || '').toLowerCase().trim()
+    return c === 'australia' || c === 'aus'
+  }, [calcCountry])
 
   // Available services for the currently chosen country in calculator
   const servicesForSelectedCountry = useMemo(() => {
     if (!calcCountry) return allServices
-    const match = destinations.find(d => d.country.toLowerCase() === calcCountry.toLowerCase())
+    const match = destinations.find(d => d.country.toLowerCase() === calcCountry.toLowerCase().trim())
     if (match && match.services && match.services.length > 0) {
       return match.services
     }
     return allServices
   }, [destinations, calcCountry, allServices])
 
-  // Sync service code if not available for country
-  useEffect(() => {
-    if (servicesForSelectedCountry.length > 0 && !servicesForSelectedCountry.includes(calcService)) {
-      setCalcService(servicesForSelectedCountry[0])
+  const isUSASelf = isUSADestination && calcService === 'PXC-EX NY SELF'
+
+  // Handlers for switching country/service
+  const handleCountryChange = (countryName) => {
+    setCalcCountry(countryName)
+    setCalcResult(null)
+    setCalcError(null)
+
+    const match = destinations.find(d => d.country.toLowerCase() === countryName.toLowerCase().trim())
+    if (match && match.services && match.services.length > 0) {
+      setCalcService(match.services[0])
     }
-  }, [servicesForSelectedCountry, calcService])
+    const isUSA = countryName.toLowerCase() === 'united states' || countryName.toLowerCase() === 'usa' || countryName.toLowerCase().includes('united states')
+    if (isUSA && !calcState) {
+      setCalcState('NY')
+    }
+  }
+
+  const handleServiceChange = (serviceName) => {
+    setCalcService(serviceName)
+    setCalcResult(null)
+    setCalcError(null)
+    if (isUSADestination && serviceName === 'PXC-EX NY SELF' && !calcState) {
+      setCalcState('NY')
+    }
+  }
 
   // ── Calculate Handler (C4, C5, C6, C7 ➔ C10) ──
   const runCalculation = async () => {
@@ -105,35 +140,70 @@ export default function RatesPage() {
       toast.error('Please select a destination country')
       return
     }
-    if (!calcWeight || parseFloat(calcWeight) <= 0) {
+    const weightNum = parseFloat(calcWeight)
+    if (!calcWeight || isNaN(weightNum) || weightNum <= 0) {
       toast.error('Please enter a valid weight in kg')
       return
     }
 
+    if (isUSASelf && !calcState) {
+      const msg = 'Please select a US State for PXC-EX NY SELF service.'
+      setCalcError(msg)
+      toast.error(msg)
+      return
+    }
+
+    if (isUSASelf && weightNum > 21.5) {
+      const msg = `Shipment weight (${weightNum} kg) exceeds maximum permissible weight of 21.5 kg for USA PXC-EX NY SELF.`
+      setCalcError(msg)
+      setCalcResult(null)
+      toast.error(msg)
+      return
+    }
+
+    if (isAustraliaDestination && weightNum > 25) {
+      const msg = `Shipment weight (${weightNum} kg) exceeds maximum permissible weight of 25 kg for Australia PXC-SELF.`
+      setCalcError(msg)
+      setCalcResult(null)
+      toast.error(msg)
+      return
+    }
+
     setCalcLoading(true)
+    setCalcError(null)
     try {
       const res = await calculateVendorRate({
         vendor_code: selectedVendorCode,
         country: calcCountry,
         service_code: calcService,
-        weight: parseFloat(calcWeight),
+        weight: weightNum,
+        state: calcState,
         postcode: calcPostcode
       })
-      setCalcResult(res)
+      if (res && res.success) {
+        setCalcResult(res)
+        setCalcError(null)
+      } else {
+        setCalcResult(null)
+        setCalcError(res?.message || 'Rate calculation failed')
+      }
     } catch (err) {
-      toast.error(err.response?.data?.message || err.message || 'Failed to calculate rate from sheet')
+      const msg = err.response?.data?.message || err.message || 'Failed to calculate rate from sheet'
+      setCalcError(msg)
       setCalcResult(null)
+      toast.error(msg)
     } finally {
       setCalcLoading(false)
     }
   }
 
-  // Auto-calculate on initial load or vendor change
+  // Auto-calculate on initial load or parameter change
   useEffect(() => {
     if (selectedVendorCode && calcCountry && calcWeight) {
+      if (isUSASelf && !calcState) return
       runCalculation()
     }
-  }, [selectedVendorCode, calcCountry, calcService, calcWeight, calcPostcode])
+  }, [selectedVendorCode, calcCountry, calcService, calcWeight, calcState, calcPostcode])
 
   // ── Import Mutation ──
   const importMutation = useMutation({
@@ -339,42 +409,39 @@ export default function RatesPage() {
               </div>
             </div>
 
-            <div className="space-y-3.5 pt-1">
-              {/* B4 / C4: Country */}
+            <div className="space-y-4 pt-1">
+              {/* B4 / C4: Country / Destination */}
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
                     <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">B4</span>
                     {calculatorTemplate.b4_label || 'Country / Destination'} (Input ➔ C4)
                   </label>
-                  <span className="text-[11px] text-gray-400">Exact country or common alias</span>
+                  <span className="text-[11px] text-gray-400 font-medium">Valid tariff destination</span>
                 </div>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={calcCountry}
-                    onChange={(e) => setCalcCountry(e.target.value)}
-                    placeholder="e.g. U.A.E., United Kingdom, Australia, United States..."
-                    list="destinations-datalist"
-                    className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition"
-                  />
-                  <datalist id="destinations-datalist">
-                    {destinations.map(d => (
-                      <option key={d.country} value={d.country} />
-                    ))}
-                  </datalist>
-                </div>
+                <select
+                  value={calcCountry}
+                  onChange={(e) => handleCountryChange(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition cursor-pointer"
+                >
+                  <option value="">-- Select Destination Country --</option>
+                  {destinations.map(d => (
+                    <option key={d.country} value={d.country}>
+                      {d.country} {d.services?.length ? `(${d.services.join(', ')})` : ''}
+                    </option>
+                  ))}
+                </select>
 
-                {/* Quick destination chips */}
+                {/* Quick destination chips for frequent routes */}
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {['U.A.E.', 'U.K.(EXPRESS)', 'U.S.A.(Single Package)', 'Australia', 'Bahrain', 'Canada(Single Package)', 'Oman', 'Qatar', 'Saudi Arabia (Resumed)'].map(c => (
+                  {['United States', 'Australia', 'United Kingdom', 'Canada', 'U.A.E.', 'Germany', 'Singapore', 'New Zealand'].map(c => (
                     <button
                       key={c}
                       type="button"
-                      onClick={() => setCalcCountry(c)}
-                      className={`text-[10px] px-2 py-0.5 rounded-md border transition cursor-pointer font-medium ${
-                        calcCountry === c
-                          ? 'bg-red-50 text-red-700 border-red-300 font-bold'
+                      onClick={() => handleCountryChange(c)}
+                      className={`text-[10px] px-2.5 py-0.5 rounded-md border transition cursor-pointer font-medium ${
+                        calcCountry.toLowerCase() === c.toLowerCase()
+                          ? 'bg-red-50 text-red-700 border-red-300 font-bold shadow-xs'
                           : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
                       }`}
                     >
@@ -386,35 +453,88 @@ export default function RatesPage() {
 
               {/* B5 / C5: Service Code */}
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
                     <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">B5</span>
                     {calculatorTemplate.b5_label || 'Service Code'} (Input ➔ C5)
                   </label>
-                  <span className="text-[11px] text-gray-400">Service available in tariff</span>
+                  <span className="text-[11px] text-emerald-600 font-semibold">
+                    {servicesForSelectedCountry.length} supported for {calcCountry || 'destination'}
+                  </span>
                 </div>
                 <select
                   value={calcService}
-                  onChange={(e) => setCalcService(e.target.value)}
+                  onChange={(e) => handleServiceChange(e.target.value)}
                   className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition cursor-pointer"
                 >
                   {servicesForSelectedCountry.map(s => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                   {servicesForSelectedCountry.length === 0 && (
-                    <option value="PXC-SELF">PXC-SELF (Default)</option>
+                    <option value="PXC-SELF">PXC-SELF (Default Standard)</option>
                   )}
                 </select>
               </div>
 
+              {/* USA State Dropdown for PXC-EX NY SELF */}
+              {isUSASelf && (
+                <div className="bg-amber-50/60 border border-amber-300/80 rounded-xl p-3.5 space-y-2 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                      <span className="px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 font-mono text-[10px] font-extrabold border border-amber-300">
+                        USA State
+                      </span>
+                      US Destination State (Required for Zone 2–8 Tariff)
+                    </label>
+                    <span className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
+                      Max: 21.5 kg
+                    </span>
+                  </div>
+                  <select
+                    value={calcState}
+                    onChange={(e) => {
+                      setCalcState(e.target.value)
+                      setCalcResult(null)
+                    }}
+                    className="w-full bg-white border border-amber-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-600 transition cursor-pointer"
+                  >
+                    <option value="">-- Select Destination US State --</option>
+                    {stateOptions.map(st => (
+                      <option key={st.code} value={st.code}>
+                        {st.label}
+                      </option>
+                    ))}
+                  </select>
+                  {calcState && (
+                    <div className="flex items-center gap-2 text-xs pt-1">
+                      <span className="text-amber-800 font-medium">Resolved State Zone:</span>
+                      <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-extrabold text-[11px] border border-blue-200">
+                        {stateOptions.find(s => s.code === calcState)?.zone || 'Zone'}
+                      </span>
+                      <span className="text-gray-500 text-[11px]">
+                        (e.g. 1kg in CT = ₹2,345 | 1kg in CA = ₹2,445)
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* B6 / C6: Weight in kg */}
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
                     <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">B6</span>
                     {calculatorTemplate.b6_label || 'Weight (kg)'} (Input ➔ C6)
                   </label>
-                  <span className="text-[11px] text-gray-400">Kilograms</span>
+                  <div className="flex items-center gap-2">
+                    {isUSASelf && (
+                      <span className="text-[11px] font-bold text-amber-700">Limit: 21.5 kg</span>
+                    )}
+                    {isAustraliaDestination && (
+                      <span className="text-[11px] font-bold text-amber-700">Limit: 25 kg</span>
+                    )}
+                    <span className="text-[11px] text-gray-400">Kilograms</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <input
@@ -427,7 +547,7 @@ export default function RatesPage() {
                     className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition"
                   />
                   <div className="flex gap-1 shrink-0">
-                    {['0.5', '1', '2.5', '5', '10', '25'].map(w => (
+                    {['0.5', '1', '2.5', '5', '10', '21.5'].map(w => (
                       <button
                         key={w}
                         type="button"
@@ -447,18 +567,18 @@ export default function RatesPage() {
 
               {/* B7 / C7: Postcode (optional) */}
               <div>
-                <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
                     <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">B7</span>
-                    {calculatorTemplate.b7_label || 'Postcode (if required)'} (Input ➔ C7)
+                    {calculatorTemplate.b7_label || 'Postcode / State'} (Input ➔ C7)
                   </label>
-                  <span className="text-[11px] text-gray-400">Optional for zone/remote check</span>
+                  <span className="text-[11px] text-gray-400">Zone / remote check</span>
                 </div>
                 <input
                   type="text"
                   value={calcPostcode}
                   onChange={(e) => setCalcPostcode(e.target.value)}
-                  placeholder="e.g. 2000, SW1A 1AA, M5V 2T6..."
+                  placeholder="e.g. 2000 (Aus), M5V 2T6 (Canada), SW1A 1AA (UK)..."
                   className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition"
                 />
               </div>
@@ -491,6 +611,19 @@ export default function RatesPage() {
                 </span>
               </div>
 
+              {/* Validation / Error banner if any */}
+              {calcError && (
+                <div className="bg-rose-500/15 border border-rose-500/40 rounded-xl p-3.5 text-xs text-rose-300 space-y-1">
+                  <div className="flex items-center gap-2 font-bold text-rose-200">
+                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                    Validation Notice:
+                  </div>
+                  <div className="text-[11px] leading-relaxed text-rose-300/90 pl-6">
+                    {calcError}
+                  </div>
+                </div>
+              )}
+
               {/* Main C10 Output Rate */}
               <div>
                 <span className="text-xs font-medium text-gray-400 block mb-1">
@@ -509,13 +642,34 @@ export default function RatesPage() {
                 )}
               </div>
 
+              {/* Pricing Badges: Zone, Method, Matched Band */}
+              {calcResult && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {calcResult.zone && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-extrabold border border-blue-500/30">
+                      {calcResult.zone}
+                    </span>
+                  )}
+                  {calcResult.matched_band && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-extrabold border border-purple-500/30">
+                      Band: {calcResult.matched_band}
+                    </span>
+                  )}
+                  {calcResult.pricing_method && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+                      Method: {calcResult.pricing_method}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {/* C9, C11, C12 Outputs */}
               <div className="space-y-3 pt-3 border-t border-gray-800/80 text-xs">
                 {/* C9: Matched Service */}
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-gray-400 font-mono text-[11px]">B9 Matched Service [C9]:</span>
                   <span className="font-bold text-gray-200 text-right">
-                    {calcResult?.matched_service || calcService}
+                    {calcResult?.matched_service || calcResult?.service_code || calcService}
                   </span>
                 </div>
 
@@ -523,16 +677,16 @@ export default function RatesPage() {
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-gray-400 font-mono text-[11px]">B11 Rate Basis [C11]:</span>
                   <span className="font-semibold text-emerald-300 text-right text-[11px]">
-                    {calcResult?.rate_basis || 'Pending evaluation'}
+                    {calcResult?.rate_basis || (calcError ? 'N/A' : 'Pending evaluation')}
                   </span>
                 </div>
 
                 {/* C12: Source Row */}
-                {calcResult?.output?.c12_source_row && (
+                {calcResult?.source_row && (
                   <div className="flex items-start justify-between gap-2">
                     <span className="text-gray-400 font-mono text-[11px]">B12 Source Row [C12]:</span>
                     <span className="font-mono font-bold text-gray-300">
-                      Row #{calcResult.output.c12_source_row}
+                      Row #{calcResult.source_row} ({calcResult.source_sheet || 'Self Network'})
                     </span>
                   </div>
                 )}
@@ -554,10 +708,12 @@ export default function RatesPage() {
                 <div className="text-gray-400 font-bold uppercase text-[10px] tracking-wider mb-1">
                   Parameters Sent to Excel Sheet:
                 </div>
-                <div>C4 (Country) = <strong className="text-white">{calcResult?.matched_country || calcCountry}</strong></div>
-                <div>C5 (Service) = <strong className="text-white">{calcResult?.matched_service || calcService}</strong></div>
+                <div>C4 (Country) = <strong className="text-white">{calcResult?.country || calcCountry}</strong></div>
+                <div>C5 (Service) = <strong className="text-white">{calcResult?.service_code || calcService}</strong></div>
                 <div>C6 (Weight) = <strong className="text-white">{calcWeight} kg</strong></div>
-                {calcPostcode && <div>C7 (Postcode) = <strong className="text-white">{calcPostcode}</strong></div>}
+                {(calcState || calcPostcode) && (
+                  <div>C7 (State / Postcode) = <strong className="text-white">{calcState || calcPostcode}</strong></div>
+                )}
               </div>
             </div>
 

@@ -461,7 +461,8 @@ export default function CustomerBookingPage() {
         country: dest,
         service_code: '',
         weight: w,
-        postcode: form.receiver_pincode || ''
+        postcode: form.receiver_pincode || '',
+        state: form.receiver_state || ''
       })
         .then((res) => {
           if (res && res.success && res.vendor_rate !== undefined) {
@@ -474,7 +475,7 @@ export default function CustomerBookingPage() {
         .catch(() => {})
     }, 400)
     return () => clearTimeout(timer)
-  }, [form.receiver_country, form.chargeable_weight, form.weight, form.receiver_pincode])
+  }, [form.receiver_country, form.chargeable_weight, form.weight, form.receiver_pincode, form.receiver_state])
 
   // Normalize document type from DB to match dropdown <option> values exactly
   const normalizeDocType = (raw, isSender = true) => {
