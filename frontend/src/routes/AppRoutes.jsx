@@ -16,6 +16,7 @@ import UsersPage from '../pages/UsersPage'
 import ProductsPage from '../pages/ProductsPage'
 import CustomersPage from '../pages/CustomersPage'
 import VendorRateImportPage from '../pages/VendorRateImportPage'
+import SheetEditorPage from '../pages/SheetEditorPage'
 
 export default function AppRoutes() {
   return (
@@ -107,6 +108,14 @@ export default function AppRoutes() {
             <DashboardLayout>
               <RatesPage />
             </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/rates/editor"
+        element={
+          <ProtectedRoute>
+            <SheetEditorPage />
           </ProtectedRoute>
         }
       />

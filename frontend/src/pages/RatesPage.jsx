@@ -22,7 +22,8 @@ import {
   Check,
   X,
   FileCheck,
-  Edit3
+  Edit3,
+  ExternalLink
 } from 'lucide-react'
 import {
   getVendorsWithSheets,
@@ -31,6 +32,7 @@ import {
   calculateVendorRate,
   getVendorSheetDownloadUrl
 } from '../api/rates.api'
+import { systemSettingsApi } from '../api/systemSettings.api'
 import ExcelSheetEditor from '../components/ExcelSheetEditor'
 
 export default function RatesPage() {
@@ -90,6 +92,24 @@ export default function RatesPage() {
   const stateOptions = sheetDetailsData?.state_options || []
   const sheets = sheetDetailsData?.sheets || []
   const calculatorTemplate = sheetDetailsData?.calculator || {}
+
+  // ── System settings for rate sheet calculation toggle ──
+  const { data: sysSettingsData } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: systemSettingsApi.getAll
+  })
+  const isRateSheetEnabled = sysSettingsData?.settings?.enable_rate_sheet_calculation !== false
+
+  const updateSettingMutation = useMutation({
+    mutationFn: systemSettingsApi.update,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-settings'] })
+      toast.success('Rate sheet booking setting saved')
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || err.message || 'Failed to update setting')
+    }
+  })
 
   // Check if chosen destination is USA
   const isUSADestination = useMemo(() => {
@@ -298,6 +318,16 @@ export default function RatesPage() {
           </button>
           {selectedVendorCode && (
             <>
+              <a
+                href={`/rates/editor?vendor=${selectedVendorCode}&name=${encodeURIComponent(currentVendor?.name || selectedVendorCode)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition cursor-pointer shadow-sm shadow-blue-600/20"
+                title="Open and edit active Excel rate sheet in a new browser tab"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Open Sheet in New Tab ↗
+              </a>
               <button
                 type="button"
                 onClick={() => setActiveTab('editor')}
@@ -318,6 +348,58 @@ export default function RatesPage() {
               </a>
             </>
           )}
+        </div>
+      </div>
+
+      {/* ── Rate Sheet Booking Integration Toggle ── */}
+      <div className="bg-white border border-gray-200/90 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className={`p-2 rounded-xl mt-0.5 ${
+            isRateSheetEnabled ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-gray-100 text-gray-500 border border-gray-200'
+          }`}>
+            <FileSpreadsheet className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-extrabold text-gray-900">
+                Rate Sheet Calculation in New Booking Form
+              </h3>
+              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                isRateSheetEnabled
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : 'bg-gray-100 text-gray-700 border border-gray-300'
+              }`}>
+                {isRateSheetEnabled ? 'FEATURE ENABLED' : 'DISABLED'}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1 max-w-2xl">
+              {isRateSheetEnabled
+                ? 'Active: The "Take rate from rate sheet" option is available in the New Booking form. By default, bookings use standard rates; checking the box evaluates rates directly from the vendor Excel sheet (C4 ➔ C10).'
+                : 'Disabled: The rate sheet checkbox is completely hidden in the New Booking form. All bookings will strictly use standard rates.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 self-end sm:self-center shrink-0">
+          <label className="relative inline-flex items-center cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={isRateSheetEnabled}
+              disabled={updateSettingMutation.isPending}
+              onChange={(e) => {
+                const val = e.target.checked
+                updateSettingMutation.mutate({
+                  key: 'enable_rate_sheet_calculation',
+                  value: val
+                })
+              }}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+          </label>
+          <span className="text-xs font-extrabold text-gray-800 min-w-[55px]">
+            {updateSettingMutation.isPending ? 'Saving...' : isRateSheetEnabled ? 'Enabled' : 'Disabled'}
+          </span>
         </div>
       </div>
 

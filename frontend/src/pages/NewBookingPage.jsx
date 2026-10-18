@@ -519,6 +519,7 @@ export default function NewBookingPage() {
     queryFn: systemSettingsApi.getAll
   })
   const allowPostPushEdit = sysSettingsData?.settings?.allow_post_push_billing_edit !== false
+  const enableRateSheetCalculation = sysSettingsData?.settings?.enable_rate_sheet_calculation !== false
 
   const isLocked = !!editBookingData?.is_locked
   const isGeneralLocked = isLocked
@@ -965,6 +966,7 @@ export default function NewBookingPage() {
   const [takeRateFromSheet, setTakeRateFromSheet] = useState(false)
   const [rateSheetResult, setRateSheetResult] = useState(null)
   const [rateSheetLoading, setRateSheetLoading] = useState(false)
+  const [showCalculationBreakdown, setShowCalculationBreakdown] = useState(false)
 
   // Fetch rate from rate sheet helper
   const fetchRateFromSheet = async (showToast = false) => {
@@ -2592,102 +2594,161 @@ export default function NewBookingPage() {
                   </CompactField>
 
                   {/* ── Take Rate from Rate Sheet Checkmark (Excel C10) ── */}
-                  <div className={`border rounded-xl p-2.5 my-1 shadow-xs transition ${
-                    takeRateFromSheet
-                      ? 'bg-gradient-to-r from-red-50 to-rose-50 border-red-300'
-                      : 'bg-gray-50/70 border-gray-200'
-                  }`}>
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="flex items-center gap-2 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={takeRateFromSheet}
-                          onChange={(e) => {
-                            const val = e.target.checked
-                            setTakeRateFromSheet(val)
-                            if (val) {
-                              if (form.vendor_config_id) {
-                                fetchRateFromSheet(true)
+                  {enableRateSheetCalculation && (
+                    <div className={`border rounded-xl p-2.5 my-1 shadow-xs transition ${
+                      takeRateFromSheet
+                        ? 'bg-gradient-to-r from-red-50 to-rose-50 border-red-300'
+                        : 'bg-gray-50/70 border-gray-200'
+                    }`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={takeRateFromSheet}
+                            onChange={(e) => {
+                              const val = e.target.checked
+                              setTakeRateFromSheet(val)
+                              if (val) {
+                                if (form.vendor_config_id) {
+                                  fetchRateFromSheet(true)
+                                } else {
+                                  toast('Select a Vendor above to calculate rate from the rate sheet', { icon: 'ℹ️' })
+                                }
                               } else {
-                                toast('Select a Vendor above to calculate rate from the rate sheet', { icon: 'ℹ️' })
+                                setRateSheetResult(null)
+                                // Revert to default rate calculation
+                                const rate = parseFloat(form.rate_per_kg) || 0
+                                const w = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
+                                if (rate > 0 && w > 0) {
+                                  setForm(prev => ({ ...prev, shipping_charge: (rate * w).toFixed(2) }))
+                                }
                               }
-                            } else {
-                              setRateSheetResult(null)
-                              // Revert to default rate calculation
-                              const rate = parseFloat(form.rate_per_kg) || 0
-                              const w = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
-                              if (rate > 0 && w > 0) {
-                                setForm(prev => ({ ...prev, shipping_charge: (rate * w).toFixed(2) }))
-                              }
-                            }
-                          }}
-                          className="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500 cursor-pointer accent-red-600"
-                        />
-                        <span className="text-[12px] font-bold text-gray-900 flex items-center gap-1.5">
-                          <FileSpreadsheet className={`w-3.5 h-3.5 ${takeRateFromSheet ? 'text-red-600' : 'text-gray-400'}`} />
-                          Take rate from rate sheet
-                        </span>
-                      </label>
+                            }}
+                            className="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500 cursor-pointer accent-red-600"
+                          />
+                          <span className="text-[12px] font-bold text-gray-900 flex items-center gap-1.5">
+                            <FileSpreadsheet className={`w-3.5 h-3.5 ${takeRateFromSheet ? 'text-red-600' : 'text-gray-400'}`} />
+                            Take rate from rate sheet
+                          </span>
+                        </label>
 
-                      {takeRateFromSheet && (
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => fetchRateFromSheet(true)}
-                            disabled={rateSheetLoading}
-                            className="text-[10px] font-bold text-red-700 bg-white border border-red-200 hover:bg-red-50 px-2 py-0.5 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
-                            title="Evaluate C4, C5, C6, C7 and read rate from C10"
-                          >
-                            <RefreshCw className={`w-3 h-3 ${rateSheetLoading ? 'animate-spin' : ''}`} />
-                            {rateSheetLoading ? 'Evaluating...' : 'Recalculate (C10)'}
-                          </button>
-                          {selectedVendor && (
-                            <a
-                              href={`/rates?vendor=${selectedVendor.vendor_code || 'pacific'}&tab=editor`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[10px] font-bold text-blue-700 bg-white border border-blue-200 hover:bg-blue-50 px-2 py-0.5 rounded-lg transition cursor-pointer shadow-xs"
-                              title="Open this vendor's Excel rate sheet in the browser editor"
+                        {takeRateFromSheet && (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => fetchRateFromSheet(true)}
+                              disabled={rateSheetLoading}
+                              className="text-[10px] font-bold text-red-700 bg-white border border-red-200 hover:bg-red-50 px-2 py-0.5 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
+                              title="Evaluate C4, C5, C6, C7 and read rate from C10"
                             >
-                              Edit Sheet ↗
-                            </a>
+                              <RefreshCw className={`w-3 h-3 ${rateSheetLoading ? 'animate-spin' : ''}`} />
+                              {rateSheetLoading ? 'Evaluating...' : 'Recalculate (C10)'}
+                            </button>
+                            {selectedVendor && (
+                              <a
+                                href={`/rates/editor?vendor=${selectedVendor.vendor_code || 'pacific'}&name=${encodeURIComponent(selectedVendor.name || selectedVendor.vendor_code || 'pacific')}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-[10px] font-bold text-blue-700 bg-white border border-blue-200 hover:bg-blue-50 px-2 py-0.5 rounded-lg transition cursor-pointer shadow-xs"
+                                title="Open this vendor's Excel rate sheet in a new browser tab editor"
+                              >
+                                Edit Sheet ↗
+                              </a>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {!takeRateFromSheet && (
+                        <p className="text-[10px] text-gray-500 mt-1 pl-6">
+                          Default calculation active (Rate/Kg × Chargeable Weight)
+                        </p>
+                      )}
+
+                      {takeRateFromSheet && !form.vendor_config_id && (
+                        <div className="mt-1.5 pt-1.5 border-t border-amber-200 text-[11px] text-amber-800 flex items-center gap-1.5 font-medium pl-1">
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          Please select a Vendor above — sheet rates will generate automatically.
+                        </div>
+                      )}
+
+                      {takeRateFromSheet && form.vendor_config_id && rateSheetResult?.vendor_rate !== undefined && (
+                        <div className="mt-2 pt-2 border-t border-red-200/70 text-[11px] space-y-1.5">
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="flex items-center gap-1.5 truncate">
+                              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                              <span className="font-extrabold text-emerald-900">
+                                {selectedVendor?.name || 'Vendor'} C10: ₹{rateSheetResult.vendor_rate}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowCalculationBreakdown(prev => !prev)}
+                              className="text-[10px] font-bold text-red-700 hover:text-red-900 bg-red-100/70 hover:bg-red-200/70 px-2 py-0.5 rounded transition cursor-pointer flex items-center gap-1 shrink-0"
+                            >
+                              <Sparkles className="w-2.5 h-2.5" />
+                              {showCalculationBreakdown ? 'Hide Breakdown' : 'How Calculated?'}
+                            </button>
+                          </div>
+
+                          {/* Quick Formula Banner */}
+                          <div className="flex items-center gap-1.5 text-[10px] text-gray-700 bg-white/80 rounded-lg px-2 py-1 border border-red-100">
+                            <span className="font-bold text-gray-900 shrink-0">
+                              {rateSheetResult.source_sheet || 'Self Network'}
+                              {rateSheetResult.source_row ? ` (Row #${rateSheetResult.source_row})` : ''}
+                            </span>
+                            <span className="text-gray-300">•</span>
+                            <span className="truncate">{rateSheetResult.rate_basis || rateSheetResult.matched_service}</span>
+                          </div>
+
+                          {/* Detailed Calculation Breakdown Drawer */}
+                          {showCalculationBreakdown && (
+                            <div className="mt-1.5 p-2.5 bg-white rounded-xl border border-red-200 shadow-sm text-[10px] space-y-2">
+                              <div className="flex items-center justify-between pb-1 border-b border-gray-100 text-gray-700 font-bold">
+                                <span className="flex items-center gap-1">
+                                  <FileSpreadsheet className="w-3 h-3 text-red-600" />
+                                  Rate Sheet Calculation Trace
+                                </span>
+                                <span className="text-red-600 font-mono font-bold">C10 = ₹{rateSheetResult.vendor_rate}</span>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-gray-600 pt-0.5">
+                                <div><span className="font-semibold text-gray-800">Destination:</span> {rateSheetResult.country} {rateSheetResult.state ? `(${rateSheetResult.state})` : ''}</div>
+                                {rateSheetResult.zone && <div><span className="font-semibold text-gray-800">Zone:</span> {rateSheetResult.zone}</div>}
+                                <div><span className="font-semibold text-gray-800">Service:</span> {rateSheetResult.service_code || form.service_code}</div>
+                                <div><span className="font-semibold text-gray-800">Weight:</span> {rateSheetResult.chargeable_weight || rateSheetResult.weight} kg</div>
+                                {rateSheetResult.matched_band && <div><span className="font-semibold text-gray-800">Tariff Slab:</span> {rateSheetResult.matched_band}</div>}
+                                {rateSheetResult.rate_per_kg && <div><span className="font-semibold text-gray-800">Rate / Kg:</span> ₹{rateSheetResult.rate_per_kg}</div>}
+                                {rateSheetResult.source_sheet && (
+                                  <div className="col-span-2">
+                                    <span className="font-semibold text-gray-800">Sheet:</span> {rateSheetResult.source_sheet} {rateSheetResult.source_row ? `(Row #${rateSheetResult.source_row})` : ''}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="pt-1.5 border-t border-gray-100">
+                                <span className="font-bold text-gray-800">Formula / Basis:</span>
+                                <div className="mt-0.5 p-1.5 bg-gray-50 rounded font-mono text-[10px] text-gray-900 border border-gray-200 break-words">
+                                  {rateSheetResult.rate_basis}
+                                </div>
+                              </div>
+
+                              {rateSheetResult.calculation_breakdown?.steps && (
+                                <div className="space-y-0.5 pt-1">
+                                  <span className="font-bold text-gray-700">Audit Steps:</span>
+                                  <ol className="list-decimal list-inside text-gray-600 space-y-0.5 pl-0.5">
+                                    {rateSheetResult.calculation_breakdown.steps.map((st, i) => (
+                                      <li key={i} className="truncate">{st}</li>
+                                    ))}
+                                  </ol>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       )}
                     </div>
-
-                    {!takeRateFromSheet && (
-                      <p className="text-[10px] text-gray-500 mt-1 pl-6">
-                        Default calculation active (Rate/Kg × Chargeable Weight)
-                      </p>
-                    )}
-
-                    {takeRateFromSheet && !form.vendor_config_id && (
-                      <div className="mt-1.5 pt-1.5 border-t border-amber-200 text-[11px] text-amber-800 flex items-center gap-1.5 font-medium pl-1">
-                        <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                        Please select a Vendor above — sheet rates will generate automatically.
-                      </div>
-                    )}
-
-                    {takeRateFromSheet && form.vendor_config_id && rateSheetResult?.vendor_rate !== undefined && (
-                      <div className="mt-1.5 pt-1.5 border-t border-red-200/60 flex items-center justify-between text-[11px]">
-                        <div className="flex items-center gap-1.5 truncate">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-                          <span className="font-bold text-emerald-800">
-                            {selectedVendor?.name || 'Vendor'} C10: ₹{rateSheetResult.vendor_rate}
-                          </span>
-                          <span className="text-gray-500 text-[10px] truncate">
-                            ({rateSheetResult.rate_basis || rateSheetResult.matched_service})
-                          </span>
-                        </div>
-                        {rateSheetResult.source_row && (
-                          <span className="text-gray-400 font-mono text-[9px] shrink-0">
-                            Row #{rateSheetResult.source_row}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-2">
                     <CompactField label="Rate / Kg (₹)">

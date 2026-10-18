@@ -1437,6 +1437,18 @@ function finalizeQuoteResponse(wb, quote) {
     }
   }
 
+  const steps = [
+    `Destination: ${quote.country}${quote.state ? ` (${quote.state})` : ''}`,
+    quote.zone ? `Zone: ${quote.zone}` : null,
+    `Service: ${quote.service_code}`,
+    `Weight: ${quote.weight} kg`,
+    `Tariff Sheet: ${quote.source_sheet || 'Self Network'}${quote.source_row ? ` (Row #${quote.source_row})` : ''}`,
+    quote.matched_band ? `Pricing Slab: ${quote.matched_band}` : null,
+    quote.rate_per_kg ? `Rate / Kg: ₹${quote.rate_per_kg}` : null,
+    `Formula: ${quote.rate_basis}`,
+    `Calculated Rate (C10): ₹${quote.vendor_rate}`
+  ].filter(Boolean)
+
   return {
     success: true,
     country: quote.country,
@@ -1454,6 +1466,20 @@ function finalizeQuoteResponse(wb, quote) {
     rate_basis: quote.rate_basis,
     transit_time: quote.transit_time || '',
     source_sheet: quote.source_sheet || 'Self Network',
-    source_row: quote.source_row || null
+    source_row: quote.source_row || null,
+    calculation_breakdown: {
+      destination: quote.country + (quote.state ? ` (${quote.state})` : ''),
+      service: quote.service_code,
+      weight: quote.weight,
+      zone: quote.zone || null,
+      source_sheet: quote.source_sheet || 'Self Network',
+      source_row: quote.source_row || null,
+      pricing_method: quote.pricing_method,
+      matched_band: quote.matched_band,
+      rate_per_kg: quote.rate_per_kg || null,
+      formula: quote.rate_basis,
+      vendor_rate: quote.vendor_rate,
+      steps
+    }
   }
 }
