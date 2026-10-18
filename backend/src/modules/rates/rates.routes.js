@@ -1,64 +1,44 @@
 import express from 'express'
 import multer from 'multer'
 import authMiddleware from '../../middlewares/auth.middleware.js'
-
 import {
-  uploadExcel,
-  getCompanies,
-  getCompanyServices,
-  getServiceRates,
-  getServiceZones,
-  updateRateEntry,
-  updateZoneEntry,
-  deleteService,
-  deleteCompany,
-  uploadVendorRateSheet,
-  getVendorVersions,
-  getVendorVersionDetail,
-  activateVendorVersion,
-  getVendorVersionDiff,
-  deleteVendorVersion,
+  getVendors,
+  importVendorRateSheet,
+  getVendorSheetInfo,
+  downloadVendorSheet,
   calculateVendorRate,
-  getVendorDestinations
+  getDestinations
 } from './rates.controller.js'
 
 const router = express.Router()
 
-// Multer config — store in memory buffer for xlsx parsing
-const upload = multer({ storage: multer.memoryStorage() })
-
-// Upload Excel (filename = "ServiceName CompanyName.xlsx")
-router.post('/upload-excel', authMiddleware, upload.single('file'), uploadExcel)
-
-// Companies
-router.get('/companies', authMiddleware, getCompanies)
-router.delete('/companies/:companyId', authMiddleware, deleteCompany)
-
-// Services
-router.get('/companies/:companyId/services', authMiddleware, getCompanyServices)
-router.delete('/services/:serviceId', authMiddleware, deleteService)
-
-// Rate Entries
-router.get('/services/:serviceId/rates', authMiddleware, getServiceRates)
-router.put('/rates/:id', authMiddleware, updateRateEntry)
-
-// Postcode-Zone Mappings
-router.get('/services/:serviceId/zones', authMiddleware, getServiceZones)
-router.put('/zones/:id', authMiddleware, updateZoneEntry)
+// Multer config for in-memory buffer handling of xlsx files
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 } // 25MB max
+})
 
 // ═══════════════════════════════════════════════════════════════════════
-// VENDOR RATE SHEETS (Multi-Sheet Tariff & Versioning — Pacific, etc.)
+// VENDOR RATE SHEETS (Direct Excel file-based, no DB storage)
 // ═══════════════════════════════════════════════════════════════════════
-router.post('/vendors/:vendorCode/upload', authMiddleware, upload.single('file'), uploadVendorRateSheet)
-router.get('/vendors/:vendorCode/versions', authMiddleware, getVendorVersions)
-router.get('/vendors/:vendorCode/versions/:versionId', authMiddleware, getVendorVersionDetail)
-router.put('/vendors/:vendorCode/versions/:versionId/activate', authMiddleware, activateVendorVersion)
-router.get('/vendors/:vendorCode/versions/:versionId/diff', authMiddleware, getVendorVersionDiff)
-router.delete('/vendors/:vendorCode/versions/:versionId', authMiddleware, deleteVendorVersion)
-router.get('/vendors/:vendorCode/destinations', authMiddleware, getVendorDestinations)
 
-// Vendor Rate Calculator
+// 1. Get all vendors available on the portal with rate sheet status
+router.get('/vendors', authMiddleware, getVendors)
+
+// 2. Import / upload a new Excel rate sheet for a vendor
+router.post('/vendors/:vendorCode/import', authMiddleware, upload.single('file'), importVendorRateSheet)
+router.post('/vendors/:vendorCode/upload', authMiddleware, upload.single('file'), importVendorRateSheet) // Alias
+
+// 3. Get rate sheet details, sheets list, calculator inputs and sample destinations
+router.get('/vendors/:vendorCode/details', authMiddleware, getVendorSheetInfo)
+router.get('/vendors/:vendorCode/sheet-info', authMiddleware, getVendorSheetInfo) // Alias
+router.get('/vendors/:vendorCode/destinations', authMiddleware, getDestinations)
+
+// 4. Download active Excel rate sheet
+router.get('/vendors/:vendorCode/download', downloadVendorSheet)
+
+// 5. Calculate Vendor Rate (Sets C4, C5, C6, C7 and returns C10)
 router.post('/calculate', authMiddleware, calculateVendorRate)
+router.get('/calculate', authMiddleware, calculateVendorRate) // Also allow GET for quick checks
 
 export default router
-

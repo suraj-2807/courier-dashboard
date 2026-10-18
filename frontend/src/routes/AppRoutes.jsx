@@ -112,13 +112,7 @@ export default function AppRoutes() {
       />
       <Route
         path="/vendor-rate-import"
-        element={
-          <ProtectedRoute>
-            <DashboardLayout>
-              <VendorRateImportPage />
-            </DashboardLayout>
-          </ProtectedRoute>
-        }
+        element={<Navigate to="/rates" replace />}
       />
       <Route
         path="/booking-requests"

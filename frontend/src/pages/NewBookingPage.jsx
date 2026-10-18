@@ -10,6 +10,7 @@ import { productsApi } from '../api/products.api'
 import { countryCodesApi } from '../api/countryCodes.api'
 import { systemSettingsApi } from '../api/systemSettings.api'
 import { customersApi } from '../api/customers.api'
+import { calculateVendorRate } from '../api/rates.api'
 import api from '../api/axios'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
 import { getFullCountryName, getCountryCode } from '../utils/countryUtils'
@@ -34,7 +35,10 @@ import {
   Trash2,
   Receipt,
   Lock,
-  Eye
+  Eye,
+  FileSpreadsheet,
+  RefreshCw,
+  Sparkles
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -954,6 +958,87 @@ export default function NewBookingPage() {
       }
     })
   })()
+
+  // ── Take Rate from Rate Sheet (Excel C10 calculation) ──
+  const [takeRateFromSheet, setTakeRateFromSheet] = useState(() => {
+    try {
+      const saved = localStorage.getItem('take_rate_from_sheet')
+      return saved !== null ? saved === 'true' : true
+    } catch {
+      return true
+    }
+  })
+  const [rateSheetResult, setRateSheetResult] = useState(null)
+  const [rateSheetLoading, setRateSheetLoading] = useState(false)
+
+  // Fetch rate from rate sheet helper
+  const fetchRateFromSheet = async (showToast = false) => {
+    const destCountry = (form.receiver_country || '').trim()
+    const chgWt = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
+
+    if (!destCountry || chgWt <= 0) {
+      if (showToast) {
+        if (!destCountry) toast.error('Please enter receiver country')
+        else if (chgWt <= 0) toast.error('Please enter shipment weight')
+      }
+      return
+    }
+
+    const vendorCode = selectedVendor?.vendor_code || (isPacificVendor ? 'pacific' : 'pacific')
+
+    setRateSheetLoading(true)
+    try {
+      const res = await calculateVendorRate({
+        vendor_code: vendorCode,
+        country: destCountry,
+        service_code: form.service_code || '',
+        weight: chgWt,
+        postcode: form.receiver_pincode || ''
+      })
+      if (res && res.success && res.vendor_rate !== undefined) {
+        setRateSheetResult(res)
+        setForm(prev => ({
+          ...prev,
+          shipping_charge: String(res.vendor_rate),
+          rate_per_kg: res.rate_per_kg ? String(res.rate_per_kg) : prev.rate_per_kg
+        }))
+        if (showToast) {
+          toast.success(`Rate sheet C10: ₹${res.vendor_rate} (${res.rate_basis || res.matched_country})`)
+        }
+      } else if (showToast) {
+        toast.error(res?.message || 'Rate not found in rate sheet')
+      }
+    } catch (err) {
+      if (showToast) {
+        toast.error(err.response?.data?.message || err.message || 'Failed to fetch rate from rate sheet')
+      }
+    } finally {
+      setRateSheetLoading(false)
+    }
+  }
+
+  // Auto-fetch rate from rate sheet when enabled and relevant fields change (only on new bookings)
+  useEffect(() => {
+    if (!takeRateFromSheet) return
+    const destCountry = (form.receiver_country || '').trim()
+    const chgWt = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
+
+    if (!destCountry || chgWt <= 0) return
+
+    const timer = setTimeout(() => {
+      fetchRateFromSheet(false)
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [
+    takeRateFromSheet,
+    form.receiver_country,
+    form.service_code,
+    form.vendor_config_id,
+    form.receiver_pincode,
+    finalChargeableWeight,
+    form.chargeable_weight,
+    form.weight
+  ])
 
   // Dedicated handler for changing number of pieces/boxes
   const handlePiecesChange = (val) => {
@@ -2500,6 +2585,61 @@ export default function NewBookingPage() {
                       className="w-full bg-transparent focus:outline-none text-[13px] font-bold text-navy text-right"
                     />
                   </CompactField>
+
+                  {/* ── Take Rate from Rate Sheet Checkmark (Excel C10) ── */}
+                  <div className="bg-gradient-to-r from-red-50 to-rose-50 border border-red-200/90 rounded-xl p-2.5 my-1 shadow-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={takeRateFromSheet}
+                          onChange={(e) => {
+                            const val = e.target.checked
+                            setTakeRateFromSheet(val)
+                            try { localStorage.setItem('take_rate_from_sheet', String(val)) } catch {}
+                            if (val) {
+                              fetchRateFromSheet(true)
+                            }
+                          }}
+                          className="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500 cursor-pointer accent-red-600"
+                        />
+                        <span className="text-[12px] font-bold text-gray-900 flex items-center gap-1.5">
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-red-600" />
+                          Take rate from rate sheet
+                        </span>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => fetchRateFromSheet(true)}
+                        disabled={rateSheetLoading}
+                        className="text-[10px] font-bold text-red-700 bg-white border border-red-200 hover:bg-red-50 px-2 py-0.5 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        title="Evaluate C4, C5, C6, C7 and read rate from C10"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${rateSheetLoading ? 'animate-spin' : ''}`} />
+                        {rateSheetLoading ? 'Evaluating...' : 'Recalculate (C10)'}
+                      </button>
+                    </div>
+
+                    {takeRateFromSheet && rateSheetResult?.vendor_rate !== undefined && (
+                      <div className="mt-1.5 pt-1.5 border-t border-red-200/60 flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-1.5 truncate">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                          <span className="font-bold text-emerald-800">
+                            Sheet C10: ₹{rateSheetResult.vendor_rate}
+                          </span>
+                          <span className="text-gray-500 text-[10px] truncate">
+                            ({rateSheetResult.rate_basis || rateSheetResult.matched_service})
+                          </span>
+                        </div>
+                        {rateSheetResult.output?.c12_source_row && (
+                          <span className="text-gray-400 font-mono text-[9px] shrink-0">
+                            Row #{rateSheetResult.output.c12_source_row}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <CompactField label="Rate / Kg (₹)">

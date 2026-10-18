@@ -7,3 +7,5 @@ build
 .next
 backend/scratch
 backend/uploads
+~$*
+*.tmp

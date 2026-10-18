@@ -25,6 +25,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast, { Toaster } from 'react-hot-toast'
 import { countryCodesApi } from '../api/countryCodes.api'
 import { customerApi } from '../api/customer.api'
+import { calculateVendorRate } from '../api/rates.api'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
 import { getCountryCode, getFullCountryName } from '../utils/countryUtils'
 
@@ -447,6 +448,33 @@ export default function CustomerBookingPage() {
       }))
     }
   }, [parcels, form.length, form.breadth, form.height, form.weight, form.no_of_pieces])
+
+  // Auto-fetch shipping charge from Excel rate sheet C10 for customer bookings
+  useEffect(() => {
+    const dest = (form.receiver_country || '').trim()
+    const w = parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
+    if (!dest || w <= 0) return
+
+    const timer = setTimeout(() => {
+      calculateVendorRate({
+        vendor_code: 'pacific',
+        country: dest,
+        service_code: '',
+        weight: w,
+        postcode: form.receiver_pincode || ''
+      })
+        .then((res) => {
+          if (res && res.success && res.vendor_rate !== undefined) {
+            setForm(prev => ({
+              ...prev,
+              shipping_charge: String(res.vendor_rate)
+            }))
+          }
+        })
+        .catch(() => {})
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [form.receiver_country, form.chargeable_weight, form.weight, form.receiver_pincode])
 
   // Normalize document type from DB to match dropdown <option> values exactly
   const normalizeDocType = (raw, isSender = true) => {

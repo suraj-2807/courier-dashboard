@@ -33,12 +33,14 @@ router.use('/tracking', trackingRoutes)
 router.use('/dashboard', dashboardRoutes)
 router.use('/api-settings', apiSettingsRoutes)
 router.use('/system-settings', systemSettingsRoutes)
+import { calculateVendorRate } from '../modules/rates/rates.controller.js'
+
 router.use('/rates', ratesRoutes)
 router.use('/booking-requests', bookingRequestRoutes)
 router.use('/country-codes', countryCodeRoutes)
 router.use('/products', productRoutes)
 router.use('/customers', customersRoutes)
-router.use('/vendor-rate-imports', vendorRateImportRoutes)
+router.use('/vendor-rate-imports', ratesRoutes) // Redirect legacy vendor-rate-imports to unified rates
 
 // Public Customer endpoints (for WP Portal iframe & Customer Portal)
 import { createBooking, getBoxLabelsPdf, getWaybillPdf, getInvoicePdf } from '../modules/bookings/booking.controller.js'
@@ -48,6 +50,8 @@ import customerRoutes from '../modules/customer/customer.routes.js'
 
 const customerRouter = express.Router()
 customerRouter.get('/active-vendors', getActiveVendors)
+customerRouter.post('/calculate-rate', calculateVendorRate)
+customerRouter.get('/calculate-rate', calculateVendorRate)
 customerRouter.post('/bookings', createBooking)
 customerRouter.post('/booking-requests', createBookingRequest)
 customerRouter.post('/booking-requests/cancel', cancelBookingRequest)
