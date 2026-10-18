@@ -38,7 +38,8 @@ import {
   Eye,
   FileSpreadsheet,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  AlertCircle
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
