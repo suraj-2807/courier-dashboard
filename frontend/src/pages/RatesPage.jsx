@@ -23,7 +23,8 @@ import {
   X,
   FileCheck,
   Edit3,
-  ExternalLink
+  ExternalLink,
+  ClipboardPaste
 } from 'lucide-react'
 import {
   getVendorsWithSheets,
@@ -92,6 +93,7 @@ export default function RatesPage() {
   const stateOptions = sheetDetailsData?.state_options || []
   const sheets = sheetDetailsData?.sheets || []
   const calculatorTemplate = sheetDetailsData?.calculator || {}
+  const hasActiveSheet = !!currentVendor?.has_sheet && sheetDetailsData?.has_sheet !== false
 
   // ── System settings for rate sheet calculation toggle ──
   const { data: sysSettingsData } = useQuery({
@@ -428,16 +430,16 @@ export default function RatesPage() {
           {currentVendor && (
             <div className="flex items-center gap-3 text-xs text-gray-600 flex-wrap">
               <span className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg">
-                <FileCheck className="w-3.5 h-3.5 text-emerald-600" />
-                Sheet: <strong className="text-gray-900">{currentVendor.sheet_filename || 'Pacific Rates.xlsx'}</strong>
+                <FileCheck className={`w-3.5 h-3.5 ${hasActiveSheet ? 'text-emerald-600' : 'text-gray-400'}`} />
+                Sheet: <strong className="text-gray-900">{hasActiveSheet ? (currentVendor.sheet_filename || `${selectedVendorCode}.xlsx`) : 'No Sheet (Blank)'}</strong>
               </span>
               <span className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg">
-                <Globe className="w-3.5 h-3.5 text-blue-600" />
-                Destinations: <strong className="text-gray-900">{destinations.length || currentVendor.destinations_count || 221}</strong>
+                <Globe className={`w-3.5 h-3.5 ${hasActiveSheet ? 'text-blue-600' : 'text-gray-400'}`} />
+                Destinations: <strong className="text-gray-900">{hasActiveSheet ? destinations.length : 0}</strong>
               </span>
               <span className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg">
-                <Layers className="w-3.5 h-3.5 text-purple-600" />
-                Workbook Tabs: <strong className="text-gray-900">{sheets.length || 9}</strong>
+                <Layers className={`w-3.5 h-3.5 ${hasActiveSheet ? 'text-purple-600' : 'text-gray-400'}`} />
+                Workbook Tabs: <strong className="text-gray-900">{hasActiveSheet ? sheets.length : 0}</strong>
               </span>
             </div>
           )}
@@ -501,16 +503,52 @@ export default function RatesPage() {
       {/* TAB 1: RATE CALCULATOR (Replicating First Tab)                  */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       {activeTab === 'calculator' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Inputs Card (C4, C5, C6, C7) */}
-          <div className="lg:col-span-7 bg-white rounded-2xl border border-gray-200/80 p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <h2 className="text-sm font-bold text-gray-900">
-                  Excel Rate Sheet Input Parameters
-                </h2>
-              </div>
+        !hasActiveSheet ? (
+          <div className="bg-white rounded-2xl border border-gray-200/90 shadow-sm p-10 text-center space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-gray-100 text-gray-400 flex items-center justify-center mx-auto shadow-xs">
+              <FileSpreadsheet className="w-7 h-7" />
+            </div>
+            <div className="max-w-md mx-auto space-y-2">
+              <h3 className="text-base font-extrabold text-gray-900">
+                No Rate Sheet Uploaded for {currentVendor?.name || selectedVendorCode.toUpperCase()}
+              </h3>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                This vendor currently does not have an Excel rate sheet file. You can import an Excel (.xlsx) file, or open the in-browser spreadsheet editor to paste your rate table directly from Excel.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setImportVendorTarget(selectedVendorCode)
+                  setShowImportModal(true)
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md shadow-red-600/20 transition cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+                Import Rate Sheet (.xlsx)
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('editor')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition cursor-pointer"
+              >
+                <ClipboardPaste className="w-4 h-4" />
+                Open Blank Sheet & Paste Table
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Inputs Card (C4, C5, C6, C7) */}
+            <div className="lg:col-span-7 bg-white rounded-2xl border border-gray-200/80 p-5 shadow-sm space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <h2 className="text-sm font-bold text-gray-900">
+                    Excel Rate Sheet Input Parameters
+                  </h2>
+                </div>
               <span className="text-[11px] font-mono font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
                 Tab: {calculatorTemplate.sheet_name || 'Rate Calculator'}
               </span>
@@ -844,6 +882,7 @@ export default function RatesPage() {
             </div>
           </div>
         </div>
+        )
       )}
 
       {/* ═══════════════════════════════════════════════════════════════ */}
@@ -857,7 +896,7 @@ export default function RatesPage() {
                 Destinations & Services in Sheet ({destinations.length})
               </h3>
               <p className="text-xs text-gray-500">
-                Loaded directly from active vendor workbook ({currentVendor?.sheet_filename || 'Pacific Rates.xlsx'})
+                Loaded directly from active vendor workbook ({hasActiveSheet ? (currentVendor?.sheet_filename || `${selectedVendorCode}.xlsx`) : 'No Sheet (Blank)'})
               </p>
             </div>
             <div className="relative min-w-[260px]">
@@ -939,11 +978,16 @@ export default function RatesPage() {
               Excel Workbook Tabs ({sheets.length})
             </h3>
             <p className="text-xs text-gray-500">
-              Worksheets present in the active vendor file ({currentVendor?.sheet_filename || 'Pacific Rates.xlsx'})
+              Worksheets present in the active vendor file ({hasActiveSheet ? (currentVendor?.sheet_filename || `${selectedVendorCode}.xlsx`) : 'No Sheet (Blank)'})
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {sheets.length === 0 ? (
+            <div className="py-8 text-center text-gray-400 text-xs">
+              No workbook tabs found for this vendor. Open the in-browser sheet editor to paste your rate table or import an Excel file.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {sheets.map((sheetName, idx) => (
               <div
                 key={sheetName}
@@ -976,6 +1020,7 @@ export default function RatesPage() {
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
 

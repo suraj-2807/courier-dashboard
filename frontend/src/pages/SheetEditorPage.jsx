@@ -27,7 +27,8 @@ import {
   ExternalLink,
   Upload,
   ArrowRight,
-  FileText
+  FileText,
+  Info
 } from 'lucide-react'
 import {
   getVendorWorkbookData,
@@ -578,6 +579,27 @@ export default function SheetEditorPage() {
           </span>
         )}
       </div>
+
+      {/* ── Blank Sheet Notice ── */}
+      {data?.is_blank && (
+        <div className="mx-4 mt-2.5 bg-blue-50/80 border border-blue-200 rounded-xl p-3 flex items-center justify-between gap-3 text-xs text-blue-950 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <Info className="w-4 h-4 text-blue-600 shrink-0" />
+            <div>
+              <strong>Blank Rate Sheet:</strong> No rate sheet has been uploaded for <strong>{vendorName}</strong> yet. You can paste your rate table from Excel into the <em>Tariff Rates</em> tab (or click "Paste Table from Excel" above), and click <strong>"Save to Server"</strong> to create this vendor's rate sheet!
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setActiveSheetIdx(1)
+              setShowPasteModal(true)
+            }}
+            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[11px] whitespace-nowrap cursor-pointer shadow-xs shrink-0"
+          >
+            Paste Table Now →
+          </button>
+        </div>
+      )}
 
       {/* ── Rate Calculator Tab Lock Notice ── */}
       {isRateCalculatorTab && (

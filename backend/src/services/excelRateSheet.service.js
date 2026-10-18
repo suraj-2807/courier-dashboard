@@ -83,7 +83,36 @@ function writeRegistry(registry) {
 }
 
 /**
- * Resolve workbook file path for a vendor code
+ * Create a clean blank starter workbook for vendors without an uploaded sheet
+ */
+export function createBlankVendorWorkbook(vendorCode, vendorName) {
+  const calcRows = [
+    ['RATE CALCULATOR', '', '', ''],
+    ['Input Parameters', '', 'Values', ''],
+    ['', '', '', ''],
+    ['', 'Country / Destination', '', ''],
+    ['', 'Service Code', '', ''],
+    ['', 'Weight (kg)', '', ''],
+    ['', 'Postcode / State', '', ''],
+    ['', '', '', ''],
+    ['', 'Matched Service', '', ''],
+    ['', 'Calculated Vendor Rate (INR)', '', ''],
+    ['', 'Rate Basis', '', '']
+  ]
+  const tariffRows = [
+    ['Country', 'Service', 'Zone', '0.5 Kg', '1.0 Kg', 'Addl 0.5 Kg', 'Per Kg Rate'],
+    ...Array.from({ length: 25 }, () => Array(7).fill(''))
+  ]
+  return [
+    { name: 'Rate Calculator', rows: calcRows },
+    { name: 'Tariff Rates', rows: tariffRows }
+  ]
+}
+
+/**
+ * Resolve workbook file path for a vendor code.
+ * ONLY Pacific defaults to Pacific Rates.xlsx.
+ * Other vendors without an uploaded sheet return null so they remain blank.
  */
 export function getWorkbookPathForVendor(vendorCode) {
   const code = (vendorCode || 'pacific').toLowerCase().trim()
@@ -93,19 +122,16 @@ export function getWorkbookPathForVendor(vendorCode) {
     return { path: customPath, isDefault: false, code }
   }
 
-  if (code === 'pacific' || code === 'pc' || code === 'pxc' || code.includes('pacific')) {
-    if (fs.existsSync(DEFAULT_PACIFIC_PATH)) {
-      return { path: DEFAULT_PACIFIC_PATH, isDefault: true, code: 'pacific' }
-    }
-  }
-
   const registry = readRegistry()
   if (registry[code]?.filepath && fs.existsSync(registry[code].filepath)) {
     return { path: registry[code].filepath, isDefault: false, code }
   }
 
-  if (fs.existsSync(DEFAULT_PACIFIC_PATH)) {
-    return { path: DEFAULT_PACIFIC_PATH, isDefault: true, code: 'pacific' }
+  // ONLY Pacific falls back to default Pacific Rates.xlsx
+  if (code === 'pacific' || code === 'pc' || code === 'pxc' || code.includes('pacific')) {
+    if (fs.existsSync(DEFAULT_PACIFIC_PATH)) {
+      return { path: DEFAULT_PACIFIC_PATH, isDefault: true, code: 'pacific' }
+    }
   }
 
   return null
@@ -327,9 +353,19 @@ export function extractCleanDestinations(sheet) {
 export function getVendorSheetDetails(vendorCode) {
   const wbInfo = getWorkbookPathForVendor(vendorCode)
   if (!wbInfo || !fs.existsSync(wbInfo.path)) {
+    const code = (vendorCode || '').toLowerCase().trim()
     return {
-      success: false,
-      message: `No rate sheet available for vendor "${vendorCode}"`
+      success: true,
+      has_sheet: false,
+      is_blank: true,
+      vendor_code: code,
+      filename: null,
+      is_default: false,
+      sheets: [],
+      destinations: [],
+      all_services: [],
+      state_options: [],
+      calculator: null
     }
   }
 
@@ -373,6 +409,8 @@ export function getVendorSheetDetails(vendorCode) {
 
   return {
     success: true,
+    has_sheet: true,
+    is_blank: false,
     vendor_code: wbInfo.code,
     filename: path.basename(wbInfo.path),
     is_default: wbInfo.isDefault,
@@ -502,9 +540,17 @@ export function saveVendorRateSheet(vendorCode, vendorName, fileBuffer, original
 export function getVendorWorkbookData(vendorCode) {
   const wbInfo = getWorkbookPathForVendor(vendorCode)
   if (!wbInfo || !fs.existsSync(wbInfo.path)) {
+    const code = (vendorCode || '').toLowerCase().trim()
+    const registry = readRegistry()
+    const vName = registry[code]?.vendor_name || code.toUpperCase()
     return {
-      success: false,
-      message: `Rate sheet file not found for vendor "${vendorCode || 'pacific'}"`
+      success: true,
+      has_sheet: false,
+      is_blank: true,
+      vendor_code: code,
+      vendor_name: vName,
+      filename: null,
+      sheets: createBlankVendorWorkbook(code, vName)
     }
   }
 
