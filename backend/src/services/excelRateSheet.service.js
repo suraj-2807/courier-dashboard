@@ -40,23 +40,27 @@ const COUNTRY_ALIASES = {
   'united arab emirates': ['u.a.e.', 'uae', 'are', 'dubai', 'abu dhabi'],
   'uae': ['u.a.e.', 'united arab emirates', 'are'],
   'u.a.e.': ['united arab emirates', 'uae', 'are'],
-  'united kingdom': ['u.k.', 'uk', 'gbr', 'great britain', 'england'],
+  'united kingdom': ['u.k.', 'uk', 'gbr', 'great britain', 'england', 'u.k. (dutypaid)', 'u.k. (express)'],
   'uk': ['u.k.', 'united kingdom', 'gbr', 'great britain'],
   'u.k.': ['united kingdom', 'uk', 'gbr', 'great britain'],
-  'united states': ['u.s.a.', 'usa', 'united states of america', 'us'],
+  'united states': ['u.s.a.', 'usa', 'united states of america', 'us', 'usa self ddp', 'usa self ddu'],
   'united states of america': ['u.s.a.', 'usa', 'united states', 'us'],
   'usa': ['u.s.a.', 'united states', 'united states of america', 'us'],
   'u.s.a.': ['united states', 'usa', 'united states of america', 'us'],
   'saudi arabia': ['ksa', 'saudi', 'sau', 'saudi arabia (resumed)'],
   'kuwait': ['kwt', 'kuwait (service temporarily suspended)'],
-  'new zealand': ['nz', 'nzl'],
-  'australia': ['aus'],
+  'new zealand': ['nz', 'nzl', 'new zealand ddp'],
+  'australia': ['aus', 'express australia - dtdc'],
   'canada': ['can'],
-  'singapore': ['sin', 'sgp'],
+  'singapore': ['sin', 'sgp', 'singapore (foodstuff max 5kg)'],
   'hong kong': ['hk', 'hkg'],
   'malaysia': ['mys', 'mas'],
-  'south africa': ['zaf', 'south africa (ddp)'],
-  'sri lanka': ['lka', 'srilanka', 'srilanka (duty paid)']
+  'south africa': ['zaf', 'south africa (ddp)', 'south africa(duty paid)'],
+  'sri lanka': ['lka', 'srilanka', 'srilanka (duty paid)'],
+  'kenya': ['kenya(duty paid)', 'kenya ddu(no receipt)'],
+  'tanzania': ['tanzania (duty paid)', 'tanzania(dar es salaam)', 'tanzania (other / rest)'],
+  'uganda': ['uganda (dutypaid)', 'uganda(duty paid)'],
+  'zimbabwe': ['zimbabwe (dutypaid)']
 }
 
 function normalizeStr(str) {
@@ -111,8 +115,11 @@ export function createBlankVendorWorkbook(vendorCode, vendorName) {
 
 /**
  * Resolve workbook file path for a vendor code.
- * ONLY Pacific defaults to Pacific Rates.xlsx.
- * Other vendors without an uploaded sheet return null so they remain blank.
+ * Searches:
+ * 1. Uploaded rate sheet in uploads/vendor_rate_sheets/${code}.xlsx
+ * 2. Registry path
+ * 3. Matching file in src/assets/ (e.g. FlySwift_Rates_with_Pacific_Layout.xlsx, Pacific Rates.xlsx)
+ * 4. Default Pacific fallback
  */
 export function getWorkbookPathForVendor(vendorCode) {
   const code = (vendorCode || 'pacific').toLowerCase().trim()
@@ -127,7 +134,22 @@ export function getWorkbookPathForVendor(vendorCode) {
     return { path: registry[code].filepath, isDefault: false, code }
   }
 
-  // ONLY Pacific falls back to default Pacific Rates.xlsx
+  // Scan ASSETS_DIR for matching vendor file
+  if (fs.existsSync(ASSETS_DIR)) {
+    const assetFiles = fs.readdirSync(ASSETS_DIR)
+    const matched = assetFiles.find(f => {
+      const fLower = f.toLowerCase()
+      if (!fLower.endsWith('.xlsx')) return false
+      const base = fLower.replace(/\.xlsx$/, '').replace(/[^a-z0-9]/g, '')
+      const codeNorm = code.replace(/[^a-z0-9]/g, '')
+      return base === codeNorm || base.startsWith(codeNorm) || base.includes(codeNorm) || codeNorm.includes(base)
+    })
+    if (matched) {
+      return { path: path.resolve(ASSETS_DIR, matched), isDefault: code.includes('pacific'), code }
+    }
+  }
+
+  // Fallback for Pacific
   if (code === 'pacific' || code === 'pc' || code === 'pxc' || code.includes('pacific')) {
     if (fs.existsSync(DEFAULT_PACIFIC_PATH)) {
       return { path: DEFAULT_PACIFIC_PATH, isDefault: true, code: 'pacific' }
@@ -189,157 +211,194 @@ export function resolveUSStateToZone(stateInput, stateMap) {
 }
 
 /**
- * Extract clean, valid destination list and their supported services
- * strictly excluding weight tiers, section headings, and notes.
+ * Universal destination and service extractor.
+ * Scans ANY vendor workbook (Pacific, FlySwift, DHL, FedEx, etc.) across:
+ * - INDEX sheet (destinations, service codes, transit times)
+ * - Main tariff sheets (Self Network, Self, Tariff Rates, Rates)
+ * - Country-specific sheets (AUS DTDC, NZ Self, USA DDU, USA DDP, MUM YYZ DDP, etc.)
+ * - Dropdown lists / data validation
  */
-export function extractCleanDestinations(sheet) {
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+export function extractCleanDestinations(wbOrSheet) {
+  // If a single worksheet is passed, wrap it in a mock workbook
+  const wb = wbOrSheet && wbOrSheet.SheetNames
+    ? wbOrSheet
+    : { SheetNames: ['Sheet1'], Sheets: { Sheet1: wbOrSheet } }
+
   const destinationMap = new Map()
+  const allServices = new Set()
 
-  function isWeightOrHeadingLabel(text) {
-    if (!text || typeof text !== 'string') return true
-    const s = text.trim()
-    if (!s) return true
-    // Matches weight labels like "06 - 10 Kg", "1 Kg - PER KG", "10 Kg - PER KG", "11 TO 15", "6 Per Kg", etc.
-    if (/^\d+(\.\d+)?\s*(kg|per kg|\+\+|to\s*\d+)?$/i.test(s)) return true
-    if (/^\d+\s*-\s*\d+\s*(kg|per kg|\+\+)?$/i.test(s)) return true
-    if (/^\d+\s*to\s*\d+(\s*per\s*kg)?$/i.test(s)) return true
-    if (/^\d+\s*per\s*kg$/i.test(s)) return true
-    if (/^(weight|zone|service code|transit time|destination)/i.test(s)) return true
-    if (s.includes('STATE WISE') || s.includes('RATES EX') || s.includes('DUTY PAID') ||
-        s.includes('HAWB Charges') || s.includes('STRICTLY') || s.includes('Compulsory') ||
-        s.includes('Volume is') || s.includes('Zone 5') || s.includes('INR ') ||
-        s.includes('Note:-') || s.includes('Subject to') || s.includes('All other') ||
-        s.includes('Maximum Weight') || s.includes('Refer the next')) {
-      return true
+  function addEntry(country, svc, meta = {}) {
+    if (!country) return
+    const cleanCountry = String(country).trim()
+    if (cleanCountry.length < 2 || cleanCountry.length > 80) return
+
+    const lower = cleanCountry.toLowerCase()
+    // Skip labels, headers, weight intervals, notes
+    if (
+      lower.includes('rate calculator') ||
+      lower.includes('zone chart') ||
+      lower.includes('below rates') ||
+      lower.includes('note') ||
+      lower.includes('transit time') ||
+      lower.includes('operation') ||
+      lower.includes('service_code') ||
+      lower.includes('service code') ||
+      lower.includes('destination') ||
+      lower.includes('charges') ||
+      lower.includes('filing facility') ||
+      lower.includes('foodstuff') ||
+      lower.includes('wef ') ||
+      /^\d/.test(cleanCountry) ||
+      cleanCountry === '-'
+    ) {
+      return
     }
-    return false
-  }
 
-  function addEntry(dest, svc, meta = {}) {
-    if (!dest || isWeightOrHeadingLabel(dest)) return
-    const cleanDest = String(dest).trim()
-    if (!destinationMap.has(cleanDest)) {
-      destinationMap.set(cleanDest, {
-        country: cleanDest,
+    if (!destinationMap.has(cleanCountry)) {
+      const isUSA = lower.includes('united states') || lower === 'usa' || lower === 'u.s.a.'
+      const isAus = lower.includes('australia') || lower === 'aus'
+      const isNZ = lower.includes('new zealand') || lower === 'nz'
+      const isCan = lower.includes('canada') || lower === 'can'
+
+      destinationMap.set(cleanCountry, {
+        country: cleanCountry,
         services: new Set(),
-        requires_state: false,
-        requires_postcode: false,
-        notes: ''
+        requires_state: isUSA || meta.requires_state || false,
+        requires_postcode: isAus || isNZ || isCan || meta.requires_postcode || false,
+        transit_time: meta.transit_time || ''
       })
     }
-    const record = destinationMap.get(cleanDest)
-    if (svc) record.services.add(svc.trim())
-    if (meta.requires_state) record.requires_state = true
-    if (meta.requires_postcode) record.requires_postcode = true
-    if (meta.notes) record.notes = meta.notes
+
+    const rec = destinationMap.get(cleanCountry)
+    if (svc && String(svc).trim()) {
+      const cleanSvc = String(svc).trim()
+      rec.services.add(cleanSvc)
+      allServices.add(cleanSvc)
+    }
+    if (meta.transit_time && !rec.transit_time) {
+      rec.transit_time = meta.transit_time
+    }
   }
 
-  // 1. Line 1-8: Middle East Self (PXC-SELF)
-  for (let r = 1; r <= 7; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], 'PXC-SELF')
+  // 1. Scan INDEX sheet if present (FlySwift, etc.)
+  if (wb.Sheets['INDEX']) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets['INDEX'], { header: 1 })
+    let headerRow = -1
+    let destCol = -1
+    let svcCol = -1
+    let transitCol = -1
+
+    for (let r = 0; r < Math.min(rows.length, 10); r++) {
+      const row = rows[r] || []
+      for (let c = 0; c < row.length; c++) {
+        const val = String(row[c] || '').toUpperCase()
+        if (val.includes('DESTINATION')) destCol = c
+        if (val.includes('SERVICE CODE') || val.includes('SERVICE_CODE')) svcCol = c
+        if (val.includes('TRANSIT TIME')) transitCol = c
+      }
+      if (destCol !== -1 && svcCol !== -1) {
+        headerRow = r
+        break
+      }
+    }
+
+    if (headerRow !== -1) {
+      for (let r = headerRow + 1; r < rows.length; r++) {
+        const row = rows[r] || []
+        const dest = row[destCol]
+        const svc = row[svcCol]
+        const transit = transitCol !== -1 ? row[transitCol] : ''
+        if (dest && typeof dest === 'string' && !dest.toUpperCase().includes('NOTES')) {
+          addEntry(dest, svc, { transit_time: transit && transit !== '-' ? String(transit).trim() : '' })
+        }
+      }
+    }
   }
 
-  // 2. Line 13-20: UK Express & UK Others (PXC-EXPRESS, PXC-SELF)
-  for (let r = 13; r <= 19; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], row[0] || 'PXC-SELF')
+  // 2. Scan standard tariff sheets (Self Network, Self, Tariff Rates, Rates)
+  const tariffSheetNames = ['Self Network', 'Self', 'Tariff Rates', 'Rates', 'Rate Sheet', 'Tariff']
+  for (const tName of tariffSheetNames) {
+    if (!wb.Sheets[tName]) continue
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[tName], { header: 1 })
+    if (!rows || rows.length < 2) continue
+
+    let headerIdx = -1
+    for (let r = 0; r < Math.min(rows.length, 10); r++) {
+      const rowStr = JSON.stringify(rows[r] || '').toLowerCase()
+      if (rowStr.includes('500') || rowStr.includes('kg') || rowStr.includes('destination')) {
+        headerIdx = r
+        break
+      }
+    }
+
+    const startR = headerIdx >= 0 ? headerIdx + 1 : 1
+    let currentSvc = ''
+
+    for (let r = startR; r < rows.length; r++) {
+      const row = rows[r] || []
+      if (!row || row.length < 2) continue
+
+      const colA = String(row[0] || '').trim()
+      const colB = String(row[1] || '').trim()
+
+      if (!colB || colB.length < 2) continue
+      if (colA && colA.length >= 2 && !colA.toLowerCase().includes('note') && !colA.toLowerCase().includes('charge')) {
+        currentSvc = colA
+      }
+
+      addEntry(colB, currentSvc)
+    }
   }
 
-  // 3. Line 23-25: Single Package
-  addEntry('U.K.(Single Package)', 'PXC-SINGLE PC')
-  addEntry('U.S.A.(Single Package)', 'PXC-SINGLE PC')
-  addEntry('Canada(Single Package)', 'PXC-SINGLE PC')
+  // 3. Scan country-specific sheets
+  for (const sName of wb.SheetNames) {
+    const lower = sName.toLowerCase()
+    // Skip auxiliary and lookup sheets
+    if (
+      lower.includes('calc') ||
+      lower.includes('index') ||
+      lower.includes('zone') ||
+      lower.includes('remote') ||
+      lower.includes('guide') ||
+      lower.includes('list') ||
+      lower.includes('data')
+    ) {
+      continue
+    }
 
-  // 4. Line 28-68: USA Self (EX-NY) - DDP
-  addEntry('United States', 'PXC-EX NY SELF', { requires_state: true })
-  addEntry('United States', 'PXC-SINGLE PC')
-  addEntry('USA', 'PXC-EX NY SELF', { requires_state: true })
-  addEntry('USA', 'PXC-SINGLE PC')
-
-  // 5. Line 75-96: Canada Self DDP
-  addEntry('Canada', 'PXC-SELF-DDP', { requires_postcode: true })
-  addEntry('Canada', 'PXC-SINGLE PC')
-
-  // 6. Line 107-117: South Asia
-  for (let r = 107; r <= 112; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], row[0] || 'PXC-SELF')
+    if (lower.includes('aus') || lower.includes('australia')) {
+      addEntry('Australia', 'AUS_DTDC')
+    } else if (lower.includes('nz') || lower.includes('new zealand')) {
+      addEntry('New Zealand', 'NZ_SELF')
+    } else if (lower.includes('usa') || lower.includes('us ')) {
+      addEntry('United States', lower.includes('ddp') ? 'USA_GROUND' : 'USA_DDU')
+    } else if (lower.includes('yyz') || lower.includes('yvr') || lower.includes('canada')) {
+      addEntry('Canada', sName)
+    }
   }
 
-  // 7. Line 121-132: East Asia / Southeast Asia
-  for (let r = 121; r <= 127; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], row[0] || 'PXC-SELF')
+  // 4. Scan _CalcLists if present
+  if (wb.Sheets['_CalcLists']) {
+    const listRows = XLSX.utils.sheet_to_json(wb.Sheets['_CalcLists'], { header: 1 })
+    for (const r of listRows) {
+      const val = String(r[0] || '').trim()
+      if (val && !val.includes('=')) {
+        if (val.includes('_') || val.includes('-') || val === val.toUpperCase()) {
+          allServices.add(val)
+        }
+      }
+    }
   }
 
-  // 8. Line 134-144: Ex-Singapore (PXC-SIN)
-  for (let r = 135; r <= 143; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], 'PXC-SIN')
-  }
-
-  // 9. Line 146-165: Australia Self
-  addEntry('Australia', 'PXC-SELF', { requires_postcode: true })
-
-  // 10. Line 167-188: New Zealand Self
-  addEntry('New Zealand', 'PXC-SELF', { requires_postcode: true })
-
-  // 11. Line 190-220: Europe DDP (PXC-LHR-DDP)
-  for (let r = 191; r <= 216; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], 'PXC-LHR-DDP')
-  }
-
-  // 12. Line 222-229: Europe DHL Non-DDP (PXC-LHR-DHL)
-  for (let r = 222; r <= 225; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], 'PXC-LHR-DHL')
-  }
-
-  // 13. Line 231-260: UK & Europe DDP Import (PXC-IMPORT)
-  for (let r = 232; r <= 258; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], 'PXC-IMPORT')
-  }
-
-  // 14. Line 261-275: East Europe / Mediterranean
-  for (let r = 261; r <= 273; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], 'PXC-SELF')
-  }
-
-  // 15. Line 277-304: Africa Self
-  for (let r = 277; r <= 301; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], row[0] || 'PXC-SELF')
-  }
-
-  // 16. Line 306-342: North/Central Africa
-  for (let r = 306; r <= 341; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], 'PXC-SELF')
-  }
-
-  // 17. Line 344-385: Latin America & Caribbean
-  for (let r = 344; r <= 384; r++) {
-    const row = rows[r]
-    if (row && row[1]) addEntry(row[1], 'PXC-SELF')
-  }
-
-  // 18. Line 387-389: Rest of World
-  addEntry('Rest Of The World', 'PXC-ROTW')
-
-  // Convert to formatted array
+  // Convert destination map to sorted array
   const result = []
-  destinationMap.forEach((val) => {
+  destinationMap.forEach(val => {
     result.push({
       country: val.country,
       services: Array.from(val.services),
       requires_state: val.requires_state,
       requires_postcode: val.requires_postcode,
-      notes: val.notes
+      transit_time: val.transit_time
     })
   })
 
@@ -348,7 +407,8 @@ export function extractCleanDestinations(sheet) {
 }
 
 /**
- * Get sheet info, valid destinations, and US state options
+ * Get sheet info, valid destinations, and US state options.
+ * Dynamically adapts to ANY vendor's Excel sheet.
  */
 export function getVendorSheetDetails(vendorCode) {
   const wbInfo = getWorkbookPathForVendor(vendorCode)
@@ -370,15 +430,29 @@ export function getVendorSheetDetails(vendorCode) {
   }
 
   const wb = XLSX.readFile(wbInfo.path)
-  const selfNet = wb.Sheets['Self Network'] || wb.Sheets[wb.SheetNames[0]]
-  const stateMap = getUSAStateToZoneMap(selfNet)
-  const destinations = extractCleanDestinations(selfNet)
+  const firstSheetName = wb.SheetNames[0]
+  const firstSheet = wb.Sheets[firstSheetName]
 
-  // Collect all unique services across destinations
+  // Extract destinations dynamically from the workbook
+  const destinations = extractCleanDestinations(wb)
+
+  // Collect all unique services
   const allServices = new Set()
   destinations.forEach(d => d.services.forEach(s => allServices.add(s)))
 
-  // Build state options for frontend dropdown
+  // Also check _CalcLists
+  if (wb.Sheets['_CalcLists']) {
+    const cRows = XLSX.utils.sheet_to_json(wb.Sheets['_CalcLists'], { header: 1 })
+    cRows.forEach(r => {
+      const val = String(r[0] || '').trim()
+      if (val && !val.includes('=')) allServices.add(val)
+    })
+  }
+
+  // Extract USA state to zone map if available
+  const stateSheet = wb.Sheets['Self Network'] || wb.Sheets['USA DDU'] || firstSheet
+  const stateMap = getUSAStateToZoneMap(stateSheet)
+
   const stateOptions = Object.entries(stateMap).map(([code, zone]) => {
     const fullName = Object.keys(US_STATE_NAMES).find(name => US_STATE_NAMES[name] === code) || code
     const formattedName = fullName.charAt(0) + fullName.slice(1).toLowerCase()
@@ -390,17 +464,17 @@ export function getVendorSheetDetails(vendorCode) {
     }
   }).sort((a, b) => a.code.localeCompare(b.code))
 
-  const firstSheet = wb.Sheets[wb.SheetNames[0]]
+  // Template defaults from Rate Calculator tab (C4, C5, C6, C7)
   const calculatorTemplate = {
-    sheet_name: wb.SheetNames[0],
+    sheet_name: firstSheetName,
     b4_label: firstSheet['B4']?.v || 'Country / Destination',
-    c4_default: firstSheet['C4']?.v || 'U.A.E.',
+    c4_default: firstSheet['C4']?.v ? String(firstSheet['C4'].v).trim() : (destinations[0]?.country || ''),
     b5_label: firstSheet['B5']?.v || 'Service Code',
-    c5_default: firstSheet['C5']?.v || 'PXC-SELF',
+    c5_default: firstSheet['C5']?.v ? String(firstSheet['C5'].v).trim() : (Array.from(allServices)[0] || ''),
     b6_label: firstSheet['B6']?.v || 'Weight (kg)',
     c6_default: firstSheet['C6']?.v || 1,
     b7_label: firstSheet['B7']?.v || 'Postcode / State (if required)',
-    c7_default: firstSheet['C7']?.v || '',
+    c7_default: firstSheet['C7']?.v ? String(firstSheet['C7'].v).trim() : '',
     b9_label: firstSheet['B9']?.v || 'Matched Service',
     b10_label: firstSheet['B10']?.v || 'Calculated Vendor Rate (INR)',
     b11_label: firstSheet['B11']?.v || 'Rate Basis',
@@ -423,41 +497,92 @@ export function getVendorSheetDetails(vendorCode) {
 }
 
 /**
- * Get all vendors available on the portal with rate sheet status
+ * Get all vendors available on the portal with rate sheet status.
+ * Automatically scans ASSETS_DIR and UPLOADS_DIR to detect all vendor sheets.
  */
 export function getVendorsRateSheetStatus(portalVendors = []) {
   const registry = readRegistry()
-  const defaultExists = fs.existsSync(DEFAULT_PACIFIC_PATH)
 
-  if (!registry['pacific'] && defaultExists) {
-    try {
-      const wb = XLSX.readFile(DEFAULT_PACIFIC_PATH)
-      const selfNet = wb.Sheets['Self Network']
-      const dests = extractCleanDestinations(selfNet)
+  // 1. Auto-discover known sheets in ASSETS_DIR and UPLOADS_DIR
+  if (fs.existsSync(ASSETS_DIR)) {
+    const assetFiles = fs.readdirSync(ASSETS_DIR)
+    for (const af of assetFiles) {
+      if (!af.toLowerCase().endsWith('.xlsx')) continue
+      const afPath = path.resolve(ASSETS_DIR, af)
+      let vCode = 'pacific'
+      let vName = 'Pacific Express'
 
-      registry['pacific'] = {
-        vendor_code: 'pacific',
-        vendor_name: 'Pacific Express',
-        filename: 'Pacific Rates.xlsx',
-        filepath: DEFAULT_PACIFIC_PATH,
-        is_default: true,
-        sheets: wb.SheetNames,
-        destinations_count: dests.length,
-        services_count: 11,
-        uploaded_at: fs.statSync(DEFAULT_PACIFIC_PATH).mtime
+      if (af.toLowerCase().includes('flyswift')) {
+        vCode = 'flyswift'
+        vName = 'FlySwift'
+      } else if (af.toLowerCase().includes('pacific')) {
+        vCode = 'pacific'
+        vName = 'Pacific Express'
+      } else {
+        vCode = af.toLowerCase().replace(/\.xlsx$/, '').replace(/[^a-z0-9]/g, '')
+        vName = vCode.toUpperCase()
       }
-      writeRegistry(registry)
-    } catch (e) {
-      console.warn('Failed to register default Pacific sheet:', e.message)
+
+      if (!registry[vCode]) {
+        try {
+          const wb = XLSX.readFile(afPath)
+          const dests = extractCleanDestinations(wb)
+          registry[vCode] = {
+            vendor_code: vCode,
+            vendor_name: vName,
+            filename: af,
+            filepath: afPath,
+            is_default: vCode === 'pacific',
+            sheets: wb.SheetNames,
+            destinations_count: dests.length,
+            services_count: 10,
+            uploaded_at: fs.statSync(afPath).mtime
+          }
+        } catch (e) {
+          console.warn(`Failed reading asset sheet ${af}:`, e.message)
+        }
+      }
     }
   }
+
+  // 2. Scan UPLOADS_DIR
+  if (fs.existsSync(UPLOADS_DIR)) {
+    const uploadFiles = fs.readdirSync(UPLOADS_DIR)
+    for (const uf of uploadFiles) {
+      if (!uf.toLowerCase().endsWith('.xlsx')) continue
+      const uCode = uf.toLowerCase().replace(/\.xlsx$/, '')
+      if (!registry[uCode]) {
+        try {
+          const uPath = path.resolve(UPLOADS_DIR, uf)
+          const wb = XLSX.readFile(uPath)
+          const dests = extractCleanDestinations(wb)
+          registry[uCode] = {
+            vendor_code: uCode,
+            vendor_name: uCode.toUpperCase(),
+            filename: uf,
+            filepath: uPath,
+            is_default: false,
+            sheets: wb.SheetNames,
+            destinations_count: dests.length,
+            services_count: 5,
+            uploaded_at: fs.statSync(uPath).mtime
+          }
+        } catch (e) {
+          console.warn(`Failed reading uploaded sheet ${uf}:`, e.message)
+        }
+      }
+    }
+  }
+
+  writeRegistry(registry)
 
   const resultVendors = []
   const seenCodes = new Set()
 
+  // Match portal vendors
   for (const pv of portalVendors) {
     const code = (pv.vendor_code || pv.name || '').toLowerCase().trim()
-    const reg = registry[code] || (code.includes('pacific') ? registry['pacific'] : null)
+    const reg = registry[code] || (code.includes('pacific') ? registry['pacific'] : null) || (code.includes('flyswift') ? registry['flyswift'] : null)
     seenCodes.add(code)
 
     resultVendors.push({
@@ -465,7 +590,7 @@ export function getVendorsRateSheetStatus(portalVendors = []) {
       name: pv.name || pv.vendor_code,
       vendor_code: pv.vendor_code || code,
       has_sheet: !!reg,
-      sheet_filename: reg?.filename || (code.includes('pacific') ? 'Pacific Rates.xlsx' : null),
+      sheet_filename: reg?.filename || null,
       sheets: reg?.sheets || [],
       destinations_count: reg?.destinations_count || 0,
       services_count: reg?.services_count || 0,
@@ -475,6 +600,7 @@ export function getVendorsRateSheetStatus(portalVendors = []) {
     })
   }
 
+  // Include any registered vendors not yet in portalVendors
   for (const [code, reg] of Object.entries(registry)) {
     if (!seenCodes.has(code)) {
       resultVendors.push({
@@ -507,8 +633,7 @@ export function saveVendorRateSheet(vendorCode, vendorName, fileBuffer, original
   fs.writeFileSync(targetPath, fileBuffer)
 
   const wb = XLSX.readFile(targetPath)
-  const selfNet = wb.Sheets['Self Network'] || wb.Sheets[wb.SheetNames[0]]
-  const destinations = extractCleanDestinations(selfNet)
+  const destinations = extractCleanDestinations(wb)
 
   const registry = readRegistry()
   registry[code] = {
@@ -555,12 +680,11 @@ export function getVendorWorkbookData(vendorCode) {
   }
 
   const wb = XLSX.readFile(wbInfo.path, { cellFormula: true, cellStyles: true })
+
   const sheets = wb.SheetNames.map(sheetName => {
     const ws = wb.Sheets[sheetName]
-    // Get raw 2D array of cells
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
 
-    // Replace formula cells with '=FORMULA' string for viewing & editing
     for (const cellRef of Object.keys(ws)) {
       if (cellRef[0] === '!') continue
       const cell = ws[cellRef]
@@ -572,7 +696,6 @@ export function getVendorWorkbookData(vendorCode) {
       }
     }
 
-    // Determine max columns
     let maxCols = 0
     rows.forEach(r => {
       if (Array.isArray(r) && r.length > maxCols) maxCols = r.length
@@ -588,6 +711,8 @@ export function getVendorWorkbookData(vendorCode) {
 
   return {
     success: true,
+    has_sheet: true,
+    is_blank: false,
     vendor_code: wbInfo.code,
     filename: path.basename(wbInfo.path),
     is_default: wbInfo.isDefault,
@@ -617,9 +742,7 @@ export function saveVendorWorkbookData(vendorCode, sheetsData, vendorName = '') 
       return row.map(cell => {
         if (cell === null || cell === undefined) return ''
         const str = String(cell).trim()
-        // If it starts with '=', keep as formula string for next pass
         if (str.startsWith('=')) return str
-        // Check if numeric
         if (str !== '' && !isNaN(Number(str)) && !str.startsWith('+') && !str.includes(':')) {
           return Number(str)
         }
@@ -629,7 +752,6 @@ export function saveVendorWorkbookData(vendorCode, sheetsData, vendorName = '') 
 
     const ws = XLSX.utils.aoa_to_sheet(rawRows)
 
-    // Convert formula strings '=...' to active XLSX formula objects
     for (const cellRef of Object.keys(ws)) {
       if (cellRef[0] === '!') continue
       const cell = ws[cellRef]
@@ -643,12 +765,9 @@ export function saveVendorWorkbookData(vendorCode, sheetsData, vendorName = '') 
     XLSX.utils.book_append_sheet(wb, ws, s.name || 'Sheet')
   }
 
-  // Write to disk
   XLSX.writeFile(wb, customPath)
 
-  // Update registry
-  const selfNet = wb.Sheets['Self Network'] || wb.Sheets[wb.SheetNames[0]]
-  const destinations = extractCleanDestinations(selfNet)
+  const destinations = extractCleanDestinations(wb)
   const registry = readRegistry()
   registry[code] = {
     vendor_code: code,
@@ -695,7 +814,7 @@ function resolveDestinationInput(destInput, destinationList) {
     const candNorm = normalizeStr(cand)
     match = destinationList.find(d => {
       const dNorm = normalizeStr(d.country)
-      return dNorm === candNorm || dNorm.startsWith(candNorm) || candNorm.startsWith(dNorm)
+      return dNorm === candNorm || dNorm.startsWith(candNorm) || candNorm.startsWith(dNorm) || dNorm.includes(candNorm) || candNorm.includes(dNorm)
     })
     if (match) return match
   }
@@ -704,13 +823,76 @@ function resolveDestinationInput(destInput, destinationList) {
 }
 
 /**
- * CALCULATION ENGINE
- * Calculates rates honoring all 5 tariff methods:
- * A. 500g incremental pricing
- * B. Per-kg pricing (from 1kg)
- * C. Fixed weight-band pricing (06-10 kg, 11-15 kg, etc.)
- * D. Weight-specific pricing (USA EX-NY, Canada breakpoints)
- * E. Service-specific weight tiers (UK Express, Import)
+ * Search all tariff sheets for a matching row for country and service
+ */
+function findTariffRowInWorkbook(wb, resolvedCountry, chosenService) {
+  const normCountry = normalizeStr(resolvedCountry)
+  const normSvc = normalizeStr(chosenService)
+
+  // Candidate sheet names: tariff sheets first
+  const sheetOrder = [
+    'Self Network', 'Self', 'Tariff Rates', 'Rates', 'Rate Sheet', 'Tariff',
+    ...wb.SheetNames.filter(s => !['Rate Calculator', '_CalcLists', 'INDEX'].includes(s))
+  ]
+
+  for (const sName of sheetOrder) {
+    const ws = wb.Sheets[sName]
+    if (!ws) continue
+
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 })
+    if (!rows || rows.length < 2) continue
+
+    let headerRow = -1
+    for (let r = 0; r < Math.min(rows.length, 10); r++) {
+      const rStr = JSON.stringify(rows[r] || '').toLowerCase()
+      if (rStr.includes('500') || rStr.includes('kg') || rStr.includes('addl')) {
+        headerRow = r
+        break
+      }
+    }
+
+    const startR = headerRow >= 0 ? headerRow + 1 : 1
+    const headers = headerRow >= 0 ? rows[headerRow] : rows[0]
+
+    for (let r = startR; r < rows.length; r++) {
+      const row = rows[r] || []
+      const colA = String(row[0] || '').trim()
+      const colB = String(row[1] || '').trim()
+
+      const matchCountry = normalizeStr(colB) === normCountry ||
+        normalizeStr(colB).includes(normCountry) ||
+        normCountry.includes(normalizeStr(colB))
+
+      if (matchCountry) {
+        // If service specified, check if colA matches
+        if (normSvc && colA) {
+          const matchSvc = normalizeStr(colA) === normSvc ||
+            normalizeStr(colA).includes(normSvc) ||
+            normSvc.includes(normalizeStr(colA))
+          if (matchSvc) {
+            return { sheetName: sName, rowIdx: r, row, headers }
+          }
+        } else {
+          return { sheetName: sName, rowIdx: r, row, headers }
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+/**
+ * UNIVERSAL RATE CALCULATION ENGINE
+ * 
+ * Works for ALL vendors (Pacific, FlySwift, and newly uploaded sheets):
+ * 1. Writes inputs into C4 (Country), C5 (Service), C6 (Weight), C7 (Postcode/State) on the Rate Calculator tab
+ * 2. If C10 has an active Excel formula, evaluates it using xlsx-calc
+ * 3. If no formula or rate is 0, uses multi-sheet tariff calculation matching country + service:
+ *    - 500g flat + additional 500g increments (<6kg)
+ *    - Per-kg tiers (>=6kg)
+ *    - Zone-based weight grid lookup (USA, Australia, NZ, Canada)
+ * 4. Writes calculated outputs to C10 (rate), C9 (matched service), C11 (basis), C12 (source row)
  */
 export async function calculateRateFromExcelSheet({
   vendor_code,
@@ -746,687 +928,406 @@ export async function calculateRateFromExcelSheet({
     }
   }
 
+  // Read workbook preserving formulas
   const wb = XLSX.readFile(wbInfo.path, { cellFormula: true, cellStyles: true })
-  const selfNet = wb.Sheets['Self Network'] || wb.Sheets[wb.SheetNames[0]]
-  const rows = XLSX.utils.sheet_to_json(selfNet, { header: 1 })
-  const cleanDests = extractCleanDestinations(selfNet)
+  const firstSheetName = wb.SheetNames[0]
+  const calcSheet = wb.Sheets[firstSheetName]
 
-  // 1. Resolve destination
+  const cleanDests = extractCleanDestinations(wb)
   const matchedDestObj = resolveDestinationInput(country, cleanDests)
-  if (!matchedDestObj) {
-    return {
-      success: false,
-      message: `Destination "${country}" not found in vendor rate sheet.`,
-      reason: 'DESTINATION_NOT_FOUND'
-    }
-  }
+  const resolvedCountry = matchedDestObj ? matchedDestObj.country : String(country).trim()
+  const validServices = matchedDestObj?.services || []
 
-  const resolvedCountry = matchedDestObj.country
-  const validServices = matchedDestObj.services || []
-
-  // 2. Resolve service code
   let chosenService = (service_code || '').trim()
-  if (!chosenService) {
-    chosenService = validServices[0] || 'PXC-SELF'
-  } else if (!validServices.some(s => s.toLowerCase() === chosenService.toLowerCase())) {
-    return {
-      success: false,
-      message: `Service '${chosenService}' is not available for destination '${resolvedCountry}'. Valid services: ${validServices.join(', ')}`,
-      reason: 'SERVICE_NOT_SUPPORTED',
-      valid_services: validServices
-    }
-  } else {
-    // Match exact case
-    chosenService = validServices.find(s => s.toLowerCase() === chosenService.toLowerCase()) || chosenService
+  if (!chosenService && validServices.length > 0) {
+    chosenService = validServices[0]
+  } else if (chosenService && validServices.length > 0) {
+    const exact = validServices.find(s => s.toLowerCase() === chosenService.toLowerCase())
+    if (exact) chosenService = exact
   }
 
-  // 3. Route to dedicated pricing model
+  const c7Value = state || postcode || ''
 
-  // ═══════════════════════════════════════════════════════════════
-  // MODEL 1: USA EX-NY SELF (PXC-EX NY SELF)
-  // ═══════════════════════════════════════════════════════════════
-  if (chosenService === 'PXC-EX NY SELF') {
-    const stateMap = getUSAStateToZoneMap(selfNet)
-    const stInput = (state || postcode || '').trim()
-    const resolvedState = resolveUSStateToZone(stInput, stateMap)
-
-    if (!resolvedState) {
-      return {
-        success: false,
-        message: stInput
-          ? `State "${stInput}" is not recognized. Valid states: ${Object.keys(stateMap).join(', ')}`
-          : 'US state is required for PXC-EX NY SELF. Please select a valid state (e.g. CT, CA, NY).',
-        reason: 'STATE_REQUIRED',
-        valid_states: Object.keys(stateMap)
-      }
-    }
-
-    if (weightNum > 21.5) {
-      return {
-        success: false,
-        message: `Shipment weight (${weightNum} kg) exceeds maximum permissible weight of 21.5 kg for USA PXC-EX NY SELF.`,
-        reason: 'MAX_WEIGHT_EXCEEDED'
-      }
-    }
-
-    const zoneHeaders = rows[56].slice(2, 9) // Zone 2 to Zone 8
-    const zoneCol = zoneHeaders.indexOf(resolvedState.zone) + 2
-
-    let calculatedRate = 0
-    let rateBasis = ''
-    let pricingMethod = ''
-    let matchedBand = ''
-    let sourceRow = 0
-    let ratePerKg = null
-
-    if (weightNum <= 5) {
-      pricingMethod = 'weight_specific'
-      const bp = Math.ceil(weightNum * 2) / 2
-      const rowIdx = 29 + Math.round((bp - 0.5) * 2)
-      sourceRow = rowIdx + 1
-      calculatedRate = Number(rows[rowIdx][zoneCol])
-      matchedBand = `${bp} kg (${resolvedState.zone})`
-      rateBasis = `${bp} kg flat rate for ${resolvedState.zone}: ₹${calculatedRate.toLocaleString('en-IN')}`
-    } else {
-      pricingMethod = 'per_kg'
-      const ceilW = Math.min(22, Math.max(6, Math.ceil(weightNum)))
-      const rowIdx = 39 + (ceilW - 6)
-      sourceRow = rowIdx + 1
-      ratePerKg = Number(rows[rowIdx][zoneCol])
-      calculatedRate = Math.round(weightNum * ratePerKg * 100) / 100
-      matchedBand = `${ceilW} Per Kg (${resolvedState.zone})`
-      rateBasis = `${weightNum} kg @ ₹${ratePerKg}/kg for ${resolvedState.zone} = ₹${calculatedRate.toLocaleString('en-IN')}`
-    }
-
-    return finalizeQuoteResponse(wb, {
-      country: resolvedCountry,
-      service_code: chosenService,
-      weight: weightNum,
-      state: resolvedState.state_code,
-      zone: resolvedState.zone,
-      pricing_method: pricingMethod,
-      matched_band: matchedBand,
-      vendor_rate: calculatedRate,
-      rate_per_kg: ratePerKg,
-      rate_basis: rateBasis,
-      transit_time: '5-8 Days',
-      source_sheet: 'Self Network',
-      source_row: sourceRow
-    })
+  // STEP 1: Write inputs into C4, C5, C6, C7 of Rate Calculator
+  if (calcSheet) {
+    calcSheet['C4'] = { t: 's', v: resolvedCountry, w: resolvedCountry }
+    calcSheet['C5'] = { t: 's', v: chosenService, w: chosenService }
+    calcSheet['C6'] = { t: 'n', v: weightNum, w: String(weightNum) }
+    calcSheet['C7'] = { t: 's', v: String(c7Value).trim(), w: String(c7Value).trim() }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // MODEL 2: AUSTRALIA SELF (PXC-SELF)
-  // ═══════════════════════════════════════════════════════════════
-  if (resolvedCountry.toLowerCase() === 'australia' && chosenService === 'PXC-SELF') {
-    if (weightNum > 25) {
-      return {
-        success: false,
-        message: `Shipment weight (${weightNum} kg) exceeds maximum permissible weight of 25 kg for Australia PXC-SELF.`,
-        reason: 'MAX_WEIGHT_EXCEEDED'
+  // STEP 2: If C10 has an active Excel formula, evaluate via xlsx-calc
+  if (calcSheet && calcSheet['C10']?.f) {
+    try {
+      xlsxCalc(wb)
+      const c10Cell = calcSheet['C10']
+      let evalRate = 0
+      if (typeof c10Cell?.v === 'number') {
+        evalRate = c10Cell.v
+      } else if (c10Cell?.v !== undefined && c10Cell?.v !== null) {
+        const p = parseFloat(String(c10Cell.v).replace(/[^0-9.\-]/g, ''))
+        if (!isNaN(p)) evalRate = p
       }
+
+      if (evalRate > 0) {
+        evalRate = Math.round(evalRate * 100) / 100
+        const matchedSvc = calcSheet['C9']?.v ? String(calcSheet['C9'].v).trim() : chosenService
+        const rateBasis = calcSheet['C11']?.v ? String(calcSheet['C11'].v).trim() : `Excel formula evaluated from ${firstSheetName}`
+        const sourceRow = calcSheet['C12']?.v ? Number(calcSheet['C12'].v) : null
+
+        return finalizeQuoteResponse(wb, {
+          country: resolvedCountry,
+          service_code: matchedSvc,
+          weight: weightNum,
+          state: state || null,
+          pricing_method: 'excel_formula',
+          vendor_rate: evalRate,
+          rate_per_kg: weightNum > 0 ? Math.round((evalRate / weightNum) * 100) / 100 : null,
+          rate_basis: rateBasis,
+          source_sheet: firstSheetName,
+          source_row: sourceRow
+        })
+      }
+    } catch (calcErr) {
+      console.warn('xlsx-calc failed, falling back to tariff sheet lookup:', calcErr.message)
     }
-
-    // Resolve zone from postcode if provided
-    let resolvedZone = 'ZONE 1'
-    if (postcode && wb.Sheets['Aus Zone']) {
-      const azRows = XLSX.utils.sheet_to_json(wb.Sheets['Aus Zone'])
-      const cleanPc = String(postcode).trim().padStart(4, '0')
-      const m = azRows.find(r => String(r['Post code'] || '').padStart(4, '0') === cleanPc)
-      if (m && m['Zones']) resolvedZone = String(m['Zones']).toUpperCase()
-    }
-
-    const ausHeaders = rows[146].slice(2, 11) // ZONE 1 to ZONE 9
-    const zIdx = ausHeaders.findIndex(h => h.toUpperCase().replace(/\s+/g, '') === resolvedZone.replace(/\s+/g, ''))
-    const col = zIdx >= 0 ? zIdx + 2 : 2
-    const zName = ausHeaders[zIdx >= 0 ? zIdx : 0]
-
-    let rate = 0
-    let perKg = null
-    let band = ''
-    let method = ''
-    let sourceRow = 148
-
-    if (weightNum <= 0.5) {
-      method = 'weight_specific'
-      rate = Number(rows[147][col])
-      band = '0.5 kg'
-      sourceRow = 148
-    } else if (weightNum <= 5) {
-      method = 'per_kg_exact'
-      const ceilW = Math.ceil(weightNum)
-      const rIdx = 147 + ceilW
-      sourceRow = rIdx + 1
-      perKg = Number(rows[rIdx][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = `${ceilW} Kg - PER KG`
-    } else if (weightNum <= 10) {
-      method = 'weight_band'
-      sourceRow = 154
-      perKg = Number(rows[153][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '06 - 10 Kg'
-    } else if (weightNum <= 15) {
-      method = 'weight_band'
-      sourceRow = 155
-      perKg = Number(rows[154][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '11 - 15 Kg'
-    } else if (weightNum <= 20) {
-      method = 'weight_band'
-      sourceRow = 156
-      perKg = Number(rows[155][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '16 - 20 Kg'
-    } else {
-      method = 'weight_band'
-      sourceRow = 157
-      perKg = Number(rows[156][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '21 - 25 Kg'
-    }
-
-    const basis = perKg
-      ? `${weightNum} kg in ${band} @ ₹${perKg}/kg (${zName}) = ₹${rate.toLocaleString('en-IN')}`
-      : `0.5 kg base rate (${zName}): ₹${rate.toLocaleString('en-IN')}`
-
-    return finalizeQuoteResponse(wb, {
-      country: resolvedCountry,
-      service_code: chosenService,
-      weight: weightNum,
-      zone: zName,
-      pricing_method: method,
-      matched_band: band,
-      vendor_rate: rate,
-      rate_per_kg: perKg,
-      rate_basis: basis,
-      transit_time: '7-8 Days',
-      source_sheet: 'Self Network',
-      source_row: sourceRow
-    })
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // MODEL 3: NEW ZEALAND SELF (PXC-SELF)
-  // ═══════════════════════════════════════════════════════════════
-  if (resolvedCountry.toLowerCase() === 'new zealand' && chosenService === 'PXC-SELF') {
-    if (weightNum > 25) {
-      return {
-        success: false,
-        message: `Shipment weight (${weightNum} kg) exceeds maximum permissible weight of 25 kg for New Zealand PXC-SELF.`,
-        reason: 'MAX_WEIGHT_EXCEEDED'
+  // STEP 3: Multi-Sheet Tariff Calculation
+
+  // ── SPECIAL DESTINATION 1: USA (USA Ground, DDU, DDP, PXC-EX NY SELF) ──
+  const isUSA = resolvedCountry.toLowerCase().includes('united states') ||
+    resolvedCountry.toLowerCase() === 'usa' ||
+    resolvedCountry.toLowerCase() === 'u.s.a.' ||
+    chosenService.toLowerCase().includes('usa')
+
+  if (isUSA) {
+    // Check if vendor has USA DDU or USA DDP sheet (FlySwift)
+    const usaSheetName = chosenService.toUpperCase().includes('DDP') ? 'USA DDP' : (wb.Sheets['USA DDU'] ? 'USA DDU' : 'USA DDP')
+    if (wb.Sheets[usaSheetName]) {
+      const uRows = XLSX.utils.sheet_to_json(wb.Sheets[usaSheetName], { header: 1 })
+      // Zone chart lookup from zip
+      let zoneCol = 2 // default Zone 3
+      let matchedZone = 'Zone 3'
+      if (postcode) {
+        const cleanZip = String(postcode).trim().slice(0, 3)
+        // Find zip in zone chart columns (Dest ZIP / Zone pairs)
+        // Header is row 1, data starts row 2
+        for (let r = 2; r < Math.min(uRows.length, 50); r++) {
+          const row = uRows[r] || []
+          for (const zipColIdx of [8, 10, 12, 14, 16, 18]) {
+            const zipVal = String(row[zipColIdx] || '').trim()
+            if (zipVal === cleanZip || (zipVal.includes('-') && cleanZip >= zipVal.split('-')[0] && cleanZip <= zipVal.split('-')[1])) {
+              const zVal = row[zipColIdx + 1]
+              if (zVal && zVal !== 'NA') {
+                matchedZone = `Zone ${zVal}`
+                zoneCol = Number(zVal) - 1 // Zone 2 is col 1, Zone 3 is col 2, etc.
+                break
+              }
+            }
+          }
+        }
       }
-    }
 
-    let resolvedZone = 'Zone 1'
-    if (postcode && wb.Sheets['NZ Zone']) {
-      const nzRows = XLSX.utils.sheet_to_json(wb.Sheets['NZ Zone'])
-      const m = nzRows.find(r => String(r['POSTCODE'] || '').trim() === String(postcode).trim())
-      if (m && m['Zone']) resolvedZone = String(m['Zone'])
-    }
-
-    const nzHeaders = rows[167].slice(2, 6) // Zone 1, Zone 2, Zone 3/4, Zone 5
-    let col = 2
-    if (resolvedZone.includes('2')) col = 3
-    else if (resolvedZone.includes('3') || resolvedZone.includes('4')) col = 4
-    else if (resolvedZone.includes('5')) col = 5
-
-    let rate = 0
-    let perKg = null
-    let band = ''
-    let sourceRow = 169
-
-    if (weightNum <= 10) {
-      const ceilW = Math.max(1, Math.ceil(weightNum))
-      const rIdx = 167 + ceilW
-      sourceRow = rIdx + 1
-      perKg = Number(rows[rIdx][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = `${ceilW} Kg - PER KG`
-    } else if (weightNum <= 15) {
-      sourceRow = 179
-      perKg = Number(rows[178][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '11 - 15 Kg'
-    } else if (weightNum <= 20) {
-      sourceRow = 180
-      perKg = Number(rows[179][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '16 - 20 Kg'
-    } else if (weightNum <= 24) {
-      sourceRow = 181
-      perKg = Number(rows[180][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '21 - 24 Kg'
-    } else {
-      sourceRow = 182
-      perKg = Number(rows[181][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '25 Kg'
-    }
-
-    const basis = `${weightNum} kg in ${band} @ ₹${perKg}/kg (${rows[167][col]}) = ₹${rate.toLocaleString('en-IN')}`
-
-    return finalizeQuoteResponse(wb, {
-      country: resolvedCountry,
-      service_code: chosenService,
-      weight: weightNum,
-      zone: rows[167][col],
-      pricing_method: weightNum <= 10 ? 'per_kg_exact' : 'weight_band',
-      matched_band: band,
-      vendor_rate: rate,
-      rate_per_kg: perKg,
-      rate_basis: basis,
-      transit_time: '7-8 Days',
-      source_sheet: 'Self Network',
-      source_row: sourceRow
-    })
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // MODEL 4: CANADA SELF DDP (PXC-SELF-DDP)
-  // ═══════════════════════════════════════════════════════════════
-  if (resolvedCountry.toLowerCase() === 'canada' && chosenService === 'PXC-SELF-DDP') {
-    if (weightNum > 30) {
-      return {
-        success: false,
-        message: `Shipment weight (${weightNum} kg) exceeds maximum permissible weight of 30 kg for Canada PXC-SELF-DDP.`,
-        reason: 'MAX_WEIGHT_EXCEEDED'
+      // Weight row lookup
+      let rate = 0
+      for (let r = 2; r < uRows.length; r++) {
+        const wVal = parseFloat(uRows[r][0])
+        if (!isNaN(wVal) && weightNum <= wVal) {
+          rate = Number(uRows[r][zoneCol] || uRows[r][1])
+          break
+        }
       }
-    }
-
-    let resolvedZone = 'Zone 1'
-    if (postcode && wb.Sheets['Canada Zone']) {
-      const czRows = XLSX.utils.sheet_to_json(wb.Sheets['Canada Zone'])
-      const cleanPrefix = String(postcode).trim().slice(0, 3).toUpperCase()
-      const m = czRows.find(r => String(r['Zipcode'] || '').trim().toUpperCase() === cleanPrefix)
-      if (m && m[' ZONE']) resolvedZone = `Zone ${m[' ZONE']}`
-    }
-
-    const zoneHeaders = rows[75].slice(3, 19) // Zone 1 to Zone 16
-    const zIdx = zoneHeaders.findIndex(h => String(h).toUpperCase().replace(/\s+/g, '') === resolvedZone.toUpperCase().replace(/\s+/g, ''))
-    const col = zIdx >= 0 ? zIdx + 3 : 3
-    const zName = zoneHeaders[zIdx >= 0 ? zIdx : 0]
-
-    let rate = 0
-    let perKg = null
-    let band = ''
-    let method = ''
-    let sourceRow = 77
-
-    if (weightNum <= 5) {
-      method = 'weight_specific'
-      const bp = Math.ceil(weightNum * 2) / 2
-      const rowIdx = 76 + Math.round((bp - 0.5) * 2)
-      sourceRow = rowIdx + 1
-      rate = Number(rows[rowIdx][col])
-      band = `${bp} kg (${zName})`
-    } else if (weightNum <= 10) {
-      method = 'per_kg_exact'
-      const ceilW = Math.ceil(weightNum)
-      const rowIdx = 86 + (ceilW - 6)
-      sourceRow = rowIdx + 1
-      perKg = Number(rows[rowIdx][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = `${ceilW} Per kg`
-    } else if (weightNum <= 15) {
-      method = 'weight_band'
-      sourceRow = 92
-      perKg = Number(rows[91][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '11 TO 15 Per kg'
-    } else if (weightNum <= 20) {
-      method = 'weight_band'
-      sourceRow = 93
-      perKg = Number(rows[92][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '16 TO 20 Per kg'
-    } else if (weightNum <= 25) {
-      method = 'weight_band'
-      sourceRow = 94
-      perKg = Number(rows[93][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '21 TO 25 Per kg'
-    } else {
-      method = 'weight_band'
-      sourceRow = 95
-      perKg = Number(rows[94][col])
-      rate = Math.round(weightNum * perKg * 100) / 100
-      band = '26 TO 30 Per kg'
-    }
-
-    const basis = perKg
-      ? `${weightNum} kg in ${band} @ ₹${perKg}/kg (${zName}) = ₹${rate.toLocaleString('en-IN')}`
-      : `${band} flat rate: ₹${rate.toLocaleString('en-IN')}`
-
-    return finalizeQuoteResponse(wb, {
-      country: resolvedCountry,
-      service_code: chosenService,
-      weight: weightNum,
-      zone: zName,
-      pricing_method: method,
-      matched_band: band,
-      vendor_rate: rate,
-      rate_per_kg: perKg,
-      rate_basis: basis,
-      transit_time: '7-10 Days',
-      source_sheet: 'Self Network',
-      source_row: sourceRow
-    })
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // MODEL 5: DDP IMPORT RATE (PXC-IMPORT)
-  // ═══════════════════════════════════════════════════════════════
-  if (chosenService === 'PXC-IMPORT') {
-    const cNorm = resolvedCountry.trim().toLowerCase()
-    let matchRow = null
-    let sourceRow = 0
-    for (let r = 232; r <= 258; r++) {
-      const row = rows[r]
-      if (row && row[1] && (
-        String(row[1]).trim().toLowerCase() === cNorm ||
-        String(row[1]).trim().toLowerCase().includes(cNorm) ||
-        cNorm.includes(String(row[1]).trim().toLowerCase())
-      )) {
-        matchRow = row
-        sourceRow = r + 1
-        break
+      if (rate === 0 && uRows.length > 2) {
+        const lastRow = uRows[uRows.length - 1]
+        rate = Number(lastRow[zoneCol] || lastRow[1])
       }
-    }
 
-    if (!matchRow) {
-      return {
-        success: false,
-        message: `Destination "${resolvedCountry}" not found in DDP Import tariff.`,
-        reason: 'DESTINATION_NOT_IN_IMPORT'
-      }
-    }
-
-    const first5 = Number(matchRow[2])
-    const sixPlus = Number(matchRow[3])
-
-    if (weightNum <= 5) {
+      const total = Math.round(rate * (weightNum > 1 ? weightNum : 1) * 100) / 100
       return finalizeQuoteResponse(wb, {
         country: resolvedCountry,
-        service_code: chosenService,
+        service_code: chosenService || usaSheetName,
         weight: weightNum,
-        pricing_method: 'base_first_5kg',
-        matched_band: 'First 5 Kg',
-        vendor_rate: first5,
-        rate_per_kg: null,
-        rate_basis: `First 5 Kg flat base rate: ₹${first5.toLocaleString('en-IN')}`,
-        transit_time: String(matchRow[4] || '7-8 Days'),
-        source_sheet: 'Self Network',
-        source_row: sourceRow
-      })
-    } else {
-      const rAmt = Math.round(weightNum * sixPlus * 100) / 100
-      return finalizeQuoteResponse(wb, {
-        country: resolvedCountry,
-        service_code: chosenService,
-        weight: weightNum,
-        pricing_method: 'per_kg',
-        matched_band: '6 Kg++',
-        vendor_rate: rAmt,
-        rate_per_kg: sixPlus,
-        rate_basis: `${weightNum} kg @ ₹${sixPlus}/kg = ₹${rAmt.toLocaleString('en-IN')}`,
-        transit_time: String(matchRow[4] || '7-8 Days'),
-        source_sheet: 'Self Network',
-        source_row: sourceRow
-      })
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // MODEL 6: SINGLE PACKAGE (PXC-SINGLE PC)
-  // ═══════════════════════════════════════════════════════════════
-  if (chosenService === 'PXC-SINGLE PC') {
-    let ratePerKg = 790
-    let sourceRow = 23
-    if (resolvedCountry.toLowerCase().includes('usa') || resolvedCountry.toLowerCase().includes('united states')) {
-      ratePerKg = 1140
-      sourceRow = 24
-    } else if (resolvedCountry.toLowerCase().includes('canada')) {
-      ratePerKg = 1190
-      sourceRow = 25
-    }
-    const total = Math.round(weightNum * ratePerKg * 100) / 100
-    return finalizeQuoteResponse(wb, {
-      country: resolvedCountry,
-      service_code: chosenService,
-      weight: weightNum,
-      pricing_method: 'per_kg_flat',
-      matched_band: 'Single PC Flat',
-      vendor_rate: total,
-      rate_per_kg: ratePerKg,
-      rate_basis: `${weightNum} kg @ ₹${ratePerKg}/kg = ₹${total.toLocaleString('en-IN')} (Note: ₹7500 clearing charge applicable if not self-cleared)`,
-      transit_time: '6-8 Days',
-      source_sheet: 'Self Network',
-      source_row: sourceRow
-    })
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // MODEL 7: UK EXPRESS (PXC-EXPRESS)
-  // ═══════════════════════════════════════════════════════════════
-  if (chosenService === 'PXC-EXPRESS') {
-    const row = rows[13] // Row 14 in Excel
-    const base500 = Number(row[2] || 675)
-    const addl500 = Number(row[3] || 225)
-
-    if (weightNum <= 0.5) {
-      return finalizeQuoteResponse(wb, {
-        country: resolvedCountry,
-        service_code: chosenService,
-        weight: weightNum,
-        pricing_method: '500g_incremental',
-        matched_band: 'First 500g',
-        vendor_rate: base500,
-        rate_per_kg: null,
-        rate_basis: `First 500g flat rate: ₹${base500}`,
-        transit_time: '48 Hours',
-        source_sheet: 'Self Network',
-        source_row: 14
-      })
-    } else if (weightNum < 6) {
-      const units = Math.ceil((weightNum - 0.5) / 0.5)
-      const total = base500 + units * addl500
-      return finalizeQuoteResponse(wb, {
-        country: resolvedCountry,
-        service_code: chosenService,
-        weight: weightNum,
-        pricing_method: '500g_incremental',
-        matched_band: `500g + ${units} addl`,
+        zone: matchedZone,
+        state: state || null,
+        pricing_method: 'zone_weight_grid',
         vendor_rate: total,
-        rate_per_kg: null,
-        rate_basis: `First 500g (₹${base500}) + ${units} × Addl 500g (₹${addl500}) = ₹${total}`,
-        transit_time: '48 Hours',
-        source_sheet: 'Self Network',
-        source_row: 14
+        rate_per_kg: weightNum > 0 ? Math.round((total / weightNum) * 100) / 100 : null,
+        rate_basis: `${weightNum} kg in ${matchedZone} (${usaSheetName}) = ₹${total.toLocaleString('en-IN')}`,
+        transit_time: '5-10 Days',
+        source_sheet: usaSheetName
       })
-    } else {
-      // UK Express tiers: 6, 8, 11, 16, 21, 26, 31, 50, 100 kg
-      let tierRate = 500
-      let band = '100Kg++'
-      if (weightNum < 8) { tierRate = Number(row[4] || 575); band = '6kg++'; }
-      else if (weightNum < 11) { tierRate = Number(row[5] || 555); band = '8kg++'; }
-      else if (weightNum < 16) { tierRate = Number(row[6] || 525); band = '11 Kg++'; }
-      else if (weightNum < 21) { tierRate = Number(row[7] || 505); band = '16Kg++'; }
-      else if (weightNum < 26) { tierRate = Number(row[8] || 500); band = '21Kg++'; }
-      else if (weightNum < 31) { tierRate = Number(row[9] || 500); band = '26Kg++'; }
-      else if (weightNum < 50) { tierRate = Number(row[10] || 500); band = '31Kg++'; }
-      else if (weightNum < 100) { tierRate = Number(row[11] || 500); band = '50Kg++'; }
+    }
 
-      const total = Math.round(weightNum * tierRate * 100) / 100
+    // Check if Pacific USA Ground in Self Network
+    if (wb.Sheets['Self Network']) {
+      const snSheet = wb.Sheets['Self Network']
+      const snRows = XLSX.utils.sheet_to_json(snSheet, { header: 1 })
+      const stateMap = getUSAStateToZoneMap(snSheet)
+      const stInput = (state || postcode || '').trim()
+      const resolvedState = resolveUSStateToZone(stInput, stateMap)
+
+      if (resolvedState && snRows.length > 65) {
+        const zoneHeaders = (snRows[56] || []).slice(2, 9)
+        const zCol = zoneHeaders.indexOf(resolvedState.zone) + 2
+
+        let calculatedRate = 0
+        let ratePerKg = null
+        let band = ''
+
+        if (weightNum <= 5) {
+          const bp = Math.ceil(weightNum * 2) / 2
+          const rowIdx = 29 + Math.round((bp - 0.5) * 2)
+          calculatedRate = Number(snRows[rowIdx][zCol])
+          band = `${bp} kg (${resolvedState.zone})`
+        } else {
+          const ceilW = Math.min(22, Math.max(6, Math.ceil(weightNum)))
+          const rowIdx = 39 + (ceilW - 6)
+          ratePerKg = Number(snRows[rowIdx][zCol])
+          calculatedRate = Math.round(weightNum * ratePerKg * 100) / 100
+          band = `${ceilW} Per Kg (${resolvedState.zone})`
+        }
+
+        return finalizeQuoteResponse(wb, {
+          country: resolvedCountry,
+          service_code: chosenService || 'PXC-EX NY SELF',
+          weight: weightNum,
+          state: resolvedState.state_code,
+          zone: resolvedState.zone,
+          pricing_method: weightNum <= 5 ? 'weight_specific' : 'per_kg',
+          matched_band: band,
+          vendor_rate: calculatedRate,
+          rate_per_kg: ratePerKg,
+          rate_basis: `${weightNum} kg for ${resolvedState.zone} = ₹${calculatedRate.toLocaleString('en-IN')}`,
+          transit_time: '5-8 Days',
+          source_sheet: 'Self Network'
+        })
+      }
+    }
+  }
+
+  // ── SPECIAL DESTINATION 2: AUSTRALIA (AUS DTDC, PXC-SELF) ──
+  const isAus = resolvedCountry.toLowerCase().includes('australia') ||
+    resolvedCountry.toLowerCase() === 'aus' ||
+    chosenService.toUpperCase().includes('AUS')
+
+  if (isAus) {
+    if (wb.Sheets['AUS DTDC']) {
+      const ausRows = XLSX.utils.sheet_to_json(wb.Sheets['AUS DTDC'], { header: 1 })
+      let zoneCol = 1 // default Zone 1
+      let matchedZone = 'Zone 1'
+
+      if (postcode && wb.Sheets['DTDC Zone AUS']) {
+        const dtdcRows = XLSX.utils.sheet_to_json(wb.Sheets['DTDC Zone AUS'])
+        const cleanPc = String(postcode).trim()
+        const m = dtdcRows.find(r => String(r['PostCode'] || '').trim() === cleanPc)
+        if (m && m['ZONES']) {
+          matchedZone = String(m['ZONES'])
+          const num = parseInt(matchedZone.replace(/\D/g, ''))
+          if (!isNaN(num) && num >= 1 && num <= 10) zoneCol = num
+        }
+      }
+
+      let rate = 0
+      for (let r = 2; r < ausRows.length; r++) {
+        const wStr = String(ausRows[r][0] || '')
+        const wVal = parseFloat(wStr.replace(/[^0-9.]/g, ''))
+        if (!isNaN(wVal) && weightNum <= wVal) {
+          rate = Number(ausRows[r][zoneCol] || ausRows[r][1])
+          break
+        }
+      }
+      if (rate === 0 && ausRows.length > 2) {
+        rate = Number(ausRows[ausRows.length - 1][zoneCol] || ausRows[ausRows.length - 1][1])
+      }
+
+      const total = Math.round(rate * 100) / 100
       return finalizeQuoteResponse(wb, {
         country: resolvedCountry,
-        service_code: chosenService,
+        service_code: chosenService || 'AUS_DTDC',
         weight: weightNum,
-        pricing_method: 'service_specific_tiers',
-        matched_band: band,
+        zone: matchedZone,
+        pricing_method: 'weight_band',
         vendor_rate: total,
-        rate_per_kg: tierRate,
-        rate_basis: `${weightNum} kg in UK Express ${band} @ ₹${tierRate}/kg = ₹${total.toLocaleString('en-IN')}`,
-        transit_time: '48 Hours',
-        source_sheet: 'Self Network',
-        source_row: 14
+        rate_per_kg: weightNum > 0 ? Math.round((total / weightNum) * 100) / 100 : null,
+        rate_basis: `${weightNum} kg in ${matchedZone} (AUS DTDC) = ₹${total.toLocaleString('en-IN')}`,
+        transit_time: '5-15 Days',
+        source_sheet: 'AUS DTDC'
       })
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════
-  // MODEL 8: STANDARD TARIFF (Middle East, Europe, Africa, ROTW, etc.)
-  // ═══════════════════════════════════════════════════════════════
-  // Scan all rows in Self Network matching destination and service code
-  let matchedTariffRow = null
-  let matchedHeader = null
-  let sourceRow = 0
-  const normDest = normalizeStr(resolvedCountry)
+  // ── SPECIAL DESTINATION 3: NEW ZEALAND (NZ Self, NZ_SELF) ──
+  const isNZ = resolvedCountry.toLowerCase().includes('new zealand') ||
+    resolvedCountry.toLowerCase() === 'nz' ||
+    chosenService.toUpperCase().includes('NZ')
 
-  for (let r = 0; r < rows.length; r++) {
-    const row = rows[r]
-    if (!row || row.length < 3) continue
-    const svcCell = String(row[0] || '').trim()
-    const destCell = String(row[1] || '').trim()
+  if (isNZ) {
+    if (wb.Sheets['NZ Self']) {
+      const nzRows = XLSX.utils.sheet_to_json(wb.Sheets['NZ Self'], { header: 1 })
+      let zoneCol = 1 // default Zone 1
+      let matchedZone = 'Zone 1'
 
-    if (svcCell && svcCell.toLowerCase() === chosenService.toLowerCase()) {
-      if (normalizeStr(destCell) === normDest || destCell.toLowerCase() === resolvedCountry.toLowerCase()) {
-        matchedTariffRow = row
-        sourceRow = r + 1
-        // Find preceding header row
-        for (let h = r - 1; h >= 0; h--) {
-          if (rows[h] && String(rows[h][0] || '').trim() === 'SERVICE CODE') {
-            matchedHeader = rows[h]
+      if (postcode && wb.Sheets['NZ Zonelist']) {
+        const listRows = XLSX.utils.sheet_to_json(wb.Sheets['NZ Zonelist'])
+        const cleanPc = String(postcode).trim()
+        const m = listRows.find(r => String(r['POSTCODE'] || '').trim() === cleanPc)
+        if (m && m['Zone']) {
+          matchedZone = String(m['Zone'])
+          const num = parseInt(matchedZone.replace(/\D/g, ''))
+          if (!isNaN(num) && num >= 1 && num <= 4) zoneCol = num
+        }
+      }
+
+      let ratePerKg = 0
+      for (let r = 2; r < nzRows.length; r++) {
+        const wVal = parseFloat(nzRows[r][0])
+        if (!isNaN(wVal) && weightNum <= wVal) {
+          ratePerKg = Number(nzRows[r][zoneCol] || nzRows[r][1])
+          break
+        }
+      }
+      if (ratePerKg === 0 && nzRows.length > 2) {
+        ratePerKg = Number(nzRows[nzRows.length - 1][zoneCol] || nzRows[nzRows.length - 1][1])
+      }
+
+      const total = Math.round(weightNum * ratePerKg * 100) / 100
+      return finalizeQuoteResponse(wb, {
+        country: resolvedCountry,
+        service_code: chosenService || 'NZ_SELF',
+        weight: weightNum,
+        zone: matchedZone,
+        pricing_method: 'per_kg_tiers',
+        vendor_rate: total,
+        rate_per_kg: ratePerKg,
+        rate_basis: `${weightNum} kg @ ₹${ratePerKg}/kg in ${matchedZone} = ₹${total.toLocaleString('en-IN')}`,
+        transit_time: '5-15 Days',
+        source_sheet: 'NZ Self'
+      })
+    }
+  }
+
+  // ── SPECIAL DESTINATION 4: CANADA (MUM YYZ DDP, MUM YVR DDP) ──
+  const isCan = resolvedCountry.toLowerCase().includes('canada') ||
+    resolvedCountry.toLowerCase() === 'can' ||
+    chosenService.toUpperCase().includes('YYZ') ||
+    chosenService.toUpperCase().includes('YVR')
+
+  if (isCan) {
+    const canSheetName = chosenService.toUpperCase().includes('YVR') ? 'MUM YVR DDP' : (wb.Sheets['MUM YYZ DDP'] ? 'MUM YYZ DDP' : 'MUM YVR DDP')
+    if (wb.Sheets[canSheetName]) {
+      const canRows = XLSX.utils.sheet_to_json(wb.Sheets[canSheetName], { header: 1 })
+      let zoneCol = 2 // default D01
+      let matchedZone = 'D01'
+
+      if (postcode) {
+        const fsa = String(postcode).trim().slice(0, 3).toUpperCase()
+        for (let r = 3; r < canRows.length; r++) {
+          if (String(canRows[r][20] || '').trim().toUpperCase() === fsa) {
+            matchedZone = String(canRows[r][22] || 'D01').trim()
             break
           }
         }
-        break
+        const dHeaders = canRows[2] || []
+        const idx = dHeaders.indexOf(matchedZone)
+        if (idx !== -1) zoneCol = idx
       }
-    }
-  }
 
-  if (!matchedTariffRow) {
-    return {
-      success: false,
-      message: `No tariff row found for destination '${resolvedCountry}' and service '${chosenService}'.`,
-      reason: 'TARIFF_ROW_NOT_FOUND'
-    }
-  }
-
-  // Check destination specific weight limits from original notes
-  if (resolvedCountry.toLowerCase().includes('kuwait') && weightNum > 30) {
-    return {
-      success: false,
-      message: `Shipment weight (${weightNum} kg) exceeds maximum permissible weight of 30 kg for Kuwait.`,
-      reason: 'MAX_WEIGHT_EXCEEDED'
-    }
-  }
-  if ((resolvedCountry.toLowerCase().includes('qatar') || resolvedCountry.toLowerCase().includes('saudi arabia')) && weightNum > 30) {
-    return {
-      success: false,
-      message: `Shipment weight (${weightNum} kg) exceeds maximum permissible weight of 30 kg for ${resolvedCountry}.`,
-      reason: 'MAX_WEIGHT_EXCEEDED'
-    }
-  }
-
-  // Determine pricing columns
-  const base500 = Number(matchedTariffRow[2] || 0)
-  const addl500 = Number(matchedTariffRow[3] || 0)
-
-  // Suspended check
-  if (base500 === 0 && Number(matchedTariffRow[4] || 0) === 0) {
-    return {
-      success: false,
-      message: `Service for destination '${resolvedCountry}' is currently suspended or rate unavailable.`,
-      reason: 'SERVICE_SUSPENDED'
-    }
-  }
-
-  // Handle East Europe 3 Kg++ base table (where column 2 is 3 Kg++)
-  const col2Header = matchedHeader ? String(matchedHeader[2] || '') : ''
-  if (col2Header.includes('3 Kg++')) {
-    if (weightNum < 3) {
-      return {
-        success: false,
-        message: `Minimum shipment weight for this tariff is 3.0 kg. (Entered: ${weightNum} kg)`,
-        reason: 'MIN_WEIGHT_NOT_MET'
-      }
-    }
-    // Match tier column
-    let perKg = Number(matchedTariffRow[2])
-    let band = '3 Kg++'
-    const headers = matchedHeader || []
-    for (let c = 2; c < headers.length; c++) {
-      const hStr = String(headers[c] || '')
-      const kgMatch = hStr.match(/(\d+)\s*Kg/i)
-      if (kgMatch) {
-        const threshold = Number(kgMatch[1])
-        if (weightNum >= threshold && matchedTariffRow[c] !== '-' && Number(matchedTariffRow[c]) > 0) {
-          perKg = Number(matchedTariffRow[c])
-          band = hStr
+      let ratePerKg = 0
+      for (let r = 3; r < canRows.length; r++) {
+        const wVal = parseFloat(canRows[r][1])
+        if (!isNaN(wVal) && weightNum <= wVal) {
+          ratePerKg = Number(canRows[r][zoneCol] || canRows[r][2])
+          break
         }
       }
+      if (ratePerKg === 0 && canRows.length > 3) {
+        ratePerKg = Number(canRows[canRows.length - 1][zoneCol] || canRows[canRows.length - 1][2])
+      }
+
+      const total = Math.round(weightNum * ratePerKg * 100) / 100
+      return finalizeQuoteResponse(wb, {
+        country: resolvedCountry,
+        service_code: chosenService || canSheetName,
+        weight: weightNum,
+        zone: matchedZone,
+        pricing_method: 'per_kg_tiers',
+        vendor_rate: total,
+        rate_per_kg: ratePerKg,
+        rate_basis: `${weightNum} kg @ ₹${ratePerKg}/kg in ${matchedZone} (${canSheetName}) = ₹${total.toLocaleString('en-IN')}`,
+        transit_time: '10-20 Days',
+        source_sheet: canSheetName
+      })
     }
-    const total = Math.round(weightNum * perKg * 100) / 100
-    return finalizeQuoteResponse(wb, {
-      country: resolvedCountry,
-      service_code: chosenService,
-      weight: weightNum,
-      pricing_method: 'per_kg_tiers',
-      matched_band: band,
-      vendor_rate: total,
-      rate_per_kg: perKg,
-      rate_basis: `${weightNum} kg @ ₹${perKg}/kg in ${band} = ₹${total.toLocaleString('en-IN')}`,
-      transit_time: String(matchedTariffRow[matchedTariffRow.length - 1] || '6-8 Days'),
-      source_sheet: 'Self Network',
-      source_row: sourceRow
-    })
   }
 
-  // Standard 500g incremental pricing
+  // ── GENERAL DESTINATION: Search Tariff Sheets (Self Network, Self, Tariff Rates) ──
+  const tariffMatch = findTariffRowInWorkbook(wb, resolvedCountry, chosenService)
+
+  if (!tariffMatch) {
+    return {
+      success: false,
+      message: `Destination "${resolvedCountry}" with service "${chosenService || 'default'}" not found in rate sheets for vendor "${wbInfo.code}".`,
+      reason: 'TARIFF_NOT_FOUND'
+    }
+  }
+
+  const { sheetName, rowIdx, row, headers } = tariffMatch
+  const base500 = Number(row[2])
+  const addl500 = Number(row[3])
+  const transitTime = String(row[row.length - 1] || '5-7 Days')
+
+  if (isNaN(base500) || base500 <= 0) {
+    return {
+      success: false,
+      message: `Invalid rate configuration for destination "${resolvedCountry}" in sheet "${sheetName}".`,
+      reason: 'INVALID_RATE_ROW'
+    }
+  }
+
+  // Weight Calculation:
+  // Under 6kg: 500g base + additional 500g increments
   if (weightNum <= 0.5) {
     return finalizeQuoteResponse(wb, {
       country: resolvedCountry,
-      service_code: chosenService,
+      service_code: chosenService || String(row[0] || ''),
       weight: weightNum,
       pricing_method: '500g_incremental',
       matched_band: 'First 500g',
       vendor_rate: base500,
       rate_per_kg: null,
       rate_basis: `First 500g flat rate: ₹${base500.toFixed(2)}`,
-      transit_time: String(matchedTariffRow[matchedTariffRow.length - 1] || '5-7 Days'),
-      source_sheet: 'Self Network',
-      source_row: sourceRow
+      transit_time: transitTime,
+      source_sheet: sheetName,
+      source_row: rowIdx + 1
     })
   } else if (weightNum < 6) {
     const units = Math.ceil((weightNum - 0.5) / 0.5)
     const total = base500 + units * addl500
     return finalizeQuoteResponse(wb, {
       country: resolvedCountry,
-      service_code: chosenService,
+      service_code: chosenService || String(row[0] || ''),
       weight: weightNum,
       pricing_method: '500g_incremental',
       matched_band: `500g + ${units} addl`,
       vendor_rate: total,
       rate_per_kg: null,
       rate_basis: `First 500g (₹${base500}) + ${units} × Addl 500g (₹${addl500}) = ₹${total.toFixed(2)}`,
-      transit_time: String(matchedTariffRow[matchedTariffRow.length - 1] || '5-7 Days'),
-      source_sheet: 'Self Network',
-      source_row: sourceRow
+      transit_time: transitTime,
+      source_sheet: sheetName,
+      source_row: rowIdx + 1
     })
   } else {
-    // 6kg and above: per-kg tiers
+    // 6kg and above: per-kg tier
     let matchedTierRate = 0
     let matchedBand = '6kg++'
-    const headers = matchedHeader || []
 
     for (let c = 4; c < headers.length; c++) {
       const hStr = String(headers[c] || '')
       const kgMatch = hStr.match(/(\d+)\s*Kg/i)
       if (kgMatch) {
         const threshold = Number(kgMatch[1])
-        const val = matchedTariffRow[c]
+        const val = row[c]
         if (weightNum >= threshold && val !== '-' && val !== null && val !== undefined && Number(val) > 0) {
           matchedTierRate = Number(val)
           matchedBand = hStr
@@ -1435,41 +1336,38 @@ export async function calculateRateFromExcelSheet({
     }
 
     if (matchedTierRate === 0) {
-      // Fallback to column 4
-      const col4Val = matchedTariffRow[4]
+      const col4Val = row[4]
       if (col4Val !== '-' && Number(col4Val) > 0) {
         matchedTierRate = Number(col4Val)
       } else {
-        return {
-          success: false,
-          message: `Rate tier for ${weightNum} kg is not available for destination '${resolvedCountry}'.`,
-          reason: 'TIER_UNAVAILABLE'
-        }
+        matchedTierRate = addl500 * 2
       }
     }
 
     const total = Math.round(weightNum * matchedTierRate * 100) / 100
     return finalizeQuoteResponse(wb, {
       country: resolvedCountry,
-      service_code: chosenService,
+      service_code: chosenService || String(row[0] || ''),
       weight: weightNum,
       pricing_method: 'per_kg_tiers',
       matched_band: matchedBand,
       vendor_rate: total,
       rate_per_kg: matchedTierRate,
       rate_basis: `${weightNum} kg @ ₹${matchedTierRate}/kg in ${matchedBand} = ₹${total.toLocaleString('en-IN')}`,
-      transit_time: String(matchedTariffRow[matchedTariffRow.length - 1] || '5-7 Days'),
-      source_sheet: 'Self Network',
-      source_row: sourceRow
+      transit_time: transitTime,
+      source_sheet: sheetName,
+      source_row: rowIdx + 1
     })
   }
 }
 
 /**
- * Finalize quote: updates Sheet 1 cells C4, C5, C6, C7 and writes C10, C9, C11, C12
+ * Finalize quote response and update Rate Calculator tab cells (C4, C5, C6, C7, C9, C10, C11, C12)
  */
 function finalizeQuoteResponse(wb, quote) {
-  const firstSheet = wb.Sheets[wb.SheetNames[0]]
+  const firstSheetName = wb.SheetNames[0]
+  const firstSheet = wb.Sheets[firstSheetName]
+
   if (firstSheet) {
     firstSheet['C4'] = { t: 's', v: quote.country, w: String(quote.country) }
     firstSheet['C5'] = { t: 's', v: quote.service_code, w: String(quote.service_code) }
@@ -1488,40 +1386,41 @@ function finalizeQuoteResponse(wb, quote) {
     quote.zone ? `Zone: ${quote.zone}` : null,
     `Service: ${quote.service_code}`,
     `Weight: ${quote.weight} kg`,
-    `Tariff Sheet: ${quote.source_sheet || 'Self Network'}${quote.source_row ? ` (Row #${quote.source_row})` : ''}`,
+    `Tariff Sheet: ${quote.source_sheet || firstSheetName}${quote.source_row ? ` (Row #${quote.source_row})` : ''}`,
     quote.matched_band ? `Pricing Slab: ${quote.matched_band}` : null,
     quote.rate_per_kg ? `Rate / Kg: ₹${quote.rate_per_kg}` : null,
     `Formula: ${quote.rate_basis}`,
-    `Calculated Rate (C10): ₹${quote.vendor_rate}`
+    `Calculated Rate (C10): ₹${quote.vendor_rate.toLocaleString('en-IN')}`
   ].filter(Boolean)
 
   return {
     success: true,
     country: quote.country,
     service_code: quote.service_code,
+    matched_service: quote.service_code,
     weight: quote.weight,
     chargeable_weight: quote.weight,
     state: quote.state || null,
     zone: quote.zone || null,
-    pricing_method: quote.pricing_method,
-    matched_band: quote.matched_band,
+    pricing_method: quote.pricing_method || 'excel_formula',
+    matched_band: quote.matched_band || null,
     vendor_rate: quote.vendor_rate,
     shipping_charge: quote.vendor_rate,
     currency: 'INR',
-    rate_per_kg: quote.rate_per_kg || null,
+    rate_per_kg: quote.rate_per_kg || (quote.weight > 0 ? Math.round((quote.vendor_rate / quote.weight) * 100) / 100 : null),
     rate_basis: quote.rate_basis,
     transit_time: quote.transit_time || '',
-    source_sheet: quote.source_sheet || 'Self Network',
+    source_sheet: quote.source_sheet || firstSheetName,
     source_row: quote.source_row || null,
     calculation_breakdown: {
       destination: quote.country + (quote.state ? ` (${quote.state})` : ''),
       service: quote.service_code,
       weight: quote.weight,
       zone: quote.zone || null,
-      source_sheet: quote.source_sheet || 'Self Network',
+      source_sheet: quote.source_sheet || firstSheetName,
       source_row: quote.source_row || null,
-      pricing_method: quote.pricing_method,
-      matched_band: quote.matched_band,
+      pricing_method: quote.pricing_method || 'excel_formula',
+      matched_band: quote.matched_band || null,
       rate_per_kg: quote.rate_per_kg || null,
       formula: quote.rate_basis,
       vendor_rate: quote.vendor_rate,

@@ -51,8 +51,8 @@ export default function RatesPage() {
   const [dragActive, setDragActive] = useState(false)
 
   // Rate Calculator State (Inputs for C4, C5, C6, C7)
-  const [calcCountry, setCalcCountry] = useState('U.A.E.')
-  const [calcService, setCalcService] = useState('PXC-SELF')
+  const [calcCountry, setCalcCountry] = useState('')
+  const [calcService, setCalcService] = useState('')
   const [calcWeight, setCalcWeight] = useState('1.5')
   const [calcState, setCalcState] = useState('')
   const [calcPostcode, setCalcPostcode] = useState('')
@@ -119,11 +119,13 @@ export default function RatesPage() {
     return c === 'united states' || c === 'usa' || c.includes('united states') || c === 'u.s.a.'
   }, [calcCountry])
 
-  // Check if chosen destination is Australia
-  const isAustraliaDestination = useMemo(() => {
-    const c = (calcCountry || '').toLowerCase().trim()
-    return c === 'australia' || c === 'aus'
-  }, [calcCountry])
+  // Check if chosen destination needs state/postcode (from destination data)
+  const currentDestData = useMemo(() => {
+    return destinations.find(d => d.country.toLowerCase() === calcCountry.toLowerCase().trim()) || null
+  }, [destinations, calcCountry])
+
+  const requiresState = currentDestData?.requires_state || isUSADestination
+  const requiresPostcode = currentDestData?.requires_postcode
 
   // Available services for the currently chosen country in calculator
   const servicesForSelectedCountry = useMemo(() => {
@@ -136,6 +138,41 @@ export default function RatesPage() {
   }, [destinations, calcCountry, allServices])
 
   const isUSASelf = isUSADestination && calcService === 'PXC-EX NY SELF'
+
+  // Reset calculator when vendor changes
+  useEffect(() => {
+    setCalcCountry('')
+    setCalcService('')
+    setCalcState('')
+    setCalcPostcode('')
+    setCalcResult(null)
+    setCalcError(null)
+  }, [selectedVendorCode])
+
+  // Set initial defaults from calculator template or destinations when vendor changes or data loads
+  useEffect(() => {
+    if (destinations.length > 0) {
+      const hasCurrent = calcCountry && destinations.some(d => d.country.toLowerCase() === calcCountry.toLowerCase().trim())
+      if (!calcCountry || !hasCurrent) {
+        const defaultCountry = (calculatorTemplate?.c4_default && destinations.some(d => d.country.toLowerCase() === calculatorTemplate.c4_default.toLowerCase().trim()))
+          ? calculatorTemplate.c4_default
+          : destinations[0].country
+        setCalcCountry(defaultCountry)
+
+        const matchedDest = destinations.find(d => d.country.toLowerCase() === defaultCountry.toLowerCase().trim())
+        const availServices = matchedDest?.services?.length > 0 ? matchedDest.services : allServices
+        const defaultService = (calculatorTemplate?.c5_default && availServices.includes(calculatorTemplate.c5_default))
+          ? calculatorTemplate.c5_default
+          : (availServices[0] || '')
+        setCalcService(defaultService)
+      }
+    }
+  }, [selectedVendorCode, destinations, calculatorTemplate, allServices, calcCountry])
+
+  // Quick destination chips — dynamic from first 8 destinations
+  const quickDestinations = useMemo(() => {
+    return destinations.slice(0, 8).map(d => d.country)
+  }, [destinations])
 
   // Handlers for switching country/service
   const handleCountryChange = (countryName) => {
@@ -183,14 +220,6 @@ export default function RatesPage() {
 
     if (isUSASelf && weightNum > 21.5) {
       const msg = `Shipment weight (${weightNum} kg) exceeds maximum permissible weight of 21.5 kg for USA PXC-EX NY SELF.`
-      setCalcError(msg)
-      setCalcResult(null)
-      toast.error(msg)
-      return
-    }
-
-    if (isAustraliaDestination && weightNum > 25) {
-      const msg = `Shipment weight (${weightNum} kg) exceeds maximum permissible weight of 25 kg for Australia PXC-SELF.`
       setCalcError(msg)
       setCalcResult(null)
       toast.error(msg)
@@ -248,6 +277,9 @@ export default function RatesPage() {
       queryClient.invalidateQueries({ queryKey: ['portal-vendors-with-sheets'] })
       queryClient.invalidateQueries({ queryKey: ['vendor-sheet-details', importVendorTarget] })
       setSelectedVendorCode(importVendorTarget)
+      setCalcCountry('')
+      setCalcService('')
+      setCalcResult(null)
     },
     onError: (err) => {
       toast.error(err.response?.data?.message || err.message || 'Import failed')
@@ -558,7 +590,7 @@ export default function RatesPage() {
             <div className="bg-amber-50/70 border border-amber-200/70 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-900">
               <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <div>
-                <strong className="font-bold">Cell Mapping Protocol:</strong> Destination country is written to <code>C4</code>, Service Code to <code>C5</code>, Weight to <code>C6</code>, Postcode to <code>C7</code>. The calculated vendor rate is fetched from <code>C10</code>.
+                <strong className="font-bold">Cell Mapping Protocol (Formula-Driven):</strong> Destination country is written to <code>C4</code>, Service Code to <code>C5</code>, Weight to <code>C6</code>, Postcode to <code>C7</code>. Excel formulas are evaluated and the calculated vendor rate is fetched from <code>C10</code>.
               </div>
             </div>
 
@@ -585,9 +617,10 @@ export default function RatesPage() {
                   ))}
                 </select>
 
-                {/* Quick destination chips for frequent routes */}
+                {/* Quick destination chips - dynamic from vendor's data */}
+                {quickDestinations.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {['United States', 'Australia', 'United Kingdom', 'Canada', 'U.A.E.', 'Germany', 'Singapore', 'New Zealand'].map(c => (
+                  {quickDestinations.map(c => (
                     <button
                       key={c}
                       type="button"
@@ -602,6 +635,7 @@ export default function RatesPage() {
                     </button>
                   ))}
                 </div>
+                )}
               </div>
 
               {/* B5 / C5: Service Code */}
@@ -682,9 +716,6 @@ export default function RatesPage() {
                   <div className="flex items-center gap-2">
                     {isUSASelf && (
                       <span className="text-[11px] font-bold text-amber-700">Limit: 21.5 kg</span>
-                    )}
-                    {isAustraliaDestination && (
-                      <span className="text-[11px] font-bold text-amber-700">Limit: 25 kg</span>
                     )}
                     <span className="text-[11px] text-gray-400">Kilograms</span>
                   </div>
