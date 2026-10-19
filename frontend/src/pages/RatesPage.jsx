@@ -590,17 +590,19 @@ export default function RatesPage() {
             <div className="bg-amber-50/70 border border-amber-200/70 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-900">
               <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <div>
-                <strong className="font-bold">Cell Mapping Protocol (Formula-Driven):</strong> Destination country is written to <code>C4</code>, Service Code to <code>C5</code>, Weight to <code>C6</code>, Postcode to <code>C7</code>. Excel formulas are evaluated and the calculated vendor rate is fetched from <code>C10</code>.
+                <strong className="font-bold">Cell Mapping Protocol (Dynamic Formula-Driven):</strong> Destination country is written to <code>{calculatorTemplate.dest_input_cell || 'C4'}</code>, Service Code to <code>{calculatorTemplate.service_input_cell || 'C5'}</code>, Weight to <code>{calculatorTemplate.weight_input_cell || 'C6'}</code>, Postcode/State to <code>{calculatorTemplate.postcode_input_cell || 'C7'}</code>. Excel formulas are evaluated and the calculated vendor rate is fetched from <code>{calculatorTemplate.rate_output_cell || 'C10'}</code>.
               </div>
             </div>
 
             <div className="space-y-4 pt-1">
-              {/* B4 / C4: Country / Destination */}
+              {/* Destination Field */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">B4</span>
-                    {calculatorTemplate.b4_label || 'Country / Destination'} (Input ➔ C4)
+                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">
+                      {calculatorTemplate.dest_label_cell || 'B4'}
+                    </span>
+                    {calculatorTemplate.dest_label || calculatorTemplate.b4_label || 'Country / Destination'} (Input ➔ {calculatorTemplate.dest_input_cell || 'C4'})
                   </label>
                   <span className="text-[11px] text-gray-400 font-medium">Valid tariff destination</span>
                 </div>
@@ -638,12 +640,14 @@ export default function RatesPage() {
                 )}
               </div>
 
-              {/* B5 / C5: Service Code */}
+              {/* Service Code Field */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">B5</span>
-                    {calculatorTemplate.b5_label || 'Service Code'} (Input ➔ C5)
+                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">
+                      {calculatorTemplate.service_label_cell || 'B5'}
+                    </span>
+                    {calculatorTemplate.service_label || calculatorTemplate.b5_label || 'Service Code'} (Input ➔ {calculatorTemplate.service_input_cell || 'C5'})
                   </label>
                   <span className="text-[11px] text-emerald-600 font-semibold">
                     {servicesForSelectedCountry.length} supported for {calcCountry || 'destination'}
@@ -706,12 +710,14 @@ export default function RatesPage() {
                 </div>
               )}
 
-              {/* B6 / C6: Weight in kg */}
+              {/* Weight in kg */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">B6</span>
-                    {calculatorTemplate.b6_label || 'Weight (kg)'} (Input ➔ C6)
+                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">
+                      {calculatorTemplate.weight_label_cell || 'B6'}
+                    </span>
+                    {calculatorTemplate.weight_label || calculatorTemplate.b6_label || 'Weight (kg)'} (Input ➔ {calculatorTemplate.weight_input_cell || 'C6'})
                   </label>
                   <div className="flex items-center gap-2">
                     {isUSASelf && (
@@ -749,12 +755,14 @@ export default function RatesPage() {
                 </div>
               </div>
 
-              {/* B7 / C7: Postcode (optional) */}
+              {/* Postcode / State */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">B7</span>
-                    {calculatorTemplate.b7_label || 'Postcode / State'} (Input ➔ C7)
+                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">
+                      {calculatorTemplate.postcode_label_cell || 'B7'}
+                    </span>
+                    {calculatorTemplate.postcode_label || calculatorTemplate.b7_label || 'Postcode / State'} (Input ➔ {calculatorTemplate.postcode_input_cell || 'C7'})
                   </label>
                   <span className="text-[11px] text-gray-400">Zone / remote check</span>
                 </div>
@@ -776,19 +784,19 @@ export default function RatesPage() {
                   className="w-full py-3 rounded-xl bg-gray-900 hover:bg-black text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${calcLoading ? 'animate-spin' : ''}`} />
-                  {calcLoading ? 'Evaluating Excel Sheet...' : 'Evaluate & Fetch Rate from C10'}
+                  {calcLoading ? 'Evaluating Excel Sheet...' : `Evaluate & Fetch Rate from ${calculatorTemplate.rate_output_cell || 'C10'}`}
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Output Card (Fetched from C10, C9, C11, C12) */}
+          {/* Output Card */}
           <div className="lg:col-span-5 space-y-4">
             <div className="bg-gradient-to-br from-gray-950 via-slate-900 to-gray-900 text-white rounded-2xl p-6 shadow-xl border border-gray-800 space-y-5">
               <div className="flex items-center justify-between border-b border-gray-800 pb-3">
                 <span className="text-[11px] uppercase font-mono tracking-wider font-bold text-rose-400 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
-                  Excel Output Result (Cell C10)
+                  Excel Output Result (Cell {calculatorTemplate.rate_output_cell || 'C10'})
                 </span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                   LIVE FETCH
@@ -808,10 +816,10 @@ export default function RatesPage() {
                 </div>
               )}
 
-              {/* Main C10 Output Rate */}
+              {/* Main Output Rate */}
               <div>
                 <span className="text-xs font-medium text-gray-400 block mb-1">
-                  {calculatorTemplate.b10_label || 'Calculated Vendor Rate'} [C10]
+                  {calculatorTemplate.rate_label || calculatorTemplate.b10_label || 'Calculated Vendor Rate'} [{calculatorTemplate.rate_output_cell || 'C10'}]
                 </span>
                 <div className="flex items-baseline gap-2">
                   <span className="text-4xl font-extrabold text-white tracking-tight">

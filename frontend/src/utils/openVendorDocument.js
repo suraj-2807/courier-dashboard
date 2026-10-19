@@ -27,8 +27,6 @@ export function openPdfBlob(blobData, filename = 'document.pdf') {
       const link = document.createElement('a')
       link.href = blobUrl
       link.download = filename
-      link.target = '_blank'
-      link.rel = 'noopener noreferrer'
       document.body.appendChild(link)
       link.click()
       setTimeout(() => {
@@ -38,15 +36,13 @@ export function openPdfBlob(blobData, filename = 'document.pdf') {
       return true
     }
 
-    // On Desktop: try opening in a new tab first
+    // On Desktop: Open in a single new tab
     const newTab = window.open(blobUrl, '_blank')
-    if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
-      // Popup blocked fallback: Trigger download link
+    if (!newTab) {
+      // Popup blocked: Fallback to direct download in current context (NO target="_blank")
       const link = document.createElement('a')
       link.href = blobUrl
       link.download = filename
-      link.target = '_blank'
-      link.rel = 'noopener noreferrer'
       document.body.appendChild(link)
       link.click()
       setTimeout(() => {
@@ -80,8 +76,6 @@ export function openPdfUrl(urlStr, filename = 'document.pdf') {
     if (isMobile) {
       const link = document.createElement('a')
       link.href = cleanUrl
-      link.target = '_blank'
-      link.rel = 'noopener noreferrer'
       link.download = filename
       document.body.appendChild(link)
       link.click()
@@ -91,12 +85,13 @@ export function openPdfUrl(urlStr, filename = 'document.pdf') {
       return true
     }
 
-    const newTab = window.open(cleanUrl, '_blank', 'noopener,noreferrer')
-    if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+    // On Desktop: Open cleanly in a single new tab (do not pass 3rd arg 'noopener' to prevent window.open returning null)
+    const newTab = window.open(cleanUrl, '_blank')
+    if (!newTab) {
+      // Popup blocked: Fallback to direct download in current context (NO target="_blank")
       const link = document.createElement('a')
       link.href = cleanUrl
-      link.target = '_blank'
-      link.rel = 'noopener noreferrer'
+      link.download = filename
       document.body.appendChild(link)
       link.click()
       setTimeout(() => {
