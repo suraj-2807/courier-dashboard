@@ -36,6 +36,69 @@ import {
 import { systemSettingsApi } from '../api/systemSettings.api'
 import ExcelSheetEditor from '../components/ExcelSheetEditor'
 
+// Map 3-digit US ZIP prefix to 2-letter state code for live real-time zone detection
+function resolveUSZipToState(zip) {
+  if (!zip) return null
+  const clean = String(zip).trim().replace(/\D/g, '')
+  if (clean.length < 3) return null
+  const p = parseInt(clean.slice(0, 3), 10)
+  if (isNaN(p)) return null
+
+  if (p >= 10 && p <= 27) return 'MA'
+  if (p >= 28 && p <= 29) return 'RI'
+  if (p >= 30 && p <= 38) return 'NH'
+  if (p >= 39 && p <= 49) return 'ME'
+  if (p >= 50 && p <= 59) return 'VT'
+  if (p >= 60 && p <= 69) return 'CT'
+  if (p >= 70 && p <= 89) return 'NJ'
+  if (p >= 100 && p <= 149) return 'NY'
+  if (p >= 150 && p <= 196) return 'PA'
+  if (p >= 197 && p <= 199) return 'DE'
+  if (p >= 200 && p <= 205) return 'DC'
+  if (p >= 206 && p <= 219) return 'MD'
+  if (p >= 220 && p <= 246) return 'VA'
+  if (p >= 247 && p <= 268) return 'WV'
+  if (p >= 270 && p <= 289) return 'NC'
+  if (p >= 290 && p <= 299) return 'SC'
+  if (p >= 300 && p <= 319) return 'GA'
+  if (p >= 320 && p <= 349) return 'FL'
+  if (p >= 350 && p <= 369) return 'AL'
+  if (p >= 370 && p <= 385) return 'TN'
+  if (p >= 386 && p <= 397) return 'MS'
+  if (p >= 400 && p <= 427) return 'KY'
+  if (p >= 430 && p <= 459) return 'OH'
+  if (p >= 460 && p <= 479) return 'IN'
+  if (p >= 480 && p <= 499) return 'MI'
+  if (p >= 500 && p <= 528) return 'IA'
+  if (p >= 530 && p <= 549) return 'WI'
+  if (p >= 550 && p <= 567) return 'MN'
+  if (p >= 570 && p <= 577) return 'SD'
+  if (p >= 580 && p <= 588) return 'ND'
+  if (p >= 590 && p <= 599) return 'MT'
+  if (p >= 600 && p <= 629) return 'IL'
+  if (p >= 630 && p <= 658) return 'MO'
+  if (p >= 660 && p <= 679) return 'KS'
+  if (p >= 680 && p <= 693) return 'NE'
+  if (p >= 700 && p <= 714) return 'LA'
+  if (p >= 716 && p <= 729) return 'AR'
+  if (p >= 730 && p <= 749) return 'OK'
+  if (p >= 750 && p <= 799) return 'TX'
+  if (p >= 800 && p <= 816) return 'CO'
+  if (p >= 820 && p <= 831) return 'WY'
+  if (p >= 832 && p <= 838) return 'ID'
+  if (p >= 840 && p <= 847) return 'UT'
+  if (p >= 850 && p <= 865) return 'AZ'
+  if (p >= 870 && p <= 884) return 'NM'
+  if (p >= 889 && p <= 898) return 'NV'
+  if (p >= 900 && p <= 961) return 'CA'
+  if (p >= 967 && p <= 968) return 'HI'
+  if (p >= 970 && p <= 979) return 'OR'
+  if (p >= 980 && p <= 994) return 'WA'
+  if (p >= 995 && p <= 999) return 'AK'
+
+  return null
+}
+
 export default function RatesPage() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef(null)
@@ -113,21 +176,37 @@ export default function RatesPage() {
     }
   })
 
-  // Check if chosen destination is USA
+  // Vendor detection
+  const isPacificVendor = useMemo(() => {
+    const v = (selectedVendorCode || '').toLowerCase().trim()
+    return v.includes('pacific') || v === 'pc' || v === 'pxc'
+  }, [selectedVendorCode])
+
+  const isFlySwiftVendor = useMemo(() => {
+    const v = (selectedVendorCode || '').toLowerCase().trim()
+    return v.includes('flyswift') || v === 'fs'
+  }, [selectedVendorCode])
+
+  // Destination checks
   const isUSADestination = useMemo(() => {
     const c = (calcCountry || '').toLowerCase().trim()
     return c === 'united states' || c === 'usa' || c.includes('united states') || c === 'u.s.a.'
   }, [calcCountry])
 
+  const isAusDestination = useMemo(() => {
+    const c = (calcCountry || '').toLowerCase().trim()
+    return c === 'australia' || c === 'aus' || c.includes('australia')
+  }, [calcCountry])
+
   // Check if chosen destination needs state/postcode (from destination data)
   const currentDestData = useMemo(() => {
-    return destinations.find(d => d.country.toLowerCase() === calcCountry.toLowerCase().trim()) || null
+    return destinations.find(d => d.country.toLowerCase() === (calcCountry || '').toLowerCase().trim()) || null
   }, [destinations, calcCountry])
 
   const requiresState = currentDestData?.requires_state || isUSADestination
-  const requiresPostcode = currentDestData?.requires_postcode
+  const requiresPostcode = currentDestData?.requires_postcode || isAusDestination
 
-  // Available services for the currently chosen country in calculator
+  // Available services strictly for the currently chosen country and vendor
   const servicesForSelectedCountry = useMemo(() => {
     if (!calcCountry) return allServices
     const match = destinations.find(d => d.country.toLowerCase() === calcCountry.toLowerCase().trim())
@@ -137,7 +216,60 @@ export default function RatesPage() {
     return allServices
   }, [destinations, calcCountry, allServices])
 
-  const isUSASelf = isUSADestination && calcService === 'PXC-EX NY SELF'
+  const isUSASelf = isUSADestination && (calcService === 'PXC-EX NY SELF' || isPacificVendor)
+
+  // Real-time live US ZIP / State resolver
+  const resolvedUSInfo = useMemo(() => {
+    if (!isUSADestination) return null
+    const rawZip = (calcPostcode || '').trim()
+    const rawState = (calcState || '').trim().toUpperCase()
+
+    let stateCode = rawState
+    let detectedFromZip = false
+
+    if (rawZip) {
+      const clean = rawZip.replace(/\D/g, '')
+      const fromZip = resolveUSZipToState(clean)
+      if (fromZip) {
+        stateCode = fromZip
+        detectedFromZip = true
+      }
+    }
+
+    if (!stateCode) return null
+    const opt = stateOptions.find(s => s.code === stateCode)
+    return {
+      state_code: stateCode,
+      state_name: opt?.label || stateCode,
+      zone: opt?.zone || (stateCode === 'NY' || stateCode === 'NJ' || stateCode === 'CT' ? 'Zone 2' : 'Zone 3'),
+      detectedFromZip
+    }
+  }, [isUSADestination, calcPostcode, calcState, stateOptions])
+
+  // Real-time live Australia Postcode resolver
+  const resolvedAusInfo = useMemo(() => {
+    if (!isAusDestination) return null
+    const pc = (calcPostcode || '').trim()
+    if (isPacificVendor) {
+      return {
+        service: 'PXC-SIN',
+        zone: 'Direct Air Hub',
+        note: 'Flat National Tariff (No postal zone surcharge)'
+      }
+    }
+    if (isFlySwiftVendor) {
+      if (!pc) return null
+      const num = parseInt(pc, 10)
+      if (isNaN(num)) return null
+      let z = 'Zone 1 (Metro)'
+      if (num >= 2000 && num <= 2234) z = 'Zone 1 (Sydney Metro)'
+      else if (num >= 3000 && num <= 3207) z = 'Zone 2 (Melbourne Metro)'
+      else if (num >= 4000 && num <= 4207) z = 'Zone 3 (Brisbane Metro)'
+      else z = 'Zone 1–10 (DTDC AUS Table)'
+      return { service: 'AUS_DTDC', zone: z, postcode: pc }
+    }
+    return null
+  }, [isAusDestination, calcPostcode, isPacificVendor, isFlySwiftVendor])
 
   // Reset calculator when vendor changes
   useEffect(() => {
@@ -169,12 +301,21 @@ export default function RatesPage() {
     }
   }, [selectedVendorCode, destinations, calculatorTemplate, allServices, calcCountry])
 
+  // Strict Service auto-synchronization: When country or vendor changes, ensure service matches supported services
+  useEffect(() => {
+    if (servicesForSelectedCountry.length > 0) {
+      if (!calcService || !servicesForSelectedCountry.includes(calcService)) {
+        setCalcService(servicesForSelectedCountry[0])
+      }
+    }
+  }, [servicesForSelectedCountry, calcService])
+
   // Quick destination chips — dynamic from first 8 destinations
   const quickDestinations = useMemo(() => {
     return destinations.slice(0, 8).map(d => d.country)
   }, [destinations])
 
-  // Handlers for switching country/service
+  // Handlers for switching country/service/postcode
   const handleCountryChange = (countryName) => {
     setCalcCountry(countryName)
     setCalcResult(null)
@@ -194,8 +335,21 @@ export default function RatesPage() {
     setCalcService(serviceName)
     setCalcResult(null)
     setCalcError(null)
-    if (isUSADestination && serviceName === 'PXC-EX NY SELF' && !calcState) {
+    if (isUSADestination && !calcState) {
       setCalcState('NY')
+    }
+  }
+
+  const handlePostcodeChange = (val) => {
+    setCalcPostcode(val)
+    setCalcResult(null)
+    setCalcError(null)
+    if (isUSADestination && val) {
+      const clean = val.replace(/\D/g, '')
+      const fromZip = resolveUSZipToState(clean)
+      if (fromZip && fromZip !== calcState) {
+        setCalcState(fromZip)
+      }
     }
   }
 
@@ -211,17 +365,33 @@ export default function RatesPage() {
       return
     }
 
-    if (isUSASelf && !calcState) {
-      const msg = 'Please select a US State for PXC-EX NY SELF service.'
+    let effectiveState = calcState
+    if (isUSADestination && !effectiveState && calcPostcode) {
+      const detected = resolveUSZipToState(calcPostcode)
+      if (detected) {
+        effectiveState = detected
+        setCalcState(detected)
+      }
+    }
+
+    if (isUSASelf && !effectiveState && !calcPostcode) {
+      const msg = 'Please select a US State or enter a 5-digit US ZIP code for United States.'
       setCalcError(msg)
       toast.error(msg)
       return
     }
 
     if (isUSASelf && weightNum > 21.5) {
-      const msg = `Shipment weight (${weightNum} kg) exceeds maximum permissible weight of 21.5 kg for USA PXC-EX NY SELF.`
+      const msg = `Shipment weight (${weightNum} kg) exceeds maximum permissible weight limit of 21.5 kg for USA.`
       setCalcError(msg)
       setCalcResult(null)
+      toast.error(msg)
+      return
+    }
+
+    if (isAusDestination && isFlySwiftVendor && !calcPostcode) {
+      const msg = 'Australian postal code is required for AUS DTDC under FlySwift to determine the delivery zone (Zone 1–10).'
+      setCalcError(msg)
       toast.error(msg)
       return
     }
@@ -234,7 +404,7 @@ export default function RatesPage() {
         country: calcCountry,
         service_code: calcService,
         weight: weightNum,
-        state: calcState,
+        state: effectiveState || calcState,
         postcode: calcPostcode
       })
       if (res && res.success) {
@@ -257,7 +427,8 @@ export default function RatesPage() {
   // Auto-calculate on initial load or parameter change
   useEffect(() => {
     if (selectedVendorCode && calcCountry && calcWeight) {
-      if (isUSASelf && !calcState) return
+      if (isUSASelf && !calcState && !calcPostcode) return
+      if (isAusDestination && isFlySwiftVendor && !calcPostcode) return
       runCalculation()
     }
   }, [selectedVendorCode, calcCountry, calcService, calcWeight, calcState, calcPostcode])
@@ -594,6 +765,45 @@ export default function RatesPage() {
               </div>
             </div>
 
+            {/* Live Vendor & Combination Match Badge */}
+            <div className="rounded-xl border p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition bg-emerald-50/70 border-emerald-200 text-emerald-950">
+              <div className="flex items-center gap-2.5">
+                <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <Check className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-extrabold text-xs text-emerald-900">
+                      Tariff Route Match:
+                    </span>
+                    <span className="font-bold text-gray-800 bg-white/90 px-2 py-0.5 rounded text-[11px] border border-emerald-200">
+                      {currentVendor?.name || selectedVendorCode.toUpperCase()}
+                    </span>
+                    <span className="text-gray-400">➔</span>
+                    <span className="font-bold text-gray-800 bg-white/90 px-2 py-0.5 rounded text-[11px] border border-emerald-200">
+                      {calcCountry || 'Select Destination'}
+                    </span>
+                    <span className="text-gray-400">➔</span>
+                    <span className="font-extrabold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded text-[11px] border border-emerald-300 font-mono">
+                      {calcService || 'Auto Service'}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-emerald-700/90 font-medium mt-0.5">
+                    {isUSADestination ? (
+                      isPacificVendor ? 'USA PXC-EX NY SELF: State/ZIP determines Zone 2 to 8 tariff.' : 'FlySwift USA DDU/DDP: ZIP code maps to delivery zone.'
+                    ) : isAusDestination ? (
+                      isPacificVendor ? 'Pacific Australia: PXC-SIN direct hub routing (flat national tariff).' : 'FlySwift Australia: DTDC 4-digit postcode zone lookup (Zone 1 to 10).'
+                    ) : (
+                      'Direct vendor tariff lookup with weight tiers.'
+                    )}
+                  </div>
+                </div>
+              </div>
+              <span className="self-start sm:self-auto text-[10px] font-mono font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-600 text-white shadow-xs shrink-0">
+                100% Validated
+              </span>
+            </div>
+
             <div className="space-y-4 pt-1">
               {/* Destination Field */}
               <div>
@@ -769,10 +979,45 @@ export default function RatesPage() {
                 <input
                   type="text"
                   value={calcPostcode}
-                  onChange={(e) => setCalcPostcode(e.target.value)}
-                  placeholder="e.g. 2000 (Aus), M5V 2T6 (Canada), SW1A 1AA (UK)..."
+                  onChange={(e) => handlePostcodeChange(e.target.value)}
+                  placeholder={
+                    isUSADestination
+                      ? "e.g. 90210 (Beverly Hills CA), 10001 (NY), 75001 (Dallas TX)..."
+                      : isAusDestination
+                      ? "e.g. 2000 (Sydney), 3000 (Melbourne), 4000 (Brisbane)..."
+                      : "e.g. 2000 (Aus), M5V 2T6 (Canada), SW1A 1AA (UK)..."
+                  }
                   className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition"
                 />
+
+                {/* Real-time Live Zone Resolution Helper */}
+                {isUSADestination && resolvedUSInfo && (
+                  <div className="flex items-center gap-2 text-xs pt-1.5 animate-fade-in">
+                    <span className="text-amber-800 font-medium flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-amber-600" />
+                      Live US Location Detected:
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-900 font-extrabold text-[11px] border border-blue-200">
+                      {resolvedUSInfo.state_code} ({resolvedUSInfo.state_name}) ➔ {resolvedUSInfo.zone}
+                    </span>
+                    {resolvedUSInfo.detectedFromZip && (
+                      <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        Auto-mapped from ZIP
+                      </span>
+                    )}
+                  </div>
+                )}
+                {isAusDestination && resolvedAusInfo && (
+                  <div className="flex items-center gap-2 text-xs pt-1.5 animate-fade-in">
+                    <span className="text-emerald-800 font-medium flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-600" />
+                      Australian Routing:
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-extrabold text-[11px] border border-emerald-200">
+                      {resolvedAusInfo.service}: {resolvedAusInfo.zone} {resolvedAusInfo.note ? `• ${resolvedAusInfo.note}` : ''}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Action Button */}

@@ -183,24 +183,98 @@ export function getUSAStateToZoneMap(sheet) {
 }
 
 /**
- * Resolve a US state string (e.g. "CT", "California", "NY") to its Zone
+ * Map 3-digit US ZIP prefix to 2-letter state code covering all 50 US states and DC.
+ */
+export function resolveZipToState(zip) {
+  if (!zip) return null
+  const clean = String(zip).trim().replace(/\D/g, '')
+  if (clean.length < 3) return null
+  const p = parseInt(clean.slice(0, 3), 10)
+  if (isNaN(p)) return null
+
+  if (p >= 10 && p <= 27) return 'MA'
+  if (p >= 28 && p <= 29) return 'RI'
+  if (p >= 30 && p <= 38) return 'NH'
+  if (p >= 39 && p <= 49) return 'ME'
+  if (p >= 50 && p <= 59) return 'VT'
+  if (p >= 60 && p <= 69) return 'CT'
+  if (p >= 70 && p <= 89) return 'NJ'
+  if (p >= 100 && p <= 149) return 'NY'
+  if (p >= 150 && p <= 196) return 'PA'
+  if (p >= 197 && p <= 199) return 'DE'
+  if (p >= 200 && p <= 205) return 'DC'
+  if (p >= 206 && p <= 219) return 'MD'
+  if (p >= 220 && p <= 246) return 'VA'
+  if (p >= 247 && p <= 268) return 'WV'
+  if (p >= 270 && p <= 289) return 'NC'
+  if (p >= 290 && p <= 299) return 'SC'
+  if (p >= 300 && p <= 319) return 'GA'
+  if (p >= 320 && p <= 349) return 'FL'
+  if (p >= 350 && p <= 369) return 'AL'
+  if (p >= 370 && p <= 385) return 'TN'
+  if (p >= 386 && p <= 397) return 'MS'
+  if (p >= 400 && p <= 427) return 'KY'
+  if (p >= 430 && p <= 459) return 'OH'
+  if (p >= 460 && p <= 479) return 'IN'
+  if (p >= 480 && p <= 499) return 'MI'
+  if (p >= 500 && p <= 528) return 'IA'
+  if (p >= 530 && p <= 549) return 'WI'
+  if (p >= 550 && p <= 567) return 'MN'
+  if (p >= 570 && p <= 577) return 'SD'
+  if (p >= 580 && p <= 588) return 'ND'
+  if (p >= 590 && p <= 599) return 'MT'
+  if (p >= 600 && p <= 629) return 'IL'
+  if (p >= 630 && p <= 658) return 'MO'
+  if (p >= 660 && p <= 679) return 'KS'
+  if (p >= 680 && p <= 693) return 'NE'
+  if (p >= 700 && p <= 714) return 'LA'
+  if (p >= 716 && p <= 729) return 'AR'
+  if (p >= 730 && p <= 749) return 'OK'
+  if (p >= 750 && p <= 799) return 'TX'
+  if (p >= 800 && p <= 816) return 'CO'
+  if (p >= 820 && p <= 831) return 'WY'
+  if (p >= 832 && p <= 838) return 'ID'
+  if (p >= 840 && p <= 847) return 'UT'
+  if (p >= 850 && p <= 865) return 'AZ'
+  if (p >= 870 && p <= 884) return 'NM'
+  if (p >= 889 && p <= 898) return 'NV'
+  if (p >= 900 && p <= 961) return 'CA'
+  if (p >= 967 && p <= 968) return 'HI'
+  if (p >= 970 && p <= 979) return 'OR'
+  if (p >= 980 && p <= 994) return 'WA'
+  if (p >= 995 && p <= 999) return 'AK'
+
+  return null
+}
+
+/**
+ * Resolve a US state string (e.g. "CT", "California", "NY", "90210") to its Zone
  */
 export function resolveUSStateToZone(stateInput, stateMap) {
   if (!stateInput || typeof stateInput !== 'string') return null
   let s = stateInput.trim().toUpperCase()
 
-  // Direct 2-letter abbreviation
+  // 1. Direct 2-letter abbreviation
   if (stateMap[s]) {
     return { state_code: s, zone: stateMap[s] }
   }
 
-  // Full name check
+  // 2. Full name check
   const abbr = US_STATE_NAMES[s]
   if (abbr && stateMap[abbr]) {
     return { state_code: abbr, zone: stateMap[abbr] }
   }
 
-  // Case-insensitive check
+  // 3. 5-digit Zip code resolution
+  const cleanZip = s.replace(/\D/g, '')
+  if (cleanZip.length >= 3) {
+    const zipState = resolveZipToState(cleanZip)
+    if (zipState && stateMap[zipState]) {
+      return { state_code: zipState, zone: stateMap[zipState], zip: stateInput.trim() }
+    }
+  }
+
+  // 4. Case-insensitive check
   for (const [k, v] of Object.entries(stateMap)) {
     if (k.toLowerCase() === stateInput.trim().toLowerCase()) {
       return { state_code: k, zone: v }
@@ -1100,6 +1174,12 @@ function findTariffRowInWorkbook(wb, resolvedCountry, chosenService) {
 
     for (let r = startR; r < rows.length; r++) {
       const row = rows[r] || []
+      if (!row || row.length < 3) continue
+
+      // Skip title rows or rows where rate columns are not valid numbers
+      const rateColVal = parseFloat(String(row[2] || '').replace(/[^0-9.]/g, ''))
+      if (isNaN(rateColVal) || rateColVal <= 0) continue
+
       const colA = String(row[0] || '').trim()
       const colB = String(row[1] || '').trim()
 
@@ -1108,11 +1188,12 @@ function findTariffRowInWorkbook(wb, resolvedCountry, chosenService) {
         normCountry.includes(normalizeStr(colB))
 
       if (matchCountry) {
-        // If service specified, check if colA matches
-        if (normSvc && colA) {
-          const matchSvc = normalizeStr(colA) === normSvc ||
+        if (normSvc) {
+          const matchSvc = colA && (
+            normalizeStr(colA) === normSvc ||
             normalizeStr(colA).includes(normSvc) ||
             normSvc.includes(normalizeStr(colA))
+          )
           if (matchSvc) {
             return { sheetName: sName, rowIdx: r, row, headers }
           }
@@ -1180,15 +1261,41 @@ export async function calculateRateFromExcelSheet({
 
   const cleanDests = extractCleanDestinations(wb)
   const matchedDestObj = resolveDestinationInput(country, cleanDests)
-  const resolvedCountry = matchedDestObj ? matchedDestObj.country : String(country).trim()
-  const validServices = matchedDestObj?.services || []
+  const registry = readRegistry()
+  const vendorDisplayName = registry[wbInfo.code]?.vendor_name || wbInfo.code.toUpperCase()
 
+  if (!matchedDestObj) {
+    return {
+      success: false,
+      message: `Destination "${country}" is not serviced by vendor "${vendorDisplayName}". Please select a supported destination.`,
+      reason: 'DESTINATION_NOT_SERVICED',
+      vendor: vendorDisplayName,
+      country
+    }
+  }
+
+  const resolvedCountry = matchedDestObj.country
+  const validServices = matchedDestObj.services || []
+
+  // Strict validation: Country-wise and vendor-wise service matching
   let chosenService = (service_code || '').trim()
   if (!chosenService && validServices.length > 0) {
     chosenService = validServices[0]
   } else if (chosenService && validServices.length > 0) {
     const exact = validServices.find(s => s.toLowerCase() === chosenService.toLowerCase())
-    if (exact) chosenService = exact
+    if (exact) {
+      chosenService = exact
+    } else {
+      return {
+        success: false,
+        message: `Service "${service_code}" is not valid for "${resolvedCountry}" under vendor "${vendorDisplayName}". Valid service(s) for ${resolvedCountry}: ${validServices.join(', ')}.`,
+        reason: 'INVALID_SERVICE_COMBINATION',
+        vendor: vendorDisplayName,
+        country: resolvedCountry,
+        invalid_service: service_code,
+        supported_services: validServices
+      }
+    }
   }
 
   const c7Value = state || postcode || ''
@@ -1312,7 +1419,30 @@ export async function calculateRateFromExcelSheet({
       const stInput = (state || postcode || '').trim()
       const resolvedState = resolveUSStateToZone(stInput, stateMap)
 
-      if (resolvedState && snRows.length > 65) {
+      if (!resolvedState) {
+        return {
+          success: false,
+          message: `US Destination State code or 5-digit ZIP code is required for United States (${chosenService || 'PXC-EX NY SELF'}) under vendor "${vendorDisplayName}". Please provide a valid US State code (e.g. NY, CA, TX, FL) or 5-digit ZIP code (e.g. 10001, 90210) to determine the delivery zone (Zone 2–8).`,
+          reason: 'STATE_OR_ZIP_REQUIRED',
+          vendor: vendorDisplayName,
+          country: resolvedCountry,
+          supported_zones: ['Zone 2', 'Zone 3', 'Zone 4', 'Zone 5', 'Zone 6', 'Zone 7', 'Zone 8']
+        }
+      }
+
+      if (weightNum > 21.5) {
+        return {
+          success: false,
+          message: `Shipment weight (${weightNum} kg) exceeds maximum permissible weight limit of 21.5 kg for United States (${chosenService || 'PXC-EX NY SELF'}) under vendor "${vendorDisplayName}".`,
+          reason: 'WEIGHT_LIMIT_EXCEEDED',
+          vendor: vendorDisplayName,
+          country: resolvedCountry,
+          max_weight_kg: 21.5,
+          requested_weight_kg: weightNum
+        }
+      }
+
+      if (snRows.length > 65) {
         const zoneHeaders = (snRows[56] || []).slice(2, 9)
         const zCol = zoneHeaders.indexOf(resolvedState.zone) + 2
 
@@ -1370,6 +1500,23 @@ export async function calculateRateFromExcelSheet({
           matchedZone = String(m['ZONES'])
           const num = parseInt(matchedZone.replace(/\D/g, ''))
           if (!isNaN(num) && num >= 1 && num <= 10) zoneCol = num
+        } else {
+          return {
+            success: false,
+            message: `Australian postal code "${cleanPc}" is not recognized or serviced under vendor "${vendorDisplayName}" (AUS DTDC). Please provide a valid 4-digit Australian postcode (e.g. 2000 for Sydney, 3000 for Melbourne, 4000 for Brisbane).`,
+            reason: 'INVALID_POSTCODE',
+            vendor: vendorDisplayName,
+            country: resolvedCountry,
+            invalid_postcode: cleanPc
+          }
+        }
+      } else if (!postcode && wb.Sheets['DTDC Zone AUS']) {
+        return {
+          success: false,
+          message: `Australian postal code is required for Australia (${chosenService || 'AUS_DTDC'}) under vendor "${vendorDisplayName}" to determine the delivery zone (Zone 1–10). Please enter a 4-digit Australian postcode (e.g. 2000 for Sydney, 3000 for Melbourne).`,
+          reason: 'POSTCODE_REQUIRED',
+          vendor: vendorDisplayName,
+          country: resolvedCountry
         }
       }
 
