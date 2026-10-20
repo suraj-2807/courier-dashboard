@@ -50,7 +50,7 @@ import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters'
 import toast from 'react-hot-toast'
 import { systemSettingsApi } from '../api/systemSettings.api'
 import { useQuery } from '@tanstack/react-query'
-import { openVendorDocument, openPdfBlob } from '../utils/openVendorDocument'
+import { openVendorDocument, openPdfRequest } from '../utils/openVendorDocument'
 
 // ─── Progress Stage Definitions ─────────────────────────────────────
 const STAGES = [
@@ -277,9 +277,8 @@ export default function BookingDetailPage() {
   const handleOpenOurBill = async () => {
     const toastId = toast.loading('Loading PICS Bill...')
     try {
-      const res = await bookingsApi.downloadWaybill(booking.id)
       const awb = booking.tracking_number || booking.order_id || booking.id
-      openPdfBlob(res.data, `ShippingBill_${awb}.pdf`)
+      await openPdfRequest(bookingsApi.downloadWaybill(booking.id), `ShippingBill_${awb}.pdf`)
       toast.success('PICS Bill opened successfully', { id: toastId })
     } catch (err) {
       toast.error('Failed to open Shipping Bill', { id: toastId })
@@ -290,9 +289,8 @@ export default function BookingDetailPage() {
   const handleOpenOurInvoice = async () => {
     const toastId = toast.loading('Loading PICS Invoice...')
     try {
-      const res = await bookingsApi.downloadInvoice(booking.id)
       const awb = booking.tracking_number || booking.order_id || booking.id
-      openPdfBlob(res.data, `PrinceInvoice_${awb}.pdf`)
+      await openPdfRequest(bookingsApi.downloadInvoice(booking.id), `PrinceInvoice_${awb}.pdf`)
       toast.success('PICS Invoice opened successfully', { id: toastId })
     } catch (err) {
       toast.error('Failed to open PICS Invoice', { id: toastId })
@@ -318,9 +316,8 @@ export default function BookingDetailPage() {
   const handleOpenPrinceLabel = async () => {
     const toastId = toast.loading('Loading PICS Label...')
     try {
-      const res = await bookingsApi.downloadBoxLabels(booking.id)
       const awb = booking.tracking_number || booking.order_id || booking.id
-      openPdfBlob(res.data, `BoxLabels_${awb}.pdf`)
+      await openPdfRequest(bookingsApi.downloadBoxLabels(booking.id), `BoxLabels_${awb}.pdf`)
       toast.success('PICS Label opened successfully', { id: toastId })
     } catch (err) {
       toast.error('Failed to open PICS Label', { id: toastId })

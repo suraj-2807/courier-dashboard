@@ -59,6 +59,30 @@ export function openPdfBlob(blobData, filename = 'document.pdf') {
   }
 }
 
+export async function openPdfRequest(request, filename = 'document.pdf') {
+  const pdfTab = window.open('', '_blank')
+  try {
+    const response = await request
+    const blob = response.data instanceof Blob
+      ? response.data
+      : new Blob([response.data], { type: 'application/pdf' })
+    const signature = await blob.slice(0, 5).text()
+    if (signature !== '%PDF-') {
+      throw new Error('The server response was not a PDF document')
+    }
+
+    if (!pdfTab) return openPdfBlob(blob, filename)
+
+    const blobUrl = window.URL.createObjectURL(blob)
+    pdfTab.location.replace(blobUrl)
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 120000)
+    return true
+  } catch (error) {
+    if (pdfTab && !pdfTab.closed) pdfTab.close()
+    throw error
+  }
+}
+
 /**
  * Universal helper to open a PDF URL (HTTP/HTTPS or data URI)
  */
@@ -299,8 +323,7 @@ export async function openVendorDocument(booking, docType = 'document') {
   // 3. Fallback: Request via authenticated backend endpoint with docType query
   const toastId = toast.loading(`Loading vendor ${docType}...`)
   try {
-    const res = await bookingsApi.getVendorDocument(booking.id, { type: docType })
-    openPdfBlob(res.data, fileName)
+    await openPdfRequest(bookingsApi.getVendorDocument(booking.id, { type: docType }), fileName)
     toast.success(`Vendor ${docType} loaded successfully`, { id: toastId })
     return true
   } catch (err) {
