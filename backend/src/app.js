@@ -41,6 +41,9 @@ if (!fs.existsSync(uploadsPath)) {
 }
 app.use('/uploads', express.static(uploadsPath))
 app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')))
+app.use('/uploads', (req, res) => {
+  return res.status(404).json({ success: false, message: 'Uploaded document not found' })
+})
 
 const distPath = path.resolve(__dirname, '..', 'dist')
 const distIndexPath = path.resolve(distPath, 'index.html')

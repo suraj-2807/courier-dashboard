@@ -152,6 +152,15 @@ export function openBase64Pdf(base64Str, filename = 'document.pdf') {
   }
 }
 
+function isManagedUploadUrl(url) {
+  try {
+    const parsedUrl = new URL(url, window.location.origin)
+    return parsedUrl.origin === window.location.origin && parsedUrl.pathname.startsWith('/uploads/')
+  } catch {
+    return false
+  }
+}
+
 /**
  * Universal helper to open the vendor's label / invoice PDF.
  * 
@@ -177,21 +186,21 @@ export async function openVendorDocument(booking, docType = 'document') {
     if (vUrl.startsWith('data:application/pdf;base64,') || (vUrl.length > 200 && !vUrl.startsWith('http') && !vUrl.startsWith('/'))) {
       if (openBase64Pdf(vUrl, fileName)) return true
     }
-    if (vUrl.startsWith('http://') || vUrl.startsWith('https://') || vUrl.startsWith('/')) {
+    if ((vUrl.startsWith('http://') || vUrl.startsWith('https://') || vUrl.startsWith('/')) && !isManagedUploadUrl(vUrl)) {
       return openPdfUrl(vUrl, fileName)
     }
   }
 
   if ((type.includes('shipper') || type.includes('bill') || type.includes('copy')) && booking.vendor_shipper_copy_url) {
     const vUrl = String(booking.vendor_shipper_copy_url).trim()
-    if (vUrl.startsWith('http://') || vUrl.startsWith('https://') || vUrl.startsWith('/')) {
+    if ((vUrl.startsWith('http://') || vUrl.startsWith('https://') || vUrl.startsWith('/')) && !isManagedUploadUrl(vUrl)) {
       return openPdfUrl(vUrl, fileName)
     }
   }
 
   if ((type.includes('box') || type.includes('label')) && booking.vendor_box_label_url) {
     const vUrl = String(booking.vendor_box_label_url).trim()
-    if (vUrl.startsWith('http://') || vUrl.startsWith('https://') || vUrl.startsWith('/')) {
+    if ((vUrl.startsWith('http://') || vUrl.startsWith('https://') || vUrl.startsWith('/')) && !isManagedUploadUrl(vUrl)) {
       return openPdfUrl(vUrl, fileName)
     }
   }
@@ -315,7 +324,7 @@ export async function openVendorDocument(booking, docType = 'document') {
     if (vUrl.startsWith('data:application/pdf;base64,') || (vUrl.length > 200 && !vUrl.startsWith('http') && !vUrl.startsWith('/'))) {
       if (openBase64Pdf(vUrl, fileName)) return true
     }
-    if (vUrl.startsWith('http://') || vUrl.startsWith('https://')) {
+    if ((vUrl.startsWith('http://') || vUrl.startsWith('https://')) && !isManagedUploadUrl(vUrl)) {
       return openPdfUrl(vUrl, fileName)
     }
   }
