@@ -1008,14 +1008,14 @@ export default function NewBookingPage() {
           rate_per_kg: res.rate_per_kg ? String(res.rate_per_kg) : prev.rate_per_kg
         }))
         if (showToast) {
-          toast.success(`${selectedVendor?.name || vendorCode.toUpperCase()} sheet C10: ₹${res.vendor_rate} (${res.rate_basis || res.matched_country})`)
+          toast.success(`${selectedVendor?.name || vendorCode.toUpperCase()} API Rate: ₹${res.vendor_rate}${res.transit_time ? ` (${res.transit_time})` : ''}`)
         }
       } else if (showToast) {
-        toast.error(res?.message || 'Rate not found in rate sheet')
+        toast.error(res?.message || 'Rate could not be calculated via Rates API')
       }
     } catch (err) {
       if (showToast) {
-        toast.error(err.response?.data?.message || err.message || 'Failed to fetch rate from rate sheet')
+        toast.error(err.response?.data?.message || err.message || 'Failed to fetch rate from Rates API')
       }
     } finally {
       setRateSheetLoading(false)
@@ -2627,8 +2627,8 @@ export default function NewBookingPage() {
                             className="w-4 h-4 text-red-600 rounded border-gray-300 focus:ring-red-500 cursor-pointer accent-red-600"
                           />
                           <span className="text-[12px] font-bold text-gray-900 flex items-center gap-1.5">
-                            <FileSpreadsheet className={`w-3.5 h-3.5 ${takeRateFromSheet ? 'text-red-600' : 'text-gray-400'}`} />
-                            Take rate from rate sheet
+                            <Sparkles className={`w-3.5 h-3.5 ${takeRateFromSheet ? 'text-red-600' : 'text-gray-400'}`} />
+                            Fetch rate from Live Rates API
                           </span>
                         </label>
 
@@ -2639,22 +2639,20 @@ export default function NewBookingPage() {
                               onClick={() => fetchRateFromSheet(true)}
                               disabled={rateSheetLoading}
                               className="text-[10px] font-bold text-red-700 bg-white border border-red-200 hover:bg-red-50 px-2 py-0.5 rounded-lg transition flex items-center gap-1 cursor-pointer disabled:opacity-50 shadow-xs"
-                              title="Evaluate C4, C5, C6, C7 and read rate from C10"
+                              title="Calculate rate live from rates.princeexp.com"
                             >
                               <RefreshCw className={`w-3 h-3 ${rateSheetLoading ? 'animate-spin' : ''}`} />
-                              {rateSheetLoading ? 'Evaluating...' : 'Recalculate (C10)'}
+                              {rateSheetLoading ? 'Evaluating...' : 'Recalculate (API)'}
                             </button>
-                            {selectedVendor && (
-                              <a
-                                href={`/rates/editor?vendor=${selectedVendor.vendor_code || 'pacific'}&name=${encodeURIComponent(selectedVendor.name || selectedVendor.vendor_code || 'pacific')}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[10px] font-bold text-blue-700 bg-white border border-blue-200 hover:bg-blue-50 px-2 py-0.5 rounded-lg transition cursor-pointer shadow-xs"
-                                title="Open this vendor's Excel rate sheet in a new browser tab editor"
-                              >
-                                Edit Sheet ↗
-                              </a>
-                            )}
+                            <a
+                              href="/rates"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] font-bold text-blue-700 bg-white border border-blue-200 hover:bg-blue-50 px-2 py-0.5 rounded-lg transition cursor-pointer shadow-xs"
+                              title="Open live Rates API Sandbox & Explorer"
+                            >
+                              API Console ↗
+                            </a>
                           </div>
                         )}
                       </div>
@@ -2668,7 +2666,7 @@ export default function NewBookingPage() {
                       {takeRateFromSheet && !form.vendor_config_id && (
                         <div className="mt-1.5 pt-1.5 border-t border-amber-200 text-[11px] text-amber-800 flex items-center gap-1.5 font-medium pl-1">
                           <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                          Please select a Vendor above — sheet rates will generate automatically.
+                          Please select a Vendor above — live API rates will generate automatically.
                         </div>
                       )}
 
@@ -2678,7 +2676,7 @@ export default function NewBookingPage() {
                             <div className="flex items-center gap-1.5 truncate">
                               <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
                               <span className="font-extrabold text-emerald-900">
-                                {selectedVendor?.name || 'Vendor'} C10: ₹{rateSheetResult.vendor_rate}
+                                {selectedVendor?.name || 'Vendor'} Live Rate: ₹{rateSheetResult.vendor_rate}
                               </span>
                             </div>
                             <button
@@ -2687,18 +2685,27 @@ export default function NewBookingPage() {
                               className="text-[10px] font-bold text-red-700 hover:text-red-900 bg-red-100/70 hover:bg-red-200/70 px-2 py-0.5 rounded transition cursor-pointer flex items-center gap-1 shrink-0"
                             >
                               <Sparkles className="w-2.5 h-2.5" />
-                              {showCalculationBreakdown ? 'Hide Breakdown' : 'How Calculated?'}
+                              {showCalculationBreakdown ? 'Hide Breakdown' : 'Calculation Details'}
                             </button>
                           </div>
 
                           {/* Quick Formula Banner */}
                           <div className="flex items-center gap-1.5 text-[10px] text-gray-700 bg-white/80 rounded-lg px-2 py-1 border border-red-100">
                             <span className="font-bold text-gray-900 shrink-0">
-                              {rateSheetResult.source_sheet || 'Self Network'}
-                              {rateSheetResult.source_row ? ` (Row #${rateSheetResult.source_row})` : ''}
+                              {rateSheetResult.active_slab || rateSheetResult.sheet_name || 'API Engine'}
                             </span>
-                            <span className="text-gray-300">•</span>
-                            <span className="truncate">{rateSheetResult.rate_basis || rateSheetResult.matched_service}</span>
+                            {rateSheetResult.transit_time && (
+                              <>
+                                <span className="text-gray-300">•</span>
+                                <span className="text-amber-700 font-semibold">{rateSheetResult.transit_time}</span>
+                              </>
+                            )}
+                            {rateSheetResult.formula && (
+                              <>
+                                <span className="text-gray-300">•</span>
+                                <span className="truncate font-mono">{rateSheetResult.formula}</span>
+                              </>
+                            )}
                           </div>
 
                           {/* Detailed Calculation Breakdown Drawer */}
@@ -2706,41 +2713,40 @@ export default function NewBookingPage() {
                             <div className="mt-1.5 p-2.5 bg-white rounded-xl border border-red-200 shadow-sm text-[10px] space-y-2">
                               <div className="flex items-center justify-between pb-1 border-b border-gray-100 text-gray-700 font-bold">
                                 <span className="flex items-center gap-1">
-                                  <FileSpreadsheet className="w-3 h-3 text-red-600" />
-                                  Rate Sheet Calculation Trace
+                                  <Sparkles className="w-3 h-3 text-red-600" />
+                                  Live Rates API Evaluation
                                 </span>
-                                <span className="text-red-600 font-mono font-bold">C10 = ₹{rateSheetResult.vendor_rate}</span>
+                                <span className="text-red-600 font-mono font-bold">₹{rateSheetResult.vendor_rate}</span>
                               </div>
 
                               <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-gray-600 pt-0.5">
-                                <div><span className="font-semibold text-gray-800">Destination:</span> {rateSheetResult.country} {rateSheetResult.state ? `(${rateSheetResult.state})` : ''}</div>
-                                {rateSheetResult.zone && <div><span className="font-semibold text-gray-800">Zone:</span> {rateSheetResult.zone}</div>}
-                                <div><span className="font-semibold text-gray-800">Service:</span> {rateSheetResult.service_code || form.service_code}</div>
-                                <div><span className="font-semibold text-gray-800">Weight:</span> {rateSheetResult.chargeable_weight || rateSheetResult.weight} kg</div>
-                                {rateSheetResult.matched_band && <div><span className="font-semibold text-gray-800">Tariff Slab:</span> {rateSheetResult.matched_band}</div>}
-                                {rateSheetResult.rate_per_kg && <div><span className="font-semibold text-gray-800">Rate / Kg:</span> ₹{rateSheetResult.rate_per_kg}</div>}
-                                {rateSheetResult.source_sheet && (
-                                  <div className="col-span-2">
-                                    <span className="font-semibold text-gray-800">Sheet:</span> {rateSheetResult.source_sheet} {rateSheetResult.source_row ? `(Row #${rateSheetResult.source_row})` : ''}
+                                <div><span className="font-semibold text-gray-800">Destination:</span> {rateSheetResult.country} {rateSheetResult.zone ? `(${rateSheetResult.zone})` : ''}</div>
+                                <div><span className="font-semibold text-gray-800">Service:</span> {rateSheetResult.service_code || form.service_code || '—'}</div>
+                                <div><span className="font-semibold text-gray-800">Actual Wt:</span> {rateSheetResult.actual_weight} kg</div>
+                                <div><span className="font-semibold text-gray-800">Chargeable:</span> {rateSheetResult.chargeable_weight} kg</div>
+                                {rateSheetResult.active_slab && <div><span className="font-semibold text-gray-800">Tariff Slab:</span> {rateSheetResult.active_slab}</div>}
+                                {rateSheetResult.transit_time && <div><span className="font-semibold text-gray-800">Transit Time:</span> {rateSheetResult.transit_time}</div>}
+                              </div>
+
+                              {rateSheetResult.formula && (
+                                <div className="pt-1.5 border-t border-gray-100">
+                                  <span className="font-bold text-gray-800">Formula:</span>
+                                  <div className="mt-0.5 p-1.5 bg-gray-50 rounded font-mono text-[10px] text-gray-900 border border-gray-200 break-words">
+                                    {rateSheetResult.formula}
                                   </div>
-                                )}
-                              </div>
-
-                              <div className="pt-1.5 border-t border-gray-100">
-                                <span className="font-bold text-gray-800">Formula / Basis:</span>
-                                <div className="mt-0.5 p-1.5 bg-gray-50 rounded font-mono text-[10px] text-gray-900 border border-gray-200 break-words">
-                                  {rateSheetResult.rate_basis}
                                 </div>
-                              </div>
+                              )}
 
-                              {rateSheetResult.calculation_breakdown?.steps && (
+                              {rateSheetResult.steps && rateSheetResult.steps.length > 0 && (
                                 <div className="space-y-0.5 pt-1">
-                                  <span className="font-bold text-gray-700">Audit Steps:</span>
-                                  <ol className="list-decimal list-inside text-gray-600 space-y-0.5 pl-0.5">
-                                    {rateSheetResult.calculation_breakdown.steps.map((st, i) => (
-                                      <li key={i} className="truncate">{st}</li>
+                                  <span className="font-bold text-gray-700">Calculation Steps:</span>
+                                  <div className="space-y-1 pl-0.5">
+                                    {rateSheetResult.steps.map((st, i) => (
+                                      <div key={i} className="text-gray-600 bg-gray-50 p-1 rounded text-[9.5px]">
+                                        <span className="font-bold text-gray-800">{st.title || `Step ${st.step}`}:</span> {st.detail}
+                                      </div>
                                     ))}
-                                  </ol>
+                                  </div>
                                 </div>
                               )}
                             </div>

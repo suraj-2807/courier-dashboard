@@ -113,11 +113,7 @@ export default function AppRoutes() {
       />
       <Route
         path="/rates/editor"
-        element={
-          <ProtectedRoute>
-            <SheetEditorPage />
-          </ProtectedRoute>
-        }
+        element={<Navigate to="/rates" replace />}
       />
       <Route
         path="/vendor-rate-import"

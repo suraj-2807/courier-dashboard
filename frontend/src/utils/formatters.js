@@ -62,6 +62,10 @@ export const getStatusLabel = (status) => {
     cancelled: 'Cancelled',
     rejected: 'Rejected'
   }
+  const sLower = String(status || '').toLowerCase()
+  if (sLower.includes('delivery order') || sLower.includes('do collected') || sLower.includes('d.o. collected')) {
+    return 'Delivered'
+  }
   return map[status] || (status ? status.charAt(0).toUpperCase() + status.slice(1) : '—')
 }
 
@@ -80,6 +84,10 @@ export const getStatusColor = (status) => {
     failed: 'bg-red-50 text-red-700 border-red-200',
     cancelled: 'bg-gray-100 text-gray-600 border-gray-200',
     rejected: 'bg-red-50 text-red-700 border-red-200'
+  }
+  const sLower = String(status || '').toLowerCase()
+  if (sLower.includes('delivery order') || sLower.includes('do collected') || sLower.includes('d.o. collected')) {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-200'
   }
   return map[status] || 'bg-gray-100 text-gray-600 border-gray-200'
 }

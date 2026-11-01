@@ -4,6 +4,38 @@ import { fileURLToPath } from 'url'
 import XLSX from 'xlsx'
 import xlsxCalc from 'xlsx-calc'
 
+// Register custom Excel functions required by Rate Calculator formulas
+if (xlsxCalc && xlsxCalc.import_functions) {
+  xlsxCalc.import_functions({
+    TEXT: (val, fmt) => {
+      if (val === undefined || val === null || val === '') return ''
+      const num = Number(val)
+      if (isNaN(num)) return String(val)
+      if (fmt === '0000') return String(num).padStart(4, '0')
+      return String(val)
+    },
+    UPPER: (str) => String(str || '').toUpperCase(),
+    SUBSTITUTE: (text, oldText, newText) => String(text || '').split(oldText).join(newText || ''),
+    ROUNDUP: (val, digits = 0) => {
+      const factor = Math.pow(10, digits)
+      return Math.ceil(Number(val) * factor) / factor
+    },
+    LOOKUP: (val, lookupArr, resultArr) => {
+      const lArr = Array.isArray(lookupArr) ? lookupArr.flat() : [lookupArr]
+      const rArr = Array.isArray(resultArr) ? resultArr.flat() : [resultArr]
+      let bestIdx = 0
+      for (let i = 0; i < lArr.length; i++) {
+        if (Number(val) >= Number(lArr[i])) {
+          bestIdx = i
+        } else {
+          break
+        }
+      }
+      return rArr[bestIdx] !== undefined ? rArr[bestIdx] : (rArr[rArr.length - 1] ?? 0)
+    }
+  })
+}
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
@@ -87,21 +119,33 @@ function writeRegistry(registry) {
 }
 
 /**
- * Create a clean blank starter workbook for vendors without an uploaded sheet
+ * Create a clean blank starter workbook for vendors without an uploaded sheet.
+ * Follows the standardized COURIER RATE CALCULATOR format matching all vendor rate sheets.
  */
 export function createBlankVendorWorkbook(vendorCode, vendorName) {
   const calcRows = [
-    ['RATE CALCULATOR', '', '', ''],
-    ['Input Parameters', '', 'Values', ''],
+    ['COURIER RATE CALCULATOR', '', '', ''],
+    ['Select a destination, service code and shipment weight to calculate the tariff from the rate tables.', '', '', ''],
     ['', '', '', ''],
-    ['', 'Country / Destination', '', ''],
+    ['', 'Destination / Country', '', ''],
     ['', 'Service Code', '', ''],
-    ['', 'Weight (kg)', '', ''],
-    ['', 'Postcode / State', '', ''],
+    ['', 'Weight (kg)', 1.0, ''],
     ['', '', '', ''],
     ['', 'Matched Service', '', ''],
-    ['', 'Calculated Vendor Rate (INR)', '', ''],
-    ['', 'Rate Basis', '', '']
+    ['', 'Calculated Rate (INR)', '', ''],
+    ['', 'Rate Basis', '', ''],
+    ['', 'Source Sheet Row', '', ''],
+    ['', '', '', ''],
+    ['', '', '', ''],
+    ['', 'HOW TO USE', '', ''],
+    ['', '1. Choose the destination and service code from the dropdowns, then enter shipment weight in kilograms.', '', ''],
+    ['', '2. Up to 0.5 kg uses the First 500g rate; up to 5.5 kg uses the base rate plus each additional 500g increment.', '', ''],
+    ['', '3. At 6 kg and above, the calculator uses the applicable weight-tier rate per kg from the tariff table.', '', ''],
+    ['', '4. This calculator covers destination-based tariff rows found in the Self Network sheet.', '', ''],
+    ['', '5. Rates are taken from the workbook as provided. Check service restrictions, suspended destinations, surcharges and notes in the original sheets before quoting.', '', ''],
+    ['', 'Destination Postcode', '', ''],
+    ['', 'Detected Zone', '', ''],
+    ['', 'Zone Rate Status', 'Use country/service tariff above', '']
   ]
   const tariffRows = [
     ['Country', 'Service', 'Zone', '0.5 Kg', '1.0 Kg', 'Addl 0.5 Kg', 'Per Kg Rate'],
@@ -111,6 +155,217 @@ export function createBlankVendorWorkbook(vendorCode, vendorName) {
     { name: 'Rate Calculator', rows: calcRows },
     { name: 'Tariff Rates', rows: tariffRows }
   ]
+}
+
+/**
+ * Build (or rebuild) the _RateData flat lookup table from all tariff sheets.
+ * Creates a normalised table with one row per country+service combination.
+ * Columns: A=Country, B=Service Code, C=Service Name, D=First 500g,
+ *          E=Addl 500g, F-R=Per-kg tier rates (6kg+ to 300kg+),
+ *          S=Source Sheet Row, T=Rate Type, U=Lookup Key ("Country|Service")
+ */
+export function buildRateDataSheet(wb) {
+  const HEADER = [
+    'Country / Destination', 'Service Code', 'Service',
+    'First 500g', 'Additional 500g',
+    'Rate 6kg+', 'Rate 8kg+', 'Rate 11kg+', 'Rate 16kg+', 'Rate 21kg+', 'Rate 26kg+',
+    'Rate 31kg+', 'Rate 41kg+', 'Rate 51kg+', 'Rate 61kg+', 'Rate 71kg+', 'Rate 100kg+', 'Rate 300kg+',
+    'Source Row', 'Rate Type', 'Lookup Key'
+  ]
+
+  const rateRows = []
+  const seen = new Set()
+
+  const parseRate = (val) => {
+    if (val === undefined || val === null || val === '' || val === '-' || String(val).toLowerCase() === 'n/a') return 0
+    const num = parseFloat(String(val).replace(/[^0-9.\-]/g, ''))
+    return isNaN(num) || num < 0 ? 0 : num
+  }
+
+  // Scan standard tariff sheets for flat-rate entries
+  const tariffNames = ['Self Network', 'Self', 'Tariff Rates', 'Rates', 'Rate Sheet', 'Tariff']
+  for (const sName of tariffNames) {
+    const ws = wb.Sheets[sName]
+    if (!ws) continue
+
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 })
+    if (!rows || rows.length < 2) continue
+
+    // Detect header row (looks for 500g / kg columns)
+    let headerIdx = -1
+    for (let r = 0; r < Math.min(rows.length, 10); r++) {
+      const rowStr = JSON.stringify(rows[r] || '').toLowerCase()
+      if (rowStr.includes('500') || (rowStr.includes('kg') && (rowStr.includes('addl') || rowStr.includes('destination')))) {
+        headerIdx = r
+        break
+      }
+    }
+
+    const startR = headerIdx >= 0 ? headerIdx + 1 : 1
+    let currentService = ''
+
+    for (let r = startR; r < rows.length; r++) {
+      const row = rows[r] || []
+      if (!row || row.length < 3) continue
+
+      const colA = String(row[0] || '').trim()
+      const colB = String(row[1] || '').trim()
+
+      // Must have a valid destination in column B
+      if (!colB || colB.length < 2) continue
+
+      // Skip note / info / header rows
+      const lb = colB.toLowerCase()
+      if (lb.includes('note') || lb.includes(':') || lb.includes('per box') ||
+          lb.includes('extra') || lb.includes('operation') || lb.includes('charges') ||
+          lb.includes('filing') || lb.includes('reconnection') || lb.startsWith('for ') ||
+          lb.includes('rate calculator') || lb.includes('zone chart') ||
+          /^\d+\)/.test(colB.trim()) || /^\d/.test(colB.trim())) continue
+
+      // Track current service code from column A
+      if (colA && colA.length >= 2 && !colA.toLowerCase().includes('note') &&
+          !/^\d+\)/.test(colA.trim()) && !colA.toLowerCase().includes('charge')) {
+        currentService = colA
+      }
+
+      const first500 = parseRate(row[2])
+      if (first500 <= 0) continue  // Must have a valid base rate
+
+      const addl500 = parseRate(row[3])
+      const rate6 = parseRate(row[4]) || (addl500 > 0 ? Math.round(addl500 * 2) : 0)
+      const rate8 = parseRate(row[5]) || rate6
+      const rate11 = parseRate(row[6]) || rate8
+      const rate16 = parseRate(row[7]) || rate11
+      const rate21 = parseRate(row[8]) || rate16
+      const rate26 = parseRate(row[9]) || rate21
+      const rate31 = parseRate(row[10]) || rate26
+      const rate41 = parseRate(row[11]) || rate31
+      const rate51 = parseRate(row[12]) || rate41
+      const rate61 = parseRate(row[13]) || rate51
+      const rate71 = parseRate(row[14]) || rate61
+      const rate100 = parseRate(row[15]) || rate71
+      const rate300 = parseRate(row[16]) || rate100
+
+      const svc = currentService || 'STANDARD'
+      const serviceName = String(row[17] || '(Self)').trim()
+      const lookupKey = `${colB}|${svc}`
+
+      if (seen.has(lookupKey)) continue
+      seen.add(lookupKey)
+
+      rateRows.push([
+        colB, svc, serviceName,
+        first500, addl500,
+        rate6, rate8, rate11, rate16, rate21, rate26,
+        rate31, rate41, rate51, rate61, rate71, rate100, rate300,
+        r + 1, '500g + increments', lookupKey
+      ])
+    }
+  }
+
+  if (rateRows.length === 0) return wb
+
+  // Build _RateData worksheet
+  const sheetData = [HEADER, ...rateRows]
+  const ws = XLSX.utils.aoa_to_sheet(sheetData)
+
+  // Remove existing _RateData if present
+  const idx = wb.SheetNames.indexOf('_RateData')
+  if (idx !== -1) {
+    wb.SheetNames.splice(idx, 1)
+    delete wb.Sheets['_RateData']
+  }
+
+  // Append as the last sheet
+  wb.SheetNames.push('_RateData')
+  wb.Sheets['_RateData'] = ws
+
+  console.log(`[RateData] Built _RateData with ${rateRows.length} rate entries`)
+  return wb
+}
+
+/**
+ * Inject standardised Excel formulas into the Rate Calculator tab.
+ *
+ * Exact Standard Cell Mapping (Identical for ALL rate sheets):
+ *   B4  -> "Destination / Country"   C4  -> [Input: Country]
+ *   B5  -> "Service Code"            C5  -> [Input: Service Code]
+ *   B6  -> "Weight (kg)"             C6  -> [Input: Weight in kg]
+ *   B8  -> "Matched Service"         C8  -> [Formula: Service Name]
+ *   B9  -> "Calculated Rate (INR)"   C9  -> [Formula: Tiered Calculated Rate]
+ *   B10 -> "Rate Basis"              C10 -> [Formula: Rate Type / Basis]
+ *   B11 -> "Source Sheet Row"        C11 -> [Formula: Row reference]
+ *   B20 -> "Destination Postcode"    C20 -> [Input: Postcode]
+ *   B21 -> "Detected Zone"           C21 -> [Formula: Zone lookup from postcode]
+ *   B22 -> "Zone Rate Status"        C22 -> [Formula: Zone Status]
+ */
+export function injectCalculatorFormulas(wb) {
+  if (!wb.Sheets['_RateData']) return wb
+
+  // Locate Rate Calculator sheet
+  let calcName = wb.SheetNames.find(s => {
+    const l = s.toLowerCase()
+    return l.includes('rate calc') || l.includes('calculator')
+  })
+  if (!calcName) calcName = wb.SheetNames[0]
+  const ws = wb.Sheets[calcName]
+  if (!ws) return wb
+
+  // NOTE: Cells must have both `f` (formula) and `v` (value) for XLSX.write to persist them
+
+  // B8 & C8: Matched Service Name / Code formula
+  ws['B8'] = { t: 's', v: 'Matched Service' }
+  ws['C8'] = {
+    t: 's',
+    v: '',
+    f: 'IFERROR(INDEX(_RateData!$C$2:$C$500,MATCH(C4&"|"&C5,_RateData!$U$2:$U$500,0)),"No matching country/service")'
+  }
+
+  // B9 & C9: Calculated Rate (INR) formula
+  ws['B9'] = { t: 's', v: 'Calculated Rate (INR)' }
+  ws['C9'] = {
+    t: 'n',
+    v: 0,
+    f: 'IFERROR(IF(C6<=0.5,INDEX(_RateData!$D$2:$D$500,MATCH(C4&"|"&C5,_RateData!$U$2:$U$500,0)),IF(C6<6,INDEX(_RateData!$D$2:$D$500,MATCH(C4&"|"&C5,_RateData!$U$2:$U$500,0))+ROUNDUP((C6-0.5)*2,0)*INDEX(_RateData!$E$2:$E$500,MATCH(C4&"|"&C5,_RateData!$U$2:$U$500,0)),LOOKUP(C6,{6,8,11,16,21,26,31,41,51,61,71,100,300},INDEX(_RateData!$F$2:$R$500,MATCH(C4&"|"&C5,_RateData!$U$2:$U$500,0),0))*C6)),"Rate not available for this selection")'
+  }
+
+  // B10 & C10: Rate Basis formula
+  ws['B10'] = { t: 's', v: 'Rate Basis' }
+  ws['C10'] = {
+    t: 's',
+    v: '',
+    f: 'IFERROR(INDEX(_RateData!$T$2:$T$500,MATCH(C4&"|"&C5,_RateData!$U$2:$U$500,0)),"")'
+  }
+
+  // B11 & C11: Source Sheet Row formula
+  ws['B11'] = { t: 's', v: 'Source Sheet Row' }
+  ws['C11'] = {
+    t: 'n',
+    v: 0,
+    f: 'IFERROR(INDEX(_RateData!$S$2:$S$500,MATCH(C4&"|"&C5,_RateData!$U$2:$U$500,0)),"")'
+  }
+
+  // B20: Destination Postcode
+  ws['B20'] = { t: 's', v: 'Destination Postcode' }
+
+  // B21 & C21: Detected Zone formula (Australia, Canada, NZ)
+  ws['B21'] = { t: 's', v: 'Detected Zone' }
+  ws['C21'] = {
+    t: 's',
+    v: '',
+    f: 'IF(OR(C4="Australia",C4="Australia "),IFERROR(INDEX(\'Aus Zone\'!$C$2:$C$20000,MATCH(TEXT(C20,"0000"),\'Aus Zone\'!$A$2:$A$20000,0)),"Postcode not found"),IF(C4="Canada",IFERROR("Zone "&INDEX(\'Canada Zone\'!$B$2:$B$2000,MATCH(UPPER(LEFT(SUBSTITUTE(C20," ",""),3)),\'Canada Zone\'!$A$2:$A$2000,0)),"Postcode not found"),IF(OR(C4="New Zealand",C4="New Zealand "),IFERROR(INDEX(\'NZ Zone\'!$E$2:$E$6000,MATCH(C20,\'NZ Zone\'!$B$2:$B$6000,0)),"Postcode not found"),"Not required for this destination")))'
+  }
+
+  // B22 & C22: Zone Rate Status formula
+  ws['B22'] = { t: 's', v: 'Zone Rate Status' }
+  ws['C22'] = {
+    t: 's',
+    v: '',
+    f: 'IF(OR(C4="Australia",C4="Australia ",C4="Canada",C4="New Zealand",C4="New Zealand "),"Zone identified; zone-based price table required","Use country/service tariff above")'
+  }
+
+  console.log(`[RateCalc] Injected standard formulas into "${calcName}" tab`)
+  return wb
 }
 
 /**
@@ -555,44 +810,52 @@ export function detectCalculatorLayout(wb) {
   const sheet = wb.Sheets[targetSheetName]
   if (!sheet) return null
 
-  // Default baseline mapping
+  // Default baseline mapping (Standard Rate Calculator format across all sheets)
   const mapping = {
     sheet_name: targetSheetName,
     dest_label_cell: 'B4',
     dest_input_cell: 'C4',
-    dest_label: 'Country / Destination',
-    c4_default: '',
+    dest_label: 'Destination / Country',
+    c4_default: 'U.A.E.',
 
     service_label_cell: 'B5',
     service_input_cell: 'C5',
     service_label: 'Service Code',
-    c5_default: '',
+    c5_default: 'PXC-SELF',
 
     weight_label_cell: 'B6',
     weight_input_cell: 'C6',
     weight_label: 'Weight (kg)',
-    c6_default: 1,
+    c6_default: 1.0,
 
-    postcode_label_cell: 'B7',
-    postcode_input_cell: 'C7',
-    postcode_label: 'Postcode / State (if required)',
-    c7_default: '',
-
-    matched_svc_label_cell: 'B9',
-    matched_svc_output_cell: 'C9',
+    matched_svc_label_cell: 'B8',
+    matched_svc_output_cell: 'C8',
     matched_svc_label: 'Matched Service',
 
-    rate_label_cell: 'B10',
-    rate_output_cell: 'C10',
-    rate_label: 'Calculated Vendor Rate (INR)',
+    rate_label_cell: 'B9',
+    rate_output_cell: 'C9',
+    rate_label: 'Calculated Rate (INR)',
 
-    rate_basis_label_cell: 'B11',
-    rate_basis_cell: 'C11',
+    rate_basis_label_cell: 'B10',
+    rate_basis_cell: 'C10',
     rate_basis_label: 'Rate Basis',
 
-    source_row_label_cell: 'B12',
-    source_row_cell: 'C12',
-    source_row_label: 'Source Sheet Row'
+    source_row_label_cell: 'B11',
+    source_row_cell: 'C11',
+    source_row_label: 'Source Sheet Row',
+
+    postcode_label_cell: 'B20',
+    postcode_input_cell: 'C20',
+    postcode_label: 'Destination Postcode',
+    c20_default: '',
+
+    zone_label_cell: 'B21',
+    zone_output_cell: 'C21',
+    zone_label: 'Detected Zone',
+
+    zone_status_label_cell: 'B22',
+    zone_status_cell: 'C22',
+    zone_status_label: 'Zone Rate Status'
   }
 
   const colLetters = ['A', 'B', 'C', 'D']
@@ -616,7 +879,7 @@ export function detectCalculatorLayout(wb) {
       if (lower.includes('rate calculator') || lower.includes('choose destination') || lower.includes('select the')) continue
 
       // Destination / Country check
-      if (!foundDest && (lower.includes('country') || lower.includes('destination') || lower === 'dest') && !lower.includes('rate') && !lower.includes('valid')) {
+      if (!foundDest && (lower.includes('country') || lower.includes('destination') || lower === 'dest') && !lower.includes('rate') && !lower.includes('valid') && !lower.includes('postcode')) {
         mapping.dest_label_cell = cellRef
         mapping.dest_input_cell = `${nextCol}${r}`
         mapping.dest_label = str
@@ -649,12 +912,12 @@ export function detectCalculatorLayout(wb) {
       }
 
       // Postcode / State / Zone check
-      if (!foundPostcode && (lower.includes('postcode') || lower.includes('state') || lower.includes('zip') || lower.includes('zone')) && !lower.includes('chart') && !lower.includes('list')) {
+      if (!foundPostcode && (lower.includes('postcode') || lower.includes('postal code') || (lower.includes('zip') && !lower.includes('chart') && !lower.includes('list')))) {
         mapping.postcode_label_cell = cellRef
         mapping.postcode_input_cell = `${nextCol}${r}`
         mapping.postcode_label = str
         const defaultVal = sheet[`${nextCol}${r}`]?.v
-        if (defaultVal) mapping.c7_default = String(defaultVal).trim()
+        if (defaultVal) mapping.c20_default = String(defaultVal).trim()
         foundPostcode = true
         continue
       }
@@ -679,6 +942,24 @@ export function detectCalculatorLayout(wb) {
         mapping.rate_basis_cell = `${nextCol}${r}`
         mapping.rate_basis_label = str
       }
+
+      if (lower.includes('source sheet row') || lower.includes('source row')) {
+        mapping.source_row_label_cell = cellRef
+        mapping.source_row_cell = `${nextCol}${r}`
+        mapping.source_row_label = str
+      }
+
+      if (lower.includes('detected zone')) {
+        mapping.zone_label_cell = cellRef
+        mapping.zone_output_cell = `${nextCol}${r}`
+        mapping.zone_label = str
+      }
+
+      if (lower.includes('zone rate status')) {
+        mapping.zone_status_label_cell = cellRef
+        mapping.zone_status_cell = `${nextCol}${r}`
+        mapping.zone_status_label = str
+      }
     }
   }
 
@@ -686,11 +967,16 @@ export function detectCalculatorLayout(wb) {
   mapping.b4_label = mapping.dest_label
   mapping.b5_label = mapping.service_label
   mapping.b6_label = mapping.weight_label
+  mapping.b8_label = mapping.matched_svc_label
+  mapping.b9_label = mapping.rate_label
+  mapping.b10_label = mapping.rate_basis_label
+  mapping.b11_label = mapping.source_row_label
+  mapping.b20_label = mapping.postcode_label
+  mapping.b21_label = mapping.zone_label
+  mapping.b22_label = mapping.zone_status_label
+
+  // Legacy fallback aliases
   mapping.b7_label = mapping.postcode_label
-  mapping.b9_label = mapping.matched_svc_label
-  mapping.b10_label = mapping.rate_label
-  mapping.b11_label = mapping.rate_basis_label
-  mapping.b12_label = mapping.source_row_label
 
   return mapping
 }
@@ -927,29 +1213,43 @@ export function saveVendorRateSheet(vendorCode, vendorName, fileBuffer, original
     const defaultService = destinations[0]?.services?.[0] || 'STANDARD'
 
     const calcRows = [
-      ['RATE CALCULATOR', '', '', ''],
-      ['Choose destination, service and weight. Evaluated live from the vendor tariff.', '', '', ''],
+      ['COURIER RATE CALCULATOR', '', '', ''],
+      ['Select a destination, service code and shipment weight to calculate the tariff from the rate tables.', '', '', ''],
       ['', '', '', ''],
-      ['', 'Country / Destination', defaultCountry, ''],
+      ['', 'Destination / Country', defaultCountry, ''],
       ['', 'Service Code', defaultService, ''],
-      ['', 'Weight (kg)', 1, ''],
-      ['', 'Postcode / State (if required)', '', ''],
+      ['', 'Weight (kg)', 1.0, ''],
       ['', '', '', ''],
       ['', 'Matched Service', defaultService, ''],
-      ['', 'Calculated Vendor Rate (INR)', '', ''],
+      ['', 'Calculated Rate (INR)', '', ''],
       ['', 'Rate Basis', '', ''],
-      ['', 'Source Sheet Row', '', '']
+      ['', 'Source Sheet Row', '', ''],
+      ['', '', '', ''],
+      ['', '', '', ''],
+      ['', 'HOW TO USE', '', ''],
+      ['', '1. Choose the destination and service code from the dropdowns, then enter shipment weight in kilograms.', '', ''],
+      ['', '2. Up to 0.5 kg uses the First 500g rate; up to 5.5 kg uses the base rate plus each additional 500g increment.', '', ''],
+      ['', '3. At 6 kg and above, the calculator uses the applicable weight-tier rate per kg from the tariff table.', '', ''],
+      ['', '4. This calculator covers destination-based tariff rows found in the Self Network sheet.', '', ''],
+      ['', '5. Rates are taken from the workbook as provided. Check service restrictions, suspended destinations, surcharges and notes in the original sheets before quoting.', '', ''],
+      ['', 'Destination Postcode', '', ''],
+      ['', 'Detected Zone', '', ''],
+      ['', 'Zone Rate Status', 'Use country/service tariff above', '']
     ]
 
     const calcSheet = XLSX.utils.aoa_to_sheet(calcRows)
     wb.SheetNames.unshift('Rate Calculator')
     wb.Sheets['Rate Calculator'] = calcSheet
 
-    const outBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
-    fs.writeFileSync(targetPath, outBuffer)
-  } else {
-    fs.writeFileSync(targetPath, fileBuffer)
   }
+
+  // Build _RateData lookup table and inject calculator formulas into Rate Calculator tab
+  buildRateDataSheet(wb)
+  injectCalculatorFormulas(wb)
+
+  // Save complete workbook with _RateData, formulas, and Rate Calculator
+  const outBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+  fs.writeFileSync(targetPath, outBuffer)
 
   const destinations = extractCleanDestinations(wb)
 
@@ -1082,6 +1382,10 @@ export function saveVendorWorkbookData(vendorCode, sheetsData, vendorName = '') 
 
     XLSX.utils.book_append_sheet(wb, ws, s.name || 'Sheet')
   }
+
+  // Rebuild _RateData lookup table and inject calculator formulas
+  buildRateDataSheet(wb)
+  injectCalculatorFormulas(wb)
 
   XLSX.writeFile(wb, customPath)
 
@@ -1306,32 +1610,58 @@ export async function calculateRateFromExcelSheet({
     calcSheet[layout.service_input_cell] = { t: 's', v: chosenService, w: chosenService }
     calcSheet[layout.weight_input_cell] = { t: 'n', v: weightNum, w: String(weightNum) }
     calcSheet[layout.postcode_input_cell] = { t: 's', v: String(c7Value).trim(), w: String(c7Value).trim() }
+
+    // Precompute E4 (MATCH helper) for reliable xlsx-calc formula evaluation
+    // This avoids depending on xlsx-calc supporting LOWER() and string concatenation
+    if (wb.Sheets['_RateData']) {
+      const rdRows = XLSX.utils.sheet_to_json(wb.Sheets['_RateData'], { header: 1 })
+      const lookupKey = `${resolvedCountry.toLowerCase()}|${chosenService.toLowerCase()}`
+      let matchIdx = 0
+      for (let r = 1; r < rdRows.length; r++) {
+        if (String(rdRows[r][12] || '').toLowerCase().trim() === lookupKey) {
+          matchIdx = r + 1 // 1-based Excel row (header is row 1, data starts row 2)
+          break
+        }
+      }
+      if (matchIdx > 0) {
+        calcSheet['E4'] = { t: 'n', v: matchIdx }
+      }
+    }
   }
 
   // STEP 2: If rate output cell has an active Excel formula, evaluate via xlsx-calc
   if (calcSheet && layout && calcSheet[layout.rate_output_cell]?.f) {
     try {
       xlsxCalc(wb)
+      const unwrap = (val) => Array.isArray(val) ? val[0] : val
       const rateCell = calcSheet[layout.rate_output_cell]
       let evalRate = 0
-      if (typeof rateCell?.v === 'number') {
-        evalRate = rateCell.v
-      } else if (rateCell?.v !== undefined && rateCell?.v !== null) {
-        const p = parseFloat(String(rateCell.v).replace(/[^0-9.\-]/g, ''))
+      const rawRate = unwrap(rateCell?.v)
+      if (typeof rawRate === 'number') {
+        evalRate = rawRate
+      } else if (rawRate !== undefined && rawRate !== null) {
+        const p = parseFloat(String(rawRate).replace(/[^0-9.\-]/g, ''))
         if (!isNaN(p)) evalRate = p
       }
 
       if (evalRate > 0) {
         evalRate = Math.round(evalRate * 100) / 100
-        const matchedSvc = calcSheet[layout.matched_svc_output_cell]?.v ? String(calcSheet[layout.matched_svc_output_cell].v).trim() : chosenService
-        const rateBasis = calcSheet[layout.rate_basis_cell]?.v ? String(calcSheet[layout.rate_basis_cell].v).trim() : `Excel formula evaluated from ${calcSheetName}`
-        const sourceRow = calcSheet[layout.source_row_cell]?.v ? Number(calcSheet[layout.source_row_cell].v) : null
+        const rawMatched = unwrap(calcSheet[layout.matched_svc_output_cell]?.v)
+        const matchedSvc = rawMatched ? String(rawMatched).trim() : chosenService
+        const rawBasis = unwrap(calcSheet[layout.rate_basis_cell]?.v)
+        const rateBasis = rawBasis ? String(rawBasis).trim() : `Excel formula evaluated from ${calcSheetName}`
+        const rawRow = unwrap(calcSheet[layout.source_row_cell]?.v)
+        const sourceRow = rawRow ? Number(rawRow) : null
+        const rawZone = unwrap(calcSheet[layout.zone_output_cell]?.v)
+        const detectedZone = rawZone && typeof rawZone === 'string' && !rawZone.includes('#') && !rawZone.toLowerCase().includes('not required') && !rawZone.toLowerCase().includes('not found') ? rawZone.trim() : null
 
         return finalizeQuoteResponse(wb, {
           country: resolvedCountry,
-          service_code: matchedSvc,
+          service_code: chosenService,
+          matched_service: matchedSvc,
           weight: weightNum,
           state: state || null,
+          zone: detectedZone,
           pricing_method: 'excel_formula',
           vendor_rate: evalRate,
           rate_per_kg: weightNum > 0 ? Math.round((evalRate / weightNum) * 100) / 100 : null,
@@ -1767,7 +2097,7 @@ function finalizeQuoteResponse(wb, quote, layout = null) {
     firstSheet[activeLayout.weight_input_cell] = { t: 'n', v: quote.weight, w: String(quote.weight) }
     firstSheet[activeLayout.postcode_input_cell] = { t: 's', v: quote.state || quote.postcode || '', w: String(quote.state || quote.postcode || '') }
     if (activeLayout.matched_svc_output_cell) {
-      firstSheet[activeLayout.matched_svc_output_cell] = { t: 's', v: quote.service_code, w: String(quote.service_code) }
+      firstSheet[activeLayout.matched_svc_output_cell] = { t: 's', v: quote.matched_service || quote.service_code, w: String(quote.matched_service || quote.service_code) }
     }
     if (activeLayout.rate_output_cell) {
       firstSheet[activeLayout.rate_output_cell] = { t: 'n', v: quote.vendor_rate, w: String(quote.vendor_rate) }
@@ -1777,6 +2107,13 @@ function finalizeQuoteResponse(wb, quote, layout = null) {
     }
     if (quote.source_row && activeLayout.source_row_cell) {
       firstSheet[activeLayout.source_row_cell] = { t: 'n', v: quote.source_row, w: String(quote.source_row) }
+    }
+    if (quote.zone && activeLayout.zone_output_cell) {
+      firstSheet[activeLayout.zone_output_cell] = { t: 's', v: quote.zone, w: String(quote.zone) }
+    }
+    if (activeLayout.zone_status_cell) {
+      const zStatus = quote.zone ? 'Zone identified from postcode' : 'Use country/service tariff above'
+      firstSheet[activeLayout.zone_status_cell] = { t: 's', v: zStatus, w: zStatus }
     }
   }
 

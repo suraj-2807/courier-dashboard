@@ -36,13 +36,13 @@ function determineCurrentStageAndStatus(events = [], initialStatus = '') {
   const evaluateText = (txt) => {
     if (!txt) return
     const s = String(txt).toLowerCase().trim()
-    if (/delivered|dlvd|signed by/i.test(s) && !/out for delivery/i.test(s)) {
+    if (/delivered|dlvd|signed by|proof of delivery|\bpod\b|delivery\s*order.*collected|d[\.\/]?o[\.\/]?\s*collected|\bdo\s*collected\b|\bdo\s*\(do\)\s*collected\b|\bcollected\s*(?:by\s*)?(?:consignee|customer|agent|receiver)\b/i.test(s) && !/out for delivery/i.test(s)) {
       if (highestWeight < 4) { highestWeight = 4; highestStage = 'delivered'; latestStatus = txt }
     } else if (/out for delivery|ofd|with courier|out for del|today.*delivery|for delivery/i.test(s)) {
       if (highestWeight < 3) { highestWeight = 3; highestStage = 'out_for_delivery'; latestStatus = txt }
     } else if (/transit|depart|arriv|custom|hub|facility|tranship|clearance|flight|in-transit|scan|hold|processing/i.test(s)) {
       if (highestWeight < 2) { highestWeight = 2; highestStage = 'in_transit'; latestStatus = txt }
-    } else if (/picked|pickup|received|origin scan|collected|manifest|booked|label/i.test(s)) {
+    } else if (/picked|pickup|received|origin scan|manifest|booked|label|\bcollected\b/i.test(s)) {
       if (highestWeight < 1) { highestWeight = 1; highestStage = 'picked_up'; latestStatus = txt }
     }
   }

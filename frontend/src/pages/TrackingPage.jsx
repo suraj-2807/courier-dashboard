@@ -48,7 +48,7 @@ const STAGE_INDEX = Object.fromEntries(STAGES.map((s, i) => [s.key, i]))
 // ─── Event status → color mapping ──────────────────────────────────
 function getEventColor(status) {
   const s = (status || '').toLowerCase()
-  if (s.includes('delivered')) return { dot: 'bg-emerald-500', ring: 'ring-emerald-500/20', text: 'text-emerald-700', bg: 'bg-emerald-50' }
+  if (s.includes('delivered') || s.includes('delivery order') || s.includes('do collected') || s.includes('d.o. collected') || s.includes('proof of delivery') || s === 'pod') return { dot: 'bg-emerald-500', ring: 'ring-emerald-500/20', text: 'text-emerald-700', bg: 'bg-emerald-50' }
   if (s.includes('out for delivery')) return { dot: 'bg-amber-500', ring: 'ring-amber-500/20', text: 'text-amber-700', bg: 'bg-amber-50' }
   if (s.includes('delay') || s.includes('sorry') || s.includes('reroute')) return { dot: 'bg-red-500', ring: 'ring-red-500/20', text: 'text-red-700', bg: 'bg-red-50' }
   if (s.includes('departed') || s.includes('arrived') || s.includes('transit') || s.includes('scan') || s.includes('processing')) return { dot: 'bg-blue-500', ring: 'ring-blue-500/20', text: 'text-blue-700', bg: 'bg-blue-50' }

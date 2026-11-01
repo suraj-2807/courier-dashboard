@@ -108,9 +108,9 @@ $ts = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust")
 
 // Delivered: PODTOWEB = 1, latest activity delivered, or parcel_history proof of delivery/delivered, or booking_requests
 $_del_clause = "(a.PODTOWEB = 1 OR a.PODTOWEB = '1'" .
-  " OR EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%delivered%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%signed by%' OR LOWER(ph.activity) = 'pod') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%' AND LOWER(ph.activity) NOT LIKE '%attempt%')" .
-  ($has_shipments_tbl ? " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND (LOWER(sh.status) LIKE '%delivered%' OR LOWER(sh.status) LIKE '%proof of delivery%' OR LOWER(sh.status) = 'pod'))" : "") .
-  " OR EXISTS (SELECT 1 FROM booking_requests br WHERE (br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR)) AND (LOWER(br.status) LIKE '%delivered%' OR LOWER(br.status) LIKE '%proof of delivery%' OR LOWER(br.status) = 'pod'))" .
+  " OR EXISTS (SELECT 1 FROM parcel_history ph WHERE ph.AWBNO = a.AWBNO AND (LOWER(ph.activity) LIKE '%delivered%' OR LOWER(ph.activity) LIKE '%dlvd%' OR LOWER(ph.activity) LIKE '%proof of delivery%' OR LOWER(ph.activity) LIKE '%signed by%' OR LOWER(ph.activity) = 'pod' OR LOWER(ph.activity) LIKE '%delivery order%collected%' OR LOWER(ph.activity) LIKE '%do collected%') AND LOWER(ph.activity) NOT LIKE '%out for%' AND LOWER(ph.activity) NOT LIKE '%undeliver%' AND LOWER(ph.activity) NOT LIKE '%not deliver%' AND LOWER(ph.activity) NOT LIKE '%attempt%')" .
+  ($has_shipments_tbl ? " OR EXISTS (SELECT 1 FROM shipments sh WHERE (sh.tracking_number = CAST(a.AWBNO AS CHAR) OR sh.order_id = CAST(a.AWBNO AS CHAR)) AND (LOWER(sh.status) LIKE '%delivered%' OR LOWER(sh.status) LIKE '%proof of delivery%' OR LOWER(sh.status) = 'pod' OR LOWER(sh.status) LIKE '%delivery order%collected%' OR LOWER(sh.status) LIKE '%do collected%'))" : "") .
+  " OR EXISTS (SELECT 1 FROM booking_requests br WHERE (br.request_awb = CAST(a.AWBNO AS CHAR) OR br.tracking_number = CAST(a.AWBNO AS CHAR)) AND (LOWER(br.status) LIKE '%delivered%' OR LOWER(br.status) LIKE '%proof of delivery%' OR LOWER(br.status) = 'pod' OR LOWER(br.status) LIKE '%delivery order%collected%' OR LOWER(br.status) LIKE '%do collected%'))" .
   ")";
 $dc = intval($wpdb->get_var("SELECT COUNT(*) FROM AWBENTRY a WHERE $where_cust AND $_del_clause"));
 $dc = min($dc, $ts);
@@ -3718,7 +3718,7 @@ if (!$is_accounting_enabled) {
     var s = st.toLowerCase().trim();
     var dot = 'dt'; // default: transit/orange
     // Force delivered if backend confirmed or status indicates delivered / proof of delivery
-    if (isDelivered || s.indexOf('deliver') >= 0 || s.indexOf('dlvd') >= 0 || s.indexOf('proof of delivery') >= 0 || s.indexOf('signed by') >= 0 || s === 'pod') {
+    if (isDelivered || s.indexOf('deliver') >= 0 || s.indexOf('dlvd') >= 0 || s.indexOf('proof of delivery') >= 0 || s.indexOf('signed by') >= 0 || s === 'pod' || s.indexOf('delivery order') >= 0 || s.indexOf('do collected') >= 0 || s.indexOf('d.o. collected') >= 0) {
       dot = 'dd';
     }
     // Out for delivery (orange/transit)

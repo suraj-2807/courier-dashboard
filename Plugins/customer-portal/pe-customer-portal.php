@@ -637,11 +637,11 @@ function pe_cp_ajax_shipments()
             $is_delivered = true;
         } elseif (!empty($breq->status) && (stripos($breq->status, 'deliver') !== false || stripos($breq->status, 'proof of delivery') !== false || strtolower(trim($breq->status)) === 'pod')) {
             $is_delivered = true;
-        } elseif (!empty($ph) && preg_match('/\b(delivered|dlvd|proof of delivery|signed by|pod)\b/i', $ph) && !preg_match('/out for|undeliver|not delivered|attempt|fail|expected|scheduled/i', $ph)) {
+        } elseif (!empty($ph) && preg_match('/\b(delivered|dlvd|proof of delivery|signed by|pod|delivery\s*order.*collected|do\s*collected)\b/i', $ph) && !preg_match('/out for|undeliver|not delivered|attempt|fail|expected|scheduled/i', $ph)) {
             $is_delivered = true;
         } else {
             $has_del_event = $wpdb->get_var($wpdb->prepare(
-                "SELECT 1 FROM parcel_history WHERE (AWBNO = %d OR CAST(AWBNO AS CHAR) = %s) AND (LOWER(activity) LIKE '%%delivered%%' OR LOWER(activity) LIKE '%%proof of delivery%%' OR LOWER(activity) LIKE '%%dlvd%%' OR LOWER(activity) = 'pod' OR LOWER(activity) LIKE '%%signed by%%') AND LOWER(activity) NOT LIKE '%%out for%%' AND LOWER(activity) NOT LIKE '%%undeliver%%' AND LOWER(activity) NOT LIKE '%%not deliver%%' AND LOWER(activity) NOT LIKE '%%attempt%%' LIMIT 1",
+                "SELECT 1 FROM parcel_history WHERE (AWBNO = %d OR CAST(AWBNO AS CHAR) = %s) AND (LOWER(activity) LIKE '%%delivered%%' OR LOWER(activity) LIKE '%%proof of delivery%%' OR LOWER(activity) LIKE '%%dlvd%%' OR LOWER(activity) = 'pod' OR LOWER(activity) LIKE '%%signed by%%' OR LOWER(activity) LIKE '%%delivery order%%collected%%' OR LOWER(activity) LIKE '%%do collected%%') AND LOWER(activity) NOT LIKE '%%out for%%' AND LOWER(activity) NOT LIKE '%%undeliver%%' AND LOWER(activity) NOT LIKE '%%not deliver%%' AND LOWER(activity) NOT LIKE '%%attempt%%' LIMIT 1",
                 intval($r->AWBNO),
                 strval($r->AWBNO)
             ));
@@ -652,7 +652,7 @@ function pe_cp_ajax_shipments()
 
         // Status = FULL tracking activity text (show real tracking update)
         if ($is_delivered) {
-            $status = (!empty($ph) && preg_match('/\b(deliver|dlvd|pod|proof|sign)\b/i', $ph) && !preg_match('/out for|undeliver/i', $ph)) ? $ph : 'Proof of Delivery';
+            $status = (!empty($ph) && preg_match('/\b(deliver|dlvd|pod|proof|sign|delivery\s*order.*collected|do\s*collected)\b/i', $ph) && !preg_match('/out for|undeliver/i', $ph)) ? $ph : 'Proof of Delivery';
         } elseif (!empty($ph)) {
             $status = $ph; // Full tracking activity text
         } elseif (!empty($shp->status) && !in_array(strtolower($shp->status), ['booked', 'created', 'pending'])) {

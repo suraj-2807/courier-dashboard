@@ -1,398 +1,246 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  FileSpreadsheet,
-  Upload,
-  Search,
+  Terminal,
   Calculator,
-  Download,
-  CheckCircle2,
-  AlertCircle,
-  Building2,
-  RefreshCw,
-  Globe,
+  Search,
+  Code2,
+  Copy,
+  Check,
+  Send,
   Sparkles,
   Layers,
-  ArrowRight,
-  Info,
+  Globe,
   Clock,
   MapPin,
-  Check,
-  X,
-  FileCheck,
-  Edit3,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Table2,
   ExternalLink,
-  ClipboardPaste
+  Key,
+  ShieldCheck,
+  Zap,
+  ArrowRight,
+  ChevronRight,
+  Database,
+  Building2,
+  Package
 } from 'lucide-react'
 import {
-  getVendorsWithSheets,
-  importVendorRateSheet,
-  getVendorSheetDetails,
+  RATES_API_KEY,
+  RATES_API_BASE_URL,
+  getVendors,
+  getVendorCountries,
+  getVendorServices,
+  resolveVendorZone,
+  getWorksheets,
+  queryRateRecords,
   calculateVendorRate,
-  getVendorSheetDownloadUrl
+  executeSandboxQuery
 } from '../api/rates.api'
-import { systemSettingsApi } from '../api/systemSettings.api'
-import ExcelSheetEditor from '../components/ExcelSheetEditor'
 
-// Map 3-digit US ZIP prefix to 2-letter state code for live real-time zone detection
-function resolveUSZipToState(zip) {
-  if (!zip) return null
-  const clean = String(zip).trim().replace(/\D/g, '')
-  if (clean.length < 3) return null
-  const p = parseInt(clean.slice(0, 3), 10)
-  if (isNaN(p)) return null
-
-  if (p >= 10 && p <= 27) return 'MA'
-  if (p >= 28 && p <= 29) return 'RI'
-  if (p >= 30 && p <= 38) return 'NH'
-  if (p >= 39 && p <= 49) return 'ME'
-  if (p >= 50 && p <= 59) return 'VT'
-  if (p >= 60 && p <= 69) return 'CT'
-  if (p >= 70 && p <= 89) return 'NJ'
-  if (p >= 100 && p <= 149) return 'NY'
-  if (p >= 150 && p <= 196) return 'PA'
-  if (p >= 197 && p <= 199) return 'DE'
-  if (p >= 200 && p <= 205) return 'DC'
-  if (p >= 206 && p <= 219) return 'MD'
-  if (p >= 220 && p <= 246) return 'VA'
-  if (p >= 247 && p <= 268) return 'WV'
-  if (p >= 270 && p <= 289) return 'NC'
-  if (p >= 290 && p <= 299) return 'SC'
-  if (p >= 300 && p <= 319) return 'GA'
-  if (p >= 320 && p <= 349) return 'FL'
-  if (p >= 350 && p <= 369) return 'AL'
-  if (p >= 370 && p <= 385) return 'TN'
-  if (p >= 386 && p <= 397) return 'MS'
-  if (p >= 400 && p <= 427) return 'KY'
-  if (p >= 430 && p <= 459) return 'OH'
-  if (p >= 460 && p <= 479) return 'IN'
-  if (p >= 480 && p <= 499) return 'MI'
-  if (p >= 500 && p <= 528) return 'IA'
-  if (p >= 530 && p <= 549) return 'WI'
-  if (p >= 550 && p <= 567) return 'MN'
-  if (p >= 570 && p <= 577) return 'SD'
-  if (p >= 580 && p <= 588) return 'ND'
-  if (p >= 590 && p <= 599) return 'MT'
-  if (p >= 600 && p <= 629) return 'IL'
-  if (p >= 630 && p <= 658) return 'MO'
-  if (p >= 660 && p <= 679) return 'KS'
-  if (p >= 680 && p <= 693) return 'NE'
-  if (p >= 700 && p <= 714) return 'LA'
-  if (p >= 716 && p <= 729) return 'AR'
-  if (p >= 730 && p <= 749) return 'OK'
-  if (p >= 750 && p <= 799) return 'TX'
-  if (p >= 800 && p <= 816) return 'CO'
-  if (p >= 820 && p <= 831) return 'WY'
-  if (p >= 832 && p <= 838) return 'ID'
-  if (p >= 840 && p <= 847) return 'UT'
-  if (p >= 850 && p <= 865) return 'AZ'
-  if (p >= 870 && p <= 884) return 'NM'
-  if (p >= 889 && p <= 898) return 'NV'
-  if (p >= 900 && p <= 961) return 'CA'
-  if (p >= 967 && p <= 968) return 'HI'
-  if (p >= 970 && p <= 979) return 'OR'
-  if (p >= 980 && p <= 994) return 'WA'
-  if (p >= 995 && p <= 999) return 'AK'
-
-  return null
-}
+// Quick Presets directly from Prince Express API Specification
+const QUICK_PRESETS = [
+  {
+    id: 'calculate-pacific-usa',
+    name: 'Calculate Rate (Pacific USA)',
+    method: 'GET',
+    url: 'https://rates.princeexp.com/api/calculate.php?vendor=pacific&country=USA&service_code=PXC-EX%20NY%20SELF&weight_kg=1&postcode=10001',
+    description: 'Calculates shipping rate with zone resolution & weight slabs'
+  },
+  {
+    id: 'calculate-pacific-germany',
+    name: 'Calculate Rate (Pacific Germany)',
+    method: 'GET',
+    url: 'https://rates.princeexp.com/api/calculate.php?vendor=pacific&country=Germany&service_code=PXC-LHR-DDP&weight_kg=26',
+    description: 'Heavy shipment rate calculation with per-kg slab breakdown'
+  },
+  {
+    id: 'filter-services',
+    name: 'Filter Services by Country',
+    method: 'GET',
+    url: 'https://rates.princeexp.com/api/services.php?vendor=pacific&country=Germany',
+    description: 'Returns available service codes for dynamic dependent dropdowns'
+  },
+  {
+    id: 'list-countries',
+    name: 'List Countries',
+    method: 'GET',
+    url: 'https://rates.princeexp.com/api/countries.php?vendor=pacific',
+    description: 'Returns all 190+ destination countries for a vendor workbook'
+  },
+  {
+    id: 'rate-lookup',
+    name: 'Rate Lookup (Legacy)',
+    method: 'GET',
+    url: 'https://rates.princeexp.com/api/rates.php?vendor=pacific&country=Germany&limit=10',
+    description: 'Query raw rate records and tariffs'
+  },
+  {
+    id: 'list-vendors',
+    name: 'List Vendors',
+    method: 'GET',
+    url: 'https://rates.princeexp.com/api/vendors.php',
+    description: 'Returns active vendors, row counts, and batch versions'
+  },
+  {
+    id: 'list-worksheets',
+    name: 'List Worksheets',
+    method: 'GET',
+    url: 'https://rates.princeexp.com/api/sheets.php?vendor=pacific',
+    description: 'Returns worksheet metadata (regular, zonewise, zones) & headers'
+  },
+  {
+    id: 'lookup-zone',
+    name: 'Lookup Zone',
+    method: 'GET',
+    url: 'https://rates.princeexp.com/api/zones.php?vendor=pacific&country=USA&postcode=10001',
+    description: 'Resolves destination postcode to shipping zone and city'
+  }
+]
 
 export default function RatesPage() {
-  const queryClient = useQueryClient()
-  const fileInputRef = useRef(null)
-  const [searchParams] = useSearchParams()
-  const tabParam = searchParams.get('tab')
-  const vendorParam = searchParams.get('vendor')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialTab = searchParams.get('tab') || 'sandbox'
+  const [activeTab, setActiveTab] = useState(initialTab) // 'sandbox' | 'calculator' | 'explorer' | 'sheets' | 'docs'
 
-  // ── States ──
-  const [selectedVendorCode, setSelectedVendorCode] = useState(vendorParam || 'pacific')
-  const [showImportModal, setShowImportModal] = useState(false)
-  const [importVendorTarget, setImportVendorTarget] = useState(vendorParam || 'pacific')
-  const [selectedFile, setSelectedFile] = useState(null)
-  const [dragActive, setDragActive] = useState(false)
+  // Sync tab with URL
+  const handleTabChange = (tab) => {
+    setActiveTab(tab)
+    setSearchParams({ tab })
+  }
 
-  // Rate Calculator State (Inputs for C4, C5, C6, C7)
-  const [calcCountry, setCalcCountry] = useState('')
-  const [calcService, setCalcService] = useState('')
-  const [calcWeight, setCalcWeight] = useState('1.5')
-  const [calcState, setCalcState] = useState('')
+  // ── Copied State ──
+  const [copiedKey, setCopiedKey] = useState(false)
+  const [copiedResponse, setCopiedResponse] = useState(false)
+
+  const copyToClipboard = (text, type = 'key') => {
+    navigator.clipboard.writeText(text)
+    if (type === 'key') {
+      setCopiedKey(true)
+      setTimeout(() => setCopiedKey(false), 2000)
+    } else {
+      setCopiedResponse(true)
+      setTimeout(() => setCopiedResponse(false), 2000)
+    }
+    toast.success('Copied to clipboard!')
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // TAB 1: LIVE API CONSOLE / SANDBOX STATE
+  // ═══════════════════════════════════════════════════════════════════════
+  const [sandboxMethod, setSandboxMethod] = useState('GET')
+  const [sandboxUrl, setSandboxUrl] = useState(QUICK_PRESETS[0].url)
+  const [sandboxLoading, setSandboxLoading] = useState(false)
+  const [sandboxResponse, setSandboxResponse] = useState(null)
+  const [sandboxStatus, setSandboxStatus] = useState(null)
+  const [sandboxLatency, setSandboxLatency] = useState(null)
+  const [sandboxError, setSandboxError] = useState(null)
+  const [responseViewMode, setResponseViewMode] = useState('visual') // 'visual' | 'json'
+
+  // Apply a quick preset
+  const handleApplyPreset = (preset) => {
+    setSandboxMethod(preset.method)
+    setSandboxUrl(preset.url)
+    toast.success(`Loaded preset: ${preset.name}`)
+  }
+
+  // Send request in Sandbox
+  const handleSendSandboxRequest = async () => {
+    if (!sandboxUrl) {
+      toast.error('Please enter an endpoint URL')
+      return
+    }
+
+    setSandboxLoading(true)
+    setSandboxError(null)
+    setSandboxResponse(null)
+    setSandboxStatus(null)
+
+    const startTime = Date.now()
+    try {
+      const res = await executeSandboxQuery({
+        method: sandboxMethod,
+        url: sandboxUrl
+      })
+
+      const latency = res.latencyMs || (Date.now() - startTime)
+      setSandboxLatency(latency)
+      setSandboxStatus(res.statusCode || 200)
+      setSandboxResponse(res.data)
+
+      if (res.statusCode >= 400 || (res.data && res.data.ok === false && res.data.success === false)) {
+        setSandboxError(res.data?.error || res.data?.message || `Request returned status ${res.statusCode}`)
+      } else {
+        toast.success(`200 OK (${latency}ms)`)
+      }
+    } catch (err) {
+      const latency = Date.now() - startTime
+      setSandboxLatency(latency)
+      setSandboxStatus(err.response?.status || 500)
+      const data = err.response?.data || { error: err.message }
+      setSandboxResponse(data)
+      setSandboxError(data.error || data.message || err.message)
+      toast.error(err.message || 'Request failed')
+    } finally {
+      setSandboxLoading(false)
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // TAB 2: INTERACTIVE RATE CALCULATOR STATE
+  // ═══════════════════════════════════════════════════════════════════════
+  const [calcVendor, setCalcVendor] = useState('pacific')
+  const [calcCountry, setCalcCountry] = useState('Germany')
+  const [calcService, setCalcService] = useState('PXC-LHR-DDP')
+  const [calcWeight, setCalcWeight] = useState('26')
   const [calcPostcode, setCalcPostcode] = useState('')
   const [calcResult, setCalcResult] = useState(null)
-  const [calcError, setCalcError] = useState(null)
   const [calcLoading, setCalcLoading] = useState(false)
+  const [calcError, setCalcError] = useState(null)
 
-  // Explorer filter
-  const [searchQuery, setSearchQuery] = useState('')
-  const [activeTab, setActiveTab] = useState(tabParam === 'editor' ? 'editor' : 'calculator') // 'calculator' | 'editor' | 'explorer' | 'sheets'
-
-  // ── Queries ──
-  const { data: vendorsData, isLoading: vendorsLoading, refetch: refetchVendors } = useQuery({
-    queryKey: ['portal-vendors-with-sheets'],
-    queryFn: getVendorsWithSheets
+  // Fetch vendors
+  const { data: vendorsData } = useQuery({
+    queryKey: ['portal-vendors'],
+    queryFn: getVendors
   })
+  const vendors = vendorsData?.vendors || [{ name: 'Pacific Express', slug: 'pacific', vendor_code: 'pacific' }]
 
-  const vendors = vendorsData?.vendors || []
-
-  // Auto-select first vendor if none selected
-  useEffect(() => {
-    if (vendors.length > 0 && !vendors.find(v => v.vendor_code === selectedVendorCode)) {
-      setSelectedVendorCode(vendors[0].vendor_code)
-      setImportVendorTarget(vendors[0].vendor_code)
-    }
-  }, [vendors, selectedVendorCode])
-
-  const currentVendor = vendors.find(v => v.vendor_code === selectedVendorCode) || vendors[0] || null
-
-  const { data: sheetDetailsData, isLoading: detailsLoading } = useQuery({
-    queryKey: ['vendor-sheet-details', selectedVendorCode],
-    queryFn: () => getVendorSheetDetails(selectedVendorCode),
-    enabled: !!selectedVendorCode
+  // Fetch countries for selected vendor
+  const { data: countriesData } = useQuery({
+    queryKey: ['vendor-countries', calcVendor],
+    queryFn: () => getVendorCountries(calcVendor),
+    enabled: !!calcVendor
   })
+  const availableCountries = countriesData?.countries || []
 
-  const destinations = sheetDetailsData?.destinations || []
-  const allServices = sheetDetailsData?.all_services || []
-  const stateOptions = sheetDetailsData?.state_options || []
-  const sheets = sheetDetailsData?.sheets || []
-  const calculatorTemplate = sheetDetailsData?.calculator || {}
-  const hasActiveSheet = !!currentVendor?.has_sheet && sheetDetailsData?.has_sheet !== false
-
-  // ── System settings for rate sheet calculation toggle ──
-  const { data: sysSettingsData } = useQuery({
-    queryKey: ['system-settings'],
-    queryFn: systemSettingsApi.getAll
+  // Fetch services for vendor & country
+  const { data: servicesData } = useQuery({
+    queryKey: ['vendor-services', calcVendor, calcCountry],
+    queryFn: () => getVendorServices(calcVendor, calcCountry),
+    enabled: !!calcVendor && !!calcCountry
   })
-  const isRateSheetEnabled = sysSettingsData?.settings?.enable_rate_sheet_calculation !== false
+  const availableServices = servicesData?.services || []
 
-  const updateSettingMutation = useMutation({
-    mutationFn: systemSettingsApi.update,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['system-settings'] })
-      toast.success('Rate sheet booking setting saved')
-    },
-    onError: (err) => {
-      toast.error(err.response?.data?.message || err.message || 'Failed to update setting')
-    }
-  })
-
-  // Vendor detection
-  const isPacificVendor = useMemo(() => {
-    const v = (selectedVendorCode || '').toLowerCase().trim()
-    return v.includes('pacific') || v === 'pc' || v === 'pxc'
-  }, [selectedVendorCode])
-
-  const isFlySwiftVendor = useMemo(() => {
-    const v = (selectedVendorCode || '').toLowerCase().trim()
-    return v.includes('flyswift') || v === 'fs'
-  }, [selectedVendorCode])
-
-  // Destination checks
-  const isUSADestination = useMemo(() => {
-    const c = (calcCountry || '').toLowerCase().trim()
-    return c === 'united states' || c === 'usa' || c.includes('united states') || c === 'u.s.a.'
-  }, [calcCountry])
-
-  const isAusDestination = useMemo(() => {
-    const c = (calcCountry || '').toLowerCase().trim()
-    return c === 'australia' || c === 'aus' || c.includes('australia')
-  }, [calcCountry])
-
-  // Check if chosen destination needs state/postcode (from destination data)
-  const currentDestData = useMemo(() => {
-    return destinations.find(d => d.country.toLowerCase() === (calcCountry || '').toLowerCase().trim()) || null
-  }, [destinations, calcCountry])
-
-  const requiresState = currentDestData?.requires_state || isUSADestination
-  const requiresPostcode = currentDestData?.requires_postcode || isAusDestination
-
-  // Available services strictly for the currently chosen country and vendor
-  const servicesForSelectedCountry = useMemo(() => {
-    if (!calcCountry) return allServices
-    const match = destinations.find(d => d.country.toLowerCase() === calcCountry.toLowerCase().trim())
-    if (match && match.services && match.services.length > 0) {
-      return match.services
-    }
-    return allServices
-  }, [destinations, calcCountry, allServices])
-
-  const isUSASelf = isUSADestination && (calcService === 'PXC-EX NY SELF' || isPacificVendor)
-
-  // Real-time live US ZIP / State resolver
-  const resolvedUSInfo = useMemo(() => {
-    if (!isUSADestination) return null
-    const rawZip = (calcPostcode || '').trim()
-    const rawState = (calcState || '').trim().toUpperCase()
-
-    let stateCode = rawState
-    let detectedFromZip = false
-
-    if (rawZip) {
-      const clean = rawZip.replace(/\D/g, '')
-      const fromZip = resolveUSZipToState(clean)
-      if (fromZip) {
-        stateCode = fromZip
-        detectedFromZip = true
-      }
-    }
-
-    if (!stateCode) return null
-    const opt = stateOptions.find(s => s.code === stateCode)
-    return {
-      state_code: stateCode,
-      state_name: opt?.label || stateCode,
-      zone: opt?.zone || (stateCode === 'NY' || stateCode === 'NJ' || stateCode === 'CT' ? 'Zone 2' : 'Zone 3'),
-      detectedFromZip
-    }
-  }, [isUSADestination, calcPostcode, calcState, stateOptions])
-
-  // Real-time live Australia Postcode resolver
-  const resolvedAusInfo = useMemo(() => {
-    if (!isAusDestination) return null
-    const pc = (calcPostcode || '').trim()
-    if (isPacificVendor) {
-      return {
-        service: 'PXC-SIN',
-        zone: 'Direct Air Hub',
-        note: 'Flat National Tariff (No postal zone surcharge)'
-      }
-    }
-    if (isFlySwiftVendor) {
-      if (!pc) return null
-      const num = parseInt(pc, 10)
-      if (isNaN(num)) return null
-      let z = 'Zone 1 (Metro)'
-      if (num >= 2000 && num <= 2234) z = 'Zone 1 (Sydney Metro)'
-      else if (num >= 3000 && num <= 3207) z = 'Zone 2 (Melbourne Metro)'
-      else if (num >= 4000 && num <= 4207) z = 'Zone 3 (Brisbane Metro)'
-      else z = 'Zone 1–10 (DTDC AUS Table)'
-      return { service: 'AUS_DTDC', zone: z, postcode: pc }
-    }
-    return null
-  }, [isAusDestination, calcPostcode, isPacificVendor, isFlySwiftVendor])
-
-  // Reset calculator when vendor changes
+  // Auto-select first service when services update
   useEffect(() => {
-    setCalcCountry('')
-    setCalcService('')
-    setCalcState('')
-    setCalcPostcode('')
-    setCalcResult(null)
-    setCalcError(null)
-  }, [selectedVendorCode])
-
-  // Set initial defaults from calculator template or destinations when vendor changes or data loads
-  useEffect(() => {
-    if (destinations.length > 0) {
-      const hasCurrent = calcCountry && destinations.some(d => d.country.toLowerCase() === calcCountry.toLowerCase().trim())
-      if (!calcCountry || !hasCurrent) {
-        const defaultCountry = (calculatorTemplate?.c4_default && destinations.some(d => d.country.toLowerCase() === calculatorTemplate.c4_default.toLowerCase().trim()))
-          ? calculatorTemplate.c4_default
-          : destinations[0].country
-        setCalcCountry(defaultCountry)
-
-        const matchedDest = destinations.find(d => d.country.toLowerCase() === defaultCountry.toLowerCase().trim())
-        const availServices = matchedDest?.services?.length > 0 ? matchedDest.services : allServices
-        const defaultService = (calculatorTemplate?.c5_default && availServices.includes(calculatorTemplate.c5_default))
-          ? calculatorTemplate.c5_default
-          : (availServices[0] || '')
-        setCalcService(defaultService)
-      }
+    if (availableServices.length > 0 && !availableServices.find(s => s.service_code === calcService)) {
+      setCalcService(availableServices[0].service_code)
     }
-  }, [selectedVendorCode, destinations, calculatorTemplate, allServices, calcCountry])
+  }, [availableServices, calcService])
 
-  // Strict Service auto-synchronization: When country or vendor changes, ensure service matches supported services
-  useEffect(() => {
-    if (servicesForSelectedCountry.length > 0) {
-      if (!calcService || !servicesForSelectedCountry.includes(calcService)) {
-        setCalcService(servicesForSelectedCountry[0])
-      }
-    }
-  }, [servicesForSelectedCountry, calcService])
-
-  // Quick destination chips — dynamic from first 8 destinations
-  const quickDestinations = useMemo(() => {
-    return destinations.slice(0, 8).map(d => d.country)
-  }, [destinations])
-
-  // Handlers for switching country/service/postcode
-  const handleCountryChange = (countryName) => {
-    setCalcCountry(countryName)
-    setCalcResult(null)
-    setCalcError(null)
-
-    const match = destinations.find(d => d.country.toLowerCase() === countryName.toLowerCase().trim())
-    if (match && match.services && match.services.length > 0) {
-      setCalcService(match.services[0])
-    }
-    const isUSA = countryName.toLowerCase() === 'united states' || countryName.toLowerCase() === 'usa' || countryName.toLowerCase().includes('united states')
-    if (isUSA && !calcState) {
-      setCalcState('NY')
-    }
-  }
-
-  const handleServiceChange = (serviceName) => {
-    setCalcService(serviceName)
-    setCalcResult(null)
-    setCalcError(null)
-    if (isUSADestination && !calcState) {
-      setCalcState('NY')
-    }
-  }
-
-  const handlePostcodeChange = (val) => {
-    setCalcPostcode(val)
-    setCalcResult(null)
-    setCalcError(null)
-    if (isUSADestination && val) {
-      const clean = val.replace(/\D/g, '')
-      const fromZip = resolveUSZipToState(clean)
-      if (fromZip && fromZip !== calcState) {
-        setCalcState(fromZip)
-      }
-    }
-  }
-
-  // ── Calculate Handler (C4, C5, C6, C7 ➔ C10) ──
-  const runCalculation = async () => {
+  // Run Calculator
+  const handleCalculateRate = async (e) => {
+    if (e) e.preventDefault()
     if (!calcCountry) {
-      toast.error('Please select a destination country')
+      toast.error('Destination country is required')
       return
     }
-    const weightNum = parseFloat(calcWeight)
-    if (!calcWeight || isNaN(weightNum) || weightNum <= 0) {
-      toast.error('Please enter a valid weight in kg')
-      return
-    }
-
-    let effectiveState = calcState
-    if (isUSADestination && !effectiveState && calcPostcode) {
-      const detected = resolveUSZipToState(calcPostcode)
-      if (detected) {
-        effectiveState = detected
-        setCalcState(detected)
-      }
-    }
-
-    if (isUSASelf && !effectiveState && !calcPostcode) {
-      const msg = 'Please select a US State or enter a 5-digit US ZIP code for United States.'
-      setCalcError(msg)
-      toast.error(msg)
-      return
-    }
-
-    if (isUSASelf && weightNum > 21.5) {
-      const msg = `Shipment weight (${weightNum} kg) exceeds maximum permissible weight limit of 21.5 kg for USA.`
-      setCalcError(msg)
-      setCalcResult(null)
-      toast.error(msg)
-      return
-    }
-
-    if (isAusDestination && isFlySwiftVendor && !calcPostcode) {
-      const msg = 'Australian postal code is required for AUS DTDC under FlySwift to determine the delivery zone (Zone 1–10).'
-      setCalcError(msg)
-      toast.error(msg)
+    if (!calcWeight || parseFloat(calcWeight) <= 0) {
+      toast.error('Valid shipment weight (kg) is required')
       return
     }
 
@@ -400,1066 +248,1065 @@ export default function RatesPage() {
     setCalcError(null)
     try {
       const res = await calculateVendorRate({
-        vendor_code: selectedVendorCode,
+        vendor: calcVendor,
         country: calcCountry,
         service_code: calcService,
-        weight: weightNum,
-        state: effectiveState || calcState,
+        weight_kg: parseFloat(calcWeight),
         postcode: calcPostcode
       })
-      if (res && res.success) {
+
+      if (res && (res.success || res.ok)) {
         setCalcResult(res)
-        setCalcError(null)
+        toast.success(`Calculated Rate: ₹${res.final_rate || res.vendor_rate}`)
       } else {
         setCalcResult(null)
-        setCalcError(res?.message || 'Rate calculation failed')
+        setCalcError(res?.message || res?.error || 'Rate could not be calculated')
+        toast.error(res?.message || res?.error || 'Rate calculation failed')
       }
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Failed to calculate rate from sheet'
-      setCalcError(msg)
       setCalcResult(null)
+      const msg = err.response?.data?.message || err.response?.data?.error || err.message
+      setCalcError(msg)
       toast.error(msg)
     } finally {
       setCalcLoading(false)
     }
   }
 
-  // Auto-calculate on initial load or parameter change
-  useEffect(() => {
-    if (selectedVendorCode && calcCountry && calcWeight) {
-      if (isUSASelf && !calcState && !calcPostcode) return
-      if (isAusDestination && isFlySwiftVendor && !calcPostcode) return
-      runCalculation()
-    }
-  }, [selectedVendorCode, calcCountry, calcService, calcWeight, calcState, calcPostcode])
+  // ═══════════════════════════════════════════════════════════════════════
+  // TAB 3: RATE RECORDS / EXPLORER STATE
+  // ═══════════════════════════════════════════════════════════════════════
+  const [explorerCountry, setExplorerCountry] = useState('')
+  const [explorerService, setExplorerService] = useState('')
+  const [explorerLimit, setExplorerLimit] = useState(25)
 
-  // ── Import Mutation ──
-  const importMutation = useMutation({
-    mutationFn: ({ vendorCode, file }) => {
-      const targetVendor = vendors.find(v => v.vendor_code === vendorCode)
-      return importVendorRateSheet(vendorCode, file, targetVendor?.name || vendorCode)
-    },
-    onSuccess: (data) => {
-      toast.success(data.message || 'Vendor rate sheet imported successfully!')
-      setShowImportModal(false)
-      setSelectedFile(null)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-      refetchVendors()
-      queryClient.invalidateQueries({ queryKey: ['portal-vendors-with-sheets'] })
-      queryClient.invalidateQueries({ queryKey: ['vendor-sheet-details', importVendorTarget] })
-      setSelectedVendorCode(importVendorTarget)
-      setCalcCountry('')
-      setCalcService('')
-      setCalcResult(null)
-    },
-    onError: (err) => {
-      toast.error(err.response?.data?.message || err.message || 'Import failed')
-    }
+  const { data: explorerData, isLoading: explorerLoading, refetch: refetchExplorer } = useQuery({
+    queryKey: ['rate-records', calcVendor, explorerCountry, explorerService, explorerLimit],
+    queryFn: () => queryRateRecords({
+      vendor: calcVendor,
+      country: explorerCountry || undefined,
+      service_code: explorerService || undefined,
+      limit: explorerLimit
+    }),
+    enabled: activeTab === 'explorer'
   })
 
-  const handleFileDrop = (e) => {
-    e.preventDefault()
-    setDragActive(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file && /\.xlsx$/i.test(file.name)) {
-      setSelectedFile(file)
-    } else {
-      toast.error('Please drop an Excel .xlsx rate sheet file')
-    }
-  }
+  const rateRecords = explorerData?.rates || []
 
-  const handleFileSelect = (e) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      if (!/\.xlsx$/i.test(file.name)) {
-        toast.error('Please select an Excel .xlsx rate sheet file')
-        return
-      }
-      setSelectedFile(file)
-    }
-  }
-
-  // Filtered destinations for explorer tab
-  const filteredDestinations = useMemo(() => {
-    if (!searchQuery) return destinations
-    const q = searchQuery.toLowerCase().trim()
-    return destinations.filter(d =>
-      d.country.toLowerCase().includes(q) ||
-      d.services.some(s => s.toLowerCase().includes(q))
-    )
-  }, [destinations, searchQuery])
+  // ═══════════════════════════════════════════════════════════════════════
+  // TAB 4: WORKSHEETS METADATA
+  // ═══════════════════════════════════════════════════════════════════════
+  const { data: sheetsData, isLoading: sheetsLoading } = useQuery({
+    queryKey: ['worksheets-metadata', calcVendor],
+    queryFn: () => getWorksheets(calcVendor),
+    enabled: activeTab === 'sheets'
+  })
+  const worksheets = sheetsData?.worksheets || []
 
   return (
-    <div className="space-y-6 animate-fade-in pb-12">
-      {/* ── Top Header ── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-600 to-red-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/20">
-              <FileSpreadsheet className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight flex items-center gap-2">
-                Vendor Rate Sheets & Rate Calculator
-                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Excel Driven • No DB Storage
-                </span>
-              </h1>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Inputs placed directly into Sheet 1 Rate Calculator (C4 Country, C5 Service, C6 Weight, C7 Postcode) ➔ Result fetched from C10
-              </p>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-6 max-w-7xl mx-auto pb-16">
+      {/* ── HEADER BANNER ── */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-red-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-gray-700/50">
+        <div className="absolute -top-24 -right-24 w-80 h-80 bg-red-600/20 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
-        {/* Action Buttons */}
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => setShowImportModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 text-white font-bold text-xs shadow-md shadow-red-600/20 hover:from-red-700 hover:to-rose-700 transition cursor-pointer"
-          >
-            <Upload className="w-4 h-4" />
-            Import New Vendor Rate Sheet
-          </button>
-          {selectedVendorCode && (
-            <>
-              <a
-                href={`/rates/editor?vendor=${selectedVendorCode}&name=${encodeURIComponent(currentVendor?.name || selectedVendorCode)}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition cursor-pointer shadow-sm shadow-blue-600/20"
-                title="Open and edit active Excel rate sheet in a new browser tab"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Open Sheet in New Tab ↗
-              </a>
-              <button
-                type="button"
-                onClick={() => setActiveTab('editor')}
-                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition cursor-pointer shadow-sm"
-                title="Open and edit active Excel rate sheet in the browser"
-              >
-                <Edit3 className="w-3.5 h-3.5 text-blue-600" />
-                Edit in Browser
-              </button>
-              <a
-                href={getVendorSheetDownloadUrl(selectedVendorCode)}
-                download
-                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition cursor-pointer shadow-sm"
-                title="Download active Excel rate sheet"
-              >
-                <Download className="w-3.5 h-3.5 text-gray-500" />
-                Download .xlsx
-              </a>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* ── Rate Sheet Booking Integration Toggle ── */}
-      <div className="bg-white border border-gray-200/90 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <div className={`p-2 rounded-xl mt-0.5 ${
-            isRateSheetEnabled ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-gray-100 text-gray-500 border border-gray-200'
-          }`}>
-            <FileSpreadsheet className="w-5 h-5" />
-          </div>
-          <div>
+        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+          <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-extrabold text-gray-900">
-                Rate Sheet Calculation in New Booking Form
-              </h3>
-              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                isRateSheetEnabled
-                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                  : 'bg-gray-100 text-gray-700 border border-gray-300'
-              }`}>
-                {isRateSheetEnabled ? 'FEATURE ENABLED' : 'DISABLED'}
+              <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                Rates API v2.0 • Live
               </span>
+              <span className="text-gray-400 text-xs font-medium">Prince Express Rates Engine</span>
             </div>
-            <p className="text-xs text-gray-500 mt-1 max-w-2xl">
-              {isRateSheetEnabled
-                ? 'Active: The "Take rate from rate sheet" option is available in the New Booking form. By default, bookings use standard rates; checking the box evaluates rates directly from the vendor Excel sheet (C4 ➔ C10).'
-                : 'Disabled: The rate sheet checkbox is completely hidden in the New Booking form. All bookings will strictly use standard rates.'}
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white flex items-center gap-2.5">
+              <Zap className="w-7 h-7 text-red-500 shrink-0" />
+              Rates API & Live Sandbox
+            </h1>
+            <p className="text-gray-300 text-sm max-w-2xl leading-relaxed">
+              Dynamically calculate shipping tariffs with itemized arithmetic, zone resolution, and incremental weight tiers.
+              All rates are evaluated live via <code className="text-red-300 font-mono text-xs">rates.princeexp.com</code>.
             </p>
           </div>
-        </div>
 
-        <div className="flex items-center gap-3 self-end sm:self-center shrink-0">
-          <label className="relative inline-flex items-center cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={isRateSheetEnabled}
-              disabled={updateSettingMutation.isPending}
-              onChange={(e) => {
-                const val = e.target.checked
-                updateSettingMutation.mutate({
-                  key: 'enable_rate_sheet_calculation',
-                  value: val
-                })
-              }}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
-          </label>
-          <span className="text-xs font-extrabold text-gray-800 min-w-[55px]">
-            {updateSettingMutation.isPending ? 'Saving...' : isRateSheetEnabled ? 'Enabled' : 'Disabled'}
-          </span>
-        </div>
-      </div>
-
-      {/* ── Vendor Selection Ribbon ── */}
-      <div className="bg-white border border-gray-200/80 rounded-2xl p-4 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
-              <Building2 className="w-3.5 h-3.5 text-gray-400" />
-              Portal Vendor:
-            </label>
-            <select
-              value={selectedVendorCode}
-              onChange={(e) => setSelectedVendorCode(e.target.value)}
-              className="bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2 text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition cursor-pointer min-w-[200px]"
-            >
-              {vendors.map((v) => (
-                <option key={v.vendor_code} value={v.vendor_code}>
-                  {v.name} ({v.vendor_code.toUpperCase()}) {v.has_sheet ? '• Sheet Ready' : '• No Sheet'}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Quick stats for selected vendor */}
-          {currentVendor && (
-            <div className="flex items-center gap-3 text-xs text-gray-600 flex-wrap">
-              <span className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg">
-                <FileCheck className={`w-3.5 h-3.5 ${hasActiveSheet ? 'text-emerald-600' : 'text-gray-400'}`} />
-                Sheet: <strong className="text-gray-900">{hasActiveSheet ? (currentVendor.sheet_filename || `${selectedVendorCode}.xlsx`) : 'No Sheet (Blank)'}</strong>
+          {/* API Key Box */}
+          <div className="bg-gray-800/80 backdrop-blur-md border border-gray-700/80 rounded-2xl p-4 w-full sm:w-auto min-w-[320px] shadow-lg">
+            <div className="flex items-center justify-between text-xs text-gray-400 mb-1.5 font-medium">
+              <span className="flex items-center gap-1.5 text-gray-200 font-semibold">
+                <Key className="w-3.5 h-3.5 text-amber-400" />
+                API Key
               </span>
-              <span className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg">
-                <Globe className={`w-3.5 h-3.5 ${hasActiveSheet ? 'text-blue-600' : 'text-gray-400'}`} />
-                Destinations: <strong className="text-gray-900">{hasActiveSheet ? destinations.length : 0}</strong>
-              </span>
-              <span className="flex items-center gap-1.5 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg">
-                <Layers className={`w-3.5 h-3.5 ${hasActiveSheet ? 'text-purple-600' : 'text-gray-400'}`} />
-                Workbook Tabs: <strong className="text-gray-900">{hasActiveSheet ? sheets.length : 0}</strong>
+              <span className="text-[11px] text-emerald-400 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5" /> Authenticated
               </span>
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Tabs Navigation ── */}
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-2 flex-wrap">
-        <button
-          onClick={() => setActiveTab('calculator')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-            activeTab === 'calculator'
-              ? 'bg-red-600 text-white shadow-sm'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-          }`}
-        >
-          <Calculator className="w-3.5 h-3.5" />
-          First Tab: Rate Calculator (C4 ➔ C10)
-        </button>
-        <button
-          onClick={() => setActiveTab('editor')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-            activeTab === 'editor'
-              ? 'bg-red-600 text-white shadow-sm'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-          }`}
-        >
-          <Edit3 className="w-3.5 h-3.5 text-blue-500" />
-          In-Browser Sheet Editor
-          {currentVendor?.has_sheet && (
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800">
-              Live
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('explorer')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-            activeTab === 'explorer'
-              ? 'bg-red-600 text-white shadow-sm'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-          }`}
-        >
-          <Globe className="w-3.5 h-3.5" />
-          Destinations & Services ({destinations.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('sheets')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
-            activeTab === 'sheets'
-              ? 'bg-red-600 text-white shadow-sm'
-              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-          }`}
-        >
-          <Layers className="w-3.5 h-3.5" />
-          Workbook Tabs ({sheets.length})
-        </button>
-      </div>
-
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* TAB 1: RATE CALCULATOR (Replicating First Tab)                  */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {activeTab === 'calculator' && (
-        !hasActiveSheet ? (
-          <div className="bg-white rounded-2xl border border-gray-200/90 shadow-sm p-10 text-center space-y-4">
-            <div className="w-14 h-14 rounded-2xl bg-gray-100 text-gray-400 flex items-center justify-center mx-auto shadow-xs">
-              <FileSpreadsheet className="w-7 h-7" />
-            </div>
-            <div className="max-w-md mx-auto space-y-2">
-              <h3 className="text-base font-extrabold text-gray-900">
-                No Rate Sheet Uploaded for {currentVendor?.name || selectedVendorCode.toUpperCase()}
-              </h3>
-              <p className="text-xs text-gray-500 leading-relaxed">
-                This vendor currently does not have an Excel rate sheet file. You can import an Excel (.xlsx) file, or open the in-browser spreadsheet editor to paste your rate table directly from Excel.
-              </p>
-            </div>
-            <div className="flex items-center justify-center gap-3 pt-2">
+            <div className="flex items-center gap-2 bg-gray-950/70 border border-gray-700/60 rounded-xl px-3 py-2 font-mono text-xs text-gray-200">
+              <span className="truncate max-w-[210px] select-all">{RATES_API_KEY}</span>
               <button
                 type="button"
-                onClick={() => {
-                  setImportVendorTarget(selectedVendorCode)
-                  setShowImportModal(true)
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs shadow-md shadow-red-600/20 transition cursor-pointer"
+                onClick={() => copyToClipboard(RATES_API_KEY, 'key')}
+                className="ml-auto p-1.5 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white transition cursor-pointer"
+                title="Copy API Key"
               >
-                <Upload className="w-4 h-4" />
-                Import Rate Sheet (.xlsx)
+                {copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('editor')}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition cursor-pointer"
-              >
-                <ClipboardPaste className="w-4 h-4" />
-                Open Blank Sheet & Paste Table
-              </button>
+            </div>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-gray-400 pt-1 border-t border-gray-700/50">
+              <span>Endpoint:</span>
+              <span className="font-mono text-gray-300">rates.princeexp.com/api</span>
             </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Inputs Card (C4, C5, C6, C7) */}
-            <div className="lg:col-span-7 bg-white rounded-2xl border border-gray-200/80 p-5 shadow-sm space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <h2 className="text-sm font-bold text-gray-900">
-                    Excel Rate Sheet Input Parameters
-                  </h2>
-                </div>
-              <span className="text-[11px] font-mono font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
-                Tab: {calculatorTemplate.sheet_name || 'Rate Calculator'}
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="mt-6 pt-4 border-t border-gray-700/60 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => handleTabChange('sandbox')}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+              activeTab === 'sandbox'
+                ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
+                : 'bg-gray-800/60 text-gray-300 hover:bg-gray-800 hover:text-white'
+            }`}
+          >
+            <Terminal className="w-4 h-4" />
+            Live API Console / Sandbox
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange('calculator')}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+              activeTab === 'calculator'
+                ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
+                : 'bg-gray-800/60 text-gray-300 hover:bg-gray-800 hover:text-white'
+            }`}
+          >
+            <Calculator className="w-4 h-4" />
+            Interactive Rate Calculator
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange('explorer')}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+              activeTab === 'explorer'
+                ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
+                : 'bg-gray-800/60 text-gray-300 hover:bg-gray-800 hover:text-white'
+            }`}
+          >
+            <Table2 className="w-4 h-4" />
+            Rate Records / Explorer
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange('sheets')}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+              activeTab === 'sheets'
+                ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
+                : 'bg-gray-800/60 text-gray-300 hover:bg-gray-800 hover:text-white'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            Worksheets Schema
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange('docs')}
+            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+              activeTab === 'docs'
+                ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
+                : 'bg-gray-800/60 text-gray-300 hover:bg-gray-800 hover:text-white'
+            }`}
+          >
+            <Code2 className="w-4 h-4" />
+            Endpoints Reference
+          </button>
+        </div>
+      </div>
+
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {/* TAB 1: LIVE API CONSOLE / SANDBOX                                    */}
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'sandbox' && (
+        <div className="space-y-6">
+          {/* Preset Buttons */}
+          <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-xs">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-red-600" />
+                Quick Presets
+              </span>
+              <span className="text-xs text-gray-400">Click a preset to load into the live console</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_PRESETS.map((preset) => {
+                const isActive = sandboxUrl === preset.url
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => handleApplyPreset(preset)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer border ${
+                      isActive
+                        ? 'bg-red-50 text-red-700 border-red-300 shadow-xs'
+                        : 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200'
+                    }`}
+                  >
+                    <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-800 font-bold">
+                      {preset.method}
+                    </span>
+                    <span>{preset.name}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Request Query Bar */}
+          <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-red-600" />
+                Live Query Request
+              </div>
+              <span className="text-xs text-gray-500 font-mono">
+                Header: <code className="text-red-600 font-bold">X-API-Key</code> auto-injected
               </span>
             </div>
 
-            {/* Cell Mapping Note */}
-            <div className="bg-amber-50/70 border border-amber-200/70 rounded-xl p-3 flex items-start gap-2.5 text-xs text-amber-900">
-              <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <strong className="font-bold">Cell Mapping Protocol (Dynamic Formula-Driven):</strong> Destination country is written to <code>{calculatorTemplate.dest_input_cell || 'C4'}</code>, Service Code to <code>{calculatorTemplate.service_input_cell || 'C5'}</code>, Weight to <code>{calculatorTemplate.weight_input_cell || 'C6'}</code>, Postcode/State to <code>{calculatorTemplate.postcode_input_cell || 'C7'}</code>. Excel formulas are evaluated and the calculated vendor rate is fetched from <code>{calculatorTemplate.rate_output_cell || 'C10'}</code>.
-              </div>
-            </div>
-
-            {/* Live Vendor & Combination Match Badge */}
-            <div className="rounded-xl border p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 transition bg-emerald-50/70 border-emerald-200 text-emerald-950">
-              <div className="flex items-center gap-2.5">
-                <div className="w-6 h-6 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                  <Check className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-extrabold text-xs text-emerald-900">
-                      Tariff Route Match:
-                    </span>
-                    <span className="font-bold text-gray-800 bg-white/90 px-2 py-0.5 rounded text-[11px] border border-emerald-200">
-                      {currentVendor?.name || selectedVendorCode.toUpperCase()}
-                    </span>
-                    <span className="text-gray-400">➔</span>
-                    <span className="font-bold text-gray-800 bg-white/90 px-2 py-0.5 rounded text-[11px] border border-emerald-200">
-                      {calcCountry || 'Select Destination'}
-                    </span>
-                    <span className="text-gray-400">➔</span>
-                    <span className="font-extrabold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded text-[11px] border border-emerald-300 font-mono">
-                      {calcService || 'Auto Service'}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-emerald-700/90 font-medium mt-0.5">
-                    {isUSADestination ? (
-                      isPacificVendor ? 'USA PXC-EX NY SELF: State/ZIP determines Zone 2 to 8 tariff.' : 'FlySwift USA DDU/DDP: ZIP code maps to delivery zone.'
-                    ) : isAusDestination ? (
-                      isPacificVendor ? 'Pacific Australia: PXC-SIN direct hub routing (flat national tariff).' : 'FlySwift Australia: DTDC 4-digit postcode zone lookup (Zone 1 to 10).'
-                    ) : (
-                      'Direct vendor tariff lookup with weight tiers.'
-                    )}
-                  </div>
-                </div>
-              </div>
-              <span className="self-start sm:self-auto text-[10px] font-mono font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-600 text-white shadow-xs shrink-0">
-                100% Validated
-              </span>
-            </div>
-
-            <div className="space-y-4 pt-1">
-              {/* Destination Field */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">
-                      {calculatorTemplate.dest_label_cell || 'B4'}
-                    </span>
-                    {calculatorTemplate.dest_label || calculatorTemplate.b4_label || 'Country / Destination'} (Input ➔ {calculatorTemplate.dest_input_cell || 'C4'})
-                  </label>
-                  <span className="text-[11px] text-gray-400 font-medium">Valid tariff destination</span>
-                </div>
+            <div className="flex flex-col sm:flex-row items-stretch gap-2">
+              {/* Method Selector */}
+              <div className="w-full sm:w-28 shrink-0">
                 <select
-                  value={calcCountry}
-                  onChange={(e) => handleCountryChange(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition cursor-pointer"
+                  value={sandboxMethod}
+                  onChange={(e) => setSandboxMethod(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-sm font-bold text-gray-800 focus:outline-hidden focus:ring-2 focus:ring-red-500"
                 >
-                  <option value="">-- Select Destination Country --</option>
-                  {destinations.map(d => (
-                    <option key={d.country} value={d.country}>
-                      {d.country} {d.services?.length ? `(${d.services.join(', ')})` : ''}
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                </select>
+              </div>
+
+              {/* Endpoint URL Input */}
+              <div className="flex-1 relative">
+                <input
+                  type="text"
+                  value={sandboxUrl}
+                  onChange={(e) => setSandboxUrl(e.target.value)}
+                  placeholder="https://rates.princeexp.com/api/calculate.php?..."
+                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-mono text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+
+              {/* Send Button */}
+              <button
+                type="button"
+                onClick={handleSendSandboxRequest}
+                disabled={sandboxLoading}
+                className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-sm shadow-red-600/30 cursor-pointer disabled:opacity-50"
+              >
+                {sandboxLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    Send Request
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* ── RESPONSE PANEL ── */}
+          <div className="bg-gray-900 text-gray-100 rounded-2xl border border-gray-800 shadow-xl overflow-hidden">
+            {/* Response Top Bar */}
+            <div className="px-5 py-3.5 bg-gray-950/80 border-b border-gray-800 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Response Output</span>
+                {sandboxStatus && (
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-bold font-mono ${
+                      sandboxStatus >= 200 && sandboxStatus < 300
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
+                        : sandboxStatus >= 400 && sandboxStatus < 500
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                        : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
+                    }`}
+                  >
+                    {sandboxStatus} {sandboxStatus === 200 ? 'OK' : sandboxStatus === 422 ? 'Unprocessable' : ''}
+                  </span>
+                )}
+                {sandboxLatency !== null && (
+                  <span className="text-xs text-gray-400 font-mono flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-gray-500" />
+                    {sandboxLatency} ms
+                  </span>
+                )}
+              </div>
+
+              {sandboxResponse && (
+                <div className="flex items-center gap-2">
+                  {/* View Mode Toggle (Visual Card vs Raw JSON) */}
+                  <div className="bg-gray-800 rounded-lg p-0.5 flex items-center text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setResponseViewMode('visual')}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
+                        responseViewMode === 'visual' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Visual Card
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setResponseViewMode('json')}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
+                        responseViewMode === 'json' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Raw JSON
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(JSON.stringify(sandboxResponse, null, 2), 'response')}
+                    className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-gray-300 hover:text-white transition cursor-pointer"
+                    title="Copy Raw JSON"
+                  >
+                    {copiedResponse ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Response Body */}
+            <div className="p-5">
+              {!sandboxResponse && !sandboxLoading && !sandboxError && (
+                <div className="py-12 text-center text-gray-500 space-y-2">
+                  <Terminal className="w-10 h-10 mx-auto text-gray-700" />
+                  <p className="text-sm font-medium text-gray-400">Ready to execute query</p>
+                  <p className="text-xs max-w-sm mx-auto text-gray-500">
+                    Click "Send Request" or select a preset above to test the Live Rates API.
+                  </p>
+                </div>
+              )}
+
+              {sandboxLoading && (
+                <div className="py-12 text-center text-gray-400 space-y-3">
+                  <RefreshCw className="w-8 h-8 mx-auto text-red-500 animate-spin" />
+                  <p className="text-sm font-medium">Fetching response from rates.princeexp.com...</p>
+                </div>
+              )}
+
+              {sandboxResponse && responseViewMode === 'visual' && (
+                <div className="space-y-4">
+                  {/* Calculation Visual Card */}
+                  {sandboxResponse.final_rate !== undefined ? (
+                    <div className="bg-gradient-to-br from-gray-800 to-gray-850 rounded-xl p-5 border border-gray-700/80 space-y-4">
+                      <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-gray-700/60">
+                        <div>
+                          <div className="text-xs text-gray-400">Calculated Final Rate</div>
+                          <div className="text-3xl font-extrabold text-white flex items-baseline gap-1 mt-0.5">
+                            <span className="text-red-400">₹</span>
+                            {Number(sandboxResponse.final_rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            <span className="text-xs text-gray-400 font-normal ml-1">{sandboxResponse.currency || 'INR'}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {sandboxResponse.transit_time && (
+                            <div className="px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs flex items-center gap-1.5 font-medium">
+                              <Clock className="w-3.5 h-3.5" />
+                              {sandboxResponse.transit_time}
+                            </div>
+                          )}
+                          {sandboxResponse.active_slab && (
+                            <div className="px-3 py-1 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-xs flex items-center gap-1.5 font-medium">
+                              <Layers className="w-3.5 h-3.5" />
+                              {sandboxResponse.active_slab}
+                            </div>
+                          )}
+                          {sandboxResponse.rate_type && (
+                            <div className="px-3 py-1 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 text-xs flex items-center gap-1.5 font-medium">
+                              <Globe className="w-3.5 h-3.5" />
+                              {sandboxResponse.rate_type}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Arithmetic Formula */}
+                      {sandboxResponse.formula && (
+                        <div>
+                          <div className="text-xs text-gray-400 mb-1">Evaluation Formula</div>
+                          <div className="bg-gray-950/80 border border-gray-700/70 rounded-xl px-3.5 py-2 font-mono text-xs text-emerald-400 font-semibold break-all">
+                            {sandboxResponse.formula}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Key Attributes Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                        <div className="bg-gray-900/60 p-2.5 rounded-xl border border-gray-800">
+                          <span className="text-gray-400 block">Vendor</span>
+                          <span className="font-semibold text-white mt-0.5 block truncate">
+                            {sandboxResponse.vendor || 'Pacific'}
+                          </span>
+                        </div>
+                        <div className="bg-gray-900/60 p-2.5 rounded-xl border border-gray-800">
+                          <span className="text-gray-400 block">Destination</span>
+                          <span className="font-semibold text-white mt-0.5 block truncate">
+                            {sandboxResponse.country} {sandboxResponse.zone ? `(${sandboxResponse.zone})` : ''}
+                          </span>
+                        </div>
+                        <div className="bg-gray-900/60 p-2.5 rounded-xl border border-gray-800">
+                          <span className="text-gray-400 block">Service Code</span>
+                          <span className="font-semibold text-white mt-0.5 block truncate">
+                            {sandboxResponse.service || '—'}
+                          </span>
+                        </div>
+                        <div className="bg-gray-900/60 p-2.5 rounded-xl border border-gray-800">
+                          <span className="text-gray-400 block">Chargeable Wt</span>
+                          <span className="font-semibold text-white mt-0.5 block">
+                            {sandboxResponse.chargeable_weight} kg (Actual: {sandboxResponse.actual_weight} kg)
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Step-by-Step Breakdown */}
+                      {sandboxResponse.calculation?.steps && (
+                        <div className="space-y-1.5 pt-2">
+                          <div className="text-xs font-semibold text-gray-300">Calculation Steps Trace</div>
+                          <div className="space-y-1.5">
+                            {sandboxResponse.calculation.steps.map((st, i) => (
+                              <div key={i} className="bg-gray-900/80 p-2.5 rounded-xl border border-gray-800 text-xs">
+                                <span className="font-bold text-red-400 mr-1.5">{st.title || `Step ${st.step}`}:</span>
+                                <span className="text-gray-300">{st.detail}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : sandboxResponse.countries ? (
+                    /* Countries Visual List */
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-xs text-gray-400">
+                        <span>Total Countries: <strong className="text-white">{sandboxResponse.count}</strong></span>
+                        <span>Vendor: <strong className="text-white">{sandboxResponse.vendor?.name}</strong></span>
+                      </div>
+                      <div className="max-h-80 overflow-y-auto grid grid-cols-2 sm:grid-cols-4 gap-2 pr-1">
+                        {sandboxResponse.countries.map((c, i) => (
+                          <div key={i} className="bg-gray-800/60 hover:bg-gray-800 p-2 rounded-xl text-xs text-gray-200 border border-gray-700/50 truncate">
+                            {c}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : sandboxResponse.services ? (
+                    /* Services Visual List */
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-xs text-gray-400">
+                        <span>Available Services: <strong className="text-white">{sandboxResponse.count}</strong></span>
+                        <span>Country: <strong className="text-white">{sandboxResponse.country || 'All'}</strong></span>
+                      </div>
+                      <div className="space-y-2">
+                        {sandboxResponse.services.map((srv, i) => (
+                          <div key={i} className="bg-gray-800/70 p-3 rounded-xl border border-gray-700/60 flex items-center justify-between text-xs">
+                            <div className="font-mono font-bold text-red-400">{srv.service_code}</div>
+                            <div className="text-gray-400">{srv.service_name || 'Standard'}</div>
+                            <div className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] uppercase font-bold">
+                              {srv.rate_type}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Generic JSON display */
+                    <pre className="font-mono text-xs text-gray-300 max-h-96 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                      {JSON.stringify(sandboxResponse, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              )}
+
+              {/* Raw JSON View */}
+              {sandboxResponse && responseViewMode === 'json' && (
+                <pre className="font-mono text-xs text-emerald-400 max-h-96 overflow-y-auto whitespace-pre-wrap leading-relaxed select-all">
+                  {JSON.stringify(sandboxResponse, null, 2)}
+                </pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {/* TAB 2: INTERACTIVE RATE CALCULATOR                                   */}
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'calculator' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Form */}
+          <div className="lg:col-span-5 bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <Calculator className="w-5 h-5 text-red-600" />
+                Live Shipping Rate Calculator
+              </h2>
+              <span className="text-xs text-emerald-600 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                API Driven
+              </span>
+            </div>
+
+            <form onSubmit={handleCalculateRate} className="space-y-4">
+              {/* Vendor */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Shipping Vendor
+                </label>
+                <select
+                  value={calcVendor}
+                  onChange={(e) => setCalcVendor(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+                >
+                  {vendors.map((v) => (
+                    <option key={v.slug || v.vendor_code} value={v.slug || v.vendor_code}>
+                      {v.name} ({v.slug || v.vendor_code})
                     </option>
                   ))}
                 </select>
-
-                {/* Quick destination chips - dynamic from vendor's data */}
-                {quickDestinations.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {quickDestinations.map(c => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => handleCountryChange(c)}
-                      className={`text-[10px] px-2.5 py-0.5 rounded-md border transition cursor-pointer font-medium ${
-                        calcCountry.toLowerCase() === c.toLowerCase()
-                          ? 'bg-red-50 text-red-700 border-red-300 font-bold shadow-xs'
-                          : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
-                      }`}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-                )}
               </div>
 
-              {/* Service Code Field */}
+              {/* Destination Country */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">
-                      {calculatorTemplate.service_label_cell || 'B5'}
-                    </span>
-                    {calculatorTemplate.service_label || calculatorTemplate.b5_label || 'Service Code'} (Input ➔ {calculatorTemplate.service_input_cell || 'C5'})
-                  </label>
-                  <span className="text-[11px] text-emerald-600 font-semibold">
-                    {servicesForSelectedCountry.length} supported for {calcCountry || 'destination'}
-                  </span>
-                </div>
-                <select
-                  value={calcService}
-                  onChange={(e) => handleServiceChange(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition cursor-pointer"
-                >
-                  {servicesForSelectedCountry.map(s => (
-                    <option key={s} value={s}>{s}</option>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>Destination Country *</span>
+                  <span className="text-gray-400 font-normal text-[11px]">{availableCountries.length} available</span>
+                </label>
+                <input
+                  type="text"
+                  list="country-suggestions"
+                  value={calcCountry}
+                  onChange={(e) => setCalcCountry(e.target.value)}
+                  placeholder="e.g. Germany, USA, United Kingdom"
+                  required
+                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+                />
+                <datalist id="country-suggestions">
+                  {availableCountries.map((c, i) => (
+                    <option key={i} value={c} />
                   ))}
-                  {servicesForSelectedCountry.length === 0 && (
-                    <option value="PXC-SELF">PXC-SELF (Default Standard)</option>
-                  )}
-                </select>
+                </datalist>
               </div>
 
-              {/* USA State Dropdown for PXC-EX NY SELF */}
-              {isUSASelf && (
-                <div className="bg-amber-50/60 border border-amber-300/80 rounded-xl p-3.5 space-y-2 animate-fade-in">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
-                      <span className="px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 font-mono text-[10px] font-extrabold border border-amber-300">
-                        USA State
-                      </span>
-                      US Destination State (Required for Zone 2–8 Tariff)
-                    </label>
-                    <span className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
-                      Max: 21.5 kg
-                    </span>
-                  </div>
+              {/* Service Code */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>Service Code</span>
+                  <span className="text-gray-400 font-normal text-[11px]">Dynamic from /services.php</span>
+                </label>
+                {availableServices.length > 0 ? (
                   <select
-                    value={calcState}
-                    onChange={(e) => {
-                      setCalcState(e.target.value)
-                      setCalcResult(null)
-                    }}
-                    className="w-full bg-white border border-amber-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-600 transition cursor-pointer"
+                    value={calcService}
+                    onChange={(e) => setCalcService(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
                   >
-                    <option value="">-- Select Destination US State --</option>
-                    {stateOptions.map(st => (
-                      <option key={st.code} value={st.code}>
-                        {st.label}
+                    {availableServices.map((s, i) => (
+                      <option key={i} value={s.service_code}>
+                        {s.service_code} {s.service_name ? `- ${s.service_name}` : ''} ({s.rate_type})
                       </option>
                     ))}
                   </select>
-                  {calcState && (
-                    <div className="flex items-center gap-2 text-xs pt-1">
-                      <span className="text-amber-800 font-medium">Resolved State Zone:</span>
-                      <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-extrabold text-[11px] border border-blue-200">
-                        {stateOptions.find(s => s.code === calcState)?.zone || 'Zone'}
-                      </span>
-                      <span className="text-gray-500 text-[11px]">
-                        (e.g. 1kg in CT = ₹2,345 | 1kg in CA = ₹2,445)
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Weight in kg */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">
-                      {calculatorTemplate.weight_label_cell || 'B6'}
-                    </span>
-                    {calculatorTemplate.weight_label || calculatorTemplate.b6_label || 'Weight (kg)'} (Input ➔ {calculatorTemplate.weight_input_cell || 'C6'})
-                  </label>
-                  <div className="flex items-center gap-2">
-                    {isUSASelf && (
-                      <span className="text-[11px] font-bold text-amber-700">Limit: 21.5 kg</span>
-                    )}
-                    <span className="text-[11px] text-gray-400">Kilograms</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
+                ) : (
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0.1"
-                    value={calcWeight}
-                    onChange={(e) => setCalcWeight(e.target.value)}
-                    placeholder="1.0"
-                    className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition"
+                    type="text"
+                    value={calcService}
+                    onChange={(e) => setCalcService(e.target.value)}
+                    placeholder="e.g. PXC-LHR-DDP"
+                    className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
                   />
-                  <div className="flex gap-1 shrink-0">
-                    {['0.5', '1', '2.5', '5', '10', '21.5'].map(w => (
-                      <button
-                        key={w}
-                        type="button"
-                        onClick={() => setCalcWeight(w)}
-                        className={`text-[10px] px-2 py-1.5 rounded-lg border font-bold transition cursor-pointer ${
-                          calcWeight === w
-                            ? 'bg-red-600 text-white border-red-600'
-                            : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'
-                        }`}
-                      >
-                        {w}kg
-                      </button>
-                    ))}
-                  </div>
+                )}
+              </div>
+
+              {/* Weight (kg) */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Shipment Weight (kg) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.1"
+                  value={calcWeight}
+                  onChange={(e) => setCalcWeight(e.target.value)}
+                  placeholder="e.g. 1.5"
+                  required
+                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+                />
+                {/* Quick Weight Slabs */}
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span className="text-[11px] text-gray-400">Quick:</span>
+                  {['0.5', '1.5', '5', '10', '26', '50'].map((w) => (
+                    <button
+                      key={w}
+                      type="button"
+                      onClick={() => setCalcWeight(w)}
+                      className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer border ${
+                        calcWeight === w
+                          ? 'bg-red-50 text-red-600 border-red-200'
+                          : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border-gray-200'
+                      }`}
+                    >
+                      {w} kg
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Postcode / State */}
+              {/* Postcode / ZIP */}
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-extrabold border">
-                      {calculatorTemplate.postcode_label_cell || 'B7'}
-                    </span>
-                    {calculatorTemplate.postcode_label || calculatorTemplate.b7_label || 'Postcode / State'} (Input ➔ {calculatorTemplate.postcode_input_cell || 'C7'})
-                  </label>
-                  <span className="text-[11px] text-gray-400">Zone / remote check</span>
-                </div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>Destination Postcode / ZIP</span>
+                  <span className="text-gray-400 font-normal text-[11px]">Optional (for Zonewise rates)</span>
+                </label>
                 <input
                   type="text"
                   value={calcPostcode}
-                  onChange={(e) => handlePostcodeChange(e.target.value)}
-                  placeholder={
-                    isUSADestination
-                      ? "e.g. 90210 (Beverly Hills CA), 10001 (NY), 75001 (Dallas TX)..."
-                      : isAusDestination
-                      ? "e.g. 2000 (Sydney), 3000 (Melbourne), 4000 (Brisbane)..."
-                      : "e.g. 2000 (Aus), M5V 2T6 (Canada), SW1A 1AA (UK)..."
-                  }
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition"
+                  onChange={(e) => setCalcPostcode(e.target.value)}
+                  placeholder="e.g. 10001"
+                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
                 />
+              </div>
 
-                {/* Real-time Live Zone Resolution Helper */}
-                {isUSADestination && resolvedUSInfo && (
-                  <div className="flex items-center gap-2 text-xs pt-1.5 animate-fade-in">
-                    <span className="text-amber-800 font-medium flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-amber-600" />
-                      Live US Location Detected:
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-900 font-extrabold text-[11px] border border-blue-200">
-                      {resolvedUSInfo.state_code} ({resolvedUSInfo.state_name}) ➔ {resolvedUSInfo.zone}
-                    </span>
-                    {resolvedUSInfo.detectedFromZip && (
-                      <span className="text-[10px] text-emerald-700 font-semibold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                        Auto-mapped from ZIP
+              <button
+                type="submit"
+                disabled={calcLoading}
+                className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-sm shadow-red-600/30 cursor-pointer disabled:opacity-50 mt-2"
+              >
+                {calcLoading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Calculating Rate via API...
+                  </>
+                ) : (
+                  <>
+                    <Calculator className="w-4 h-4" />
+                    Calculate Shipping Rate
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+
+          {/* Result Card */}
+          <div className="lg:col-span-7 space-y-4">
+            {calcResult ? (
+              <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-5">
+                <div className="flex flex-wrap items-center justify-between pb-4 border-b border-gray-100 gap-2">
+                  <div>
+                    <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Total Cost</span>
+                    <div className="text-4xl font-extrabold text-gray-900 mt-0.5 flex items-baseline gap-1">
+                      <span className="text-red-600 text-2xl font-bold">₹</span>
+                      {Number(calcResult.final_rate || calcResult.vendor_rate).toLocaleString('en-IN', {
+                        minimumFractionDigits: 2
+                      })}
+                      <span className="text-xs text-gray-500 font-normal ml-1">INR</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {calcResult.transit_time && (
+                      <span className="px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-semibold flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                        {calcResult.transit_time}
+                      </span>
+                    )}
+                    {calcResult.active_slab && (
+                      <span className="px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-xl text-xs font-semibold flex items-center gap-1.5">
+                        <Layers className="w-3.5 h-3.5 text-red-600" />
+                        {calcResult.active_slab}
                       </span>
                     )}
                   </div>
-                )}
-                {isAusDestination && resolvedAusInfo && (
-                  <div className="flex items-center gap-2 text-xs pt-1.5 animate-fade-in">
-                    <span className="text-emerald-800 font-medium flex items-center gap-1">
-                      <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-                      Australian Routing:
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-extrabold text-[11px] border border-emerald-200">
-                      {resolvedAusInfo.service}: {resolvedAusInfo.zone} {resolvedAusInfo.note ? `• ${resolvedAusInfo.note}` : ''}
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Action Button */}
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={runCalculation}
-                  disabled={calcLoading}
-                  className="w-full py-3 rounded-xl bg-gray-900 hover:bg-black text-white text-xs font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${calcLoading ? 'animate-spin' : ''}`} />
-                  {calcLoading ? 'Evaluating Excel Sheet...' : `Evaluate & Fetch Rate from ${calculatorTemplate.rate_output_cell || 'C10'}`}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Output Card */}
-          <div className="lg:col-span-5 space-y-4">
-            <div className="bg-gradient-to-br from-gray-950 via-slate-900 to-gray-900 text-white rounded-2xl p-6 shadow-xl border border-gray-800 space-y-5">
-              <div className="flex items-center justify-between border-b border-gray-800 pb-3">
-                <span className="text-[11px] uppercase font-mono tracking-wider font-bold text-rose-400 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  Excel Output Result (Cell {calculatorTemplate.rate_output_cell || 'C10'})
-                </span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  LIVE FETCH
-                </span>
-              </div>
-
-              {/* Validation / Error banner if any */}
-              {calcError && (
-                <div className="bg-rose-500/15 border border-rose-500/40 rounded-xl p-3.5 text-xs text-rose-300 space-y-1">
-                  <div className="flex items-center gap-2 font-bold text-rose-200">
-                    <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-                    Validation Notice:
-                  </div>
-                  <div className="text-[11px] leading-relaxed text-rose-300/90 pl-6">
-                    {calcError}
-                  </div>
-                </div>
-              )}
-
-              {/* Main Output Rate */}
-              <div>
-                <span className="text-xs font-medium text-gray-400 block mb-1">
-                  {calculatorTemplate.rate_label || calculatorTemplate.b10_label || 'Calculated Vendor Rate'} [{calculatorTemplate.rate_output_cell || 'C10'}]
-                </span>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-extrabold text-white tracking-tight">
-                    ₹{calcResult?.vendor_rate ? calcResult.vendor_rate.toLocaleString('en-IN') : '0.00'}
-                  </span>
-                  <span className="text-xs font-bold text-gray-400">INR</span>
-                </div>
-                {calcResult?.rate_per_kg && (
-                  <span className="text-xs text-rose-300 font-semibold block mt-1">
-                    (Tier Rate: ₹{calcResult.rate_per_kg}/kg)
-                  </span>
-                )}
-              </div>
-
-              {/* Pricing Badges: Zone, Method, Matched Band */}
-              {calcResult && (
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {calcResult.zone && (
-                    <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-extrabold border border-blue-500/30">
-                      {calcResult.zone}
-                    </span>
-                  )}
-                  {calcResult.matched_band && (
-                    <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-extrabold border border-purple-500/30">
-                      Band: {calcResult.matched_band}
-                    </span>
-                  )}
-                  {calcResult.pricing_method && (
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
-                      Method: {calcResult.pricing_method}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* C9, C11, C12 Outputs */}
-              <div className="space-y-3 pt-3 border-t border-gray-800/80 text-xs">
-                {/* C9: Matched Service */}
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-gray-400 font-mono text-[11px]">B9 Matched Service [C9]:</span>
-                  <span className="font-bold text-gray-200 text-right">
-                    {calcResult?.matched_service || calcResult?.service_code || calcService}
-                  </span>
                 </div>
 
-                {/* C11: Rate Basis */}
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-gray-400 font-mono text-[11px]">B11 Rate Basis [C11]:</span>
-                  <span className="font-semibold text-emerald-300 text-right text-[11px]">
-                    {calcResult?.rate_basis || (calcError ? 'N/A' : 'Pending evaluation')}
-                  </span>
-                </div>
-
-                {/* C12: Source Row */}
-                {calcResult?.source_row && (
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-gray-400 font-mono text-[11px]">B12 Source Row [C12]:</span>
-                    <span className="font-mono font-bold text-gray-300">
-                      Row #{calcResult.source_row} ({calcResult.source_sheet || 'Self Network'})
-                    </span>
+                {/* Arithmetic Formula */}
+                {calcResult.formula && (
+                  <div>
+                    <div className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                      Calculation Formula
+                    </div>
+                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 font-mono text-xs text-gray-900 font-semibold break-all">
+                      {calcResult.formula}
+                    </div>
                   </div>
                 )}
 
-                {/* Transit time if found */}
-                {calcResult?.transit_time && (
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-gray-400 font-mono text-[11px]">Transit Time:</span>
-                    <span className="font-semibold text-amber-300 flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-amber-400" />
-                      {calcResult.transit_time}
+                {/* Parameter Details */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200/80">
+                    <span className="text-gray-500 block">Destination</span>
+                    <span className="font-bold text-gray-900 mt-0.5 block truncate">
+                      {calcResult.country} {calcResult.zone ? `(${calcResult.zone})` : ''}
                     </span>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200/80">
+                    <span className="text-gray-500 block">Service</span>
+                    <span className="font-bold text-gray-900 mt-0.5 block truncate">
+                      {calcResult.service_code || calcService}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200/80">
+                    <span className="text-gray-500 block">Weight</span>
+                    <span className="font-bold text-gray-900 mt-0.5 block">
+                      {calcResult.chargeable_weight} kg
+                    </span>
+                  </div>
+                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200/80">
+                    <span className="text-gray-500 block">Rate Type</span>
+                    <span className="font-bold text-gray-900 mt-0.5 block capitalize">
+                      {calcResult.rate_type || 'Regular'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Breakdown Table */}
+                {calcResult.breakdown && calcResult.breakdown.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Itemized Breakdown
+                    </div>
+                    <div className="overflow-x-auto rounded-xl border border-gray-200">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-gray-50 text-gray-700 border-b border-gray-200">
+                          <tr>
+                            <th className="p-2.5">Item</th>
+                            <th className="p-2.5 text-right">Unit Price</th>
+                            <th className="p-2.5 text-right">Quantity</th>
+                            <th className="p-2.5 text-right">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {calcResult.breakdown.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50/50">
+                              <td className="p-2.5 font-medium text-gray-900">{item.item}</td>
+                              <td className="p-2.5 text-right font-mono">₹{item.unit_price}</td>
+                              <td className="p-2.5 text-right font-mono">{item.quantity}</td>
+                              <td className="p-2.5 text-right font-mono font-bold text-red-600">₹{item.amount}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
               </div>
-
-              {/* Input echo */}
-              <div className="bg-white/5 rounded-xl p-3 border border-white/10 text-[11px] font-mono text-gray-300 space-y-1">
-                <div className="text-gray-400 font-bold uppercase text-[10px] tracking-wider mb-1">
-                  Parameters Sent to Excel Sheet:
-                </div>
-                <div>C4 (Country) = <strong className="text-white">{calcResult?.country || calcCountry}</strong></div>
-                <div>C5 (Service) = <strong className="text-white">{calcResult?.service_code || calcService}</strong></div>
-                <div>C6 (Weight) = <strong className="text-white">{calcWeight} kg</strong></div>
-                {(calcState || calcPostcode) && (
-                  <div>C7 (State / Postcode) = <strong className="text-white">{calcState || calcPostcode}</strong></div>
-                )}
-              </div>
-            </div>
-
-            {/* Quick Helper Guide */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-4 text-xs text-gray-600 space-y-2">
-              <strong className="text-gray-900 font-bold flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                How Rates Are Handled in Bookings:
-              </strong>
-              <p className="leading-relaxed">
-                When you create a booking on the <strong>New Booking</strong> page, tick the checkbox <strong>"Take rate from rate sheet"</strong>. The booking will automatically query this Excel engine with your destination and weight, and enter the shipping charge into the docket!
-              </p>
-            </div>
-          </div>
-        </div>
-        )
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* TAB 2: DESTINATIONS & SERVICES EXPLORER                        */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {activeTab === 'explorer' && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-gray-900">
-                Destinations & Services in Sheet ({destinations.length})
-              </h3>
-              <p className="text-xs text-gray-500">
-                Loaded directly from active vendor workbook ({hasActiveSheet ? (currentVendor?.sheet_filename || `${selectedVendorCode}.xlsx`) : 'No Sheet (Blank)'})
-              </p>
-            </div>
-            <div className="relative min-w-[260px]">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search countries or services..."
-                className="w-full bg-gray-50 border border-gray-300 rounded-xl pl-9 pr-3.5 py-2 text-xs font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
-              />
-            </div>
-          </div>
-
-          <div className="overflow-x-auto max-h-[500px] border border-gray-100 rounded-xl">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-gray-50 sticky top-0 border-b border-gray-200 text-gray-600 font-bold">
-                <tr>
-                  <th className="py-2.5 px-3.5 w-12 text-center">#</th>
-                  <th className="py-2.5 px-3.5">Destination Country / Territory</th>
-                  <th className="py-2.5 px-3.5">Available Service Codes</th>
-                  <th className="py-2.5 px-3.5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 text-gray-700">
-                {filteredDestinations.map((d, idx) => (
-                  <tr key={d.country} className="hover:bg-gray-50/80 transition">
-                    <td className="py-2.5 px-3.5 text-center font-mono text-gray-400 text-[11px]">{idx + 1}</td>
-                    <td className="py-2.5 px-3.5 font-bold text-gray-900 flex items-center gap-2">
-                      <MapPin className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                      {d.country}
-                    </td>
-                    <td className="py-2.5 px-3.5">
-                      <div className="flex flex-wrap gap-1">
-                        {d.services.map(s => (
-                          <span key={s} className="px-2 py-0.5 rounded bg-gray-100 text-gray-700 font-mono text-[10px] font-bold border border-gray-200">
-                            {s}
-                          </span>
-                        ))}
-                        {d.services.length === 0 && (
-                          <span className="text-gray-400 italic text-[11px]">Standard Self Network</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-2.5 px-3.5 text-right">
-                      <button
-                        onClick={() => {
-                          setCalcCountry(d.country)
-                          if (d.services.length > 0) setCalcService(d.services[0])
-                          setActiveTab('calculator')
-                        }}
-                        className="text-[11px] font-bold text-red-600 hover:text-red-700 underline cursor-pointer"
-                      >
-                        Calculate Rate ➔
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {filteredDestinations.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="py-8 text-center text-gray-400 text-xs">
-                      No matching destinations found for "{searchQuery}"
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* TAB 3: WORKBOOK SHEETS OVERVIEW                                */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {activeTab === 'sheets' && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-4">
-          <div>
-            <h3 className="text-sm font-bold text-gray-900">
-              Excel Workbook Tabs ({sheets.length})
-            </h3>
-            <p className="text-xs text-gray-500">
-              Worksheets present in the active vendor file ({hasActiveSheet ? (currentVendor?.sheet_filename || `${selectedVendorCode}.xlsx`) : 'No Sheet (Blank)'})
-            </p>
-          </div>
-
-          {sheets.length === 0 ? (
-            <div className="py-8 text-center text-gray-400 text-xs">
-              No workbook tabs found for this vendor. Open the in-browser sheet editor to paste your rate table or import an Excel file.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {sheets.map((sheetName, idx) => (
-              <div
-                key={sheetName}
-                className={`p-4 rounded-xl border transition ${
-                  idx === 0
-                    ? 'bg-rose-50/60 border-rose-200 text-rose-950'
-                    : 'bg-gray-50/60 border-gray-200 text-gray-800'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-white border text-gray-600">
-                    Tab #{idx + 1}
-                  </span>
-                  {idx === 0 && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-600 text-white">
-                      Primary Rate Calculator
-                    </span>
-                  )}
-                </div>
-                <h4 className="text-xs font-extrabold truncate">{sheetName}</h4>
-                <p className="text-[11px] text-gray-500 mt-1">
-                  {idx === 0
-                    ? 'Active calculator tab: C4 (Country), C5 (Service), C6 (Weight), C7 (Postcode) ➔ C10 Rate'
-                    : sheetName.toLowerCase().includes('zone')
-                    ? 'Zone mapping table for destination postcodes'
-                    : sheetName.toLowerCase().includes('remote')
-                    ? 'Remote area delivery surcharge reference list'
-                    : 'Tariff rate schedule matrix'}
+            ) : (
+              <div className="bg-white rounded-2xl p-12 border border-gray-200/80 shadow-xs text-center space-y-3">
+                <Calculator className="w-12 h-12 text-gray-300 mx-auto" />
+                <h3 className="text-base font-bold text-gray-800">No Rate Calculated Yet</h3>
+                <p className="text-xs text-gray-500 max-w-sm mx-auto">
+                  Fill in the shipping details on the left and click "Calculate Shipping Rate" to compute live rates from the API.
                 </p>
               </div>
-            ))}
+            )}
           </div>
+        </div>
+      )}
+
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {/* TAB 3: RATE RECORDS / EXPLORER                                       */}
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'explorer' && (
+        <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-5">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-3 border-b border-gray-100">
+            <div>
+              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <Table2 className="w-5 h-5 text-red-600" />
+                Live Rate Records
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Query rates directly from the live database via <code className="text-red-600">/api/rates.php</code>
+              </p>
+            </div>
+
+            {/* Filter inputs */}
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              <input
+                type="text"
+                placeholder="Filter by country..."
+                value={explorerCountry}
+                onChange={(e) => setExplorerCountry(e.target.value)}
+                className="bg-gray-50 border border-gray-300 rounded-xl px-3 py-1.5 text-xs font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+              />
+              <input
+                type="text"
+                placeholder="Filter by service..."
+                value={explorerService}
+                onChange={(e) => setExplorerService(e.target.value)}
+                className="bg-gray-50 border border-gray-300 rounded-xl px-3 py-1.5 text-xs font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+              />
+              <select
+                value={explorerLimit}
+                onChange={(e) => setExplorerLimit(Number(e.target.value))}
+                className="bg-gray-50 border border-gray-300 rounded-xl px-2 py-1.5 text-xs font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+              >
+                <option value={10}>10 rows</option>
+                <option value={25}>25 rows</option>
+                <option value={50}>50 rows</option>
+                <option value={100}>100 rows</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Table */}
+          {explorerLoading ? (
+            <div className="py-12 text-center text-gray-400 space-y-2">
+              <RefreshCw className="w-7 h-7 text-red-500 animate-spin mx-auto" />
+              <p className="text-xs">Loading rates from API...</p>
+            </div>
+          ) : rateRecords.length === 0 ? (
+            <div className="py-12 text-center text-gray-500 text-xs">
+              No rates found matching the filters.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-gray-200">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-gray-50 text-gray-700 font-bold border-b border-gray-200">
+                  <tr>
+                    <th className="p-3">ID</th>
+                    <th className="p-3">Service Code</th>
+                    <th className="p-3">Destination</th>
+                    <th className="p-3">Weight Slab</th>
+                    <th className="p-3">Zone</th>
+                    <th className="p-3">Rate (INR)</th>
+                    <th className="p-3">Transit Time</th>
+                    <th className="p-3">Sheet</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {rateRecords.map((row) => (
+                    <tr key={row.id} className="hover:bg-gray-50/60 transition">
+                      <td className="p-3 font-mono text-gray-500">{row.id}</td>
+                      <td className="p-3 font-bold text-red-600 font-mono">{row.service_code}</td>
+                      <td className="p-3 font-medium text-gray-900">{row.country || '—'}</td>
+                      <td className="p-3 text-gray-700">{row.weight_label || '—'}</td>
+                      <td className="p-3 text-gray-600">{row.zone || '—'}</td>
+                      <td className="p-3 font-mono font-bold text-gray-900">
+                        {row.rate ? `₹${parseFloat(row.rate).toFixed(2)}` : row.rate_raw || '—'}
+                      </td>
+                      <td className="p-3 text-gray-600">{row.transit_time || '—'}</td>
+                      <td className="p-3 text-gray-400 font-mono text-[11px] truncate max-w-[150px]">{row.sheet_name}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* TAB: IN-BROWSER EXCEL SPREADSHEET EDITOR                       */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {activeTab === 'editor' && (
-        <ExcelSheetEditor
-          vendorCode={selectedVendorCode}
-          vendorName={currentVendor?.name || selectedVendorCode.toUpperCase()}
-          onSaved={() => {
-            refetchVendors()
-            queryClient.invalidateQueries({ queryKey: ['vendor-sheet-details', selectedVendorCode] })
-            queryClient.invalidateQueries({ queryKey: ['vendor-workbook-data', selectedVendorCode] })
-          }}
-        />
-      )}
-
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* MODAL: IMPORT NEW VENDOR RATE SHEET                            */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {showImportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl w-full max-w-lg p-6 space-y-5 animate-scale-up">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
-                  <Upload className="w-4 h-4" />
-                </div>
-                <h3 className="text-base font-bold text-gray-900">
-                  Import New Vendor Rate Sheet
-                </h3>
-              </div>
-              <button
-                onClick={() => {
-                  setShowImportModal(false)
-                  setSelectedFile(null)
-                }}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Vendor Selector */}
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {/* TAB 4: WORKSHEETS SCHEMA                                             */}
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'sheets' && (
+        <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-5">
+          <div className="pb-3 border-b border-gray-100 flex items-center justify-between">
             <div>
-              <label className="text-xs font-bold text-gray-700 block mb-1.5">
-                Select Vendor Available on Portal:
-              </label>
-              <select
-                value={importVendorTarget}
-                onChange={(e) => setImportVendorTarget(e.target.value)}
-                className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition cursor-pointer"
-              >
-                {vendors.map((v) => (
-                  <option key={v.vendor_code} value={v.vendor_code}>
-                    {v.name} ({v.vendor_code.toUpperCase()})
-                  </option>
-                ))}
-              </select>
+              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <Layers className="w-5 h-5 text-red-600" />
+                Detected Worksheets & Schema
+              </h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Worksheet schemas detected by the Rates API engine (<code className="text-red-600">/api/sheets.php</code>)
+              </p>
             </div>
+            <span className="text-xs text-gray-400 font-medium">Vendor: Pacific Express</span>
+          </div>
 
-            {/* File Drag and Drop */}
-            <div>
-              <label className="text-xs font-bold text-gray-700 block mb-1.5">
-                Excel Rate Sheet (.xlsx):
-              </label>
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-                onDragLeave={() => setDragActive(false)}
-                onDrop={handleFileDrop}
-                onClick={() => fileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition ${
-                  dragActive
-                    ? 'border-red-500 bg-red-50/50'
-                    : selectedFile
-                    ? 'border-emerald-500 bg-emerald-50/30'
-                    : 'border-gray-300 hover:border-gray-400 bg-gray-50/50'
-                }`}
-              >
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".xlsx"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                />
-                {selectedFile ? (
-                  <div className="space-y-1">
-                    <FileCheck className="w-8 h-8 text-emerald-600 mx-auto" />
-                    <p className="text-xs font-bold text-emerald-900">{selectedFile.name}</p>
-                    <p className="text-[11px] text-gray-500">
-                      {(selectedFile.size / 1024).toFixed(1)} KB • Click to change
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <FileSpreadsheet className="w-8 h-8 text-gray-400 mx-auto" />
+          {sheetsLoading ? (
+            <div className="py-12 text-center text-gray-400 space-y-2">
+              <RefreshCw className="w-7 h-7 text-red-500 animate-spin mx-auto" />
+              <p className="text-xs">Loading worksheet schemas...</p>
+            </div>
+          ) : worksheets.length === 0 ? (
+            <div className="py-12 text-center text-gray-500 text-xs">No worksheets detected.</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {worksheets.map((ws) => {
+                let headers = []
+                try {
+                  headers = typeof ws.column_headers === 'string' ? JSON.parse(ws.column_headers) : ws.column_headers
+                } catch (e) {
+                  headers = []
+                }
+
+                return (
+                  <div key={ws.id} className="bg-gray-50 rounded-xl p-5 border border-gray-200 space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                          <Table2 className="w-4 h-4 text-red-600" />
+                          {ws.sheet_name}
+                        </div>
+                        <span className="text-xs text-gray-500 capitalize">{ws.sheet_type} Sheet</span>
+                      </div>
+                      <span className="px-2.5 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold font-mono">
+                        {Number(ws.row_count).toLocaleString()} rows
+                      </span>
+                    </div>
+
                     <div>
-                      <p className="text-xs font-bold text-gray-800">
-                        Drag and drop your vendor rate sheet here
-                      </p>
-                      <p className="text-[11px] text-gray-500">or click to browse (.xlsx only)</p>
+                      <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1.5">
+                        Column Headers ({headers.length})
+                      </span>
+                      <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto pr-1">
+                        {headers.map((h, i) => (
+                          <span
+                            key={i}
+                            className="px-2 py-0.5 bg-white border border-gray-200 rounded text-[10.5px] font-mono text-gray-700"
+                          >
+                            {h}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                )}
-              </div>
+                )
+              })}
             </div>
+          )}
+        </div>
+      )}
 
-            {/* Note about first tab structure */}
-            <div className="bg-blue-50/70 border border-blue-200/70 rounded-xl p-3 text-xs text-blue-900 space-y-1">
-              <strong className="font-bold flex items-center gap-1">
-                <Info className="w-3.5 h-3.5 text-blue-600" />
-                Sheet Structure Requirement:
-              </strong>
-              <p className="text-[11px] leading-relaxed text-blue-800">
-                The imported rate sheet must contain a first tab (e.g. <code>Rate Calculator</code>) where:
-                <br />
-                • <strong>B4:</strong> Country / Destination (Input into <strong>C4</strong>)
-                <br />
-                • <strong>B5:</strong> Service Code (Input into <strong>C5</strong>)
-                <br />
-                • <strong>B6:</strong> Weight in kg (Input into <strong>C6</strong>)
-                <br />
-                • <strong>B7:</strong> Postcode (Input into <strong>C7</strong>)
-                <br />
-                • <strong>B10:</strong> Calculated Vendor Rate (Fetched from <strong>C10</strong>)
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {/* TAB 5: ENDPOINTS REFERENCE & DOCS                                    */}
+      {/* ═════════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'docs' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-6">
+            <div>
+              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                <Code2 className="w-5 h-5 text-red-600" />
+                Prince Express Rates API Reference
+              </h2>
+              <p className="text-xs text-gray-500 mt-1">
+                Complete documentation for integrating shipping rates, dependent dropdowns, and arithmetic calculations.
               </p>
             </div>
 
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowImportModal(false)
-                  setSelectedFile(null)
-                }}
-                className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!selectedFile || importMutation.isPending}
-                onClick={() => {
-                  if (selectedFile) {
-                    importMutation.mutate({ vendorCode: importVendorTarget, file: selectedFile })
-                  }
-                }}
-                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-md shadow-red-600/20 disabled:opacity-50 transition cursor-pointer"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                {importMutation.isPending ? 'Importing...' : 'Confirm & Activate Rate Sheet'}
-              </button>
+            {/* Auth Reference */}
+            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-xs space-y-2">
+              <span className="font-bold text-gray-800">Authentication</span>
+              <p className="text-gray-600">
+                All endpoints require authentication using the API Key via any of the following methods:
+              </p>
+              <ul className="list-disc list-inside space-y-1 font-mono text-[11.5px] text-gray-700">
+                <li>Header: <code className="text-red-600 font-bold">X-API-Key: {RATES_API_KEY}</code></li>
+                <li>Bearer Token: <code className="text-red-600 font-bold">Authorization: Bearer {RATES_API_KEY}</code></li>
+                <li>Query Param: <code className="text-red-600 font-bold">?api_key={RATES_API_KEY}</code></li>
+              </ul>
+            </div>
+
+            {/* Endpoints List */}
+            <div className="space-y-4">
+              {/* Endpoint 1: calculate */}
+              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET / POST</span>
+                  <code className="text-sm font-bold text-gray-900">/api/calculate.php</code>
+                  <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold ml-auto">
+                    Primary Engine
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Calculates total rate with itemized breakdown, zone resolution, and incremental weight arithmetic.
+                </p>
+                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
+                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/calculate.php?vendor=pacific&country=Germany&service_code=PXC-LHR-DDP&weight_kg=26"
+                </div>
+              </div>
+
+              {/* Endpoint 2: services */}
+              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET</span>
+                  <code className="text-sm font-bold text-gray-900">/api/services.php</code>
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold ml-auto">
+                    Dependent Dropdown
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Returns available shipping service codes filtered by vendor and destination country.
+                </p>
+                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
+                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/services.php?vendor=pacific&country=Germany"
+                </div>
+              </div>
+
+              {/* Endpoint 3: countries */}
+              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET</span>
+                  <code className="text-sm font-bold text-gray-900">/api/countries.php</code>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Returns all distinct destination countries across regular rates, country services, and postal zones.
+                </p>
+                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
+                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/countries.php?vendor=pacific"
+                </div>
+              </div>
+
+              {/* Endpoint 4: zones */}
+              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET</span>
+                  <code className="text-sm font-bold text-gray-900">/api/zones.php</code>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Resolves destination postcodes to shipping zones and city names.
+                </p>
+                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
+                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/zones.php?vendor=pacific&country=USA&postcode=10001"
+                </div>
+              </div>
+
+              {/* Endpoint 5: vendors */}
+              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET</span>
+                  <code className="text-sm font-bold text-gray-900">/api/vendors.php</code>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Returns active vendors, upload timestamps, and active workbook version batch IDs.
+                </p>
+                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
+                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/vendors.php"
+                </div>
+              </div>
+
+              {/* Endpoint 6: sheets */}
+              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET</span>
+                  <code className="text-sm font-bold text-gray-900">/api/sheets.php</code>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Returns detected worksheets (regular, zonewise, zones, country_services) and column headers.
+                </p>
+                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
+                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/sheets.php?vendor=pacific"
+                </div>
+              </div>
             </div>
           </div>
         </div>
