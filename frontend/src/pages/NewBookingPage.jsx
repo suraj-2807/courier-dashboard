@@ -519,7 +519,6 @@ export default function NewBookingPage() {
     queryFn: systemSettingsApi.getAll
   })
   const allowPostPushEdit = sysSettingsData?.settings?.allow_post_push_billing_edit !== false
-  const enableRateSheetCalculation = sysSettingsData?.settings?.enable_rate_sheet_calculation !== false
 
   const isLocked = !!editBookingData?.is_locked
   const isGeneralLocked = isLocked
@@ -2602,9 +2601,8 @@ export default function NewBookingPage() {
                     />
                   </CompactField>
 
-                  {/* ── Take Rate from Rate Sheet Checkmark (Excel C10) ── */}
-                  {enableRateSheetCalculation && (
-                    <div className={`border rounded-xl p-2.5 my-1 shadow-xs transition ${
+                  {/* ── Fetch Rate from Live Rates API ── */}
+                  <div className={`border rounded-xl p-2.5 my-1 shadow-xs transition ${
                       takeRateFromSheet
                         ? 'bg-gradient-to-r from-red-50 to-rose-50 border-red-300'
                         : 'bg-gray-50/70 border-gray-200'
@@ -2780,7 +2778,6 @@ export default function NewBookingPage() {
                         </div>
                       )}
                     </div>
-                  )}
 
                   <div className="flex items-center justify-between text-[11px] text-gray-500 font-semibold px-0.5 pt-0.5">
                     <span>Shipping Charges & Rates</span>
