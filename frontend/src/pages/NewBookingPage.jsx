@@ -961,18 +961,19 @@ export default function NewBookingPage() {
     })
   })()
 
-  // ── Take Rate from Rate Sheet (Excel C10 calculation) ──
-  // By default false: uses default rate calculation, only calculates from sheet when checked and vendor selected
+  // ── Take Rate from Live Rates API ──
+  // By default false: uses default rate calculation, only calculates from API when checked and vendor selected
   const [takeRateFromSheet, setTakeRateFromSheet] = useState(false)
   const [rateSheetResult, setRateSheetResult] = useState(null)
+  const [apiRateError, setApiRateError] = useState(null)
   const [rateSheetLoading, setRateSheetLoading] = useState(false)
   const [showCalculationBreakdown, setShowCalculationBreakdown] = useState(false)
 
-  // Fetch rate from rate sheet helper
+  // Fetch rate from live Rates API helper
   const fetchRateFromSheet = async (showToast = false) => {
     if (!form.vendor_config_id) {
       if (showToast) {
-        toast.error('Please select a Vendor first to calculate rate from rate sheet')
+        toast.error('Please select a Vendor first to calculate rate from Rates API')
       }
       return
     }
@@ -991,6 +992,7 @@ export default function NewBookingPage() {
     const vendorCode = selectedVendor?.vendor_code || (isPacificVendor ? 'pacific' : (selectedVendor?.name?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'pacific'))
 
     setRateSheetLoading(true)
+    setApiRateError(null)
     try {
       const res = await calculateVendorRate({
         vendor_code: vendorCode,
@@ -1002,6 +1004,7 @@ export default function NewBookingPage() {
       })
       if (res && res.success && res.vendor_rate !== undefined) {
         setRateSheetResult(res)
+        setApiRateError(null)
         setForm(prev => ({
           ...prev,
           shipping_charge: String(res.vendor_rate),
@@ -1010,12 +1013,18 @@ export default function NewBookingPage() {
         if (showToast) {
           toast.success(`${selectedVendor?.name || vendorCode.toUpperCase()} API Rate: ₹${res.vendor_rate}${res.transit_time ? ` (${res.transit_time})` : ''}`)
         }
-      } else if (showToast) {
-        toast.error(res?.message || 'Rate could not be calculated via Rates API')
+      } else {
+        const errMsg = res?.message || res?.error || 'Rate could not be calculated via Rates API'
+        setApiRateError(errMsg)
+        if (showToast) {
+          toast.error(`${errMsg}. You can enter custom rates below.`)
+        }
       }
     } catch (err) {
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Failed to fetch rate from Rates API'
+      setApiRateError(errMsg)
       if (showToast) {
-        toast.error(err.response?.data?.message || err.message || 'Failed to fetch rate from Rates API')
+        toast.error(`${errMsg}. You can enter custom rates below.`)
       }
     } finally {
       setRateSheetLoading(false)
@@ -2608,14 +2617,16 @@ export default function NewBookingPage() {
                             onChange={(e) => {
                               const val = e.target.checked
                               setTakeRateFromSheet(val)
+                              setApiRateError(null)
                               if (val) {
                                 if (form.vendor_config_id) {
                                   fetchRateFromSheet(true)
                                 } else {
-                                  toast('Select a Vendor above to calculate rate from the rate sheet', { icon: 'ℹ️' })
+                                  toast('Select a Vendor above to fetch live rate from the Rates API', { icon: 'ℹ️' })
                                 }
                               } else {
                                 setRateSheetResult(null)
+                                setApiRateError(null)
                                 // Revert to default rate calculation
                                 const rate = parseFloat(form.rate_per_kg) || 0
                                 const w = parseFloat(finalChargeableWeight) || parseFloat(form.chargeable_weight) || parseFloat(form.weight) || 0
@@ -2659,7 +2670,7 @@ export default function NewBookingPage() {
 
                       {!takeRateFromSheet && (
                         <p className="text-[10px] text-gray-500 mt-1 pl-6">
-                          Default calculation active (Rate/Kg × Chargeable Weight)
+                          Default calculation active (Rate/Kg × Chargeable Weight) or enter custom rates below.
                         </p>
                       )}
 
@@ -2667,6 +2678,21 @@ export default function NewBookingPage() {
                         <div className="mt-1.5 pt-1.5 border-t border-amber-200 text-[11px] text-amber-800 flex items-center gap-1.5 font-medium pl-1">
                           <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                           Please select a Vendor above — live API rates will generate automatically.
+                        </div>
+                      )}
+
+                      {/* API Rate Error / Fallback Banner */}
+                      {takeRateFromSheet && apiRateError && (
+                        <div className="mt-2 pt-2 border-t border-amber-200 text-[11px] space-y-1">
+                          <div className="flex items-start gap-1.5 text-amber-900 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                            <div>
+                              <span className="font-bold">API rate unavailable:</span> {apiRateError}
+                              <div className="text-[10.5px] text-amber-800 mt-0.5 font-medium">
+                                You can enter custom rates directly in the <strong className="text-gray-900">Shipping Charge</strong> or <strong className="text-gray-900">Rate / Kg</strong> fields below.
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       )}
 
@@ -2755,6 +2781,13 @@ export default function NewBookingPage() {
                       )}
                     </div>
                   )}
+
+                  <div className="flex items-center justify-between text-[11px] text-gray-500 font-semibold px-0.5 pt-0.5">
+                    <span>Shipping Charges & Rates</span>
+                    <span className="text-[10px] text-gray-600 bg-gray-100 px-2 py-0.5 rounded font-normal">
+                      Custom editable
+                    </span>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <CompactField label="Rate / Kg (₹)">

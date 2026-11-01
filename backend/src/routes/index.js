@@ -14,7 +14,6 @@ import countryCodeRoutes from '../modules/countryCodes/countryCode.routes.js'
 import systemSettingsRoutes from '../modules/systemSettings/systemSettings.routes.js'
 import productRoutes from '../modules/products/product.routes.js'
 import customersRoutes from '../modules/customer/customers.routes.js'
-import vendorRateImportRoutes from '../modules/vendorRateImport/vendorRateImport.routes.js'
 
 const router = express.Router()
 
