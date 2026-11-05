@@ -828,9 +828,12 @@ export default function CustomerBookingPage() {
         breadth: parseFloat(form.breadth) || (parcels[0] ? parseFloat(parcels[0].breadth) : 0) || 0,
         height: parseFloat(form.height) || (parcels[0] ? parseFloat(parcels[0].height) : 0) || 0,
         no_of_pieces: Math.max(parcels.length, parseInt(form.no_of_pieces) || 1),
-        content_description: (form.content_description && form.content_description !== 'General Goods' && form.content_description !== 'ITEMS / GOODS INSIDE')
-          ? form.content_description
-          : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || (['general goods', 'items / goods inside', 'goods'].includes((form.content_description || '').trim().toLowerCase()) ? '' : form.content_description) || ''),
+        content_description: (() => {
+          const derived = (invoiceItems || []).map(i => i.description).filter(Boolean).join(', ')
+          const clean = (form.content_description || '').trim()
+          const isGen = ['general goods', 'items / goods inside', 'goods'].includes(clean.toLowerCase())
+          return (!isGen && clean) ? clean : (derived || clean || '')
+        })(),
         declared_value: parseFloat(form.declared_value) || 0,
         is_fragile: form.is_fragile,
         remarks: form.remarks,
@@ -873,8 +876,9 @@ export default function CustomerBookingPage() {
         invoice_note: form.invoice_note || '',
         invoice_items: invoiceItems
           .filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0)
-          .map(item => ({
+          .map((item, idx) => ({
             ...item,
+            description: item.description || (idx === 0 && invoiceItems.length === 1 ? form.content_description : ''),
             unit_weight: (item.unit_weight !== undefined && item.unit_weight !== null && String(item.unit_weight).trim() !== '') ? String(item.unit_weight).trim() : '00'
           })),
 

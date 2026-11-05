@@ -148,7 +148,7 @@ function extractBookingFields(body) {
     receiver_country: body.receiver_country,
     // Additional
     no_of_pieces: body.no_of_pieces,
-    content_description: body.content_description,
+    content_description: body.content_description !== undefined ? body.content_description : (body.content !== undefined ? body.content : undefined),
     declared_value: body.declared_value,
     cod_amount: body.cod_amount,
     // Extended
@@ -615,9 +615,14 @@ async function upsertReceiver(fields) {
  * Generate invoice PDF for a booking.
  */
 async function generateInvoiceForBooking(trackingNumber, fields, senderId, receiverId) {
-  const invoiceItems = Array.isArray(fields.invoice_items)
+  let invoiceItems = Array.isArray(fields.invoice_items)
     ? fields.invoice_items
     : (typeof fields.invoice_items === 'string' ? JSON.parse(fields.invoice_items || '[]') : [])
+
+  if (!Array.isArray(invoiceItems)) invoiceItems = []
+  if (invoiceItems.length === 1 && !invoiceItems[0].description && fields.content_description) {
+    invoiceItems[0].description = fields.content_description
+  }
 
   // Fetch sender/receiver details if we have IDs
   let senderData = {}
@@ -1039,6 +1044,7 @@ export const saveBooking = async (req, res) => {
           }
         }
 
+        const effectiveContent = contentDescription || fields.content_description || null
         await execute(
           `UPDATE shipments SET
             customer_id = ?,
@@ -1049,7 +1055,11 @@ export const saveBooking = async (req, res) => {
             rate_per_kg = ?,
             shipping_charge = ?,
             extra_charge = ?,
-            total_amount = ?
+            total_amount = ?,
+            content_description = COALESCE(?, content_description),
+            invoice_items = COALESCE(?, invoice_items),
+            parcels = COALESCE(?, parcels),
+            no_of_pieces = COALESCE(?, no_of_pieces)
            WHERE id = ?`,
           [
             newCustomerId,
@@ -1061,9 +1071,30 @@ export const saveBooking = async (req, res) => {
             shippingCharge,
             extraCharge,
             totalAmount,
+            effectiveContent,
+            invoiceItemsJson && invoiceItemsJson !== '[]' ? invoiceItemsJson : null,
+            parcelsJson,
+            finalPieces || null,
             existingId
           ]
         )
+
+        // Regenerate invoice PDF with updated content and items
+        try {
+          const invPath = await generateInvoiceForBooking(
+            existing[0].tracking_number,
+            {
+              ...fields,
+              content_description: effectiveContent || existing[0].content_description,
+              invoice_items: (invoiceItemsJson && invoiceItemsJson !== '[]') ? invoiceItemsJson : existing[0].invoice_items
+            },
+            existing[0].sender_id,
+            existing[0].receiver_id
+          )
+          await execute('UPDATE shipments SET invoice_pdf_path = ? WHERE id = ?', [invPath, existingId])
+        } catch (pdfErr) {
+          console.warn('[saveBooking locked invoice regeneration notice]:', pdfErr.message)
+        }
 
         // Sync customer update & confirm to local booking_requests if linked
         try {
@@ -3566,6 +3597,22 @@ export const updateBookingBilling = async (req, res) => {
       }
     }
 
+    // Extract content_description if provided or derive from invoice_items
+    let updatedContent = null
+    const rawContent = body.content_description !== undefined ? body.content_description : (body.content !== undefined ? body.content : undefined)
+    if (rawContent !== undefined) {
+      updatedContent = String(rawContent).trim()
+    } else if (body.invoice_items !== undefined) {
+      let parsedItems = []
+      try {
+        parsedItems = Array.isArray(body.invoice_items) ? body.invoice_items : JSON.parse(body.invoice_items || '[]')
+      } catch {}
+      const descs = Array.isArray(parsedItems) ? parsedItems.map(i => i.description).filter(Boolean) : []
+      if (descs.length > 0) {
+        updatedContent = descs.join(', ')
+      }
+    }
+
     // Update the local shipments table
     await execute(
       `UPDATE shipments SET
@@ -3578,6 +3625,7 @@ export const updateBookingBilling = async (req, res) => {
         shipping_charge = ?,
         extra_charge = ?,
         total_amount = ?,
+        content_description = COALESCE(?, content_description),
         invoice_items = COALESCE(?, invoice_items),
         parcels = COALESCE(?, parcels),
         no_of_pieces = COALESCE(?, no_of_pieces)
@@ -3592,6 +3640,7 @@ export const updateBookingBilling = async (req, res) => {
         shippingCharge,
         extraCharge,
         totalAmount,
+        updatedContent,
         invItemsJson,
         parcelsJson,
         updatedPieces,
@@ -3605,10 +3654,11 @@ export const updateBookingBilling = async (req, res) => {
         `UPDATE booking_requests SET 
           customer_id = ?, 
           customer_name = ?,
+          content_description = COALESCE(?, content_description),
           invoice_items = COALESCE(?, invoice_items),
           parcels = COALESCE(?, parcels)
          WHERE shipment_id = ? OR tracking_number = ?`,
-        [newCustomerId, newCustomerName, invItemsJson, parcelsJson, id, current.tracking_number]
+        [newCustomerId, newCustomerName, updatedContent, invItemsJson, parcelsJson, id, current.tracking_number]
       )
     } catch (brErr) {
       console.warn('[updateBookingBilling local br sync notice]:', brErr.message)
@@ -3643,6 +3693,14 @@ export const updateBookingBilling = async (req, res) => {
       remoteSyncSuccess = syncResult?.success ?? true
     } catch (syncErr) {
       console.error('[Remote AWBENTRY Billing Sync Error]:', syncErr.message)
+    }
+
+    // Regenerate invoice PDF with updated content/items
+    try {
+      const invPath = await generateInvoiceForBooking(updatedShipment.tracking_number, updatedShipment, updatedShipment.sender_id, updatedShipment.receiver_id)
+      await execute('UPDATE shipments SET invoice_pdf_path = ? WHERE id = ?', [invPath, id])
+    } catch (pdfErr) {
+      console.warn('[updateBookingBilling invoice regeneration notice]:', pdfErr.message)
     }
 
     // Synchronize customer & billing to WordPress REST API

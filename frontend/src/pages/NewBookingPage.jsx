@@ -244,6 +244,15 @@ export default function NewBookingPage() {
         }
       }
 
+      if (field === 'description') {
+        const itemDescriptions = updated.map(i => i.description).filter(Boolean)
+        const derived = itemDescriptions.join(', ')
+        setForm(prev => ({
+          ...prev,
+          content_description: derived
+        }))
+      }
+
       // Auto-calculate amount = quantity * unit_rates (or cost)
       if (field === 'quantity' || field === 'unit_rates' || field === 'cost') {
         const qty = parseFloat(field === 'quantity' ? value : updated[index].quantity) || 1
@@ -1315,6 +1324,16 @@ export default function NewBookingPage() {
       val = val.toUpperCase()
     }
     setForm(prev => ({ ...prev, [field]: val }))
+
+    // If updating content description directly and there's 1 invoice item, keep it in sync
+    if (field === 'content_description') {
+      setInvoiceItems(prev => {
+        if (Array.isArray(prev) && prev.length === 1) {
+          return [{ ...prev[0], description: val }]
+        }
+        return prev
+      })
+    }
   }
 
   // Build the common payload used by both save and push
@@ -1323,6 +1342,11 @@ export default function NewBookingPage() {
     const shipCharge = parseFloat(form.shipping_charge) || 0
     const extraChargeVal = parseFloat(extraCharge) || 0
     const totAmount = parseFloat((shipCharge + extraChargeVal).toFixed(2))
+
+    const derivedContent = (invoiceItems || []).map(i => i.description).filter(Boolean).join(', ')
+    const cleanContent = (form.content_description || '').trim()
+    const isGeneric = ['general goods', 'items / goods inside', 'goods'].includes(cleanContent.toLowerCase())
+    const resolvedContent = (!isGeneric && cleanContent) ? cleanContent : (derivedContent || cleanContent || '')
 
     return {
     id: editId ? parseInt(editId) : undefined,
@@ -1364,9 +1388,7 @@ export default function NewBookingPage() {
     breadth: ((parcels[0]?.breadth || parcels[0]?.width) !== undefined && (parcels[0]?.breadth || parcels[0]?.width) !== '') ? parseFloat(parcels[0].breadth || parcels[0].width) : (parseFloat(form.breadth) || 0),
     height: (parcels[0]?.height !== undefined && parcels[0]?.height !== '') ? parseFloat(parcels[0].height) : (parseFloat(form.height) || 0),
     no_of_pieces: Math.max(1, parseInt(form.no_of_pieces) || parcels.length || 1),
-    content_description: (form.content_description && form.content_description !== 'General Goods' && form.content_description !== 'ITEMS / GOODS INSIDE')
-      ? form.content_description
-      : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || (['general goods', 'items / goods inside', 'goods'].includes((form.content_description || '').trim().toLowerCase()) ? '' : form.content_description) || ''),
+    content_description: resolvedContent,
     declared_value: decVal,
     package_type: form.package_type,
     payment_mode: form.payment_mode,
@@ -1421,8 +1443,9 @@ export default function NewBookingPage() {
     }),
     invoice_items: invoiceItems
       .filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0)
-      .map(item => ({
+      .map((item, idx) => ({
         ...item,
+        description: item.description || (idx === 0 && invoiceItems.length === 1 ? resolvedContent : ''),
         unit_weight: (item.unit_weight !== undefined && item.unit_weight !== null && String(item.unit_weight).trim() !== '') ? String(item.unit_weight).trim() : '00'
       })),
 
@@ -1617,12 +1640,18 @@ export default function NewBookingPage() {
     const extra = parseFloat(extraCharge) || 0
     const total = parseFloat((ship + extra).toFixed(2))
 
+    const derivedContent = (invoiceItems || []).map(i => i.description).filter(Boolean).join(', ')
+    const cleanContent = (form.content_description || '').trim()
+    const isGeneric = ['general goods', 'items / goods inside', 'goods'].includes(cleanContent.toLowerCase())
+    const effectiveContent = (!isGeneric && cleanContent) ? cleanContent : (derivedContent || cleanContent || '')
+
     setSavingDraft(true)
     try {
       const validInvoiceItems = (invoiceItems || [])
         .filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0)
-        .map(item => ({
+        .map((item, idx) => ({
           ...item,
+          description: item.description || (idx === 0 && (invoiceItems || []).length === 1 ? effectiveContent : ''),
           unit_weight: (item.unit_weight !== undefined && item.unit_weight !== null && String(item.unit_weight).trim() !== '') ? String(item.unit_weight).trim() : '00'
         }))
 
@@ -1632,6 +1661,7 @@ export default function NewBookingPage() {
         shipping_charge: ship,
         extra_charge: extra,
         total_amount: total,
+        content_description: effectiveContent,
         customer_id: form.customer_type === 'registered' ? (form.customer_id || null) : null,
         customer_name: form.customer_type === 'registered' ? (form.customer_name || 'Registered Customer') : 'Walk-in Customer',
         customer_type: form.customer_type || 'walkin',
@@ -2912,7 +2942,7 @@ export default function NewBookingPage() {
         </div>
 
         {/* ── Main Section 2: Package & Weight Specs & Commercial Invoice ── */}
-        <fieldset disabled={isGeneralLocked} className="contents">
+        <fieldset disabled={isGeneralLocked && !allowPostPushEdit} className="contents">
         <div className="bg-surface rounded-2xl border border-border p-5 shadow-xs">
           <RedBadge title="Package & Weight Specifications" icon={Package} />
 
