@@ -694,7 +694,8 @@ async function generateInvoiceForBooking(trackingNumber, fields, senderId, recei
       breadth: fields.breadth,
       height: fields.height,
       no_of_pieces: fields.no_of_pieces,
-      package_type: fields.package_type
+      package_type: fields.package_type,
+      content_description: fields.content_description || ''
     },
     invoiceItems,
     invoiceMeta: {
@@ -739,7 +740,7 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
   } else if (fields.content_description) {
     contentDescription = fields.content_description.trim()
   } else {
-    contentDescription = 'Books'
+    contentDescription = 'Shipment Content'
   }
 
   let parcelsList = []
@@ -957,7 +958,7 @@ export const saveBooking = async (req, res) => {
     } else if (fields.content_description) {
       contentDescription = fields.content_description.trim()
     } else {
-      contentDescription = 'Books'
+      contentDescription = 'Shipment Content'
     }
 
     const parsedParcelsList = normalizeParcels(fields.parcels, fields.weight, fields.length, fields.breadth, fields.height)
@@ -1729,7 +1730,7 @@ export const createBooking = async (req, res) => {
     } else if (fields.content_description) {
       contentDescription = fields.content_description.trim()
     } else {
-      contentDescription = 'Books'
+      contentDescription = 'Shipment Content'
     }
 
     const parsedParcelsList = normalizeParcels(fields.parcels, fields.weight, fields.length, fields.breadth, fields.height)

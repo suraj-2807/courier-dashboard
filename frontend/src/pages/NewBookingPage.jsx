@@ -1366,7 +1366,7 @@ export default function NewBookingPage() {
     no_of_pieces: Math.max(1, parseInt(form.no_of_pieces) || parcels.length || 1),
     content_description: (form.content_description && form.content_description !== 'General Goods' && form.content_description !== 'ITEMS / GOODS INSIDE')
       ? form.content_description
-      : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'Books'),
+      : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'Shipment Content'),
     declared_value: decVal,
     package_type: form.package_type,
     payment_mode: form.payment_mode,

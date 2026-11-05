@@ -264,7 +264,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
     } else if (shipmentData.content_description) {
       contentDescription = shipmentData.content_description.trim()
     } else {
-      contentDescription = 'Books'
+      contentDescription = 'Shipment Content'
     }
 
     // Build free_form_line_items (required by FlySwift for invoice)
@@ -286,7 +286,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
           box_no: boxNoClean,
           rate: unitRate > 0 ? unitRate.toFixed(2) : (parseFloat(qty) > 0 && totalItemAmount > 0 ? (totalItemAmount / parseFloat(qty)).toFixed(2) : '0.00'),
           hscode: item.hs_code || item.hscode || shipmentData.hs_code || '',
-          description: item.description || contentDescription || 'Books',
+          description: item.description || contentDescription || 'Shipment Content',
           unit_of_measurement: item.unit_type || item.unit_of_measurement || 'Pc',
           unit_weight: itemWeight,
           igst_amount: item.igst_amount ? String(item.igst_amount) : '0.00'
@@ -300,7 +300,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
           box_no: String(i + 1),
           rate: perItemValue,
           hscode: shipmentData.hs_code || '',
-          description: contentDescription || 'Books',
+          description: contentDescription || 'Shipment Content',
           unit_of_measurement: 'Pc',
           unit_weight: '00',
           igst_amount: '0.00'

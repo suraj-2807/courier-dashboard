@@ -830,7 +830,7 @@ export default function CustomerBookingPage() {
         no_of_pieces: Math.max(parcels.length, parseInt(form.no_of_pieces) || 1),
         content_description: (form.content_description && form.content_description !== 'General Goods' && form.content_description !== 'ITEMS / GOODS INSIDE')
           ? form.content_description
-          : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'Books'),
+          : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'Shipment Content'),
         declared_value: parseFloat(form.declared_value) || 0,
         is_fragile: form.is_fragile,
         remarks: form.remarks,
