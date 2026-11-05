@@ -180,6 +180,19 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
       throw new Error('Vendor API is currently inactive')
     }
 
+    // Validate that content or invoice item is present before pushing
+    let invItems = []
+    if (shipmentData?.invoice_items) {
+      try {
+        invItems = typeof shipmentData.invoice_items === 'string' ? JSON.parse(shipmentData.invoice_items) : shipmentData.invoice_items
+      } catch {}
+    }
+    const hasContent = Boolean(shipmentData?.content_description && shipmentData.content_description.trim() && !['general goods', 'items / goods inside', 'goods'].includes(shipmentData.content_description.trim().toLowerCase()))
+    const hasItem = Array.isArray(invItems) && invItems.some(i => (i.description && i.description.trim()) || (parseFloat(i.quantity) > 0))
+    if (!hasContent && !hasItem) {
+      throw new Error('Cannot push to vendor API: Content description or invoice item is required')
+    }
+
     // Step 2: Create adapter
     const adapter = createAdapter(config)
 

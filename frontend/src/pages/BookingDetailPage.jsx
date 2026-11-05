@@ -355,6 +355,19 @@ export default function BookingDetailPage() {
   }
 
   const handlePushToApi = async () => {
+    let parsedItems = []
+    if (booking.invoice_items) {
+      try {
+        parsedItems = typeof booking.invoice_items === 'string' ? JSON.parse(booking.invoice_items) : booking.invoice_items
+      } catch { }
+    }
+    const hasContent = Boolean(booking.content_description && booking.content_description.trim() && !['general goods', 'items / goods inside', 'goods'].includes(booking.content_description.trim().toLowerCase()))
+    const hasItems = Array.isArray(parsedItems) && parsedItems.some(i => (i.description && i.description.trim()) || (parseFloat(i.quantity) > 0))
+    if (!hasContent && !hasItems) {
+      toast.error('Content description or invoice items are required to push to Vendor API')
+      return
+    }
+
     try {
       await pushToApiMutation.mutateAsync({
         id: booking.id,

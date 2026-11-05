@@ -740,7 +740,7 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
   } else if (fields.content_description) {
     contentDescription = fields.content_description.trim()
   } else {
-    contentDescription = 'Shipment Content'
+    contentDescription = ''
   }
 
   let parcelsList = []
@@ -958,7 +958,7 @@ export const saveBooking = async (req, res) => {
     } else if (fields.content_description) {
       contentDescription = fields.content_description.trim()
     } else {
-      contentDescription = 'Shipment Content'
+      contentDescription = ''
     }
 
     const parsedParcelsList = normalizeParcels(fields.parcels, fields.weight, fields.length, fields.breadth, fields.height)
@@ -1519,6 +1519,22 @@ export const pushBookingToApi = async (req, res) => {
       return res.status(400).json({ success: false, message: 'No vendor API selected for this booking. Please select a vendor first.' })
     }
 
+    // Validate that content is provided before pushing to vendor API
+    let parsedBookingItems = []
+    if (booking.invoice_items) {
+      try {
+        parsedBookingItems = typeof booking.invoice_items === 'string' ? JSON.parse(booking.invoice_items) : booking.invoice_items
+      } catch { }
+    }
+    const hasBookingContent = Boolean(booking.content_description && booking.content_description.trim() && !['general goods', 'items / goods inside', 'goods'].includes(booking.content_description.trim().toLowerCase()))
+    const hasBookingItems = Array.isArray(parsedBookingItems) && parsedBookingItems.some(i => (i.description && i.description.trim()) || (parseFloat(i.quantity) > 0))
+    if (!hasBookingContent && !hasBookingItems) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot push to vendor API: Content description or invoice item is required'
+      })
+    }
+
     // Build vendor data
     const shipmentDataForVendor = buildVendorShipmentData({
       ...booking,
@@ -1730,7 +1746,19 @@ export const createBooking = async (req, res) => {
     } else if (fields.content_description) {
       contentDescription = fields.content_description.trim()
     } else {
-      contentDescription = 'Shipment Content'
+      contentDescription = ''
+    }
+
+    // Validate content before pushing to vendor API
+    if (fields.vendor_config_id) {
+      const hasContent = Boolean(contentDescription && contentDescription.trim() && !['general goods', 'items / goods inside', 'goods'].includes(contentDescription.trim().toLowerCase()))
+      const hasItems = Array.isArray(parsedInvoiceItems) && parsedInvoiceItems.some(i => (i.description && i.description.trim()) || (parseFloat(i.quantity) > 0))
+      if (!hasContent && !hasItems) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot push to vendor API: Content description or invoice item is required'
+        })
+      }
     }
 
     const parsedParcelsList = normalizeParcels(fields.parcels, fields.weight, fields.length, fields.breadth, fields.height)

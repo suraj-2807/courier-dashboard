@@ -238,7 +238,7 @@ export default class PacificAdapter extends BaseAdapter {
     const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
     const contentDescription = (shipmentData.content_description && shipmentData.content_description !== 'General Goods' && shipmentData.content_description !== 'ITEMS / GOODS INSIDE')
       ? shipmentData.content_description
-      : (derivedContent || shipmentData.content_description || 'Shipment Content')
+      : (derivedContent || shipmentData.content_description || '')
 
     const declaredValue = parseFloat(shipmentData.declared_value || shipmentData.total_amount || shipmentData.shipping_charge || 0)
     const performa = []
@@ -254,7 +254,7 @@ export default class PacificAdapter extends BaseAdapter {
 
         performa.push({
           BoxNo: `Box-${boxNoClean}`,
-          Description: this._truncate(item.description || contentDescription || 'Shipment Content', 50),
+          Description: this._truncate(item.description || contentDescription || '', 50),
           HSNCode: this._truncate(item.hs_code || shipmentData.hs_code || '', 10),
           Quantity: qty,
           Unit: item.unit_type || item.unit || 'PCS',
@@ -270,7 +270,7 @@ export default class PacificAdapter extends BaseAdapter {
       for (let i = 0; i < numPieces; i++) {
         performa.push({
           BoxNo: `Box-${i + 1}`,
-          Description: this._truncate(contentDescription || 'Shipment Content', 50),
+          Description: this._truncate(contentDescription || '', 50),
           HSNCode: this._truncate(shipmentData.hs_code || '', 10),
           Quantity: '1',
           Unit: 'PCS',

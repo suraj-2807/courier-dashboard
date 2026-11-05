@@ -1366,7 +1366,7 @@ export default function NewBookingPage() {
     no_of_pieces: Math.max(1, parseInt(form.no_of_pieces) || parcels.length || 1),
     content_description: (form.content_description && form.content_description !== 'General Goods' && form.content_description !== 'ITEMS / GOODS INSIDE')
       ? form.content_description
-      : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || form.content_description || 'Shipment Content'),
+      : (invoiceItems.map(i => i.description).filter(Boolean).join(', ') || (['general goods', 'items / goods inside', 'goods'].includes((form.content_description || '').trim().toLowerCase()) ? '' : form.content_description) || ''),
     declared_value: decVal,
     package_type: form.package_type,
     payment_mode: form.payment_mode,
@@ -1655,6 +1655,20 @@ export default function NewBookingPage() {
 
     if (!form.vendor_config_id) {
       const msg = 'Please select a Vendor API to push to'
+      setPushError(msg)
+      toast.error(msg)
+      return
+    }
+
+    // Validate that content or invoice item is provided before pushing to Vendor API
+    const derivedContent = (invoiceItems || []).map(i => i.description).filter(Boolean).join(', ')
+    const hasContent = Boolean(
+      (form.content_description && form.content_description.trim() && !['general goods', 'items / goods inside', 'goods'].includes(form.content_description.trim().toLowerCase())) ||
+      derivedContent
+    )
+    const hasValidItem = (invoiceItems || []).some(i => (i.description && i.description.trim()) || (parseFloat(i.quantity) > 0))
+    if (!hasContent && !hasValidItem) {
+      const msg = 'Content description or invoice items are required to push to Vendor API'
       setPushError(msg)
       toast.error(msg)
       return

@@ -300,7 +300,7 @@ export async function generateInvoicePdf(params) {
     // Distribute invoice items across boxes (all items go to box 1 if no box assignment)
     const items = invoiceItems.length > 0 ? invoiceItems : [{
       sr_no: 1,
-      description: shipment.content_description || 'PARCEL GOODS',
+      description: shipment.content_description || '',
       hs_code: '',
       c_t_o: 'IN',
       unit_type: 'PCS',

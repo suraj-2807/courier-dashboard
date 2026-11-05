@@ -332,7 +332,7 @@ export async function generateWaybillPdf(params) {
       } else if (shipment.content_description) {
         contentsStr = shipment.content_description.toUpperCase()
       } else {
-        contentsStr = 'PARCEL / GENERAL GOODS.'
+        contentsStr = ''
       }
 
       doc.fillColor(TEXT_DARK).fontSize(6.8).font('Helvetica').text(contentsStr, cntX, curY + 16, { width: contentsWidth - 12, lineGap: 1.8 })
