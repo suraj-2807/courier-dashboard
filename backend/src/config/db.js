@@ -659,6 +659,11 @@ export async function initializeDb() {
           'enable_accounting',
           'false',
           'Enable customer debit/credit accounting ledger, balance tracking, and customer accounting statements'
+        ],
+        [
+          'enable_rates_api',
+          'true',
+          'Enable live Rates API for automatic shipping rate calculation and vendor destination country services'
         ]
       ]
       for (const [key, val, desc] of defaultSettings) {

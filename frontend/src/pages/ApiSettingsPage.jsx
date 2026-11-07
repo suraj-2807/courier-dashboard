@@ -32,7 +32,8 @@ import {
   FileText,
   ChevronDown,
   Upload,
-  Wallet
+  Wallet,
+  Calculator
 } from 'lucide-react'
 import {
   getApiSettings,
@@ -976,6 +977,81 @@ export default function ApiSettingsPage() {
               }}
             >
               {systemSettings.enable_accounting ? (
+                <>
+                  <ToggleRight style={{ width: '18px', height: '18px' }} />
+                  Enabled
+                </>
+              ) : (
+                <>
+                  <ToggleLeft style={{ width: '18px', height: '18px' }} />
+                  Disabled
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Divider */}
+          <div style={{ height: '1px', background: 'var(--color-border-light)', margin: '18px 0' }} />
+
+          {/* Take Rates from API Setting */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '14px', maxWidth: '800px' }}>
+              <div style={{
+                width: '36px', height: '36px', borderRadius: '10px',
+                background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Calculator style={{ width: '18px', height: '18px', color: '#fff' }} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <h2 style={{ fontSize: '15px', fontWeight: 800, color: 'var(--color-text-primary)' }}>
+                    Take Rates from API (Live Rate Calculation)
+                  </h2>
+                  <span style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '6px',
+                    background: systemSettings.enable_rates_api !== false ? '#ecfdf5' : '#fef2f2',
+                    color: systemSettings.enable_rates_api !== false ? '#059669' : '#dc2626',
+                    border: `1px solid ${systemSettings.enable_rates_api !== false ? '#a7f3d0' : '#fecaca'}`
+                  }}>
+                    {systemSettings.enable_rates_api !== false ? 'ENABLED (DEFAULT)' : 'DISABLED'}
+                  </span>
+                </div>
+                <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: 1.5 }}>
+                  Enables taking live shipping rates and country-specific vendor services from the Rates API (rates.princeexp.com). When enabled, booking forms calculate real-time rates based on destination, weight slabs, and postal code / state zones. When disabled, the admin portal operates smoothly using standard manual rate entries and vendor default services.
+                </p>
+              </div>
+            </div>
+
+            {/* Rates API Toggle Button */}
+            <button
+              onClick={() => {
+                const currentVal = systemSettings.enable_rates_api !== false
+                const newVal = !currentVal
+                updateSysSettingsMutation.mutate({
+                  key: 'enable_rates_api',
+                  value: newVal,
+                  description: 'Enable live Rates API for automatic shipping rate calculation and vendor destination country services'
+                })
+              }}
+              disabled={updateSysSettingsMutation.isPending || sysSettingsLoading}
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                padding: '8px 16px',
+                borderRadius: '10px',
+                fontSize: '12px', fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                border: systemSettings.enable_rates_api !== false ? '1px solid #10b981' : '1px solid var(--color-border)',
+                background: systemSettings.enable_rates_api !== false ? '#10b981' : 'var(--color-surface-alt)',
+                color: systemSettings.enable_rates_api !== false ? '#ffffff' : 'var(--color-text-secondary)'
+              }}
+            >
+              {systemSettings.enable_rates_api !== false ? (
                 <>
                   <ToggleRight style={{ width: '18px', height: '18px' }} />
                   Enabled

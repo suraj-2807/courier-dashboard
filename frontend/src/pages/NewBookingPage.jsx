@@ -10,7 +10,7 @@ import { productsApi } from '../api/products.api'
 import { countryCodesApi } from '../api/countryCodes.api'
 import { systemSettingsApi } from '../api/systemSettings.api'
 import { customersApi } from '../api/customers.api'
-import { calculateVendorRate } from '../api/rates.api'
+import { calculateVendorRate, getVendorServices } from '../api/rates.api'
 import api from '../api/axios'
 import CountryAutocompleteInput from '../components/CountryAutocompleteInput'
 import { getFullCountryName, getCountryCode } from '../utils/countryUtils'
@@ -528,6 +528,7 @@ export default function NewBookingPage() {
     queryFn: systemSettingsApi.getAll
   })
   const allowPostPushEdit = sysSettingsData?.settings?.allow_post_push_billing_edit !== false
+  const isRatesApiEnabled = sysSettingsData?.settings?.enable_rates_api !== false
 
   const isLocked = !!editBookingData?.is_locked
   const isGeneralLocked = isLocked
@@ -917,6 +918,55 @@ export default function NewBookingPage() {
   const vendorRequiredFields = safeNullableArr(selectedVendor?.required_fields)
   const vendorProductRestrictions = safeNullableArr(selectedVendor?.product_code_restrictions)
 
+  const vendorCode = selectedVendor?.vendor_code || (isPacificVendor ? 'pacific' : (selectedVendor?.name?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'pacific'))
+  const destCountry = (form.receiver_country || '').trim()
+
+  // Fetch destination country services for this vendor from Rates API
+  const { data: countryServicesData } = useQuery({
+    queryKey: ['rates-country-services', vendorCode, destCountry],
+    queryFn: () => getVendorServices(vendorCode, destCountry),
+    enabled: Boolean(form.vendor_config_id && destCountry && isRatesApiEnabled),
+    staleTime: 60 * 1000
+  })
+
+  // Services dropdown strictly filtered to vendor's available services for that destination country
+  const countryFilteredServices = useMemo(() => {
+    if (isRatesApiEnabled && destCountry) {
+      if (countryServicesData?.ok) {
+        const apiServices = Array.isArray(countryServicesData.services) ? countryServicesData.services : []
+        if (apiServices.length > 0) {
+          return apiServices.map(s => {
+            const matching = vendorServices.find(vs => vs.code?.toUpperCase() === s.service_code?.toUpperCase())
+            return {
+              code: s.service_code,
+              label: matching?.label || s.service_name || s.service_code,
+              rate_type: s.rate_type
+            }
+          })
+        }
+        return []
+      }
+    }
+    return vendorServices
+  }, [isRatesApiEnabled, destCountry, countryServicesData, vendorServices])
+
+  // Sync selected service_code when country or filtered services change
+  useEffect(() => {
+    if (!form.vendor_config_id || customServiceMode) return
+    if (!destCountry) return
+
+    if (countryFilteredServices.length > 0) {
+      const exists = countryFilteredServices.some(s => s.code?.toUpperCase() === form.service_code?.toUpperCase())
+      if (!exists) {
+        updateForm('service_code', countryFilteredServices[0].code)
+      }
+    } else if (countryFilteredServices.length === 0 && countryServicesData?.ok) {
+      if (form.service_code !== '') {
+        updateForm('service_code', '')
+      }
+    }
+  }, [countryFilteredServices, form.vendor_config_id, customServiceMode, destCountry, countryServicesData?.ok])
+
   const vendorRequiresField = (fieldKey) => {
     if (!form.vendor_config_id) return true
     if (!vendorRequiredFields || !Array.isArray(vendorRequiredFields)) return true
@@ -979,6 +1029,13 @@ export default function NewBookingPage() {
 
   // Fetch rate from live Rates API helper
   const fetchRateFromSheet = async (showToast = false) => {
+    if (!isRatesApiEnabled) {
+      if (showToast) {
+        toast.error('Rates API calculation is disabled in Settings')
+      }
+      return
+    }
+
     if (!form.vendor_config_id) {
       if (showToast) {
         toast.error('Please select a Vendor first to calculate rate from Rates API')
@@ -1007,8 +1064,8 @@ export default function NewBookingPage() {
         country: destCountry,
         service_code: form.service_code || '',
         weight: chgWt,
-        postcode: form.receiver_pincode || '',
-        state: form.receiver_state || ''
+        postcode: form.receiver_pincode || form.receiver_state || '',
+        state: form.receiver_state || form.receiver_pincode || ''
       })
       if (res && res.success && res.vendor_rate !== undefined) {
         setRateSheetResult(res)
@@ -1041,6 +1098,7 @@ export default function NewBookingPage() {
 
   // Auto-fetch rate from rate sheet when enabled and relevant fields change (once vendor is selected)
   useEffect(() => {
+    if (!isRatesApiEnabled) return
     if (!takeRateFromSheet) return
     if (!form.vendor_config_id) return
     const destCountry = (form.receiver_country || '').trim()
@@ -1053,6 +1111,7 @@ export default function NewBookingPage() {
     }, 400)
     return () => clearTimeout(timer)
   }, [
+    isRatesApiEnabled,
     takeRateFromSheet,
     form.vendor_config_id,
     form.receiver_country,
@@ -2497,6 +2556,40 @@ export default function NewBookingPage() {
                               Reset
                             </button>
                           </div>
+                        ) : countryFilteredServices.length > 0 ? (
+                          <select
+                            value={form.service_code}
+                            onChange={e => {
+                              if (e.target.value === '__custom__') {
+                                setCustomServiceMode(true)
+                                updateForm('service_code', '')
+                              } else {
+                                updateForm('service_code', e.target.value)
+                              }
+                            }}
+                            className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 cursor-pointer font-bold"
+                          >
+                            <option value="">— Select Service —</option>
+                            {countryFilteredServices.map((svc, i) => (
+                              <option key={i} value={svc.code}>
+                                {svc.code} {svc.label && svc.label !== svc.code ? `— ${svc.label}` : ''}
+                              </option>
+                            ))}
+                            <option value="__custom__">Custom Service Code...</option>
+                          </select>
+                        ) : (destCountry && isRatesApiEnabled && countryServicesData?.ok && countryFilteredServices.length === 0) ? (
+                          <div className="flex items-center justify-between gap-1 py-0.5">
+                            <span className="text-[11px] text-amber-700 italic truncate" title={`No services available for ${destCountry}`}>
+                              No services for {destCountry}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setCustomServiceMode(true)}
+                              className="text-[10px] text-red-600 font-bold underline shrink-0"
+                            >
+                              Custom
+                            </button>
+                          </div>
                         ) : vendorServices.length > 0 ? (
                           <select
                             value={form.service_code}
@@ -2646,7 +2739,15 @@ export default function NewBookingPage() {
                   </CompactField>
 
                   {/* ── Fetch Rate from Live Rates API ── */}
-                  <div className={`border rounded-xl p-2.5 my-1 shadow-xs transition ${
+                  {!isRatesApiEnabled ? (
+                    <div className="border border-gray-200 bg-gray-50/70 rounded-xl p-2.5 my-1 text-[11px] text-gray-500 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 font-medium">
+                        <Sparkles className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                        Live Rates API is turned OFF in Settings — Standard manual rate calculation active.
+                      </span>
+                    </div>
+                  ) : (
+                    <div className={`border rounded-xl p-2.5 my-1 shadow-xs transition ${
                       takeRateFromSheet
                         ? 'bg-gradient-to-r from-red-50 to-rose-50 border-red-300'
                         : 'bg-gray-50/70 border-gray-200'
@@ -2822,6 +2923,7 @@ export default function NewBookingPage() {
                         </div>
                       )}
                     </div>
+                  )}
 
                   <div className="flex items-center justify-between text-[11px] text-gray-500 font-semibold px-0.5 pt-0.5">
                     <span>Shipping Charges & Rates</span>

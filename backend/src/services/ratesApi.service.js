@@ -97,7 +97,8 @@ export async function calculateRate({
   country,
   service_code = '',
   weight = 1,
-  postcode = ''
+  postcode = '',
+  state = ''
 }) {
   const query = new URLSearchParams()
   query.set('vendor', vendor || 'pacific')
@@ -105,6 +106,7 @@ export async function calculateRate({
   if (service_code) query.set('service_code', String(service_code).trim())
   query.set('weight_kg', String(weight || 1))
   if (postcode) query.set('postcode', String(postcode).trim())
+  if (state) query.set('state', String(state).trim())
 
   const endpoint = `/api/calculate.php?${query.toString()}`
   const response = await requestRatesApi(endpoint, { method: 'GET' })
@@ -184,13 +186,14 @@ export async function getCountries({ vendor = 'pacific' } = {}) {
 }
 
 /**
- * 4. Resolve postcode to shipping zone and city
+ * 4. Resolve postcode / state to shipping zone and city
  */
-export async function resolveZone({ vendor = 'pacific', country, postcode }) {
+export async function resolveZone({ vendor = 'pacific', country, postcode = '', state = '' }) {
   const query = new URLSearchParams()
   query.set('vendor', vendor || 'pacific')
   if (country) query.set('country', String(country).trim())
   if (postcode) query.set('postcode', String(postcode).trim())
+  if (state) query.set('state', String(state).trim())
 
   const endpoint = `/api/zones.php?${query.toString()}`
   const response = await requestRatesApi(endpoint)

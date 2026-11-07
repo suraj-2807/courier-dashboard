@@ -1,0 +1,10 @@
+Options -Indexes
+
+<FilesMatch "^(config\.php|config\.example\.php|database\.sql|migration\.sql|composer\.json|composer\.lock|README\.md)$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^(storage|vendor|includes)(/|$) - [F,L,NC]
+</IfModule>

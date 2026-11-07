@@ -24,10 +24,10 @@ export const getVendorServices = (vendor = 'pacific', country = '') =>
   api.get('/rates/services', { params: { vendor, country } }).then((res) => res.data)
 
 /**
- * 4. Resolve destination postcode to shipping zone and town/city
+ * 4. Resolve destination postcode / state to shipping zone and town/city
  */
-export const resolveVendorZone = (vendor = 'pacific', country = '', postcode = '') =>
-  api.get('/rates/zones', { params: { vendor, country, postcode } }).then((res) => res.data)
+export const resolveVendorZone = (vendor = 'pacific', country = '', postcode = '', state = '') =>
+  api.get('/rates/zones', { params: { vendor, country, postcode, state } }).then((res) => res.data)
 
 /**
  * 5. Get detected worksheets & metadata

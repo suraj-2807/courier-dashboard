@@ -99,6 +99,7 @@ export const calculateVendorRate = async (req, res) => {
     const service_code = params.service_code || params.service || ''
     const weight = params.weight_kg !== undefined ? params.weight_kg : (params.weight || 1)
     const postcode = params.postcode || params.pincode || params.zipcode || params.receiver_pincode || ''
+    const state = params.state || params.receiver_state || params.province || ''
 
     if (!country) {
       return res.status(400).json({
@@ -121,7 +122,8 @@ export const calculateVendorRate = async (req, res) => {
       country,
       service_code,
       weight: parseFloat(weight),
-      postcode
+      postcode,
+      state
     })
 
     if (!result.success && !result.ok) {
@@ -171,16 +173,17 @@ export const resolveZone = async (req, res) => {
   try {
     const vendor = req.query.vendor || req.params.vendorCode || 'pacific'
     const country = req.query.country || ''
-    const postcode = req.query.postcode || ''
+    const postcode = req.query.postcode || req.query.pincode || req.query.zipcode || ''
+    const state = req.query.state || req.query.receiver_state || ''
 
-    if (!country || !postcode) {
+    if (!country || (!postcode && !state)) {
       return res.status(400).json({
         ok: false,
-        error: 'Both country and postcode parameters are required.'
+        error: 'Country and either postcode or state parameter are required.'
       })
     }
 
-    const data = await ratesApiService.resolveZone({ vendor, country, postcode })
+    const data = await ratesApiService.resolveZone({ vendor, country, postcode, state })
     return res.json(data)
   } catch (error) {
     console.error('Error resolving zone:', error)
