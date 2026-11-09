@@ -147,6 +147,10 @@ function makeEditable(cell, recordId, field, table) {
 
 // ---- API Helper ----
 async function apiRequest(method, url, data = null) {
+    let cleanUrl = url;
+    if (!cleanUrl.startsWith('/') && !cleanUrl.startsWith('http')) {
+        cleanUrl = '/' + cleanUrl;
+    }
     const opts = {
         method: method,
         headers: { 'Content-Type': 'application/json' }
@@ -154,7 +158,7 @@ async function apiRequest(method, url, data = null) {
     if (data && method !== 'GET') {
         opts.body = JSON.stringify(data);
     }
-    const response = await fetch(url, opts);
+    const response = await fetch(cleanUrl, opts);
     return response.json();
 }
 
