@@ -42,6 +42,12 @@ export const queryRateRecords = (params = {}) =>
   api.get('/rates/query', { params }).then((res) => res.data)
 
 /**
+ * Update rate record / price in live Rates API
+ */
+export const updateRateRecord = (id, data = {}) =>
+  api.patch(`/rates/records/${id}`, data).then((res) => res.data)
+
+/**
  * 7. Primary Rate Calculation Engine
  * Calls /rates/calculate which queries Prince Express Rates API (/api/calculate.php)
  */

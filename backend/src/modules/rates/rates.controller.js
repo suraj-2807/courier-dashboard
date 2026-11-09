@@ -219,6 +219,21 @@ export const queryRates = async (req, res) => {
 }
 
 /**
+ * Update rate / price record via Rates API
+ */
+export const updateRate = async (req, res) => {
+  try {
+    const id = req.params.id || req.query.id || req.body?.id
+    const data = req.body || {}
+    const result = await ratesApiService.updateRateRecord(id, data)
+    return res.json(result)
+  } catch (error) {
+    console.error('Error updating rate record:', error)
+    return res.status(500).json({ ok: false, success: false, message: error.message })
+  }
+}
+
+/**
  * Live Sandbox Proxy: Execute custom queries from the Live API Console
  */
 export const sandboxProxy = async (req, res) => {

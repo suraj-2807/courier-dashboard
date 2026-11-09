@@ -108,30 +108,63 @@ try {
         ]);
 
     } elseif ($method === 'POST') {
-        // Create new rate row
+        // Create new rate or zone row
         $input = getJsonInput();
-        $vendorSlug = trim($input['vendor'] ?? '');
-        if ($vendorSlug === '') apiRespond(400, ['ok' => false, 'error' => 'vendor slug is required.']);
+        if (empty($input)) {
+            $input = !empty($_POST) ? $_POST : $_GET;
+        }
 
-        $v = getVendorBySlug($pdo, $vendorSlug);
-        if (!$v) apiRespond(404, ['ok' => false, 'error' => 'Vendor not found.']);
+        $vendorSlug = trim((string)($input['vendor'] ?? ''));
+        $vendorId = (int)($input['vendor_id'] ?? 0);
+        if ($vendorSlug !== '') {
+            $v = getVendorBySlug($pdo, $vendorSlug);
+        } elseif ($vendorId > 0) {
+            $v = getVendorById($pdo, $vendorId);
+        } else {
+            apiRespond(400, ['ok' => false, 'success' => false, 'error' => 'vendor slug or vendor_id is required.']);
+        }
+        if (!$v) apiRespond(404, ['ok' => false, 'success' => false, 'error' => 'Vendor not found.']);
 
         $batchId = (int)($input['batch_id'] ?? getActiveBatchId($pdo, (int)$v['id']));
-        if (!$batchId) apiRespond(400, ['ok' => false, 'error' => 'No active batch found for this vendor.']);
+        if (!$batchId) apiRespond(400, ['ok' => false, 'success' => false, 'error' => 'No active batch found for this vendor.']);
 
-        $sheetName = trim($input['sheet_name'] ?? 'Custom Rates');
-        $rateType = trim($input['rate_type'] ?? 'regular');
-        $serviceCode = trim($input['service_code'] ?? '');
+        $sheetType = trim((string)($input['sheet_type'] ?? 'regular'));
+
+        if ($sheetType === 'zones') {
+            $country = clean($input['zone_country'] ?? ($input['country'] ?? null));
+            $postcode = clean($input['postcode'] ?? null);
+            $zone = clean($input['zone_value'] ?? ($input['zone'] ?? null));
+            $townCity = clean($input['town_city'] ?? null);
+
+            if (!$country || !$postcode || !$zone) {
+                apiRespond(400, ['ok' => false, 'success' => false, 'error' => 'Country, postcode, and zone are required for zone records.']);
+            }
+
+            $st = $pdo->prepare("
+                INSERT INTO vendor_zone_rows
+                (batch_id, vendor_id, source_row, country, postcode, zone, town_city, is_manually_modified, modified_at)
+                VALUES (?, ?, 0, ?, ?, ?, ?, 1, NOW())
+            ");
+            $st->execute([$batchId, $v['id'], $country, $postcode, $zone, $townCity]);
+            $newId = (int)$pdo->lastInsertId();
+            auditLog($pdo, 'vendor_zone_rows', $newId, 'zone', null, $zone, 'insert');
+
+            apiRespond(201, ['ok' => true, 'success' => true, 'id' => $newId, 'table' => 'vendor_zone_rows', 'message' => 'Zone record created successfully.']);
+        }
+
+        $sheetName = trim((string)($input['sheet_name'] ?? 'Custom Rates'));
+        $rateType = trim((string)($input['rate_type'] ?? ($sheetType ?: 'regular')));
+        $serviceCode = trim((string)($input['service_code'] ?? ''));
         $serviceName = clean($input['service_name'] ?? null);
         $country = clean($input['country'] ?? null);
         $weightLabel = clean($input['weight_label'] ?? null);
         $weightKg = isset($input['weight_kg']) && is_numeric($input['weight_kg']) ? (float)$input['weight_kg'] : weightKg($weightLabel ?? '');
         $zone = clean($input['zone'] ?? null);
-        $rate = isset($input['rate']) && is_numeric($input['rate']) ? (float)$input['rate'] : null;
+        $rate = isset($input['rate']) && is_numeric($input['rate']) ? (float)$input['rate'] : (isset($input['price']) && is_numeric($input['price']) ? (float)$input['price'] : null);
         $rateRaw = clean($input['rate_raw'] ?? ($rate !== null ? (string)$rate : null));
         $transitTime = clean($input['transit_time'] ?? null);
 
-        if ($serviceCode === '') apiRespond(400, ['ok' => false, 'error' => 'service_code is required.']);
+        if ($serviceCode === '') apiRespond(400, ['ok' => false, 'success' => false, 'error' => 'service_code is required.']);
 
         $st = $pdo->prepare("
             INSERT INTO vendor_rate_rows
@@ -146,60 +179,122 @@ try {
 
         auditLog($pdo, 'vendor_rate_rows', $newId, 'rate', null, $rate, 'insert');
 
-        apiRespond(201, ['ok' => true, 'id' => $newId, 'message' => 'Rate record created successfully.']);
+        apiRespond(201, ['ok' => true, 'success' => true, 'id' => $newId, 'table' => 'vendor_rate_rows', 'message' => 'Rate record created successfully.']);
 
     } elseif ($method === 'PATCH') {
-        // Update rate row
+        // Update rate or zone row
         $input = getJsonInput();
-        $id = (int)($_GET['id'] ?? ($input['id'] ?? 0));
-        if ($id <= 0) apiRespond(400, ['ok' => false, 'error' => 'id is required.']);
+        if (empty($input)) {
+            $input = !empty($_POST) ? $_POST : $_GET;
+        }
 
-        $existing = $pdo->prepare("SELECT * FROM vendor_rate_rows WHERE id = ?");
+        $id = (int)($_GET['id'] ?? ($input['id'] ?? 0));
+        if ($id <= 0) apiRespond(400, ['ok' => false, 'success' => false, 'error' => 'id is required.']);
+
+        $table = trim((string)($_GET['table'] ?? ($input['table'] ?? 'vendor_rate_rows')));
+        if ($table !== 'vendor_zone_rows') {
+            $table = 'vendor_rate_rows';
+        }
+
+        // Support { field: "rate", value: 120 } or { field: "price", value: 120 } format from client makeEditable
+        if (isset($input['field']) && array_key_exists('value', $input)) {
+            $fieldName = trim((string)$input['field']);
+            $input[$fieldName] = $input['value'];
+        }
+
+        // Support price / unit_price / amount aliases for rate
+        if ((array_key_exists('price', $input) || array_key_exists('unit_price', $input) || array_key_exists('amount', $input)) && !array_key_exists('rate', $input)) {
+            $input['rate'] = $input['price'] ?? ($input['unit_price'] ?? $input['amount']);
+        }
+        if (array_key_exists('service', $input) && !array_key_exists('service_code', $input)) {
+            $input['service_code'] = $input['service'];
+        }
+        if (array_key_exists('zone_value', $input) && !array_key_exists('zone', $input)) {
+            $input['zone'] = $input['zone_value'];
+        }
+        if (array_key_exists('city', $input) && !array_key_exists('town_city', $input)) {
+            $input['town_city'] = $input['city'];
+        }
+
+        $existing = $pdo->prepare("SELECT * FROM {$table} WHERE id = ?");
         $existing->execute([$id]);
         $row = $existing->fetch();
-        if (!$row) apiRespond(404, ['ok' => false, 'error' => 'Rate row not found.']);
+        if (!$row) apiRespond(404, ['ok' => false, 'success' => false, 'error' => ($table === 'vendor_zone_rows' ? 'Zone' : 'Rate') . ' row not found.']);
 
-        $allowedFields = ['rate', 'rate_raw', 'transit_time', 'service_name', 'country', 'zone', 'weight_label', 'weight_kg'];
         $updates = [];
         $params = [];
 
-        foreach ($allowedFields as $field) {
-            if (array_key_exists($field, $input)) {
-                $newVal = $input[$field];
-                if ($field === 'rate') {
-                    $newVal = ($newVal !== null && is_numeric($newVal)) ? (float)$newVal : null;
+        if ($table === 'vendor_zone_rows') {
+            $allowedZoneFields = ['zone', 'town_city', 'country', 'postcode', 'state'];
+            foreach ($allowedZoneFields as $field) {
+                if (array_key_exists($field, $input)) {
+                    $newVal = clean($input[$field]);
+                    $updates[] = "{$field} = ?";
+                    $params[] = $newVal;
+                    auditLog($pdo, $table, $id, $field, $row[$field] ?? null, $newVal, 'update');
                 }
-                $updates[] = "{$field} = ?";
-                $params[] = $newVal;
-                auditLog($pdo, 'vendor_rate_rows', $id, $field, $row[$field], $newVal, 'update');
+            }
+        } else {
+            $allowedRateFields = ['rate', 'rate_raw', 'transit_time', 'service_code', 'service_name', 'country', 'zone', 'weight_label', 'weight_kg', 'sheet_name', 'rate_type'];
+            foreach ($allowedRateFields as $field) {
+                if (array_key_exists($field, $input)) {
+                    $newVal = $input[$field];
+                    if ($field === 'rate') {
+                        $newVal = ($newVal !== null && is_numeric($newVal)) ? (float)$newVal : null;
+                    }
+                    $updates[] = "{$field} = ?";
+                    $params[] = $newVal;
+                    auditLog($pdo, $table, $id, $field, $row[$field] ?? null, $newVal, 'update');
+                }
+            }
+
+            // If rate was updated and rate_raw was not explicitly provided, keep rate_raw in sync
+            if (array_key_exists('rate', $input) && !array_key_exists('rate_raw', $input)) {
+                $rateVal = $input['rate'];
+                $rateRawVal = ($rateVal !== null && is_numeric($rateVal)) ? (string)$rateVal : '-';
+                $updates[] = "rate_raw = ?";
+                $params[] = $rateRawVal;
             }
         }
 
-        if (empty($updates)) apiRespond(400, ['ok' => false, 'error' => 'No valid fields provided to update.']);
+        if (empty($updates)) {
+            apiRespond(400, ['ok' => false, 'success' => false, 'error' => 'No valid fields provided to update.']);
+        }
 
         $updates[] = "is_manually_modified = 1";
         $updates[] = "modified_at = NOW()";
         $params[] = $id;
 
-        $sql = "UPDATE vendor_rate_rows SET " . implode(', ', $updates) . " WHERE id = ?";
+        $sql = "UPDATE {$table} SET " . implode(', ', $updates) . " WHERE id = ?";
         $pdo->prepare($sql)->execute($params);
 
-        apiRespond(200, ['ok' => true, 'id' => $id, 'message' => 'Rate record updated successfully.']);
+        apiRespond(200, [
+            'ok' => true,
+            'success' => true,
+            'id' => $id,
+            'table' => $table,
+            'message' => ($table === 'vendor_zone_rows' ? 'Zone' : 'Rate') . ' record updated successfully.'
+        ]);
 
     } elseif ($method === 'DELETE') {
-        // Delete rate row
+        // Delete rate or zone row
         $id = (int)($_GET['id'] ?? 0);
-        if ($id <= 0) apiRespond(400, ['ok' => false, 'error' => 'id parameter is required.']);
+        if ($id <= 0) apiRespond(400, ['ok' => false, 'success' => false, 'error' => 'id parameter is required.']);
 
-        $existing = $pdo->prepare("SELECT * FROM vendor_rate_rows WHERE id = ?");
+        $table = trim((string)($_GET['table'] ?? 'vendor_rate_rows'));
+        if ($table !== 'vendor_zone_rows') {
+            $table = 'vendor_rate_rows';
+        }
+
+        $existing = $pdo->prepare("SELECT * FROM {$table} WHERE id = ?");
         $existing->execute([$id]);
         $row = $existing->fetch();
-        if (!$row) apiRespond(404, ['ok' => false, 'error' => 'Rate row not found.']);
+        if (!$row) apiRespond(404, ['ok' => false, 'success' => false, 'error' => ($table === 'vendor_zone_rows' ? 'Zone' : 'Rate') . ' row not found.']);
 
-        $pdo->prepare("DELETE FROM vendor_rate_rows WHERE id = ?")->execute([$id]);
-        auditLog($pdo, 'vendor_rate_rows', $id, '*', json_encode($row), null, 'delete');
+        $pdo->prepare("DELETE FROM {$table} WHERE id = ?")->execute([$id]);
+        auditLog($pdo, $table, $id, '*', json_encode($row), null, 'delete');
 
-        apiRespond(200, ['ok' => true, 'id' => $id, 'message' => 'Rate record deleted successfully.']);
+        apiRespond(200, ['ok' => true, 'success' => true, 'id' => $id, 'table' => $table, 'message' => 'Record deleted successfully.']);
 
     } else {
         apiRespond(405, ['ok' => false, 'error' => 'Method not allowed.']);

@@ -241,7 +241,25 @@ export async function queryRates(params = {}) {
 }
 
 /**
- * 8. Execute arbitrary sandbox query through backend proxy
+ * 8. Update rate record in Rates API
+ */
+export async function updateRateRecord(id, data = {}) {
+  const query = new URLSearchParams()
+  const recordId = id || data.id
+  if (recordId) query.set('id', String(recordId))
+  if (data.table) query.set('table', String(data.table))
+
+  const endpoint = `/api/rates.php?${query.toString()}`
+  const response = await requestRatesApi(endpoint, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: data
+  })
+  return response.data
+}
+
+/**
+ * 9. Execute arbitrary sandbox query through backend proxy
  */
 export async function executeSandboxQuery({
   method = 'GET',

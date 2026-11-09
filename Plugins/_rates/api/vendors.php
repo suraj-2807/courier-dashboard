@@ -68,18 +68,28 @@ try {
 
     } elseif ($method === 'PATCH') {
         $input = getJsonInput();
+        if (empty($input)) {
+            $input = !empty($_POST) ? $_POST : $_GET;
+        }
+
         $id = (int)($_GET['id'] ?? ($input['id'] ?? 0));
-        if ($id <= 0) apiRespond(400, ['ok' => false, 'error' => 'id is required.']);
+        if ($id <= 0) apiRespond(400, ['ok' => false, 'success' => false, 'error' => 'id is required.']);
 
         $vendor = getVendorById($pdo, $id);
-        if (!$vendor) apiRespond(404, ['ok' => false, 'error' => 'Vendor not found.']);
+        if (!$vendor) apiRespond(404, ['ok' => false, 'success' => false, 'error' => 'Vendor not found.']);
+
+        // Support { field: "name", value: "New Name" } format
+        if (isset($input['field']) && array_key_exists('value', $input)) {
+            $fieldName = trim((string)$input['field']);
+            $input[$fieldName] = $input['value'];
+        }
 
         $updates = [];
         $params = [];
 
-        if (array_key_exists('name', $input) && trim($input['name']) !== '') {
+        if (array_key_exists('name', $input) && trim((string)$input['name']) !== '') {
             $updates[] = "name = ?";
-            $params[] = trim($input['name']);
+            $params[] = trim((string)$input['name']);
         }
         if (array_key_exists('contact_info', $input)) {
             $updates[] = "contact_info = ?";
@@ -94,13 +104,13 @@ try {
             $params[] = (int)!empty($input['is_active']);
         }
 
-        if (empty($updates)) apiRespond(400, ['ok' => false, 'error' => 'No valid fields provided to update.']);
+        if (empty($updates)) apiRespond(400, ['ok' => false, 'success' => false, 'error' => 'No valid fields provided to update.']);
 
         $params[] = $id;
         $sql = "UPDATE vendors SET " . implode(', ', $updates) . " WHERE id = ?";
         $pdo->prepare($sql)->execute($params);
 
-        apiRespond(200, ['ok' => true, 'id' => $id, 'message' => 'Vendor updated successfully.']);
+        apiRespond(200, ['ok' => true, 'success' => true, 'id' => $id, 'message' => 'Vendor updated successfully.']);
 
     } else {
         apiRespond(405, ['ok' => false, 'error' => 'Method not allowed.']);

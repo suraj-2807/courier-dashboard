@@ -112,12 +112,18 @@ function makeEditable(cell, recordId, field, table) {
             return;
         }
         try {
-            const response = await apiRequest('PATCH', `/api/rates.php?id=${recordId}`, {
+            const payload = {
                 field: field,
                 value: newValue,
-                table: table || 'vendor_rate_rows'
-            });
-            if (response.success) {
+                table: table || 'vendor_rate_rows',
+                [field]: newValue
+            };
+            if (field === 'rate' || field === 'price') {
+                payload.rate = newValue;
+                payload.price = newValue;
+            }
+            const response = await apiRequest('PATCH', `/api/rates.php?id=${recordId}`, payload);
+            if (response.success || response.ok) {
                 cell.textContent = newValue || '—';
                 cell.style.background = '#d1fae5';
                 setTimeout(() => { cell.style.background = originalBg; }, 1500);
@@ -285,8 +291,8 @@ function exportTableCSV(tableId, filename) {
 async function deleteRecord(id, table, row) {
     if (!confirm('Are you sure you want to delete this record?')) return;
     try {
-        const resp = await apiRequest('DELETE', `api/rates.php?id=${id}&table=${encodeURIComponent(table)}`);
-        if (resp.success) {
+        const resp = await apiRequest('DELETE', `api/rates.php?id=${id}&table=${encodeURIComponent(table || 'vendor_rate_rows')}`);
+        if (resp.success || resp.ok) {
             if (row) row.style.display = 'none';
             showToast('Record deleted');
         } else {
@@ -329,7 +335,7 @@ async function submitAddRecord() {
     const data = Object.fromEntries(new FormData(form));
     try {
         const resp = await apiRequest('POST', 'api/rates.php', data);
-        if (resp.success) {
+        if (resp.success || resp.ok) {
             showToast('Record added successfully');
             closeAddModal();
             location.reload();

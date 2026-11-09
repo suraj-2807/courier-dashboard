@@ -15,6 +15,7 @@ import {
   resolveZone,
   getSheets,
   queryRates,
+  updateRate,
   sandboxProxy
 } from './rates.controller.js'
 
@@ -51,9 +52,13 @@ router.get('/zones', authMiddleware, resolveZone)
 router.get('/sheets', authMiddleware, getSheets)
 router.get('/vendors/:vendorCode/sheets', authMiddleware, getSheets)
 
-// 7. Rate Lookup / Query Records
+// 7. Rate Lookup / Query Records & Price Updates
 router.get('/query', authMiddleware, queryRates)
 router.get('/records', authMiddleware, queryRates)
+router.patch('/records', authMiddleware, updateRate)
+router.patch('/records/:id', authMiddleware, updateRate)
+router.patch('/rates', authMiddleware, updateRate)
+router.patch('/rates/:id', authMiddleware, updateRate)
 
 // 8. Live Sandbox Proxy
 router.post('/proxy', authMiddleware, sandboxProxy)
