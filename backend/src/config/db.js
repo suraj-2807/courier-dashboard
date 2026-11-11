@@ -868,6 +868,64 @@ export async function initializeDb() {
       }
     }
 
+    // ── Accounting Module Tables (Double-entry Ledger) ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS accounting_master_accounts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        account_code VARCHAR(20) NOT NULL UNIQUE,
+        account_name VARCHAR(150) NOT NULL,
+        account_type ENUM('asset', 'liability', 'equity', 'revenue', 'expense') NOT NULL,
+        group_category VARCHAR(100) NOT NULL,
+        parent_id INT DEFAULT NULL,
+        is_subledger TINYINT(1) DEFAULT 0,
+        linked_entity_type ENUM('customer', 'vendor', 'bank', 'cash', 'tax', 'none') DEFAULT 'none',
+        linked_entity_id INT DEFAULT NULL,
+        current_balance DECIMAL(15,2) DEFAULT 0.00,
+        is_active TINYINT(1) DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_acct_type (account_type),
+        INDEX idx_linked (linked_entity_type, linked_entity_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+
+      await execute(`CREATE TABLE IF NOT EXISTS accounting_vouchers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        voucher_no VARCHAR(50) NOT NULL UNIQUE,
+        voucher_type ENUM('receipt', 'payment', 'journal', 'sales_invoice', 'purchase_bill', 'contra', 'credit_note', 'debit_note') NOT NULL,
+        voucher_date DATE NOT NULL,
+        reference_no VARCHAR(100) DEFAULT '',
+        shipment_id INT DEFAULT NULL,
+        customer_id INT DEFAULT NULL,
+        vendor_id INT DEFAULT NULL,
+        total_debit DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        total_credit DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        is_tallied TINYINT(1) NOT NULL DEFAULT 1,
+        narration TEXT,
+        created_by VARCHAR(100) DEFAULT 'Admin',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_v_date (voucher_date),
+        INDEX idx_v_type (voucher_type),
+        INDEX idx_v_cust (customer_id),
+        INDEX idx_v_vendor (vendor_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+
+      await execute(`CREATE TABLE IF NOT EXISTS accounting_voucher_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        voucher_id INT NOT NULL,
+        account_id INT NOT NULL,
+        debit_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        credit_amount DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        particulars VARCHAR(255) DEFAULT '',
+        INDEX idx_vi_voucher (voucher_id),
+        INDEX idx_vi_acct (account_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+
+      console.log('Accounting tables ready.')
+    } catch (accErr) {
+      if (accErr.code !== 'ER_TABLE_EXISTS_ERROR') {
+        console.error('Accounting table initialization notice:', accErr.message)
+      }
+    }
+
     console.log('DB initialization successfully completed!')
   } catch (err) {
     console.error('DB Initialization/Migration Failed:', err)
