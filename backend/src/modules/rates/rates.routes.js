@@ -16,7 +16,12 @@ import {
   getSheets,
   queryRates,
   updateRate,
-  sandboxProxy
+  sandboxProxy,
+  getProfitRules,
+  createProfitRuleHandler,
+  updateProfitRuleHandler,
+  deleteProfitRuleHandler,
+  previewProfit
 } from './rates.controller.js'
 
 const router = express.Router()
@@ -62,6 +67,13 @@ router.patch('/rates/:id', authMiddleware, updateRate)
 
 // 8. Live Sandbox Proxy
 router.post('/proxy', authMiddleware, sandboxProxy)
+
+// 9. Profit Margin Rules (Weight & Country-wise markup)
+router.get('/profit-rules', authMiddleware, getProfitRules)
+router.post('/profit-rules', authMiddleware, createProfitRuleHandler)
+router.put('/profit-rules/:id', authMiddleware, updateProfitRuleHandler)
+router.delete('/profit-rules/:id', authMiddleware, deleteProfitRuleHandler)
+router.post('/preview-profit', authMiddleware, previewProfit)
 
 // ═══════════════════════════════════════════════════════════════════════
 // LEGACY COMPATIBILITY ROUTES

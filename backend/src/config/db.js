@@ -840,6 +840,44 @@ export async function initializeDb() {
       }
     }
 
+    // ── Rate Profit Rules (Weight & Country-wise markup) ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS rate_profit_rules (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        rule_type ENUM('weight', 'country') NOT NULL,
+        vendor_code VARCHAR(50) DEFAULT 'all',
+        country VARCHAR(100) DEFAULT '',
+        min_weight DECIMAL(10,3) DEFAULT 0.000,
+        max_weight DECIMAL(10,3) DEFAULT 9999.000,
+        margin_type ENUM('percentage', 'fixed_amount', 'fixed_per_kg') NOT NULL DEFAULT 'percentage',
+        margin_value DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+        is_active TINYINT(1) DEFAULT 1,
+        notes VARCHAR(255) DEFAULT '',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX idx_rpr_type (rule_type),
+        INDEX idx_rpr_vendor (vendor_code),
+        INDEX idx_rpr_country (country),
+        INDEX idx_rpr_active (is_active)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+
+      const [countRows] = await pool.query('SELECT COUNT(*) as cnt FROM rate_profit_rules')
+      const count = countRows && countRows[0] ? countRows[0].cnt : 0
+      if (count === 0) {
+        await execute(`INSERT INTO rate_profit_rules 
+          (rule_type, vendor_code, country, min_weight, max_weight, margin_type, margin_value, is_active, notes)
+          VALUES 
+          ('weight', 'pacific', '', 0.000, 5.000, 'percentage', 15.00, 1, 'Pacific 0-5 kg standard weight profit (+15%)'),
+          ('country', 'sairaj', 'USA', 0.000, 9999.000, 'percentage', 20.00, 1, 'Sairaj USA country destination profit (+20%)')
+        `)
+      }
+      console.log('rate_profit_rules table ready.')
+    } catch (rprErr) {
+      if (rprErr.code !== 'ER_TABLE_EXISTS_ERROR') {
+        console.error('rate_profit_rules migration notice:', rprErr.message)
+      }
+    }
+
     console.log('DB initialization successfully completed!')
   } catch (err) {
     console.error('DB Initialization/Migration Failed:', err)

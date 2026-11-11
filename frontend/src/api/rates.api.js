@@ -61,6 +61,24 @@ export const executeSandboxQuery = ({ method = 'GET', url, headers = {}, body = 
   api.post('/rates/proxy', { method, url, headers, body }).then((res) => res.data)
 
 /**
+ * 9. Profit Margin Rules API
+ */
+export const getProfitRules = (ruleType) =>
+  api.get('/rates/profit-rules', { params: ruleType ? { rule_type: ruleType } : {} }).then((res) => res.data)
+
+export const createProfitRule = (data) =>
+  api.post('/rates/profit-rules', data).then((res) => res.data)
+
+export const updateProfitRule = (id, data) =>
+  api.put(`/rates/profit-rules/${id}`, data).then((res) => res.data)
+
+export const deleteProfitRule = (id) =>
+  api.delete(`/rates/profit-rules/${id}`).then((res) => res.data)
+
+export const previewProfit = (data) =>
+  api.post('/rates/preview-profit', data).then((res) => res.data)
+
+/**
  * Backwards compatibility methods
  */
 export const getVendorSheetDetails = (vendorCode = 'pacific') =>

@@ -1,246 +1,240 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  Terminal,
   Calculator,
   Search,
-  Code2,
-  Copy,
+  Plus,
+  Trash2,
+  Edit3,
   Check,
-  Send,
-  Sparkles,
+  TrendingUp,
+  Percent,
   Layers,
   Globe,
-  Clock,
-  MapPin,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
   Table2,
-  ExternalLink,
-  Key,
-  ShieldCheck,
   Zap,
-  ArrowRight,
-  ChevronRight,
-  Database,
   Building2,
-  Package
+  Package,
+  Sliders,
+  DollarSign,
+  ArrowRight,
+  ShieldCheck,
+  X,
+  Scale
 } from 'lucide-react'
 import {
-  RATES_API_KEY,
-  RATES_API_BASE_URL,
   getVendors,
   getVendorCountries,
   getVendorServices,
-  resolveVendorZone,
   getWorksheets,
   queryRateRecords,
   calculateVendorRate,
-  executeSandboxQuery
+  getProfitRules,
+  createProfitRule,
+  updateProfitRule,
+  deleteProfitRule,
+  previewProfit
 } from '../api/rates.api'
 
-// Quick Presets directly from Prince Express API Specification
-const QUICK_PRESETS = [
-  {
-    id: 'calculate-pacific-usa',
-    name: 'Calculate Rate (Pacific USA)',
-    method: 'GET',
-    url: 'https://rates.princeexp.com/api/calculate.php?vendor=pacific&country=USA&service_code=PXC-EX%20NY%20SELF&weight_kg=1&postcode=10001',
-    description: 'Calculates shipping rate with zone resolution & weight slabs'
-  },
-  {
-    id: 'calculate-pacific-germany',
-    name: 'Calculate Rate (Pacific Germany)',
-    method: 'GET',
-    url: 'https://rates.princeexp.com/api/calculate.php?vendor=pacific&country=Germany&service_code=PXC-LHR-DDP&weight_kg=26',
-    description: 'Heavy shipment rate calculation with per-kg slab breakdown'
-  },
-  {
-    id: 'filter-services',
-    name: 'Filter Services by Country',
-    method: 'GET',
-    url: 'https://rates.princeexp.com/api/services.php?vendor=pacific&country=Germany',
-    description: 'Returns available service codes for dynamic dependent dropdowns'
-  },
-  {
-    id: 'list-countries',
-    name: 'List Countries',
-    method: 'GET',
-    url: 'https://rates.princeexp.com/api/countries.php?vendor=pacific',
-    description: 'Returns all 190+ destination countries for a vendor workbook'
-  },
-  {
-    id: 'rate-lookup',
-    name: 'Rate Lookup (Legacy)',
-    method: 'GET',
-    url: 'https://rates.princeexp.com/api/rates.php?vendor=pacific&country=Germany&limit=10',
-    description: 'Query raw rate records and tariffs'
-  },
-  {
-    id: 'list-vendors',
-    name: 'List Vendors',
-    method: 'GET',
-    url: 'https://rates.princeexp.com/api/vendors.php',
-    description: 'Returns active vendors, row counts, and batch versions'
-  },
-  {
-    id: 'list-worksheets',
-    name: 'List Worksheets',
-    method: 'GET',
-    url: 'https://rates.princeexp.com/api/sheets.php?vendor=pacific',
-    description: 'Returns worksheet metadata (regular, zonewise, zones) & headers'
-  },
-  {
-    id: 'lookup-zone',
-    name: 'Lookup Zone',
-    method: 'GET',
-    url: 'https://rates.princeexp.com/api/zones.php?vendor=pacific&country=USA&postcode=10001',
-    description: 'Resolves destination postcode to shipping zone and city'
-  }
-]
-
 export default function RatesPage() {
+  const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
-  const initialTab = searchParams.get('tab') || 'sandbox'
-  const [activeTab, setActiveTab] = useState(initialTab) // 'sandbox' | 'calculator' | 'explorer' | 'sheets' | 'docs'
+  const initialTab = searchParams.get('tab') || 'margins'
+  const [activeTab, setActiveTab] = useState(initialTab) // 'margins' | 'calculator' | 'explorer' | 'sheets'
 
-  // Sync tab with URL
   const handleTabChange = (tab) => {
     setActiveTab(tab)
     setSearchParams({ tab })
   }
 
-  // ── Copied State ──
-  const [copiedKey, setCopiedKey] = useState(false)
-  const [copiedResponse, setCopiedResponse] = useState(false)
-
-  const copyToClipboard = (text, type = 'key') => {
-    navigator.clipboard.writeText(text)
-    if (type === 'key') {
-      setCopiedKey(true)
-      setTimeout(() => setCopiedKey(false), 2000)
-    } else {
-      setCopiedResponse(true)
-      setTimeout(() => setCopiedResponse(false), 2000)
-    }
-    toast.success('Copied to clipboard!')
-  }
+  // ═══════════════════════════════════════════════════════════════════════
+  // VENDORS QUERY
+  // ═══════════════════════════════════════════════════════════════════════
+  const { data: vendorsData } = useQuery({
+    queryKey: ['rates-vendors'],
+    queryFn: getVendors
+  })
+  const vendorsList = vendorsData?.vendors || [
+    { name: 'Pacific', vendor_code: 'pacific' },
+    { name: 'SAIRAJ', vendor_code: 'sairaj' },
+    { name: 'ACX', vendor_code: 'acx' }
+  ]
 
   // ═══════════════════════════════════════════════════════════════════════
-  // TAB 1: LIVE API CONSOLE / SANDBOX STATE
+  // TAB 1: PROFIT MARGIN RULES STATE
   // ═══════════════════════════════════════════════════════════════════════
-  const [sandboxMethod, setSandboxMethod] = useState('GET')
-  const [sandboxUrl, setSandboxUrl] = useState(QUICK_PRESETS[0].url)
-  const [sandboxLoading, setSandboxLoading] = useState(false)
-  const [sandboxResponse, setSandboxResponse] = useState(null)
-  const [sandboxStatus, setSandboxStatus] = useState(null)
-  const [sandboxLatency, setSandboxLatency] = useState(null)
-  const [sandboxError, setSandboxError] = useState(null)
-  const [responseViewMode, setResponseViewMode] = useState('visual') // 'visual' | 'json'
+  const {
+    data: profitRulesData,
+    isLoading: rulesLoading,
+    refetch: refetchRules
+  } = useQuery({
+    queryKey: ['profit-rules'],
+    queryFn: () => getProfitRules()
+  })
 
-  // Apply a quick preset
-  const handleApplyPreset = (preset) => {
-    setSandboxMethod(preset.method)
-    setSandboxUrl(preset.url)
-    toast.success(`Loaded preset: ${preset.name}`)
+  const profitRules = profitRulesData?.rules || []
+  const weightRules = useMemo(() => profitRules.filter(r => r.rule_type === 'weight'), [profitRules])
+  const countryRules = useMemo(() => profitRules.filter(r => r.rule_type === 'country'), [profitRules])
+
+  // Modal State for Add / Edit Rule
+  const [ruleModalOpen, setRuleModalOpen] = useState(false)
+  const [editingRule, setEditingRule] = useState(null)
+  const [ruleForm, setRuleForm] = useState({
+    rule_type: 'weight',
+    vendor_code: 'all',
+    country: '',
+    min_weight: '0',
+    max_weight: '9999',
+    margin_type: 'percentage',
+    margin_value: '15',
+    is_active: 1,
+    notes: ''
+  })
+
+  const openAddModal = (type = 'weight') => {
+    setEditingRule(null)
+    setRuleForm({
+      rule_type: type,
+      vendor_code: 'all',
+      country: '',
+      min_weight: '0',
+      max_weight: '9999',
+      margin_type: 'percentage',
+      margin_value: type === 'weight' ? '15' : '20',
+      is_active: 1,
+      notes: ''
+    })
+    setRuleModalOpen(true)
   }
 
-  // Send request in Sandbox
-  const handleSendSandboxRequest = async () => {
-    if (!sandboxUrl) {
-      toast.error('Please enter an endpoint URL')
-      return
-    }
+  const openEditModal = (rule) => {
+    setEditingRule(rule)
+    setRuleForm({
+      rule_type: rule.rule_type || 'weight',
+      vendor_code: rule.vendor_code || 'all',
+      country: rule.country || '',
+      min_weight: String(rule.min_weight ?? 0),
+      max_weight: String(rule.max_weight ?? 9999),
+      margin_type: rule.margin_type || 'percentage',
+      margin_value: String(rule.margin_value ?? 0),
+      is_active: rule.is_active ? 1 : 0,
+      notes: rule.notes || ''
+    })
+    setRuleModalOpen(true)
+  }
 
-    setSandboxLoading(true)
-    setSandboxError(null)
-    setSandboxResponse(null)
-    setSandboxStatus(null)
-
-    const startTime = Date.now()
-    try {
-      const res = await executeSandboxQuery({
-        method: sandboxMethod,
-        url: sandboxUrl
-      })
-
-      const latency = res.latencyMs || (Date.now() - startTime)
-      setSandboxLatency(latency)
-      setSandboxStatus(res.statusCode || 200)
-      setSandboxResponse(res.data)
-
-      if (res.statusCode >= 400 || (res.data && res.data.ok === false && res.data.success === false)) {
-        setSandboxError(res.data?.error || res.data?.message || `Request returned status ${res.statusCode}`)
-      } else {
-        toast.success(`200 OK (${latency}ms)`)
+  // Save Rule Mutation
+  const saveRuleMutation = useMutation({
+    mutationFn: async (payload) => {
+      if (editingRule?.id) {
+        return updateProfitRule(editingRule.id, payload)
       }
-    } catch (err) {
-      const latency = Date.now() - startTime
-      setSandboxLatency(latency)
-      setSandboxStatus(err.response?.status || 500)
-      const data = err.response?.data || { error: err.message }
-      setSandboxResponse(data)
-      setSandboxError(data.error || data.message || err.message)
-      toast.error(err.message || 'Request failed')
-    } finally {
-      setSandboxLoading(false)
+      return createProfitRule(payload)
+    },
+    onSuccess: () => {
+      toast.success(editingRule ? 'Rule updated successfully' : 'Rule created successfully')
+      setRuleModalOpen(false)
+      queryClient.invalidateQueries(['profit-rules'])
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || err.message || 'Failed to save rule')
     }
+  })
+
+  // Delete Rule Mutation
+  const deleteRuleMutation = useMutation({
+    mutationFn: (id) => deleteProfitRule(id),
+    onSuccess: () => {
+      toast.success('Profit rule removed')
+      queryClient.invalidateQueries(['profit-rules'])
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || err.message || 'Failed to delete rule')
+    }
+  })
+
+  // Toggle Active Mutation
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, is_active }) => updateProfitRule(id, { is_active }),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['profit-rules'])
+    }
+  })
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // LIVE PROFIT SIMULATOR / TESTER STATE
+  // ═══════════════════════════════════════════════════════════════════════
+  const [simVendor, setSimVendor] = useState('pacific')
+  const [simCountry, setSimCountry] = useState('USA')
+  const [simWeight, setSimWeight] = useState('3')
+  const [simBaseCost, setSimBaseCost] = useState('300')
+  const [simLoading, setSimLoading] = useState(false)
+  const [simResult, setSimResult] = useState(null)
+
+  const handleRunSimulator = async () => {
+    setSimLoading(true)
+    try {
+      const res = await previewProfit({
+        vendor_code: simVendor,
+        country: simCountry,
+        weight: parseFloat(simWeight) || 1,
+        base_vendor_cost: parseFloat(simBaseCost) || 0
+      })
+      setSimResult(res)
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Simulator failed')
+    } finally {
+      setSimLoading(false)
+    }
+  }
+
+  // Auto-run simulation on initial mount or parameters change
+  useEffect(() => {
+    handleRunSimulator()
+  }, [profitRules, simVendor, simCountry, simWeight, simBaseCost])
+
+  // Quick Preset buttons for simulator
+  const applySimPreset = (vendor, country, weight, baseCost) => {
+    setSimVendor(vendor)
+    setSimCountry(country)
+    setSimWeight(String(weight))
+    setSimBaseCost(String(baseCost))
   }
 
   // ═══════════════════════════════════════════════════════════════════════
   // TAB 2: INTERACTIVE RATE CALCULATOR STATE
   // ═══════════════════════════════════════════════════════════════════════
   const [calcVendor, setCalcVendor] = useState('pacific')
-  const [calcCountry, setCalcCountry] = useState('Germany')
-  const [calcService, setCalcService] = useState('PXC-LHR-DDP')
-  const [calcWeight, setCalcWeight] = useState('26')
-  const [calcPostcode, setCalcPostcode] = useState('')
-  const [calcResult, setCalcResult] = useState(null)
+  const [calcCountry, setCalcCountry] = useState('USA')
+  const [calcService, setCalcService] = useState('')
+  const [calcWeight, setCalcWeight] = useState('3')
+  const [calcPostcode, setCalcPostcode] = useState('10001')
   const [calcLoading, setCalcLoading] = useState(false)
+  const [calcResult, setCalcResult] = useState(null)
   const [calcError, setCalcError] = useState(null)
 
-  // Fetch vendors
-  const { data: vendorsData } = useQuery({
-    queryKey: ['portal-vendors'],
-    queryFn: getVendors
-  })
-  const vendors = vendorsData?.vendors || [{ name: 'Pacific Express', slug: 'pacific', vendor_code: 'pacific' }]
-
-  // Fetch countries for selected vendor
-  const { data: countriesData } = useQuery({
-    queryKey: ['vendor-countries', calcVendor],
-    queryFn: () => getVendorCountries(calcVendor),
-    enabled: !!calcVendor
-  })
-  const availableCountries = countriesData?.countries || []
-
-  // Fetch services for vendor & country
-  const { data: servicesData } = useQuery({
+  const { data: servicesData, isLoading: servicesLoading } = useQuery({
     queryKey: ['vendor-services', calcVendor, calcCountry],
     queryFn: () => getVendorServices(calcVendor, calcCountry),
-    enabled: !!calcVendor && !!calcCountry
+    enabled: !!calcVendor
   })
   const availableServices = servicesData?.services || []
 
-  // Auto-select first service when services update
   useEffect(() => {
     if (availableServices.length > 0 && !availableServices.find(s => s.service_code === calcService)) {
       setCalcService(availableServices[0].service_code)
     }
-  }, [availableServices, calcService])
+  }, [availableServices])
 
-  // Run Calculator
   const handleCalculateRate = async (e) => {
     if (e) e.preventDefault()
-    if (!calcCountry) {
-      toast.error('Destination country is required')
-      return
-    }
     if (!calcWeight || parseFloat(calcWeight) <= 0) {
-      toast.error('Valid shipment weight (kg) is required')
+      toast.error('Please enter a valid weight in kg')
       return
     }
 
@@ -254,20 +248,12 @@ export default function RatesPage() {
         weight_kg: parseFloat(calcWeight),
         postcode: calcPostcode
       })
-
-      if (res && (res.success || res.ok)) {
-        setCalcResult(res)
-        toast.success(`Calculated Rate: ₹${res.final_rate || res.vendor_rate}`)
-      } else {
-        setCalcResult(null)
-        setCalcError(res?.message || res?.error || 'Rate could not be calculated')
-        toast.error(res?.message || res?.error || 'Rate calculation failed')
-      }
+      setCalcResult(res)
+      toast.success('Rate calculated with profit margin!')
     } catch (err) {
-      setCalcResult(null)
-      const msg = err.response?.data?.message || err.response?.data?.error || err.message
-      setCalcError(msg)
-      toast.error(msg)
+      const errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Failed to calculate rate'
+      setCalcError(errMsg)
+      toast.error(errMsg)
     } finally {
       setCalcLoading(false)
     }
@@ -290,7 +276,6 @@ export default function RatesPage() {
     }),
     enabled: activeTab === 'explorer'
   })
-
   const rateRecords = explorerData?.rates || []
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -305,446 +290,439 @@ export default function RatesPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
-      {/* ── HEADER BANNER ── */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-red-950 text-white rounded-3xl p-6 sm:p-8 shadow-xl border border-gray-700/50">
-        <div className="absolute -top-24 -right-24 w-80 h-80 bg-red-600/20 rounded-full blur-3xl pointer-events-none"></div>
-        <div className="absolute -bottom-20 -left-20 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-        <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                Rates API v2.0 • Live
-              </span>
-              <span className="text-gray-400 text-xs font-medium">Prince Express Rates Engine</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white flex items-center gap-2.5">
-              <Zap className="w-7 h-7 text-red-500 shrink-0" />
-              Rates API & Live Sandbox
-            </h1>
-            <p className="text-gray-300 text-sm max-w-2xl leading-relaxed">
-              Dynamically calculate shipping tariffs with itemized arithmetic, zone resolution, and incremental weight tiers.
-              All rates are evaluated live via <code className="text-red-300 font-mono text-xs">rates.princeexp.com</code>.
-            </p>
+      {/* ── CLEAN EXECUTIVE HEADER ── */}
+      <div className="bg-white rounded-3xl p-6 sm:p-7 shadow-xs border border-gray-200/90 flex flex-col md:flex-row items-start md:items-center justify-between gap-5">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              Profit Margin Engine Active
+            </span>
+            <span className="text-gray-400 text-xs font-medium">Automatic Booking Markup</span>
           </div>
-
-          {/* API Key Box */}
-          <div className="bg-gray-800/80 backdrop-blur-md border border-gray-700/80 rounded-2xl p-4 w-full sm:w-auto min-w-[320px] shadow-lg">
-            <div className="flex items-center justify-between text-xs text-gray-400 mb-1.5 font-medium">
-              <span className="flex items-center gap-1.5 text-gray-200 font-semibold">
-                <Key className="w-3.5 h-3.5 text-amber-400" />
-                API Key
-              </span>
-              <span className="text-[11px] text-emerald-400 flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> Authenticated
-              </span>
-            </div>
-            <div className="flex items-center gap-2 bg-gray-950/70 border border-gray-700/60 rounded-xl px-3 py-2 font-mono text-xs text-gray-200">
-              <span className="truncate max-w-[210px] select-all">{RATES_API_KEY}</span>
-              <button
-                type="button"
-                onClick={() => copyToClipboard(RATES_API_KEY, 'key')}
-                className="ml-auto p-1.5 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white transition cursor-pointer"
-                title="Copy API Key"
-              >
-                {copiedKey ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-            <div className="mt-2 flex items-center justify-between text-[11px] text-gray-400 pt-1 border-t border-gray-700/50">
-              <span>Endpoint:</span>
-              <span className="font-mono text-gray-300">rates.princeexp.com/api</span>
-            </div>
-          </div>
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-gray-900 flex items-center gap-2.5">
+            <TrendingUp className="w-7 h-7 text-emerald-600 shrink-0" />
+            Vendor Rate Margins & Profit Configuration
+          </h1>
+          <p className="text-gray-500 text-xs sm:text-sm max-w-3xl leading-relaxed">
+            Configure automatic profit markups on vendor costs by weight tier and destination country. When live rates are fetched into booking forms, your profit is automatically added to the shipping charge and calculated into the rate per kg.
+          </p>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="mt-6 pt-4 border-t border-gray-700/60 flex flex-wrap gap-2">
+        {/* Quick Summary Pill Box */}
+        <div className="flex items-center gap-3 bg-gray-50 border border-gray-200/80 rounded-2xl p-3 shrink-0">
+          <div className="text-center px-2">
+            <div className="text-base font-black text-gray-900">{weightRules.length}</div>
+            <div className="text-[10px] uppercase font-bold text-gray-500">Weight Rules</div>
+          </div>
+          <div className="h-7 w-px bg-gray-200"></div>
+          <div className="text-center px-2">
+            <div className="text-base font-black text-gray-900">{countryRules.length}</div>
+            <div className="text-[10px] uppercase font-bold text-gray-500">Country Rules</div>
+          </div>
+          <div className="h-7 w-px bg-gray-200"></div>
           <button
             type="button"
-            onClick={() => handleTabChange('sandbox')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
-              activeTab === 'sandbox'
-                ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
-                : 'bg-gray-800/60 text-gray-300 hover:bg-gray-800 hover:text-white'
-            }`}
+            onClick={() => openAddModal('weight')}
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer"
           >
-            <Terminal className="w-4 h-4" />
-            Live API Console / Sandbox
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleTabChange('calculator')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
-              activeTab === 'calculator'
-                ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
-                : 'bg-gray-800/60 text-gray-300 hover:bg-gray-800 hover:text-white'
-            }`}
-          >
-            <Calculator className="w-4 h-4" />
-            Interactive Rate Calculator
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleTabChange('explorer')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
-              activeTab === 'explorer'
-                ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
-                : 'bg-gray-800/60 text-gray-300 hover:bg-gray-800 hover:text-white'
-            }`}
-          >
-            <Table2 className="w-4 h-4" />
-            Rate Records / Explorer
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleTabChange('sheets')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
-              activeTab === 'sheets'
-                ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
-                : 'bg-gray-800/60 text-gray-300 hover:bg-gray-800 hover:text-white'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            Worksheets Schema
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleTabChange('docs')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
-              activeTab === 'docs'
-                ? 'bg-red-600 text-white shadow-md shadow-red-600/30'
-                : 'bg-gray-800/60 text-gray-300 hover:bg-gray-800 hover:text-white'
-            }`}
-          >
-            <Code2 className="w-4 h-4" />
-            Endpoints Reference
+            <Plus className="w-3.5 h-3.5" />
+            Add Rule
           </button>
         </div>
       </div>
 
+      {/* ── NAVIGATION TABS ── */}
+      <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-2">
+        <button
+          type="button"
+          onClick={() => handleTabChange('margins')}
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+            activeTab === 'margins'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50 hover:text-gray-900'
+          }`}
+        >
+          <Sliders className="w-4 h-4" />
+          Profit Margin Rules
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleTabChange('calculator')}
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+            activeTab === 'calculator'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50 hover:text-gray-900'
+          }`}
+        >
+          <Calculator className="w-4 h-4" />
+          Rate & Margin Calculator
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleTabChange('explorer')}
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+            activeTab === 'explorer'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50 hover:text-gray-900'
+          }`}
+        >
+          <Table2 className="w-4 h-4" />
+          Vendor Rate Explorer
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleTabChange('sheets')}
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition cursor-pointer ${
+            activeTab === 'sheets'
+              ? 'bg-emerald-600 text-white shadow-sm'
+              : 'bg-white text-gray-600 border border-gray-200/80 hover:bg-gray-50 hover:text-gray-900'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          Worksheets Schema
+        </button>
+      </div>
+
       {/* ═════════════════════════════════════════════════════════════════════ */}
-      {/* TAB 1: LIVE API CONSOLE / SANDBOX                                    */}
+      {/* TAB 1: PROFIT MARGIN RULES (Weight & Country)                        */}
       {/* ═════════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'sandbox' && (
-        <div className="space-y-6">
-          {/* Preset Buttons */}
-          <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-xs">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-red-600" />
-                Quick Presets
-              </span>
-              <span className="text-xs text-gray-400">Click a preset to load into the live console</span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {QUICK_PRESETS.map((preset) => {
-                const isActive = sandboxUrl === preset.url
-                return (
+      {activeTab === 'margins' && (
+        <div className="space-y-8">
+          {/* ── LIVE PROFIT SIMULATOR / VISUAL PROOF CARD ── */}
+          <div className="bg-gradient-to-br from-slate-900 via-gray-900 to-emerald-950 text-white rounded-3xl p-6 sm:p-7 shadow-lg border border-gray-700/60 relative overflow-hidden">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+              <div className="space-y-1.5 max-w-xl">
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 w-fit">
+                  <Zap className="w-3 h-3 text-emerald-400" />
+                  Live Simulator & Formula Verification
+                </span>
+                <h3 className="text-lg sm:text-xl font-extrabold text-white">
+                  Test Rate Profit Addition in Real-Time
+                </h3>
+                <p className="text-xs text-gray-300 leading-relaxed">
+                  Enter or test sample values below to verify how profit additions are calculated and divided into the rate per kg when booking forms fetch rates.
+                </p>
+
+                {/* Example Quick Presets */}
+                <div className="flex flex-wrap items-center gap-2 pt-2">
+                  <span className="text-[11px] text-gray-400 font-semibold">Test User Examples:</span>
                   <button
-                    key={preset.id}
                     type="button"
-                    onClick={() => handleApplyPreset(preset)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer border ${
-                      isActive
-                        ? 'bg-red-50 text-red-700 border-red-300 shadow-xs'
-                        : 'bg-gray-50 hover:bg-gray-100 text-gray-700 border-gray-200'
-                    }`}
+                    onClick={() => applySimPreset('pacific', 'USA', 3, 300)}
+                    className="px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-[11px] font-mono text-emerald-300 transition cursor-pointer"
                   >
-                    <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-gray-200 text-gray-800 font-bold">
-                      {preset.method}
-                    </span>
-                    <span>{preset.name}</span>
+                    Pacific 3kg @ ₹300 (+15%)
                   </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Request Query Bar */}
-          <div className="bg-white rounded-2xl p-5 border border-gray-200/80 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-bold text-gray-900 flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-red-600" />
-                Live Query Request
-              </div>
-              <span className="text-xs text-gray-500 font-mono">
-                Header: <code className="text-red-600 font-bold">X-API-Key</code> auto-injected
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row items-stretch gap-2">
-              {/* Method Selector */}
-              <div className="w-full sm:w-28 shrink-0">
-                <select
-                  value={sandboxMethod}
-                  onChange={(e) => setSandboxMethod(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3 py-2.5 text-sm font-bold text-gray-800 focus:outline-hidden focus:ring-2 focus:ring-red-500"
-                >
-                  <option value="GET">GET</option>
-                  <option value="POST">POST</option>
-                </select>
-              </div>
-
-              {/* Endpoint URL Input */}
-              <div className="flex-1 relative">
-                <input
-                  type="text"
-                  value={sandboxUrl}
-                  onChange={(e) => setSandboxUrl(e.target.value)}
-                  placeholder="https://rates.princeexp.com/api/calculate.php?..."
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-mono text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
-                />
-              </div>
-
-              {/* Send Button */}
-              <button
-                type="button"
-                onClick={handleSendSandboxRequest}
-                disabled={sandboxLoading}
-                className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-sm shadow-red-600/30 cursor-pointer disabled:opacity-50"
-              >
-                {sandboxLoading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-4 h-4" />
-                    Send Request
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* ── RESPONSE PANEL ── */}
-          <div className="bg-gray-900 text-gray-100 rounded-2xl border border-gray-800 shadow-xl overflow-hidden">
-            {/* Response Top Bar */}
-            <div className="px-5 py-3.5 bg-gray-950/80 border-b border-gray-800 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Response Output</span>
-                {sandboxStatus && (
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-bold font-mono ${
-                      sandboxStatus >= 200 && sandboxStatus < 300
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-                        : sandboxStatus >= 400 && sandboxStatus < 500
-                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                        : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'
-                    }`}
+                  <button
+                    type="button"
+                    onClick={() => applySimPreset('sairaj', 'USA', 10, 400)}
+                    className="px-2.5 py-1 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-[11px] font-mono text-emerald-300 transition cursor-pointer"
                   >
-                    {sandboxStatus} {sandboxStatus === 200 ? 'OK' : sandboxStatus === 422 ? 'Unprocessable' : ''}
-                  </span>
-                )}
-                {sandboxLatency !== null && (
-                  <span className="text-xs text-gray-400 font-mono flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-gray-500" />
-                    {sandboxLatency} ms
-                  </span>
-                )}
+                    Sairaj 10kg USA @ ₹400 (+20%)
+                  </button>
+                </div>
               </div>
 
-              {sandboxResponse && (
-                <div className="flex items-center gap-2">
-                  {/* View Mode Toggle (Visual Card vs Raw JSON) */}
-                  <div className="bg-gray-800 rounded-lg p-0.5 flex items-center text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setResponseViewMode('visual')}
-                      className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
-                        responseViewMode === 'visual' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white'
-                      }`}
+              {/* Simulation Result Card */}
+              <div className="bg-gray-800/90 border border-gray-700 rounded-2xl p-4 w-full lg:w-[420px] shadow-xl space-y-3">
+                <div className="grid grid-cols-4 gap-2 text-xs">
+                  <div>
+                    <label className="text-[10px] text-gray-400 block mb-1">Vendor</label>
+                    <select
+                      value={simVendor}
+                      onChange={e => setSimVendor(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white"
                     >
-                      Visual Card
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setResponseViewMode('json')}
-                      className={`px-2.5 py-1 rounded-md font-semibold transition cursor-pointer ${
-                        responseViewMode === 'json' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      Raw JSON
-                    </button>
+                      <option value="all">All Vendors</option>
+                      {vendorsList.map(v => (
+                        <option key={v.vendor_code} value={v.vendor_code}>{v.name}</option>
+                      ))}
+                    </select>
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => copyToClipboard(JSON.stringify(sandboxResponse, null, 2), 'response')}
-                    className="p-1.5 bg-gray-800 hover:bg-gray-700 rounded-lg text-gray-300 hover:text-white transition cursor-pointer"
-                    title="Copy Raw JSON"
-                  >
-                    {copiedResponse ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  </button>
+                  <div>
+                    <label className="text-[10px] text-gray-400 block mb-1">Country</label>
+                    <input
+                      type="text"
+                      value={simCountry}
+                      onChange={e => setSimCountry(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                      placeholder="e.g. USA"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-400 block mb-1">Weight (kg)</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      value={simWeight}
+                      onChange={e => setSimWeight(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                      placeholder="3"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-400 block mb-1">Vendor ₹</label>
+                    <input
+                      type="number"
+                      value={simBaseCost}
+                      onChange={e => setSimBaseCost(e.target.value)}
+                      className="w-full bg-gray-900 border border-gray-700 rounded-lg px-2 py-1.5 text-xs text-white"
+                      placeholder="300"
+                    />
+                  </div>
                 </div>
-              )}
-            </div>
 
-            {/* Response Body */}
-            <div className="p-5">
-              {!sandboxResponse && !sandboxLoading && !sandboxError && (
-                <div className="py-12 text-center text-gray-500 space-y-2">
-                  <Terminal className="w-10 h-10 mx-auto text-gray-700" />
-                  <p className="text-sm font-medium text-gray-400">Ready to execute query</p>
-                  <p className="text-xs max-w-sm mx-auto text-gray-500">
-                    Click "Send Request" or select a preset above to test the Live Rates API.
-                  </p>
-                </div>
-              )}
-
-              {sandboxLoading && (
-                <div className="py-12 text-center text-gray-400 space-y-3">
-                  <RefreshCw className="w-8 h-8 mx-auto text-red-500 animate-spin" />
-                  <p className="text-sm font-medium">Fetching response from rates.princeexp.com...</p>
-                </div>
-              )}
-
-              {sandboxResponse && responseViewMode === 'visual' && (
-                <div className="space-y-4">
-                  {/* Calculation Visual Card */}
-                  {sandboxResponse.final_rate !== undefined ? (
-                    <div className="bg-gradient-to-br from-gray-800 to-gray-850 rounded-xl p-5 border border-gray-700/80 space-y-4">
-                      <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-gray-700/60">
-                        <div>
-                          <div className="text-xs text-gray-400">Calculated Final Rate</div>
-                          <div className="text-3xl font-extrabold text-white flex items-baseline gap-1 mt-0.5">
-                            <span className="text-red-400">₹</span>
-                            {Number(sandboxResponse.final_rate).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            <span className="text-xs text-gray-400 font-normal ml-1">{sandboxResponse.currency || 'INR'}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          {sandboxResponse.transit_time && (
-                            <div className="px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-300 text-xs flex items-center gap-1.5 font-medium">
-                              <Clock className="w-3.5 h-3.5" />
-                              {sandboxResponse.transit_time}
-                            </div>
-                          )}
-                          {sandboxResponse.active_slab && (
-                            <div className="px-3 py-1 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-xs flex items-center gap-1.5 font-medium">
-                              <Layers className="w-3.5 h-3.5" />
-                              {sandboxResponse.active_slab}
-                            </div>
-                          )}
-                          {sandboxResponse.rate_type && (
-                            <div className="px-3 py-1 bg-blue-500/10 border border-blue-500/30 rounded-xl text-blue-300 text-xs flex items-center gap-1.5 font-medium">
-                              <Globe className="w-3.5 h-3.5" />
-                              {sandboxResponse.rate_type}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Arithmetic Formula */}
-                      {sandboxResponse.formula && (
-                        <div>
-                          <div className="text-xs text-gray-400 mb-1">Evaluation Formula</div>
-                          <div className="bg-gray-950/80 border border-gray-700/70 rounded-xl px-3.5 py-2 font-mono text-xs text-emerald-400 font-semibold break-all">
-                            {sandboxResponse.formula}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Key Attributes Grid */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                        <div className="bg-gray-900/60 p-2.5 rounded-xl border border-gray-800">
-                          <span className="text-gray-400 block">Vendor</span>
-                          <span className="font-semibold text-white mt-0.5 block truncate">
-                            {sandboxResponse.vendor || 'Pacific'}
-                          </span>
-                        </div>
-                        <div className="bg-gray-900/60 p-2.5 rounded-xl border border-gray-800">
-                          <span className="text-gray-400 block">Destination</span>
-                          <span className="font-semibold text-white mt-0.5 block truncate">
-                            {sandboxResponse.country} {sandboxResponse.zone ? `(${sandboxResponse.zone})` : ''}
-                          </span>
-                        </div>
-                        <div className="bg-gray-900/60 p-2.5 rounded-xl border border-gray-800">
-                          <span className="text-gray-400 block">Service Code</span>
-                          <span className="font-semibold text-white mt-0.5 block truncate">
-                            {sandboxResponse.service || '—'}
-                          </span>
-                        </div>
-                        <div className="bg-gray-900/60 p-2.5 rounded-xl border border-gray-800">
-                          <span className="text-gray-400 block">Chargeable Wt</span>
-                          <span className="font-semibold text-white mt-0.5 block">
-                            {sandboxResponse.chargeable_weight} kg (Actual: {sandboxResponse.actual_weight} kg)
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Step-by-Step Breakdown */}
-                      {sandboxResponse.calculation?.steps && (
-                        <div className="space-y-1.5 pt-2">
-                          <div className="text-xs font-semibold text-gray-300">Calculation Steps Trace</div>
-                          <div className="space-y-1.5">
-                            {sandboxResponse.calculation.steps.map((st, i) => (
-                              <div key={i} className="bg-gray-900/80 p-2.5 rounded-xl border border-gray-800 text-xs">
-                                <span className="font-bold text-red-400 mr-1.5">{st.title || `Step ${st.step}`}:</span>
-                                <span className="text-gray-300">{st.detail}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : sandboxResponse.countries ? (
-                    /* Countries Visual List */
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between text-xs text-gray-400">
-                        <span>Total Countries: <strong className="text-white">{sandboxResponse.count}</strong></span>
-                        <span>Vendor: <strong className="text-white">{sandboxResponse.vendor?.name}</strong></span>
-                      </div>
-                      <div className="max-h-80 overflow-y-auto grid grid-cols-2 sm:grid-cols-4 gap-2 pr-1">
-                        {sandboxResponse.countries.map((c, i) => (
-                          <div key={i} className="bg-gray-800/60 hover:bg-gray-800 p-2 rounded-xl text-xs text-gray-200 border border-gray-700/50 truncate">
-                            {c}
-                          </div>
-                        ))}
+                {/* Calculation Output Box */}
+                <div className="bg-gray-950/90 border border-emerald-500/30 rounded-xl p-3 space-y-2">
+                  <div className="flex items-center justify-between text-xs text-gray-300">
+                    <span>Base Vendor Cost:</span>
+                    <span className="font-mono font-bold text-gray-200">₹{parseFloat(simBaseCost || 0).toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-emerald-400">
+                    <span className="flex items-center gap-1">
+                      <TrendingUp className="w-3.5 h-3.5" />
+                      Profit Added ({simResult?.total_percentage || 0}%):
+                    </span>
+                    <span className="font-mono font-bold">+₹{simResult?.profit_margin_amount?.toFixed(2) || '0.00'}</span>
+                  </div>
+                  <div className="h-px bg-gray-800"></div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-[10px] uppercase font-bold text-gray-400">Customer Shipping Charge</div>
+                      <div className="text-xl font-black text-emerald-400 font-mono">
+                        ₹{simResult?.final_customer_rate?.toFixed(2) || '0.00'}
                       </div>
                     </div>
-                  ) : sandboxResponse.services ? (
-                    /* Services Visual List */
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between text-xs text-gray-400">
-                        <span>Available Services: <strong className="text-white">{sandboxResponse.count}</strong></span>
-                        <span>Country: <strong className="text-white">{sandboxResponse.country || 'All'}</strong></span>
-                      </div>
-                      <div className="space-y-2">
-                        {sandboxResponse.services.map((srv, i) => (
-                          <div key={i} className="bg-gray-800/70 p-3 rounded-xl border border-gray-700/60 flex items-center justify-between text-xs">
-                            <div className="font-mono font-bold text-red-400">{srv.service_code}</div>
-                            <div className="text-gray-400">{srv.service_name || 'Standard'}</div>
-                            <div className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] uppercase font-bold">
-                              {srv.rate_type}
-                            </div>
-                          </div>
-                        ))}
+                    <div className="text-right">
+                      <div className="text-[10px] uppercase font-bold text-gray-400">Rate / Kg on Form</div>
+                      <div className="text-lg font-black text-white font-mono">
+                        ₹{simResult?.rate_per_kg?.toFixed(2) || '0.00'}<span className="text-xs text-gray-400">/kg</span>
                       </div>
                     </div>
-                  ) : (
-                    /* Generic JSON display */
-                    <pre className="font-mono text-xs text-gray-300 max-h-96 overflow-y-auto whitespace-pre-wrap leading-relaxed">
-                      {JSON.stringify(sandboxResponse, null, 2)}
-                    </pre>
+                  </div>
+                  {simResult?.applied_rules?.length > 0 && (
+                    <div className="text-[10px] text-gray-400 pt-1 border-t border-gray-800/80 flex items-center gap-1.5 flex-wrap">
+                      <span className="font-semibold text-gray-300">Applied:</span>
+                      {simResult.applied_rules.map((r, idx) => (
+                        <span key={idx} className="bg-gray-800 text-emerald-300 px-1.5 py-0.5 rounded border border-gray-700">
+                          {r.notes || r.label} (+₹{r.profit_amount})
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
-              )}
-
-              {/* Raw JSON View */}
-              {sandboxResponse && responseViewMode === 'json' && (
-                <pre className="font-mono text-xs text-emerald-400 max-h-96 overflow-y-auto whitespace-pre-wrap leading-relaxed select-all">
-                  {JSON.stringify(sandboxResponse, null, 2)}
-                </pre>
-              )}
+              </div>
             </div>
+          </div>
+
+          {/* ── SECTION 1: WEIGHT-WISE PROFIT MARGINS ── */}
+          <div className="bg-white rounded-3xl p-6 sm:p-7 border border-gray-200/90 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+              <div>
+                <h3 className="text-lg font-extrabold text-gray-900 flex items-center gap-2">
+                  <Scale className="w-5 h-5 text-indigo-600" />
+                  Weight-Wise Profit Margins
+                </h3>
+                <p className="text-xs text-gray-500">
+                  Adds profit margin based on parcel chargeable weight bracket (e.g. Pacific offers ₹300 for 3 kg → +15% profit added).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openAddModal('weight')}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer w-fit"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Weight Margin
+              </button>
+            </div>
+
+            {weightRules.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 text-xs">
+                No weight-wise profit rules added yet. Click &quot;Add Weight Margin&quot; to configure.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-gray-400 uppercase text-[10px] tracking-wider font-bold">
+                      <th className="py-2.5 px-3">Rule Description</th>
+                      <th className="py-2.5 px-3">Vendor</th>
+                      <th className="py-2.5 px-3">Weight Bracket</th>
+                      <th className="py-2.5 px-3 text-right">Profit Addition</th>
+                      <th className="py-2.5 px-3 text-center">Status</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 font-medium text-gray-700">
+                    {weightRules.map(rule => (
+                      <tr key={rule.id} className="hover:bg-gray-50/70 transition-colors">
+                        <td className="py-3 px-3">
+                          <span className="font-bold text-gray-900">{rule.notes || 'Weight Tier Margin'}</span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-800 font-mono text-[11px] font-bold uppercase">
+                            {rule.vendor_code === 'all' ? 'All Vendors' : rule.vendor_code}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-bold text-gray-800">
+                          {parseFloat(rule.min_weight).toFixed(2)} kg — {parseFloat(rule.max_weight) >= 9999 ? '∞' : `${parseFloat(rule.max_weight).toFixed(2)} kg`}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono font-black text-emerald-700 text-sm">
+                          +{parseFloat(rule.margin_value)}{rule.margin_type === 'percentage' ? '%' : (rule.margin_type === 'fixed_per_kg' ? '₹/kg' : '₹')}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => toggleActiveMutation.mutate({ id: rule.id, is_active: rule.is_active ? 0 : 1 })}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition ${
+                              rule.is_active
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-gray-100 text-gray-500 border border-gray-200'
+                            }`}
+                          >
+                            {rule.is_active ? 'Active' : 'Disabled'}
+                          </button>
+                        </td>
+                        <td className="py-3 px-3 text-right space-x-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(rule)}
+                            className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-gray-100 rounded-lg transition cursor-pointer"
+                            title="Edit"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm('Delete this profit margin rule?')) {
+                                deleteRuleMutation.mutate(rule.id)
+                              }
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* ── SECTION 2: COUNTRY-WISE PROFIT MARGINS ── */}
+          <div className="bg-white rounded-3xl p-6 sm:p-7 border border-gray-200/90 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
+              <div>
+                <h3 className="text-lg font-extrabold text-gray-900 flex items-center gap-2">
+                  <Globe className="w-5 h-5 text-emerald-600" />
+                  Country-Wise Profit Margins
+                </h3>
+                <p className="text-xs text-gray-500">
+                  Adds profit margin based on destination country (e.g. Sairaj offers ₹400 for 10 kg in USA → +20% country addition).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openAddModal('country')}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-xs cursor-pointer w-fit"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Country Margin
+              </button>
+            </div>
+
+            {countryRules.length === 0 ? (
+              <div className="text-center py-8 text-gray-400 text-xs">
+                No country-wise profit rules added yet. Click &quot;Add Country Margin&quot; to configure.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-gray-400 uppercase text-[10px] tracking-wider font-bold">
+                      <th className="py-2.5 px-3">Rule Description</th>
+                      <th className="py-2.5 px-3">Vendor</th>
+                      <th className="py-2.5 px-3">Destination Country</th>
+                      <th className="py-2.5 px-3">Weight Tier</th>
+                      <th className="py-2.5 px-3 text-right">Profit Addition</th>
+                      <th className="py-2.5 px-3 text-center">Status</th>
+                      <th className="py-2.5 px-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 font-medium text-gray-700">
+                    {countryRules.map(rule => (
+                      <tr key={rule.id} className="hover:bg-gray-50/70 transition-colors">
+                        <td className="py-3 px-3">
+                          <span className="font-bold text-gray-900">{rule.notes || `${rule.country} Margin`}</span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="px-2 py-0.5 rounded-md bg-gray-100 text-gray-800 font-mono text-[11px] font-bold uppercase">
+                            {rule.vendor_code === 'all' ? 'All Vendors' : rule.vendor_code}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                            {rule.country || 'Any Country'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-mono text-gray-600">
+                          {parseFloat(rule.min_weight) === 0 && parseFloat(rule.max_weight) >= 9999
+                            ? 'All Weights'
+                            : `${parseFloat(rule.min_weight).toFixed(2)} - ${parseFloat(rule.max_weight).toFixed(2)} kg`}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono font-black text-emerald-700 text-sm">
+                          +{parseFloat(rule.margin_value)}{rule.margin_type === 'percentage' ? '%' : (rule.margin_type === 'fixed_per_kg' ? '₹/kg' : '₹')}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => toggleActiveMutation.mutate({ id: rule.id, is_active: rule.is_active ? 0 : 1 })}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold cursor-pointer transition ${
+                              rule.is_active
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-gray-100 text-gray-500 border border-gray-200'
+                            }`}
+                          >
+                            {rule.is_active ? 'Active' : 'Disabled'}
+                          </button>
+                        </td>
+                        <td className="py-3 px-3 text-right space-x-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(rule)}
+                            className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-gray-100 rounded-lg transition cursor-pointer"
+                            title="Edit"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm('Delete this country profit rule?')) {
+                                deleteRuleMutation.mutate(rule.id)
+                              }
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -753,269 +731,167 @@ export default function RatesPage() {
       {/* TAB 2: INTERACTIVE RATE CALCULATOR                                   */}
       {/* ═════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'calculator' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Form */}
-          <div className="lg:col-span-5 bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                <Calculator className="w-5 h-5 text-red-600" />
-                Live Shipping Rate Calculator
-              </h2>
-              <span className="text-xs text-emerald-600 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                API Driven
-              </span>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Calculator Form */}
+          <div className="lg:col-span-5 bg-white rounded-3xl p-6 sm:p-7 border border-gray-200/90 shadow-xs space-y-5">
+            <div>
+              <h3 className="text-base font-extrabold text-gray-900 flex items-center gap-2">
+                <Calculator className="w-5 h-5 text-emerald-600" />
+                Live Rate Calculator & Margin Testbench
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Calculates vendor tariffs via Live API and applies configured weight/country profit margins.
+              </p>
             </div>
 
             <form onSubmit={handleCalculateRate} className="space-y-4">
-              {/* Vendor */}
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  Shipping Vendor
-                </label>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Vendor</label>
                 <select
                   value={calcVendor}
-                  onChange={(e) => setCalcVendor(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+                  onChange={e => setCalcVendor(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:border-emerald-500"
                 >
-                  {vendors.map((v) => (
-                    <option key={v.slug || v.vendor_code} value={v.slug || v.vendor_code}>
-                      {v.name} ({v.slug || v.vendor_code})
-                    </option>
+                  {vendorsList.map(v => (
+                    <option key={v.vendor_code} value={v.vendor_code}>{v.name} ({v.vendor_code})</option>
                   ))}
                 </select>
               </div>
 
-              {/* Destination Country */}
               <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                  <span>Destination Country *</span>
-                  <span className="text-gray-400 font-normal text-[11px]">{availableCountries.length} available</span>
-                </label>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Destination Country</label>
                 <input
                   type="text"
-                  list="country-suggestions"
                   value={calcCountry}
-                  onChange={(e) => setCalcCountry(e.target.value)}
-                  placeholder="e.g. Germany, USA, United Kingdom"
-                  required
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+                  onChange={e => setCalcCountry(e.target.value)}
+                  placeholder="e.g. USA, Germany, U.K."
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:border-emerald-500"
                 />
-                <datalist id="country-suggestions">
-                  {availableCountries.map((c, i) => (
-                    <option key={i} value={c} />
-                  ))}
-                </datalist>
               </div>
 
-              {/* Service Code */}
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                  <span>Service Code</span>
-                  <span className="text-gray-400 font-normal text-[11px]">Dynamic from /services.php</span>
-                </label>
-                {availableServices.length > 0 ? (
+              {availableServices.length > 0 && (
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Service</label>
                   <select
                     value={calcService}
-                    onChange={(e) => setCalcService(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+                    onChange={e => setCalcService(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:border-emerald-500"
                   >
-                    {availableServices.map((s, i) => (
-                      <option key={i} value={s.service_code}>
-                        {s.service_code} {s.service_name ? `- ${s.service_name}` : ''} ({s.rate_type})
+                    {availableServices.map(s => (
+                      <option key={s.service_code} value={s.service_code}>
+                        {s.service_code} {s.service_name ? `(${s.service_name})` : ''}
                       </option>
                     ))}
                   </select>
-                ) : (
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Weight (kg)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={calcWeight}
+                    onChange={e => setCalcWeight(e.target.value)}
+                    placeholder="e.g. 3"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Postcode / State</label>
                   <input
                     type="text"
-                    value={calcService}
-                    onChange={(e) => setCalcService(e.target.value)}
-                    placeholder="e.g. PXC-LHR-DDP"
-                    className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+                    value={calcPostcode}
+                    onChange={e => setCalcPostcode(e.target.value)}
+                    placeholder="e.g. 10001"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:border-emerald-500"
                   />
-                )}
-              </div>
-
-              {/* Weight (kg) */}
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                  Shipment Weight (kg) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.1"
-                  value={calcWeight}
-                  onChange={(e) => setCalcWeight(e.target.value)}
-                  placeholder="e.g. 1.5"
-                  required
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
-                />
-                {/* Quick Weight Slabs */}
-                <div className="flex items-center gap-1.5 mt-2">
-                  <span className="text-[11px] text-gray-400">Quick:</span>
-                  {['0.5', '1.5', '5', '10', '26', '50'].map((w) => (
-                    <button
-                      key={w}
-                      type="button"
-                      onClick={() => setCalcWeight(w)}
-                      className={`px-2 py-0.5 rounded text-[11px] font-semibold transition cursor-pointer border ${
-                        calcWeight === w
-                          ? 'bg-red-50 text-red-600 border-red-200'
-                          : 'bg-gray-50 hover:bg-gray-100 text-gray-600 border-gray-200'
-                      }`}
-                    >
-                      {w} kg
-                    </button>
-                  ))}
                 </div>
-              </div>
-
-              {/* Postcode / ZIP */}
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                  <span>Destination Postcode / ZIP</span>
-                  <span className="text-gray-400 font-normal text-[11px]">Optional (for Zonewise rates)</span>
-                </label>
-                <input
-                  type="text"
-                  value={calcPostcode}
-                  onChange={(e) => setCalcPostcode(e.target.value)}
-                  placeholder="e.g. 10001"
-                  className="w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
-                />
               </div>
 
               <button
                 type="submit"
                 disabled={calcLoading}
-                className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm transition flex items-center justify-center gap-2 shadow-sm shadow-red-600/30 cursor-pointer disabled:opacity-50 mt-2"
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs cursor-pointer disabled:opacity-60"
               >
-                {calcLoading ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Calculating Rate via API...
-                  </>
-                ) : (
-                  <>
-                    <Calculator className="w-4 h-4" />
-                    Calculate Shipping Rate
-                  </>
-                )}
+                {calcLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Calculator className="w-4 h-4" />}
+                Calculate Final Rate & Profit
               </button>
             </form>
           </div>
 
-          {/* Result Card */}
-          <div className="lg:col-span-7 space-y-4">
+          {/* Calculator Output Display */}
+          <div className="lg:col-span-7 bg-white rounded-3xl p-6 sm:p-7 border border-gray-200/90 shadow-xs space-y-5">
+            <div>
+              <h3 className="text-base font-extrabold text-gray-900">Calculation Breakdown</h3>
+              <p className="text-xs text-gray-500">Live breakdown showing vendor cost, profit addition, and final customer rate.</p>
+            </div>
+
             {calcResult ? (
-              <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-5">
-                <div className="flex flex-wrap items-center justify-between pb-4 border-b border-gray-100 gap-2">
-                  <div>
-                    <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Total Cost</span>
-                    <div className="text-4xl font-extrabold text-gray-900 mt-0.5 flex items-baseline gap-1">
-                      <span className="text-red-600 text-2xl font-bold">₹</span>
-                      {Number(calcResult.final_rate || calcResult.vendor_rate).toLocaleString('en-IN', {
-                        minimumFractionDigits: 2
-                      })}
-                      <span className="text-xs text-gray-500 font-normal ml-1">INR</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {calcResult.transit_time && (
-                      <span className="px-3 py-1 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-semibold flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-amber-600" />
-                        {calcResult.transit_time}
-                      </span>
-                    )}
-                    {calcResult.active_slab && (
-                      <span className="px-3 py-1 bg-red-50 text-red-700 border border-red-200 rounded-xl text-xs font-semibold flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-red-600" />
-                        {calcResult.active_slab}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Arithmetic Formula */}
-                {calcResult.formula && (
-                  <div>
-                    <div className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
-                      Calculation Formula
-                    </div>
-                    <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 font-mono text-xs text-gray-900 font-semibold break-all">
-                      {calcResult.formula}
-                    </div>
-                  </div>
-                )}
-
-                {/* Parameter Details */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200/80">
-                    <span className="text-gray-500 block">Destination</span>
-                    <span className="font-bold text-gray-900 mt-0.5 block truncate">
-                      {calcResult.country} {calcResult.zone ? `(${calcResult.zone})` : ''}
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200/70">
+                    <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Base Vendor Cost</span>
+                    <span className="text-xl font-black text-gray-800 font-mono">
+                      ₹{parseFloat(calcResult.base_vendor_cost ?? calcResult.vendor_rate ?? 0).toFixed(2)}
                     </span>
                   </div>
-                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200/80">
-                    <span className="text-gray-500 block">Service</span>
-                    <span className="font-bold text-gray-900 mt-0.5 block truncate">
-                      {calcResult.service_code || calcService}
+                  <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-200/70">
+                    <span className="text-[10px] text-emerald-700 uppercase font-bold block mb-1">
+                      Profit Added (+{calcResult.profit_percentage || 0}%)
+                    </span>
+                    <span className="text-xl font-black text-emerald-700 font-mono">
+                      +₹{parseFloat(calcResult.profit_margin_amount ?? 0).toFixed(2)}
                     </span>
                   </div>
-                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200/80">
-                    <span className="text-gray-500 block">Weight</span>
-                    <span className="font-bold text-gray-900 mt-0.5 block">
-                      {calcResult.chargeable_weight} kg
-                    </span>
-                  </div>
-                  <div className="p-3 bg-gray-50 rounded-xl border border-gray-200/80">
-                    <span className="text-gray-500 block">Rate Type</span>
-                    <span className="font-bold text-gray-900 mt-0.5 block capitalize">
-                      {calcResult.rate_type || 'Regular'}
+                  <div className="bg-slate-900 text-white rounded-2xl p-4 border border-slate-800 col-span-2 sm:col-span-1">
+                    <span className="text-[10px] text-gray-400 uppercase font-bold block mb-1">Final Selling Rate</span>
+                    <span className="text-xl font-black text-emerald-400 font-mono">
+                      ₹{parseFloat(calcResult.final_rate ?? calcResult.vendor_rate ?? 0).toFixed(2)}
                     </span>
                   </div>
                 </div>
 
-                {/* Breakdown Table */}
-                {calcResult.breakdown && calcResult.breakdown.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                      Itemized Breakdown
+                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-200/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500 font-medium">Chargeable Weight:</span>
+                    <span className="font-mono font-bold text-gray-800">{calcResult.chargeable_weight} kg</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500 font-medium">Customer Rate Per Kg (Form Value):</span>
+                    <span className="font-mono font-bold text-emerald-700">₹{calcResult.rate_per_kg}/kg</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-gray-500 font-medium">Estimated Transit Time:</span>
+                    <span className="font-mono font-bold text-gray-800">{calcResult.transit_time || 'Standard'}</span>
+                  </div>
+                  {calcResult.zone && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Destination Zone:</span>
+                      <span className="font-mono font-bold text-gray-800">{calcResult.zone}</span>
                     </div>
-                    <div className="overflow-x-auto rounded-xl border border-gray-200">
-                      <table className="w-full text-xs text-left">
-                        <thead className="bg-gray-50 text-gray-700 border-b border-gray-200">
-                          <tr>
-                            <th className="p-2.5">Item</th>
-                            <th className="p-2.5 text-right">Unit Price</th>
-                            <th className="p-2.5 text-right">Quantity</th>
-                            <th className="p-2.5 text-right">Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {calcResult.breakdown.map((item, idx) => (
-                            <tr key={idx} className="hover:bg-gray-50/50">
-                              <td className="p-2.5 font-medium text-gray-900">{item.item}</td>
-                              <td className="p-2.5 text-right font-mono">₹{item.unit_price}</td>
-                              <td className="p-2.5 text-right font-mono">{item.quantity}</td>
-                              <td className="p-2.5 text-right font-mono font-bold text-red-600">₹{item.amount}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  )}
+                </div>
+
+                {calcResult.applied_profit_rules?.length > 0 && (
+                  <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-1">
+                    <div className="text-[11px] font-bold text-emerald-900 flex items-center gap-1.5">
+                      <TrendingUp className="w-3.5 h-3.5" />
+                      Applied Profit Margin Rules:
                     </div>
+                    {calcResult.applied_profit_rules.map((r, i) => (
+                      <div key={i} className="text-xs text-emerald-800 flex items-center justify-between font-mono">
+                        <span>• {r.notes || r.label}</span>
+                        <span className="font-bold">+₹{r.profit_amount}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             ) : (
-              <div className="bg-white rounded-2xl p-12 border border-gray-200/80 shadow-xs text-center space-y-3">
-                <Calculator className="w-12 h-12 text-gray-300 mx-auto" />
-                <h3 className="text-base font-bold text-gray-800">No Rate Calculated Yet</h3>
-                <p className="text-xs text-gray-500 max-w-sm mx-auto">
-                  Fill in the shipping details on the left and click "Calculate Shipping Rate" to compute live rates from the API.
-                </p>
+              <div className="text-center py-12 text-gray-400 text-xs">
+                Enter shipment details and click &quot;Calculate Final Rate & Profit&quot; to test.
               </div>
             )}
           </div>
@@ -1023,88 +899,64 @@ export default function RatesPage() {
       )}
 
       {/* ═════════════════════════════════════════════════════════════════════ */}
-      {/* TAB 3: RATE RECORDS / EXPLORER                                       */}
+      {/* TAB 3: RATE RECORDS EXPLORER                                         */}
       {/* ═════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'explorer' && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-5">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-3 border-b border-gray-100">
+        <div className="bg-white rounded-3xl p-6 sm:p-7 border border-gray-200/90 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100">
             <div>
-              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                <Table2 className="w-5 h-5 text-red-600" />
-                Live Rate Records
-              </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Query rates directly from the live database via <code className="text-red-600">/api/rates.php</code>
-              </p>
+              <h3 className="text-lg font-extrabold text-gray-900 flex items-center gap-2">
+                <Table2 className="w-5 h-5 text-gray-700" />
+                Raw Vendor Rate Tariffs
+              </h3>
+              <p className="text-xs text-gray-500">Live rate tariff entries directly stored in the vendor rate sheets database.</p>
             </div>
-
-            {/* Filter inputs */}
-            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+            <div className="flex items-center gap-2">
               <input
                 type="text"
-                placeholder="Filter by country..."
                 value={explorerCountry}
-                onChange={(e) => setExplorerCountry(e.target.value)}
-                className="bg-gray-50 border border-gray-300 rounded-xl px-3 py-1.5 text-xs font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+                onChange={e => setExplorerCountry(e.target.value)}
+                placeholder="Filter country..."
+                className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-800"
               />
-              <input
-                type="text"
-                placeholder="Filter by service..."
-                value={explorerService}
-                onChange={(e) => setExplorerService(e.target.value)}
-                className="bg-gray-50 border border-gray-300 rounded-xl px-3 py-1.5 text-xs font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
-              />
-              <select
-                value={explorerLimit}
-                onChange={(e) => setExplorerLimit(Number(e.target.value))}
-                className="bg-gray-50 border border-gray-300 rounded-xl px-2 py-1.5 text-xs font-medium text-gray-900 focus:outline-hidden focus:ring-2 focus:ring-red-500"
+              <button
+                type="button"
+                onClick={() => refetchExplorer()}
+                className="p-2 bg-gray-100 hover:bg-gray-200 rounded-xl text-gray-600 transition cursor-pointer"
+                title="Refresh"
               >
-                <option value={10}>10 rows</option>
-                <option value={25}>25 rows</option>
-                <option value={50}>50 rows</option>
-                <option value={100}>100 rows</option>
-              </select>
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
-          {/* Table */}
           {explorerLoading ? (
-            <div className="py-12 text-center text-gray-400 space-y-2">
-              <RefreshCw className="w-7 h-7 text-red-500 animate-spin mx-auto" />
-              <p className="text-xs">Loading rates from API...</p>
-            </div>
-          ) : rateRecords.length === 0 ? (
-            <div className="py-12 text-center text-gray-500 text-xs">
-              No rates found matching the filters.
+            <div className="text-center py-12 text-gray-400 text-xs flex items-center justify-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+              Loading tariff entries...
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border border-gray-200">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-gray-50 text-gray-700 font-bold border-b border-gray-200">
-                  <tr>
-                    <th className="p-3">ID</th>
-                    <th className="p-3">Service Code</th>
-                    <th className="p-3">Destination</th>
-                    <th className="p-3">Weight Slab</th>
-                    <th className="p-3">Zone</th>
-                    <th className="p-3">Rate (INR)</th>
-                    <th className="p-3">Transit Time</th>
-                    <th className="p-3">Sheet</th>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 text-gray-400 uppercase text-[10px] tracking-wider font-bold">
+                    <th className="py-2.5 px-3">Service Code</th>
+                    <th className="py-2.5 px-3">Country</th>
+                    <th className="py-2.5 px-3">Weight (kg)</th>
+                    <th className="py-2.5 px-3">Zone</th>
+                    <th className="py-2.5 px-3 text-right">Vendor Rate</th>
+                    <th className="py-2.5 px-3">Transit</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {rateRecords.map((row) => (
-                    <tr key={row.id} className="hover:bg-gray-50/60 transition">
-                      <td className="p-3 font-mono text-gray-500">{row.id}</td>
-                      <td className="p-3 font-bold text-red-600 font-mono">{row.service_code}</td>
-                      <td className="p-3 font-medium text-gray-900">{row.country || '—'}</td>
-                      <td className="p-3 text-gray-700">{row.weight_label || '—'}</td>
-                      <td className="p-3 text-gray-600">{row.zone || '—'}</td>
-                      <td className="p-3 font-mono font-bold text-gray-900">
-                        {row.rate ? `₹${parseFloat(row.rate).toFixed(2)}` : row.rate_raw || '—'}
-                      </td>
-                      <td className="p-3 text-gray-600">{row.transit_time || '—'}</td>
-                      <td className="p-3 text-gray-400 font-mono text-[11px] truncate max-w-[150px]">{row.sheet_name}</td>
+                <tbody className="divide-y divide-gray-100 font-medium text-gray-700">
+                  {rateRecords.map(r => (
+                    <tr key={r.id} className="hover:bg-gray-50/70 transition-colors">
+                      <td className="py-2.5 px-3 font-mono font-bold text-gray-900">{r.service_code}</td>
+                      <td className="py-2.5 px-3">{r.country || '—'}</td>
+                      <td className="py-2.5 px-3 font-mono">{r.weight_kg ?? '—'}</td>
+                      <td className="py-2.5 px-3 font-mono">{r.zone || '—'}</td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-gray-900">₹{r.rate ?? r.rate_raw}</td>
+                      <td className="py-2.5 px-3 text-gray-500">{r.transit_time || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1118,196 +970,217 @@ export default function RatesPage() {
       {/* TAB 4: WORKSHEETS SCHEMA                                             */}
       {/* ═════════════════════════════════════════════════════════════════════ */}
       {activeTab === 'sheets' && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-5">
-          <div className="pb-3 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                <Layers className="w-5 h-5 text-red-600" />
-                Detected Worksheets & Schema
-              </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Worksheet schemas detected by the Rates API engine (<code className="text-red-600">/api/sheets.php</code>)
-              </p>
-            </div>
-            <span className="text-xs text-gray-400 font-medium">Vendor: Pacific Express</span>
+        <div className="bg-white rounded-3xl p-6 sm:p-7 border border-gray-200/90 shadow-xs space-y-4">
+          <div>
+            <h3 className="text-lg font-extrabold text-gray-900 flex items-center gap-2">
+              <Layers className="w-5 h-5 text-gray-700" />
+              Detected Worksheets Metadata
+            </h3>
+            <p className="text-xs text-gray-500">Recognized sheet structure and tariff types per vendor workbook.</p>
           </div>
 
-          {sheetsLoading ? (
-            <div className="py-12 text-center text-gray-400 space-y-2">
-              <RefreshCw className="w-7 h-7 text-red-500 animate-spin mx-auto" />
-              <p className="text-xs">Loading worksheet schemas...</p>
-            </div>
-          ) : worksheets.length === 0 ? (
-            <div className="py-12 text-center text-gray-500 text-xs">No worksheets detected.</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {worksheets.map((ws) => {
-                let headers = []
-                try {
-                  headers = typeof ws.column_headers === 'string' ? JSON.parse(ws.column_headers) : ws.column_headers
-                } catch (e) {
-                  headers = []
-                }
-
-                return (
-                  <div key={ws.id} className="bg-gray-50 rounded-xl p-5 border border-gray-200 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                          <Table2 className="w-4 h-4 text-red-600" />
-                          {ws.sheet_name}
-                        </div>
-                        <span className="text-xs text-gray-500 capitalize">{ws.sheet_type} Sheet</span>
-                      </div>
-                      <span className="px-2.5 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold font-mono">
-                        {Number(ws.row_count).toLocaleString()} rows
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1.5">
-                        Column Headers ({headers.length})
-                      </span>
-                      <div className="flex flex-wrap gap-1 max-h-36 overflow-y-auto pr-1">
-                        {headers.map((h, i) => (
-                          <span
-                            key={i}
-                            className="px-2 py-0.5 bg-white border border-gray-200 rounded text-[10.5px] font-mono text-gray-700"
-                          >
-                            {h}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 pt-2">
+            {worksheets.map((w, idx) => (
+              <div key={idx} className="bg-gray-50 rounded-2xl p-4 border border-gray-200/80 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-sm text-gray-900">{w.sheet_name}</span>
+                  <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-bold uppercase">
+                    {w.sheet_type}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-500">
+                  Rows: <span className="font-mono font-bold text-gray-700">{w.row_count}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* ═════════════════════════════════════════════════════════════════════ */}
-      {/* TAB 5: ENDPOINTS REFERENCE & DOCS                                    */}
-      {/* ═════════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'docs' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-6">
-            <div>
-              <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
-                <Code2 className="w-5 h-5 text-red-600" />
-                Prince Express Rates API Reference
-              </h2>
-              <p className="text-xs text-gray-500 mt-1">
-                Complete documentation for integrating shipping rates, dependent dropdowns, and arithmetic calculations.
-              </p>
+      {/* ── ADD / EDIT RULE MODAL ── */}
+      {ruleModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl border border-gray-200 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <h3 className="text-lg font-extrabold text-gray-900 flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-emerald-600" />
+                {editingRule ? 'Edit Profit Margin Rule' : 'Add Profit Margin Rule'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setRuleModalOpen(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            {/* Auth Reference */}
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 text-xs space-y-2">
-              <span className="font-bold text-gray-800">Authentication</span>
-              <p className="text-gray-600">
-                All endpoints require authentication using the API Key via any of the following methods:
-              </p>
-              <ul className="list-disc list-inside space-y-1 font-mono text-[11.5px] text-gray-700">
-                <li>Header: <code className="text-red-600 font-bold">X-API-Key: {RATES_API_KEY}</code></li>
-                <li>Bearer Token: <code className="text-red-600 font-bold">Authorization: Bearer {RATES_API_KEY}</code></li>
-                <li>Query Param: <code className="text-red-600 font-bold">?api_key={RATES_API_KEY}</code></li>
-              </ul>
-            </div>
-
-            {/* Endpoints List */}
-            <div className="space-y-4">
-              {/* Endpoint 1: calculate */}
-              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET / POST</span>
-                  <code className="text-sm font-bold text-gray-900">/api/calculate.php</code>
-                  <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold ml-auto">
-                    Primary Engine
-                  </span>
-                </div>
-                <p className="text-xs text-gray-600">
-                  Calculates total rate with itemized breakdown, zone resolution, and incremental weight arithmetic.
-                </p>
-                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
-                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/calculate.php?vendor=pacific&country=Germany&service_code=PXC-LHR-DDP&weight_kg=26"
-                </div>
-              </div>
-
-              {/* Endpoint 2: services */}
-              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET</span>
-                  <code className="text-sm font-bold text-gray-900">/api/services.php</code>
-                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold ml-auto">
-                    Dependent Dropdown
-                  </span>
-                </div>
-                <p className="text-xs text-gray-600">
-                  Returns available shipping service codes filtered by vendor and destination country.
-                </p>
-                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
-                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/services.php?vendor=pacific&country=Germany"
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                saveRuleMutation.mutate(ruleForm)
+              }}
+              className="space-y-4"
+            >
+              {/* Rule Type */}
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Rule Category</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRuleForm(prev => ({ ...prev, rule_type: 'weight' }))}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      ruleForm.rule_type === 'weight'
+                        ? 'bg-indigo-50 border-indigo-500 text-indigo-700'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    Weight-Wise Margin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRuleForm(prev => ({ ...prev, rule_type: 'country' }))}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                      ruleForm.rule_type === 'country'
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    Country-Wise Margin
+                  </button>
                 </div>
               </div>
 
-              {/* Endpoint 3: countries */}
-              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET</span>
-                  <code className="text-sm font-bold text-gray-900">/api/countries.php</code>
+              {/* Vendor Selector */}
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Applicable Vendor</label>
+                <select
+                  value={ruleForm.vendor_code}
+                  onChange={e => setRuleForm(prev => ({ ...prev, vendor_code: e.target.value }))}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="all">All Vendors (Global)</option>
+                  {vendorsList.map(v => (
+                    <option key={v.vendor_code} value={v.vendor_code}>{v.name} ({v.vendor_code})</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* If Country-Wise, show Country Input */}
+              {ruleForm.rule_type === 'country' && (
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Destination Country</label>
+                  <input
+                    type="text"
+                    required
+                    value={ruleForm.country}
+                    onChange={e => setRuleForm(prev => ({ ...prev, country: e.target.value }))}
+                    placeholder="e.g. USA, United States, Germany, U.K."
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:border-emerald-500"
+                  />
                 </div>
-                <p className="text-xs text-gray-600">
-                  Returns all distinct destination countries across regular rates, country services, and postal zones.
-                </p>
-                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
-                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/countries.php?vendor=pacific"
+              )}
+
+              {/* Weight Brackets */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Min Weight (kg)</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    value={ruleForm.min_weight}
+                    onChange={e => setRuleForm(prev => ({ ...prev, min_weight: e.target.value }))}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Max Weight (kg)</label>
+                  <input
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    value={ruleForm.max_weight}
+                    onChange={e => setRuleForm(prev => ({ ...prev, max_weight: e.target.value }))}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:border-emerald-500"
+                  />
                 </div>
               </div>
 
-              {/* Endpoint 4: zones */}
-              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET</span>
-                  <code className="text-sm font-bold text-gray-900">/api/zones.php</code>
+              {/* Margin Type & Value */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Profit Addition Type</label>
+                  <select
+                    value={ruleForm.margin_type}
+                    onChange={e => setRuleForm(prev => ({ ...prev, margin_type: e.target.value }))}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="percentage">Percentage (+%)</option>
+                    <option value="fixed_amount">Fixed Amount (+₹)</option>
+                    <option value="fixed_per_kg">Per Kg (+₹/kg)</option>
+                  </select>
                 </div>
-                <p className="text-xs text-gray-600">
-                  Resolves destination postcodes to shipping zones and city names.
-                </p>
-                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
-                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/zones.php?vendor=pacific&country=USA&postcode=10001"
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">
+                    Value {ruleForm.margin_type === 'percentage' ? '(%)' : '(₹)'}
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={ruleForm.margin_value}
+                    onChange={e => setRuleForm(prev => ({ ...prev, margin_value: e.target.value }))}
+                    placeholder="e.g. 15 or 20"
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-bold text-emerald-700 focus:outline-none focus:border-emerald-500"
+                  />
                 </div>
               </div>
 
-              {/* Endpoint 5: vendors */}
-              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET</span>
-                  <code className="text-sm font-bold text-gray-900">/api/vendors.php</code>
-                </div>
-                <p className="text-xs text-gray-600">
-                  Returns active vendors, upload timestamps, and active workbook version batch IDs.
-                </p>
-                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
-                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/vendors.php"
-                </div>
+              {/* Note / Description */}
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Rule Note / Description</label>
+                <input
+                  type="text"
+                  value={ruleForm.notes}
+                  onChange={e => setRuleForm(prev => ({ ...prev, notes: e.target.value }))}
+                  placeholder="e.g. Pacific 3kg 15% profit, Sairaj USA 20% margin"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs font-semibold text-gray-900 focus:outline-none focus:border-emerald-500"
+                />
               </div>
 
-              {/* Endpoint 6: sheets */}
-              <div className="border border-gray-200 rounded-xl p-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold">GET</span>
-                  <code className="text-sm font-bold text-gray-900">/api/sheets.php</code>
-                </div>
-                <p className="text-xs text-gray-600">
-                  Returns detected worksheets (regular, zonewise, zones, country_services) and column headers.
-                </p>
-                <div className="bg-gray-900 text-gray-200 p-3 rounded-lg font-mono text-xs overflow-x-auto">
-                  curl -H "X-API-Key: {RATES_API_KEY}" "https://rates.princeexp.com/api/sheets.php?vendor=pacific"
-                </div>
+              {/* Active Toggle */}
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="rule-active"
+                  checked={!!ruleForm.is_active}
+                  onChange={e => setRuleForm(prev => ({ ...prev, is_active: e.target.checked ? 1 : 0 }))}
+                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                />
+                <label htmlFor="rule-active" className="text-xs font-semibold text-gray-700 cursor-pointer">
+                  Rule is active and applied automatically to bookings
+                </label>
               </div>
-            </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setRuleModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saveRuleMutation.isPending}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-60"
+                >
+                  {saveRuleMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  {editingRule ? 'Update Rule' : 'Save Profit Rule'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

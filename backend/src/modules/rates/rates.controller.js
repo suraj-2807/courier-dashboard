@@ -1,5 +1,12 @@
 import * as ratesApiService from '../../services/ratesApi.service.js'
 import { query } from '../../config/db.js'
+import {
+  calculateProfitMargin,
+  getAllProfitRules,
+  createProfitRule,
+  updateProfitRule,
+  deleteProfitRule
+} from '../../services/rateProfit.service.js'
 
 /**
  * Get all vendors available on the portal with rate API status
@@ -130,7 +137,29 @@ export const calculateVendorRate = async (req, res) => {
       return res.status(422).json(result)
     }
 
-    return res.json(result)
+    // Apply profit addition to vendor's base cost according to weight & country rules
+    const baseVendorRate = result.vendor_rate !== undefined ? parseFloat(result.vendor_rate) : parseFloat(result.final_rate) || 0
+    const profitCalc = await calculateProfitMargin({
+      vendor_code: vendor,
+      country,
+      weight: parseFloat(weight),
+      base_vendor_cost: baseVendorRate
+    })
+
+    const finalRateWithProfit = profitCalc.final_customer_rate
+    const ratePerKgWithProfit = profitCalc.rate_per_kg
+
+    return res.json({
+      ...result,
+      vendor_rate: finalRateWithProfit, // Populates into shipping_charge on booking form
+      final_rate: finalRateWithProfit,
+      rate_per_kg: ratePerKgWithProfit, // Populates into rate_per_kg on booking form (finalRateWithProfit / weight)
+      base_vendor_cost: baseVendorRate,
+      base_rate_per_kg: result.rate_per_kg,
+      profit_margin_amount: profitCalc.profit_margin_amount,
+      profit_percentage: profitCalc.total_percentage,
+      applied_profit_rules: profitCalc.applied_rules
+    })
   } catch (error) {
     console.error('Rates API calculation error:', error)
     return res.status(500).json({ success: false, ok: false, message: error.message })
@@ -337,4 +366,67 @@ export const saveVendorWorkbook = async (req, res) => {
     success: true,
     message: 'Worksheet editing is deprecated. Rates are fetched live via Rates API.'
   })
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROFIT MARGIN RULES (Weight & Country-wise markup)
+// ═══════════════════════════════════════════════════════════════════════
+
+export const getProfitRules = async (req, res) => {
+  try {
+    const { rule_type } = req.query
+    const rules = await getAllProfitRules(rule_type || null)
+    return res.json({ success: true, rules, count: rules.length })
+  } catch (error) {
+    console.error('Error fetching profit rules:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export const createProfitRuleHandler = async (req, res) => {
+  try {
+    const rule = await createProfitRule(req.body || {})
+    return res.status(201).json({ success: true, message: 'Profit rule created successfully', rule })
+  } catch (error) {
+    console.error('Error creating profit rule:', error)
+    return res.status(400).json({ success: false, message: error.message })
+  }
+}
+
+export const updateProfitRuleHandler = async (req, res) => {
+  try {
+    const { id } = req.params
+    const rule = await updateProfitRule(id, req.body || {})
+    return res.json({ success: true, message: 'Profit rule updated successfully', rule })
+  } catch (error) {
+    console.error('Error updating profit rule:', error)
+    return res.status(400).json({ success: false, message: error.message })
+  }
+}
+
+export const deleteProfitRuleHandler = async (req, res) => {
+  try {
+    const { id } = req.params
+    const result = await deleteProfitRule(id)
+    return res.json(result)
+  } catch (error) {
+    console.error('Error deleting profit rule:', error)
+    return res.status(400).json({ success: false, message: error.message })
+  }
+}
+
+export const previewProfit = async (req, res) => {
+  try {
+    const { vendor_code, country, weight, base_vendor_cost } = req.body || {}
+    const result = await calculateProfitMargin({
+      vendor_code: vendor_code || 'pacific',
+      country: country || '',
+      weight: parseFloat(weight) || 1,
+      base_vendor_cost: parseFloat(base_vendor_cost) || 0
+    })
+    return res.json({ success: true, ...result })
+  } catch (error) {
+    console.error('Error previewing profit:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
 }

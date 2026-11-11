@@ -39,7 +39,8 @@ import {
   FileSpreadsheet,
   RefreshCw,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  TrendingUp
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -1076,7 +1077,8 @@ export default function NewBookingPage() {
           rate_per_kg: res.rate_per_kg ? String(res.rate_per_kg) : prev.rate_per_kg
         }))
         if (showToast) {
-          toast.success(`${selectedVendor?.name || vendorCode.toUpperCase()} API Rate: ₹${res.vendor_rate}${res.transit_time ? ` (${res.transit_time})` : ''}`)
+          const profitNotice = res.profit_margin_amount > 0 ? ` (+₹${res.profit_margin_amount} profit added)` : ''
+          toast.success(`${selectedVendor?.name || vendorCode.toUpperCase()} Rate: ₹${res.vendor_rate}${profitNotice}${res.transit_time ? ` (${res.transit_time})` : ''}`)
         }
       } else {
         const errMsg = res?.message || res?.error || 'Rate could not be calculated via Rates API'
@@ -2931,6 +2933,18 @@ export default function NewBookingPage() {
                       Custom editable
                     </span>
                   </div>
+
+                  {rateSheetResult?.profit_margin_amount > 0 && (
+                    <div className="bg-emerald-50/90 border border-emerald-200 rounded-xl px-2.5 py-1.5 text-[11px] text-emerald-850 flex items-center justify-between">
+                      <span className="flex items-center gap-1 font-semibold text-emerald-800">
+                        <TrendingUp className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        Profit Margin Added:
+                      </span>
+                      <span className="font-mono text-[10.5px] text-emerald-900">
+                        Base: <span className="font-bold">₹{parseFloat(rateSheetResult.base_vendor_cost || 0).toFixed(2)}</span> + Profit: <span className="font-bold text-emerald-700">₹{parseFloat(rateSheetResult.profit_margin_amount || 0).toFixed(2)}</span> ({rateSheetResult.profit_percentage}%)
+                      </span>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-2">
                     <CompactField label="Rate / Kg (₹)">
