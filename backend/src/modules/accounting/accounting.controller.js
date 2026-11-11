@@ -222,3 +222,85 @@ export async function getDayBook(req, res) {
     return res.status(500).json({ success: false, message: error.message })
   }
 }
+
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════
+ * 5 BALANCE SHEETS & SIMPLE ENTRIES CONTROLLERS
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+
+export async function getMasterBalanceSheet(req, res) {
+  try {
+    const data = await accountingService.getMasterBalanceSheet()
+    return res.json({ success: true, ...data })
+  } catch (error) {
+    console.error('Error in getMasterBalanceSheet:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export async function getCustomersBalanceSheet(req, res) {
+  try {
+    const data = await accountingService.getCustomersBalanceSheet()
+    return res.json({ success: true, ...data })
+  } catch (error) {
+    console.error('Error in getCustomersBalanceSheet:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export async function getWalkinBalanceSheet(req, res) {
+  try {
+    const data = await accountingService.getWalkinBalanceSheet(req.query)
+    return res.json({ success: true, ...data })
+  } catch (error) {
+    console.error('Error in getWalkinBalanceSheet:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export async function getVendorsBalanceSheet(req, res) {
+  try {
+    const data = await accountingService.getVendorsBalanceSheet()
+    return res.json({ success: true, ...data })
+  } catch (error) {
+    console.error('Error in getVendorsBalanceSheet:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export async function getEntries(req, res) {
+  try {
+    const entries = await accountingService.getEntries(req.query)
+    return res.json({ success: true, entries })
+  } catch (error) {
+    console.error('Error in getEntries:', error)
+    return res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export async function createSimpleEntry(req, res) {
+  try {
+    const creator = req.user?.name || req.user?.username || 'Admin'
+    const entry = await accountingService.createSimpleEntry(req.body, creator)
+    return res.status(201).json({
+      success: true,
+      message: `Entry ${entry.entry_number} recorded successfully`,
+      entry
+    })
+  } catch (error) {
+    console.error('Error in createSimpleEntry:', error)
+    return res.status(400).json({ success: false, message: error.message })
+  }
+}
+
+export async function deleteSimpleEntry(req, res) {
+  try {
+    const result = await accountingService.deleteSimpleEntry(req.params.id)
+    return res.json(result)
+  } catch (error) {
+    console.error('Error in deleteSimpleEntry:', error)
+    return res.status(400).json({ success: false, message: error.message })
+  }
+}

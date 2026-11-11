@@ -664,3 +664,489 @@ export async function getDayBook(date = new Date().toISOString().slice(0, 10)) {
     vouchers
   }
 }
+
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════
+ * SIMPLIFIED ACCOUNTING: 5 BALANCE SHEETS & DIRECT ENTRIES
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+
+export async function ensureAccountingEntriesTable() {
+  await ensureAccountingTables()
+  await execute(`CREATE TABLE IF NOT EXISTS accounting_entries (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    entry_number VARCHAR(50) NOT NULL UNIQUE,
+    entry_type ENUM('customer_payment', 'customer_charge', 'walkin_cash', 'vendor_payment', 'vendor_bill', 'expense') NOT NULL,
+    party_type ENUM('customer', 'walkin', 'vendor', 'expense', 'other') NOT NULL DEFAULT 'other',
+    party_name VARCHAR(150) NOT NULL DEFAULT '',
+    customer_id INT DEFAULT NULL,
+    vendor_id INT DEFAULT NULL,
+    vendor_code VARCHAR(100) DEFAULT '',
+    amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    payment_mode VARCHAR(50) NOT NULL DEFAULT 'cash',
+    reference_no VARCHAR(100) DEFAULT '',
+    entry_date DATE NOT NULL,
+    description TEXT,
+    created_by VARCHAR(100) DEFAULT 'Admin',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_ae_date (entry_date),
+    INDEX idx_ae_type (entry_type),
+    INDEX idx_ae_cust (customer_id),
+    INDEX idx_ae_vendor (vendor_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+}
+
+/**
+ * 1. Master Balance Sheet Overview
+ */
+export async function getMasterBalanceSheet() {
+  await ensureAccountingEntriesTable()
+
+  // Customers Total Outstanding Due
+  const [custTotal] = await query(`
+    SELECT 
+      COUNT(*) as total_customers,
+      COALESCE(SUM(current_balance), 0.00) as total_receivable
+    FROM tbl_customers
+  `)
+
+  // Walk-in Shipments Revenue
+  const [walkinTotal] = await query(`
+    SELECT 
+      COUNT(*) as total_walkin_shipments,
+      COALESCE(SUM(total_amount), 0.00) as total_walkin_revenue
+    FROM shipments
+    WHERE (customer_id IS NULL OR customer_id = 0 OR customer_type = 'walkin')
+      AND (is_trashed = 0 OR is_trashed IS NULL)
+  `)
+
+  // Registered Customer Shipments Revenue
+  const [customerShipTotal] = await query(`
+    SELECT 
+      COUNT(*) as total_customer_shipments,
+      COALESCE(SUM(total_amount), 0.00) as total_customer_revenue
+    FROM shipments
+    WHERE customer_id > 0 AND (customer_type != 'walkin' OR customer_type IS NULL)
+      AND (is_trashed = 0 OR is_trashed IS NULL)
+  `)
+
+  // Total Vendor Freight Costs
+  const [vendorCosts] = await query(`
+    SELECT 
+      COALESCE(SUM(vendor_rate), 0.00) as total_vendor_linehaul
+    FROM shipments
+    WHERE (is_trashed = 0 OR is_trashed IS NULL)
+  `)
+
+  // Vendor Payments Made
+  const [vendorPaidRes] = await query(`
+    SELECT COALESCE(SUM(amount), 0.00) as total_vendor_paid
+    FROM accounting_entries
+    WHERE entry_type = 'vendor_payment'
+  `)
+
+  // Total Expenses
+  const [expenseRes] = await query(`
+    SELECT COALESCE(SUM(amount), 0.00) as total_expenses
+    FROM accounting_entries
+    WHERE entry_type = 'expense'
+  `)
+
+  // Cash / Bank Balances
+  const [cashAcc] = await query("SELECT current_balance FROM accounting_master_accounts WHERE account_code = '1111' LIMIT 1")
+  const [bankAcc] = await query("SELECT current_balance FROM accounting_master_accounts WHERE account_code = '1121' LIMIT 1")
+
+  const totalWalkinRev = parseFloat(walkinTotal?.total_walkin_revenue) || 0
+  const totalCustRev = parseFloat(customerShipTotal?.total_customer_revenue) || 0
+  const totalBilledRevenue = totalWalkinRev + totalCustRev
+
+  const totalVendorBilled = parseFloat(vendorCosts?.total_vendor_linehaul) || 0
+  const totalVendorPaid = parseFloat(vendorPaidRes?.total_vendor_paid) || 0
+  const vendorPayableBalance = Math.max(0, totalVendorBilled - totalVendorPaid)
+
+  const totalCustomerReceivable = parseFloat(custTotal?.total_receivable) || 0
+  const totalExpenses = parseFloat(expenseRes?.total_expenses) || 0
+
+  const grossProfit = totalBilledRevenue - totalVendorBilled
+  const netProfit = grossProfit - totalExpenses
+
+  return {
+    receivables: {
+      total_customer_due: totalCustomerReceivable,
+      total_customers_count: parseInt(custTotal?.total_customers, 10) || 0,
+      total_customer_shipments_revenue: totalCustRev
+    },
+    walkin: {
+      total_walkin_revenue: totalWalkinRev,
+      total_walkin_shipments_count: parseInt(walkinTotal?.total_walkin_shipments, 10) || 0
+    },
+    payables: {
+      total_vendor_linehaul_cost: totalVendorBilled,
+      total_vendor_paid: totalVendorPaid,
+      total_vendor_payable: vendorPayableBalance
+    },
+    liquid_funds: {
+      cash_in_hand: parseFloat(cashAcc?.current_balance || 0),
+      bank_balance: parseFloat(bankAcc?.current_balance || 0),
+      total_expenses: totalExpenses
+    },
+    profitability: {
+      total_revenue: totalBilledRevenue,
+      total_direct_costs: totalVendorBilled,
+      gross_profit: grossProfit,
+      net_profit: netProfit,
+      margin_pct: totalBilledRevenue > 0 ? Math.round((grossProfit / totalBilledRevenue) * 10000) / 100 : 0
+    }
+  }
+}
+
+/**
+ * 2. Customers Accounts Balance Sheet
+ */
+export async function getCustomersBalanceSheet() {
+  await ensureAccountingEntriesTable()
+
+  const customers = await query(`
+    SELECT 
+      c.id, c.name, c.company, c.phone, c.email, c.credit_limit, c.current_balance, c.status,
+      COUNT(s.id) as shipments_count,
+      COALESCE(SUM(s.total_amount), 0.00) as total_shipment_billing,
+      (SELECT COALESCE(SUM(amount), 0.00) FROM customer_ledger cl WHERE cl.customer_id = c.id AND cl.entry_type = 'credit') as total_paid
+    FROM tbl_customers c
+    LEFT JOIN shipments s ON c.id = s.customer_id AND (s.is_trashed = 0 OR s.is_trashed IS NULL)
+    GROUP BY c.id
+    ORDER BY c.current_balance DESC, c.name ASC
+  `)
+
+  let grandTotalBalance = 0
+  let grandTotalBilling = 0
+  let grandTotalPaid = 0
+
+  const list = customers.map(c => {
+    const bal = parseFloat(c.current_balance) || 0
+    const billing = parseFloat(c.total_shipment_billing) || 0
+    const paid = parseFloat(c.total_paid) || 0
+    grandTotalBalance += bal
+    grandTotalBilling += billing
+    grandTotalPaid += paid
+    return {
+      ...c,
+      current_balance: bal,
+      total_shipment_billing: billing,
+      total_paid: paid,
+      status_label: bal > 0 ? 'Due Pending' : bal < 0 ? 'Advance / Excess' : 'Settled'
+    }
+  })
+
+  return {
+    grand_total_balance: grandTotalBalance,
+    grand_total_billing: grandTotalBilling,
+    grand_total_paid: grandTotalPaid,
+    total_customers: list.length,
+    customers: list
+  }
+}
+
+/**
+ * 3. Walk-in Customers Balance Sheet
+ */
+export async function getWalkinBalanceSheet(filters = {}) {
+  await ensureAccountingEntriesTable()
+
+  let sql = `
+    SELECT 
+      id, order_id, tracking_number, sender_name, sender_phone, sender_city,
+      receiver_name, receiver_country, receiver_city,
+      chargeable_weight, rate_per_kg, shipping_charge, extra_charge, total_amount,
+      payment_mode, status, created_at
+    FROM shipments
+    WHERE (customer_id IS NULL OR customer_id = 0 OR customer_type = 'walkin')
+      AND (is_trashed = 0 OR is_trashed IS NULL)
+  `
+  const params = []
+
+  if (filters.from_date) {
+    sql += ' AND created_at >= ?'
+    params.push(filters.from_date + ' 00:00:00')
+  }
+  if (filters.to_date) {
+    sql += ' AND created_at <= ?'
+    params.push(filters.to_date + ' 23:59:59')
+  }
+  if (filters.search) {
+    sql += ' AND (tracking_number LIKE ? OR sender_name LIKE ? OR receiver_name LIKE ? OR receiver_country LIKE ?)'
+    const t = `%${filters.search.trim()}%`
+    params.push(t, t, t, t)
+  }
+
+  sql += ' ORDER BY created_at DESC LIMIT 100'
+
+  const shipments = await query(sql, params)
+
+  // Overall totals for walkin
+  const [totalRow] = await query(`
+    SELECT 
+      COUNT(*) as total_count,
+      COALESCE(SUM(total_amount), 0.00) as total_revenue,
+      COALESCE(SUM(chargeable_weight), 0.00) as total_weight,
+      COALESCE(SUM(CASE WHEN payment_mode = 'cash' THEN total_amount ELSE 0 END), 0.00) as cash_collected,
+      COALESCE(SUM(CASE WHEN payment_mode != 'cash' THEN total_amount ELSE 0 END), 0.00) as digital_collected
+    FROM shipments
+    WHERE (customer_id IS NULL OR customer_id = 0 OR customer_type = 'walkin')
+      AND (is_trashed = 0 OR is_trashed IS NULL)
+  `)
+
+  return {
+    summary: {
+      total_count: parseInt(totalRow?.total_count, 10) || 0,
+      total_revenue: parseFloat(totalRow?.total_revenue || 0),
+      total_weight: parseFloat(totalRow?.total_weight || 0),
+      cash_collected: parseFloat(totalRow?.cash_collected || 0),
+      digital_collected: parseFloat(totalRow?.digital_collected || 0)
+    },
+    shipments
+  }
+}
+
+/**
+ * 4. Vendors Balance Sheet
+ */
+export async function getVendorsBalanceSheet() {
+  await ensureAccountingEntriesTable()
+
+  // Get active vendors from configs
+  const vendors = await query(`
+    SELECT id, name, vendor_code, is_active
+    FROM vendor_api_configs
+    ORDER BY name ASC
+  `)
+
+  let grandTotalCost = 0
+  let grandTotalPaid = 0
+  let grandTotalPayable = 0
+
+  const vendorList = []
+
+  for (const v of vendors) {
+    // Shipments forwarded to this vendor
+    const [shipRes] = await query(
+      `SELECT 
+        COUNT(*) as shipments_count,
+        COALESCE(SUM(chargeable_weight), 0.00) as total_weight,
+        COALESCE(SUM(vendor_rate), 0.00) as total_cost
+       FROM shipments
+       WHERE (vendor_code = ? OR vendor_config_id = ?)
+         AND (is_trashed = 0 OR is_trashed IS NULL)`,
+      [v.vendor_code, v.id]
+    )
+
+    // Payments made to this vendor
+    const [payRes] = await query(
+      `SELECT COALESCE(SUM(amount), 0.00) as total_paid
+       FROM accounting_entries
+       WHERE (vendor_id = ? OR vendor_code = ?) AND entry_type = 'vendor_payment'`,
+      [v.id, v.vendor_code]
+    )
+
+    const cost = parseFloat(shipRes?.total_cost) || 0
+    const paid = parseFloat(payRes?.total_paid) || 0
+    const payable = Math.round((cost - paid) * 100) / 100
+
+    grandTotalCost += cost
+    grandTotalPaid += paid
+    grandTotalPayable += payable
+
+    vendorList.push({
+      id: v.id,
+      name: v.name,
+      vendor_code: v.vendor_code,
+      shipments_count: parseInt(shipRes?.shipments_count, 10) || 0,
+      total_weight: parseFloat(shipRes?.total_weight) || 0,
+      total_cost: cost,
+      total_paid: paid,
+      balance_payable: payable,
+      status: payable > 0 ? 'Payable Due' : payable < 0 ? 'Advance Paid' : 'Settled'
+    })
+  }
+
+  return {
+    grand_total_cost: grandTotalCost,
+    grand_total_paid: grandTotalPaid,
+    grand_total_payable: grandTotalPayable,
+    vendors: vendorList
+  }
+}
+
+/**
+ * 5. Simple Financial Entries Register
+ */
+export async function getEntries(filters = {}) {
+  await ensureAccountingEntriesTable()
+
+  let sql = 'SELECT * FROM accounting_entries WHERE 1=1'
+  const params = []
+
+  if (filters.entry_type) {
+    sql += ' AND entry_type = ?'
+    params.push(filters.entry_type)
+  }
+  if (filters.party_type) {
+    sql += ' AND party_type = ?'
+    params.push(filters.party_type)
+  }
+  if (filters.customer_id) {
+    sql += ' AND customer_id = ?'
+    params.push(filters.customer_id)
+  }
+  if (filters.vendor_code) {
+    sql += ' AND vendor_code = ?'
+    params.push(filters.vendor_code)
+  }
+  if (filters.search) {
+    sql += ' AND (entry_number LIKE ? OR party_name LIKE ? OR reference_no LIKE ? OR description LIKE ?)'
+    const t = `%${filters.search.trim()}%`
+    params.push(t, t, t, t)
+  }
+
+  sql += ' ORDER BY entry_date DESC, id DESC LIMIT 100'
+  return await query(sql, params)
+}
+
+/**
+ * Create a Simple Entry (Customer Payment, Charge, Walk-in, Vendor Payment, Expense)
+ */
+export async function createSimpleEntry(data, creator = 'Admin') {
+  await ensureAccountingEntriesTable()
+
+  const {
+    entry_type,
+    party_type = 'other',
+    party_name = '',
+    customer_id = null,
+    vendor_id = null,
+    vendor_code = '',
+    amount,
+    payment_mode = 'cash',
+    reference_no = '',
+    entry_date = new Date().toISOString().slice(0, 10),
+    description = ''
+  } = data
+
+  const numAmount = Math.round((parseFloat(amount) || 0) * 100) / 100
+  if (numAmount <= 0) {
+    throw new Error('Amount must be greater than zero')
+  }
+
+  // Generate entry number
+  const yyyymm = new Date().toISOString().slice(0, 7).replace('-', '')
+  const prefixMap = {
+    customer_payment: 'CR',
+    customer_charge: 'CD',
+    walkin_cash: 'WC',
+    vendor_payment: 'VP',
+    vendor_bill: 'VB',
+    expense: 'EX'
+  }
+  const pfx = prefixMap[entry_type] || 'EN'
+
+  const [lastRow] = await query(
+    'SELECT entry_number FROM accounting_entries WHERE entry_number LIKE ? ORDER BY id DESC LIMIT 1',
+    [`${pfx}-${yyyymm}-%`]
+  )
+
+  let nextSeq = 1
+  if (lastRow?.entry_number) {
+    const parts = lastRow.entry_number.split('-')
+    const lastNum = parseInt(parts[parts.length - 1], 10)
+    if (!isNaN(lastNum)) nextSeq = lastNum + 1
+  }
+  const entryNumber = `${pfx}-${yyyymm}-${String(nextSeq).padStart(4, '0')}`
+
+  // If customer entry, sync with tbl_customers and customer_ledger
+  let finalPartyName = party_name
+  if (customer_id) {
+    const [cust] = await query('SELECT id, name, company, email, current_balance FROM tbl_customers WHERE id = ?', [customer_id])
+    if (cust) {
+      finalPartyName = cust.company ? `${cust.name} (${cust.company})` : cust.name
+      const curBal = parseFloat(cust.current_balance) || 0
+      let newBal = curBal
+
+      if (entry_type === 'customer_payment') {
+        // Payment decreases customer due balance
+        newBal = Math.round((curBal - numAmount) * 100) / 100
+        await execute('UPDATE tbl_customers SET current_balance = ? WHERE id = ?', [newBal, customer_id])
+        await execute(
+          `INSERT INTO customer_ledger 
+          (customer_id, customer_email, entry_type, amount, balance_after, reference_no, payment_mode, description, entry_date, created_by)
+          VALUES (?, ?, 'credit', ?, ?, ?, ?, ?, ?, ?)`,
+          [customer_id, cust.email, numAmount, newBal, reference_no, payment_mode, description || 'Customer Payment Received', entry_date, creator]
+        )
+      } else if (entry_type === 'customer_charge') {
+        // Charge increases customer due balance
+        newBal = Math.round((curBal + numAmount) * 100) / 100
+        await execute('UPDATE tbl_customers SET current_balance = ? WHERE id = ?', [newBal, customer_id])
+        await execute(
+          `INSERT INTO customer_ledger 
+          (customer_id, customer_email, entry_type, amount, balance_after, reference_no, payment_mode, description, entry_date, created_by)
+          VALUES (?, ?, 'debit', ?, ?, ?, ?, ?, ?, ?)`,
+          [customer_id, cust.email, numAmount, newBal, reference_no, payment_mode, description || 'Shipment / Service Charge', entry_date, creator]
+        )
+      }
+    }
+  }
+
+  // Insert into accounting_entries
+  const res = await execute(
+    `INSERT INTO accounting_entries 
+    (entry_number, entry_type, party_type, party_name, customer_id, vendor_id, vendor_code, amount, payment_mode, reference_no, entry_date, description, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      entryNumber,
+      entry_type,
+      party_type,
+      finalPartyName,
+      customer_id || null,
+      vendor_id || null,
+      vendor_code || '',
+      numAmount,
+      payment_mode,
+      reference_no.trim(),
+      entry_date,
+      description.trim(),
+      creator
+    ]
+  )
+
+  const [newEntry] = await query('SELECT * FROM accounting_entries WHERE id = ?', [res.insertId])
+  return newEntry
+}
+
+/**
+ * Delete a simple entry
+ */
+export async function deleteSimpleEntry(id) {
+  await ensureAccountingEntriesTable()
+  const [entry] = await query('SELECT * FROM accounting_entries WHERE id = ?', [id])
+  if (!entry) throw new Error('Entry not found')
+
+  // Reverse customer balance if applicable
+  if (entry.customer_id) {
+    const [cust] = await query('SELECT id, current_balance FROM tbl_customers WHERE id = ?', [entry.customer_id])
+    if (cust) {
+      const curBal = parseFloat(cust.current_balance) || 0
+      let revertedBal = curBal
+      if (entry.entry_type === 'customer_payment') {
+        // Re-add amount that was deducted
+        revertedBal = Math.round((curBal + parseFloat(entry.amount)) * 100) / 100
+      } else if (entry.entry_type === 'customer_charge') {
+        // Deduct amount that was charged
+        revertedBal = Math.round((curBal - parseFloat(entry.amount)) * 100) / 100
+      }
+      await execute('UPDATE tbl_customers SET current_balance = ? WHERE id = ?', [revertedBal, entry.customer_id])
+    }
+  }
+
+  await execute('DELETE FROM accounting_entries WHERE id = ?', [id])
+  return { success: true, message: `Entry ${entry.entry_number} deleted and balances updated` }
+}

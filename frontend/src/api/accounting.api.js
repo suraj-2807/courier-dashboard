@@ -77,3 +77,31 @@ export const getTrialBalance = () =>
  */
 export const getDayBook = (params = {}) =>
   api.get('/accounting/day-book', { params }).then(res => res.data)
+
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════
+ * SIMPLIFIED BALANCE SHEETS & DIRECT ENTRIES APIS
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+
+export const getMasterBalanceSheet = () =>
+  api.get('/accounting/master-balance-sheet').then(res => res.data)
+
+export const getCustomersBalanceSheet = () =>
+  api.get('/accounting/customers-balance-sheet').then(res => res.data)
+
+export const getWalkinBalanceSheet = (params = {}) =>
+  api.get('/accounting/walkin-balance-sheet', { params }).then(res => res.data)
+
+export const getVendorsBalanceSheet = () =>
+  api.get('/accounting/vendors-balance-sheet').then(res => res.data)
+
+export const getEntries = (params = {}) =>
+  api.get('/accounting/entries', { params }).then(res => res.data)
+
+export const createSimpleEntry = (data) =>
+  api.post('/accounting/entries', data).then(res => res.data)
+
+export const deleteSimpleEntry = (id) =>
+  api.delete(`/accounting/entries/${id}`).then(res => res.data)

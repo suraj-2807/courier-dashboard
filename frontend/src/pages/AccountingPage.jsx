@@ -2,400 +2,213 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import {
-  BookOpen,
-  Receipt,
+  Scale,
+  Users,
+  UserCheck,
+  Truck,
+  FileText,
   Plus,
   Search,
   Trash2,
-  CheckCircle2,
-  AlertCircle,
   Calendar,
   IndianRupee,
-  Layers,
-  FileText,
-  Check,
+  Wallet,
+  Building,
+  CheckCircle2,
+  AlertCircle,
   X,
   RefreshCw,
-  Wallet,
-  Scale,
-  Printer,
+  ArrowRight,
+  TrendingUp,
+  CreditCard,
+  Eye,
+  User,
   ToggleLeft,
   ToggleRight,
-  Eye,
-  Building,
-  User,
-  ArrowRight,
-  Calculator,
-  Coins
+  ChevronRight,
+  Send,
+  Download
 } from 'lucide-react'
 import * as accountingApi from '../api/accounting.api'
 import { customersApi } from '../api/customers.api'
 import { getVendors } from '../api/rates.api'
 
-const VOUCHER_TYPE_COLORS = {
-  receipt: { bg: '#ecfdf5', text: '#059669', border: '#a7f3d0', label: 'Receipt Voucher (RV)' },
-  payment: { bg: '#fef2f2', text: '#dc2626', border: '#fecaca', label: 'Payment Voucher (PV)' },
-  sales_invoice: { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe', label: 'Sales Invoice (SV)' },
-  purchase_bill: { bg: '#fff7ed', text: '#ea580c', border: '#fed7aa', label: 'Purchase Bill (PB)' },
-  journal: { bg: '#f5f3ff', text: '#7c3aed', border: '#ddd6fe', label: 'Journal Voucher (JV)' },
-  contra: { bg: '#f0fdf4', text: '#16a34a', border: '#bbf7d0', label: 'Contra Voucher (CV)' },
-  credit_note: { bg: '#fefce8', text: '#ca8a04', border: '#fef08a', label: 'Credit Note (CN)' },
-  debit_note: { bg: '#fdf2f8', text: '#db2777', border: '#fbcfe8', label: 'Debit Note (DN)' }
-}
-
-const ACCOUNT_TYPE_COLORS = {
-  asset: { bg: '#ecfdf5', text: '#059669', label: 'Asset (Normal Dr)' },
-  liability: { bg: '#eff6ff', text: '#2563eb', label: 'Liability (Normal Cr)' },
-  equity: { bg: '#f5f3ff', text: '#7c3aed', label: 'Equity (Normal Cr)' },
-  revenue: { bg: '#f0fdf4', text: '#16a34a', label: 'Revenue (Normal Cr)' },
-  expense: { bg: '#fff1f2', text: '#e11d48', label: 'Expense (Normal Dr)' }
+const ENTRY_TYPE_BADGES = {
+  customer_payment: { bg: '#ecfdf5', text: '#059669', border: '#a7f3d0', label: 'Customer Payment' },
+  customer_charge: { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe', label: 'Customer Charge' },
+  walkin_cash: { bg: '#f0fdf4', text: '#16a34a', border: '#bbf7d0', label: 'Walk-in Cash' },
+  vendor_payment: { bg: '#fff7ed', text: '#ea580c', border: '#fed7aa', label: 'Vendor Payment' },
+  vendor_bill: { bg: '#fdf2f8', text: '#db2777', border: '#fbcfe8', label: 'Vendor Bill' },
+  expense: { bg: '#fef2f2', text: '#dc2626', border: '#fecaca', label: 'Office Expense' }
 }
 
 export default function AccountingPage() {
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState('vouchers') // 'vouchers', 'new_voucher', 'day_book', 'coa', 'ledger', 'trial_balance'
 
-  // Filters & State
-  const [voucherFilterType, setVoucherFilterType] = useState('')
-  const [voucherSearch, setVoucherSearch] = useState('')
-  const [selectedVoucher, setSelectedVoucher] = useState(null)
-  const [selectedLedgerAccountId, setSelectedLedgerAccountId] = useState('')
-  const [dayBookDate, setDayBookDate] = useState(() => new Date().toISOString().slice(0, 10))
+  // 5 Simplified Tabs: 'master', 'customers', 'walkin', 'vendors', 'entries'
+  const [activeTab, setActiveTab] = useState('master')
 
-  // Cash Denomination state for Day Book tally
-  const [denominations, setDenominations] = useState({
-    d2000: 0,
-    d500: 0,
-    d200: 0,
-    d100: 0,
-    d50: 0,
-    d20: 0,
-    d10: 0,
-    coins: 0
-  })
+  // Search & Filters
+  const [customerSearch, setCustomerSearch] = useState('')
+  const [walkinSearch, setWalkinSearch] = useState('')
+  const [entriesFilterType, setEntriesFilterType] = useState('')
+  const [entriesSearch, setEntriesSearch] = useState('')
 
-  // New Account Modal State
-  const [showAddAccountModal, setShowAddAccountModal] = useState(false)
-  const [newAccountForm, setNewAccountForm] = useState({
-    account_code: '',
-    account_name: '',
-    account_type: 'asset',
-    group_category: '',
-    linked_entity_type: 'none'
-  })
+  // Selected Customer for Statement Modal
+  const [statementCustomer, setStatementCustomer] = useState(null)
 
-  // New Voucher Form State
-  const [voucherForm, setVoucherForm] = useState({
-    voucher_type: 'receipt',
-    voucher_date: new Date().toISOString().slice(0, 10),
-    reference_no: '',
+  // New Entry Modal State
+  const [showEntryModal, setShowEntryModal] = useState(false)
+  const [entryForm, setEntryForm] = useState({
+    entry_type: 'customer_payment',
+    party_type: 'customer',
     customer_id: '',
-    narration: '',
-    items: [
-      { account_id: '', debit_amount: '', credit_amount: '', particulars: '' },
-      { account_id: '', debit_amount: '', credit_amount: '', particulars: '' }
-    ]
+    vendor_id: '',
+    vendor_code: '',
+    party_name: '',
+    amount: '',
+    payment_mode: 'cash',
+    reference_no: '',
+    entry_date: new Date().toISOString().slice(0, 10),
+    description: ''
   })
 
-  // 1. Fetch Ledger Toggle Status
+  // 1. Ledger Toggle Status
   const { data: statusData, isLoading: statusLoading } = useQuery({
     queryKey: ['accounting-status'],
     queryFn: accountingApi.getLedgerStatus
   })
   const isLedgerEnabled = Boolean(statusData?.enabled)
 
-  // Toggle Mutation
   const toggleStatusMutation = useMutation({
     mutationFn: accountingApi.toggleLedgerStatus,
     onSuccess: (data) => {
       toast.success(data.message)
       queryClient.invalidateQueries({ queryKey: ['accounting-status'] })
-      queryClient.invalidateQueries({ queryKey: ['accounting-accounts'] })
-      queryClient.invalidateQueries({ queryKey: ['accounting-vouchers'] })
+      queryClient.invalidateQueries({ queryKey: ['accounting-master'] })
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to toggle ledger')
   })
 
-  // 2. Fetch Chart of Accounts
-  const { data: accountsData, isLoading: accountsLoading } = useQuery({
-    queryKey: ['accounting-accounts'],
-    queryFn: () => accountingApi.getAccounts(),
+  // 2. Master Balance Sheet Query
+  const { data: masterData, isLoading: masterLoading } = useQuery({
+    queryKey: ['accounting-master'],
+    queryFn: accountingApi.getMasterBalanceSheet,
     enabled: isLedgerEnabled
   })
-  const accounts = accountsData?.accounts || []
 
-  // 3. Fetch Customers for linkage
-  const { data: customersData } = useQuery({
-    queryKey: ['customers-list-accounting'],
-    queryFn: () => customersApi.getAll({ limit: 500 }).then(res => res.data),
-    enabled: isLedgerEnabled
-  })
-  const customers = customersData?.customers || []
-
-  // 4. Fetch Vendors for linkage
-  const { data: vendorsData } = useQuery({
-    queryKey: ['vendors-list-accounting'],
-    queryFn: getVendors,
-    enabled: isLedgerEnabled
-  })
-  const vendors = vendorsData?.vendors || []
-
-  // 5. Fetch Vouchers Register
-  const { data: vouchersData, isLoading: vouchersLoading } = useQuery({
-    queryKey: ['accounting-vouchers', voucherFilterType, voucherSearch],
-    queryFn: () => accountingApi.getVouchers({ voucher_type: voucherFilterType, search: voucherSearch }),
-    enabled: isLedgerEnabled
-  })
-  const vouchers = vouchersData?.vouchers || []
-
-  // 6. Fetch Trial Balance
-  const { data: trialBalanceData, isLoading: tbLoading } = useQuery({
-    queryKey: ['accounting-trial-balance'],
-    queryFn: accountingApi.getTrialBalance,
-    enabled: isLedgerEnabled && activeTab === 'trial_balance'
+  // 3. Customers Balance Sheet Query
+  const { data: customersSheetData, isLoading: custLoading } = useQuery({
+    queryKey: ['accounting-customers-sheet'],
+    queryFn: accountingApi.getCustomersBalanceSheet,
+    enabled: isLedgerEnabled && (activeTab === 'customers' || activeTab === 'master')
   })
 
-  // 7. Fetch Day Book
-  const { data: dayBookData, isLoading: dayBookLoading } = useQuery({
-    queryKey: ['accounting-day-book', dayBookDate],
-    queryFn: () => accountingApi.getDayBook({ date: dayBookDate }),
-    enabled: isLedgerEnabled && activeTab === 'day_book'
+  // 4. Walk-in Balance Sheet Query
+  const { data: walkinData, isLoading: walkinLoading } = useQuery({
+    queryKey: ['accounting-walkin-sheet', walkinSearch],
+    queryFn: () => accountingApi.getWalkinBalanceSheet({ search: walkinSearch }),
+    enabled: isLedgerEnabled && (activeTab === 'walkin' || activeTab === 'master')
   })
 
-  // 8. Fetch Account Ledger
-  const { data: ledgerData, isLoading: ledgerLoading } = useQuery({
-    queryKey: ['accounting-ledger', selectedLedgerAccountId],
-    queryFn: () => accountingApi.getAccountLedger(selectedLedgerAccountId),
-    enabled: isLedgerEnabled && Boolean(selectedLedgerAccountId) && activeTab === 'ledger'
+  // 5. Vendors Balance Sheet Query
+  const { data: vendorsSheetData, isLoading: vendorsLoading } = useQuery({
+    queryKey: ['accounting-vendors-sheet'],
+    queryFn: accountingApi.getVendorsBalanceSheet,
+    enabled: isLedgerEnabled && (activeTab === 'vendors' || activeTab === 'master')
   })
 
-  // Create Voucher Mutation
-  const createVoucherMutation = useMutation({
-    mutationFn: accountingApi.createVoucher,
+  // 6. Entries Register Query
+  const { data: entriesData, isLoading: entriesLoading } = useQuery({
+    queryKey: ['accounting-entries', entriesFilterType, entriesSearch],
+    queryFn: () => accountingApi.getEntries({ entry_type: entriesFilterType, search: entriesSearch }),
+    enabled: isLedgerEnabled && (activeTab === 'entries' || activeTab === 'master')
+  })
+
+  // Customer Ledger Statement for Modal
+  const { data: customerLedgerData, isLoading: statementLoading } = useQuery({
+    queryKey: ['customer-statement-ledger', statementCustomer?.id],
+    queryFn: () => customersApi.getLedger(statementCustomer.id).then(res => res.data),
+    enabled: Boolean(statementCustomer?.id)
+  })
+
+  // Customers dropdown list for New Entry modal
+  const customersList = customersSheetData?.customers || []
+
+  // Vendors dropdown list for New Entry modal
+  const vendorsList = vendorsSheetData?.vendors || []
+
+  // Create Entry Mutation
+  const createEntryMutation = useMutation({
+    mutationFn: accountingApi.createSimpleEntry,
     onSuccess: (data) => {
-      toast.success(data.message || 'Voucher recorded successfully!')
-      queryClient.invalidateQueries({ queryKey: ['accounting-vouchers'] })
-      queryClient.invalidateQueries({ queryKey: ['accounting-accounts'] })
-      queryClient.invalidateQueries({ queryKey: ['accounting-trial-balance'] })
-      queryClient.invalidateQueries({ queryKey: ['accounting-day-book'] })
+      toast.success(data.message || 'Entry recorded successfully!')
+      queryClient.invalidateQueries({ queryKey: ['accounting-master'] })
+      queryClient.invalidateQueries({ queryKey: ['accounting-customers-sheet'] })
+      queryClient.invalidateQueries({ queryKey: ['accounting-vendors-sheet'] })
+      queryClient.invalidateQueries({ queryKey: ['accounting-entries'] })
+      queryClient.invalidateQueries({ queryKey: ['customer-statement-ledger'] })
+      setShowEntryModal(false)
       // Reset form
-      setVoucherForm({
-        voucher_type: 'receipt',
-        voucher_date: new Date().toISOString().slice(0, 10),
+      setEntryForm({
+        entry_type: 'customer_payment',
+        party_type: 'customer',
+        customer_id: '',
+        vendor_id: '',
+        vendor_code: '',
+        party_name: '',
+        amount: '',
+        payment_mode: 'cash',
         reference_no: '',
-        customer_id: '',
-        narration: '',
-        items: [
-          { account_id: '', debit_amount: '', credit_amount: '', particulars: '' },
-          { account_id: '', debit_amount: '', credit_amount: '', particulars: '' }
-        ]
+        entry_date: new Date().toISOString().slice(0, 10),
+        description: ''
       })
-      setActiveTab('vouchers')
     },
-    onError: (err) => toast.error(err.response?.data?.message || 'Failed to create voucher')
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to record entry')
   })
 
-  // Delete Voucher Mutation
-  const deleteVoucherMutation = useMutation({
-    mutationFn: accountingApi.deleteVoucher,
+  // Delete Entry Mutation
+  const deleteEntryMutation = useMutation({
+    mutationFn: accountingApi.deleteSimpleEntry,
     onSuccess: (data) => {
-      toast.success(data.message || 'Voucher deleted')
-      queryClient.invalidateQueries({ queryKey: ['accounting-vouchers'] })
-      queryClient.invalidateQueries({ queryKey: ['accounting-accounts'] })
-      queryClient.invalidateQueries({ queryKey: ['accounting-trial-balance'] })
-      queryClient.invalidateQueries({ queryKey: ['accounting-day-book'] })
-      setSelectedVoucher(null)
+      toast.success(data.message || 'Entry deleted')
+      queryClient.invalidateQueries({ queryKey: ['accounting-master'] })
+      queryClient.invalidateQueries({ queryKey: ['accounting-customers-sheet'] })
+      queryClient.invalidateQueries({ queryKey: ['accounting-vendors-sheet'] })
+      queryClient.invalidateQueries({ queryKey: ['accounting-entries'] })
     },
-    onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete voucher')
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete entry')
   })
 
-  // Create Master Account Mutation
-  const createAccountMutation = useMutation({
-    mutationFn: accountingApi.createAccount,
-    onSuccess: () => {
-      toast.success('Master account created successfully')
-      queryClient.invalidateQueries({ queryKey: ['accounting-accounts'] })
-      setShowAddAccountModal(false)
-      setNewAccountForm({
-        account_code: '',
-        account_name: '',
-        account_type: 'asset',
-        group_category: '',
-        linked_entity_type: 'none'
-      })
-    },
-    onError: (err) => toast.error(err.response?.data?.message || 'Failed to create account')
-  })
-
-  // Voucher Calculations for live tally validation
-  const voucherTotals = useMemo(() => {
-    let debits = 0
-    let credits = 0
-    voucherForm.items.forEach(it => {
-      debits += parseFloat(it.debit_amount) || 0
-      credits += parseFloat(it.credit_amount) || 0
+  // Helper to open New Entry modal with preset
+  const openNewEntry = (type, prefill = {}) => {
+    setEntryForm({
+      entry_type: type,
+      party_type: type.startsWith('customer') ? 'customer' : type.startsWith('vendor') ? 'vendor' : type === 'walkin_cash' ? 'walkin' : 'expense',
+      customer_id: prefill.customer_id || '',
+      vendor_id: prefill.vendor_id || '',
+      vendor_code: prefill.vendor_code || '',
+      party_name: prefill.party_name || '',
+      amount: prefill.amount || '',
+      payment_mode: prefill.payment_mode || 'cash',
+      reference_no: prefill.reference_no || '',
+      entry_date: new Date().toISOString().slice(0, 10),
+      description: prefill.description || ''
     })
-    const d = Math.round(debits * 100) / 100
-    const c = Math.round(credits * 100) / 100
-    const diff = Math.round(Math.abs(d - c) * 100) / 100
-    const isTallied = diff < 0.01 && d > 0 && c > 0
-    return { debits: d, credits: c, diff, isTallied }
-  }, [voucherForm.items])
-
-  // Physical Cash Denomination Calculation for Day Book
-  const physicalCashTotal = useMemo(() => {
-    const total =
-      (parseInt(denominations.d2000, 10) || 0) * 2000 +
-      (parseInt(denominations.d500, 10) || 0) * 500 +
-      (parseInt(denominations.d200, 10) || 0) * 200 +
-      (parseInt(denominations.d100, 10) || 0) * 100 +
-      (parseInt(denominations.d50, 10) || 0) * 50 +
-      (parseInt(denominations.d20, 10) || 0) * 20 +
-      (parseInt(denominations.d10, 10) || 0) * 10 +
-      (parseFloat(denominations.coins) || 0)
-    return Math.round(total * 100) / 100
-  }, [denominations])
-
-  // Key KPI balances from Chart of Accounts
-  const kpis = useMemo(() => {
-    let cash = 0
-    let bank = 0
-    let debtors = 0
-    let creditors = 0
-    accounts.forEach(a => {
-      const bal = parseFloat(a.current_balance) || 0
-      if (a.account_code === '1111' || a.account_code === '1112') cash += bal
-      else if (a.account_code === '1121' || a.account_code === '1122') bank += bal
-      else if (a.account_code === '1130' || a.account_code === '1139') debtors += bal
-      else if (a.account_code === '2110' || a.account_code === '2119') creditors += bal
-    })
-    return { cash, bank, debtors, creditors }
-  }, [accounts])
-
-  // Voucher Item row handlers
-  const handleItemChange = (index, field, value) => {
-    setVoucherForm(prev => {
-      const newItems = [...prev.items]
-      newItems[index] = { ...newItems[index], [field]: value }
-      // If debit is typed, clear credit (and vice-versa) for clean single-side entry
-      if (field === 'debit_amount' && value) {
-        newItems[index].credit_amount = ''
-      } else if (field === 'credit_amount' && value) {
-        newItems[index].debit_amount = ''
-      }
-      return { ...prev, items: newItems }
-    })
+    setShowEntryModal(true)
   }
 
-  const addVoucherRow = () => {
-    setVoucherForm(prev => ({
-      ...prev,
-      items: [...prev.items, { account_id: '', debit_amount: '', credit_amount: '', particulars: '' }]
-    }))
-  }
-
-  const removeVoucherRow = (index) => {
-    if (voucherForm.items.length <= 2) {
-      toast.error('A double-entry voucher must have at least 2 line items')
-      return
-    }
-    setVoucherForm(prev => ({
-      ...prev,
-      items: prev.items.filter((_, i) => i !== index)
-    }))
-  }
-
-  // Preset Template loader (quick fill)
-  const applyPreset = (presetType) => {
-    const cashAcc = accounts.find(a => a.account_code === '1111')
-    const bankAcc = accounts.find(a => a.account_code === '1121')
-    const revDomestic = accounts.find(a => a.account_code === '4110')
-    const arAcc = accounts.find(a => a.account_code === '1130')
-    const apAcc = accounts.find(a => a.account_code === '2110')
-    const expFreight = accounts.find(a => a.account_code === '5110')
-    const expPetty = accounts.find(a => a.account_code === '5230')
-
-    if (presetType === 'walkin_cash') {
-      setVoucherForm({
-        voucher_type: 'receipt',
-        voucher_date: new Date().toISOString().slice(0, 10),
-        reference_no: 'WALK-IN',
-        customer_id: '',
-        narration: 'Retail walk-in parcel freight collection in counter cash drawer',
-        items: [
-          { account_id: cashAcc ? String(cashAcc.id) : '', debit_amount: '', credit_amount: '', particulars: 'Cash In (Counter Drawer)' },
-          { account_id: revDomestic ? String(revDomestic.id) : '', debit_amount: '', credit_amount: '', particulars: 'Domestic Courier Freight Revenue' }
-        ]
-      })
-    } else if (presetType === 'customer_bank_receipt') {
-      setVoucherForm({
-        voucher_type: 'receipt',
-        voucher_date: new Date().toISOString().slice(0, 10),
-        reference_no: 'UPI/NEFT',
-        customer_id: '',
-        narration: 'Customer outstanding balance payment received via Bank/UPI',
-        items: [
-          { account_id: bankAcc ? String(bankAcc.id) : '', debit_amount: '', credit_amount: '', particulars: 'Operating Bank Account (Current A/c)' },
-          { account_id: arAcc ? String(arAcc.id) : '', debit_amount: '', credit_amount: '', particulars: 'Accounts Receivable (Customer Credit Cleared)' }
-        ]
-      })
-    } else if (presetType === 'carrier_payment') {
-      setVoucherForm({
-        voucher_type: 'payment',
-        voucher_date: new Date().toISOString().slice(0, 10),
-        reference_no: 'LINEHAUL-PAY',
-        customer_id: '',
-        narration: 'Linehaul freight carrier payment settlement',
-        items: [
-          { account_id: apAcc ? String(apAcc.id) : '', debit_amount: '', credit_amount: '', particulars: 'Carrier Accounts Payable (Debit to reduce liability)' },
-          { account_id: bankAcc ? String(bankAcc.id) : '', debit_amount: '', credit_amount: '', particulars: 'Bank Transfer to Carrier' }
-        ]
-      })
-    } else if (presetType === 'petty_cash') {
-      setVoucherForm({
-        voucher_type: 'payment',
-        voucher_date: new Date().toISOString().slice(0, 10),
-        reference_no: 'PETTY',
-        customer_id: '',
-        narration: 'Counter packaging tape, stationery & petty expenses',
-        items: [
-          { account_id: expPetty ? String(expPetty.id) : '', debit_amount: '', credit_amount: '', particulars: 'Printing, Barcode & Stationery Expense' },
-          { account_id: cashAcc ? String(cashAcc.id) : '', debit_amount: '', credit_amount: '', particulars: 'Paid from Counter Cash Drawer' }
-        ]
-      })
-    } else if (presetType === 'contra_deposit') {
-      setVoucherForm({
-        voucher_type: 'contra',
-        voucher_date: new Date().toISOString().slice(0, 10),
-        reference_no: 'BANK-DEP',
-        customer_id: '',
-        narration: 'Day-end counter cash drawer deposited into bank account',
-        items: [
-          { account_id: bankAcc ? String(bankAcc.id) : '', debit_amount: '', credit_amount: '', particulars: 'Operating Bank Account (Deposit Dr)' },
-          { account_id: cashAcc ? String(cashAcc.id) : '', debit_amount: '', credit_amount: '', particulars: 'Counter Cash Register (Withdrawal Cr)' }
-        ]
-      })
-    }
-  }
-
-  const handleSaveVoucher = (e) => {
-    e.preventDefault()
-    if (!voucherTotals.isTallied) {
-      toast.error(`Voucher is not balanced! Debit: ₹${voucherTotals.debits.toFixed(2)}, Credit: ₹${voucherTotals.credits.toFixed(2)}`)
-      return
-    }
-
-    const payload = {
-      ...voucherForm,
-      items: voucherForm.items.map(it => ({
-        account_id: parseInt(it.account_id, 10),
-        debit_amount: parseFloat(it.debit_amount) || 0,
-        credit_amount: parseFloat(it.credit_amount) || 0,
-        particulars: it.particulars || ''
-      }))
-    }
-    createVoucherMutation.mutate(payload)
-  }
+  // Filtered customers for search
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearch.trim()) return customersList
+    const term = customerSearch.toLowerCase()
+    return customersList.filter(c =>
+      c.name?.toLowerCase().includes(term) ||
+      c.company?.toLowerCase().includes(term) ||
+      c.phone?.includes(term) ||
+      c.email?.toLowerCase().includes(term)
+    )
+  }, [customersList, customerSearch])
 
   return (
     <div className="space-y-6">
@@ -408,7 +221,7 @@ export default function AccountingPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-xl font-bold tracking-tight text-text-primary">
-                Accounting & General Ledger
+                Financial Balance Sheets & Accounting
               </h1>
               <span
                 className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${
@@ -421,12 +234,11 @@ export default function AccountingPage() {
               </span>
             </div>
             <p className="text-xs text-text-secondary mt-1">
-              Double-entry bookkeeping ($\sum Dr = \sum Cr$), Counter Day Book tallying, Master Chart of Accounts, and Trial Balance.
+              Master Balance Sheet, Customer Accounts, Walk-in Counter Cash, Vendor Payables, and Direct Financial Entries.
             </p>
           </div>
         </div>
 
-        {/* Enable / Disable Ledger Button */}
         <div className="flex items-center gap-3">
           <button
             onClick={() => toggleStatusMutation.mutate(!isLedgerEnabled)}
@@ -458,9 +270,9 @@ export default function AccountingPage() {
           <div className="flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
             <div>
-              <h3 className="text-sm font-bold">Accounting Ledger is Currently Inactive</h3>
+              <h3 className="text-sm font-bold">Accounting Ledger is Currently Disabled</h3>
               <p className="text-xs text-amber-800/90 dark:text-amber-300/80 mt-1">
-                To start entering balanced debit/credit vouchers, tracking customer & vendor accounts, tallying counter cash, and viewing live financial trial balances, activate the ledger toggle above.
+                Enable the ledger to view real-time customer balances, walk-in counter revenue, vendor linehaul payables, and record payment entries.
               </p>
             </div>
           </div>
@@ -468,7 +280,7 @@ export default function AccountingPage() {
             onClick={() => toggleStatusMutation.mutate(true)}
             className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white whitespace-nowrap shadow-xs"
           >
-            Activate Accounting Ledger
+            Activate Ledger
           </button>
         </div>
       )}
@@ -476,271 +288,424 @@ export default function AccountingPage() {
       {/* ── Active Module Content ── */}
       {isLedgerEnabled && (
         <>
-          {/* Key KPI Strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="p-4 rounded-xl bg-surface border border-border">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-text-secondary">Cash in Hand</span>
-                <Wallet className="w-4 h-4 text-emerald-500" />
-              </div>
-              <div className="text-lg font-bold text-text-primary mt-1">
-                ₹{kpis.cash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </div>
-              <span className="text-[10px] text-text-tertiary">Drawer & Petty Cash</span>
-            </div>
-
-            <div className="p-4 rounded-xl bg-surface border border-border">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-text-secondary">Bank & Gateway</span>
-                <Building className="w-4 h-4 text-blue-500" />
-              </div>
-              <div className="text-lg font-bold text-text-primary mt-1">
-                ₹{kpis.bank.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </div>
-              <span className="text-[10px] text-text-tertiary">Current A/c & UPI Clearing</span>
-            </div>
-
-            <div className="p-4 rounded-xl bg-surface border border-border">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-text-secondary">Accounts Receivable</span>
-                <User className="w-4 h-4 text-purple-500" />
-              </div>
-              <div className="text-lg font-bold text-text-primary mt-1">
-                ₹{kpis.debtors.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </div>
-              <span className="text-[10px] text-text-tertiary">Total Customer Dues (Dr)</span>
-            </div>
-
-            <div className="p-4 rounded-xl bg-surface border border-border">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-text-secondary">Accounts Payable</span>
-                <Scale className="w-4 h-4 text-rose-500" />
-              </div>
-              <div className="text-lg font-bold text-text-primary mt-1">
-                ₹{kpis.creditors.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </div>
-              <span className="text-[10px] text-text-tertiary">Carrier & Vendor Bills (Cr)</span>
-            </div>
-          </div>
-
           {/* Navigation Tabs */}
-          <div className="flex items-center gap-2 border-b border-border overflow-x-auto pb-1 text-sm font-semibold">
-            <button
-              onClick={() => setActiveTab('vouchers')}
-              className={`px-4 py-2.5 rounded-t-xl transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${
-                activeTab === 'vouchers'
-                  ? 'border-primary text-primary bg-primary/5'
-                  : 'border-transparent text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <Receipt className="w-4 h-4" />
-              Voucher Register
-            </button>
+          <div className="flex items-center justify-between border-b border-border pb-1">
+            <div className="flex items-center gap-2 overflow-x-auto text-sm font-semibold">
+              <button
+                onClick={() => setActiveTab('master')}
+                className={`px-4 py-2.5 rounded-t-xl transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${
+                  activeTab === 'master'
+                    ? 'border-primary text-primary bg-primary/5'
+                    : 'border-transparent text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <Scale className="w-4 h-4" />
+                Master Balance Sheet
+              </button>
 
+              <button
+                onClick={() => setActiveTab('customers')}
+                className={`px-4 py-2.5 rounded-t-xl transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${
+                  activeTab === 'customers'
+                    ? 'border-primary text-primary bg-primary/5'
+                    : 'border-transparent text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                Customers Accounts
+              </button>
+
+              <button
+                onClick={() => setActiveTab('walkin')}
+                className={`px-4 py-2.5 rounded-t-xl transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${
+                  activeTab === 'walkin'
+                    ? 'border-primary text-primary bg-primary/5'
+                    : 'border-transparent text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <Wallet className="w-4 h-4" />
+                Walk-in Customers
+              </button>
+
+              <button
+                onClick={() => setActiveTab('vendors')}
+                className={`px-4 py-2.5 rounded-t-xl transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${
+                  activeTab === 'vendors'
+                    ? 'border-primary text-primary bg-primary/5'
+                    : 'border-transparent text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <Truck className="w-4 h-4" />
+                Vendors Balance Sheet
+              </button>
+
+              <button
+                onClick={() => setActiveTab('entries')}
+                className={`px-4 py-2.5 rounded-t-xl transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${
+                  activeTab === 'entries'
+                    ? 'border-primary text-primary bg-primary/5'
+                    : 'border-transparent text-text-secondary hover:text-text-primary'
+                }`}
+              >
+                <FileText className="w-4 h-4" />
+                Entries Register
+              </button>
+            </div>
+
+            {/* Quick Add Entry Button */}
             <button
-              onClick={() => setActiveTab('new_voucher')}
-              className={`px-4 py-2.5 rounded-t-xl transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${
-                activeTab === 'new_voucher'
-                  ? 'border-primary text-primary bg-primary/5'
-                  : 'border-transparent text-text-secondary hover:text-text-primary'
-              }`}
+              onClick={() => openNewEntry('customer_payment')}
+              className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-primary hover:bg-primary-hover text-white shadow-xs"
             >
               <Plus className="w-4 h-4" />
-              New Voucher Entry
-            </button>
-
-            <button
-              onClick={() => setActiveTab('day_book')}
-              className={`px-4 py-2.5 rounded-t-xl transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${
-                activeTab === 'day_book'
-                  ? 'border-primary text-primary bg-primary/5'
-                  : 'border-transparent text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <Coins className="w-4 h-4" />
-              Day Book & Cash Tally
-            </button>
-
-            <button
-              onClick={() => setActiveTab('coa')}
-              className={`px-4 py-2.5 rounded-t-xl transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${
-                activeTab === 'coa'
-                  ? 'border-primary text-primary bg-primary/5'
-                  : 'border-transparent text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <Layers className="w-4 h-4" />
-              Chart of Accounts (COA)
-            </button>
-
-            <button
-              onClick={() => setActiveTab('ledger')}
-              className={`px-4 py-2.5 rounded-t-xl transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${
-                activeTab === 'ledger'
-                  ? 'border-primary text-primary bg-primary/5'
-                  : 'border-transparent text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <BookOpen className="w-4 h-4" />
-              Account Ledger
-            </button>
-
-            <button
-              onClick={() => setActiveTab('trial_balance')}
-              className={`px-4 py-2.5 rounded-t-xl transition-all border-b-2 whitespace-nowrap flex items-center gap-2 ${
-                activeTab === 'trial_balance'
-                  ? 'border-primary text-primary bg-primary/5'
-                  : 'border-transparent text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <Scale className="w-4 h-4" />
-              Trial Balance ($\Delta = 0$)
+              + Add Entry
             </button>
           </div>
 
           {/* ════════════════════════════════════════════════════════════════
-              TAB 1: VOUCHER REGISTER
+              TAB 1: MASTER BALANCE SHEET
               ════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'vouchers' && (
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="flex items-center gap-3 w-full sm:w-auto">
-                  <div className="relative flex-1 sm:w-64">
-                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
-                    <input
-                      type="text"
-                      placeholder="Search voucher no, ref, narration..."
-                      value={voucherSearch}
-                      onChange={(e) => setVoucherSearch(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
+          {activeTab === 'master' && (
+            <div className="space-y-6">
+              {/* Primary KPI Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="p-5 rounded-2xl bg-surface border border-border shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-text-secondary">Customer Dues (Receivable)</span>
+                    <User className="w-4 h-4 text-purple-500" />
+                  </div>
+                  <div className="text-xl font-bold text-purple-600 dark:text-purple-400 mt-2">
+                    ₹{(masterData?.receivables?.total_customer_due || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-text-tertiary mt-2 pt-2 border-t border-border/50">
+                    <span>{masterData?.receivables?.total_customers_count || 0} Registered Accounts</span>
+                    <button onClick={() => setActiveTab('customers')} className="text-primary hover:underline font-bold">
+                      View →
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-surface border border-border shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-text-secondary">Walk-in Counter Revenue</span>
+                    <Wallet className="w-4 h-4 text-emerald-500" />
+                  </div>
+                  <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-2">
+                    ₹{(masterData?.walkin?.total_walkin_revenue || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-text-tertiary mt-2 pt-2 border-t border-border/50">
+                    <span>{masterData?.walkin?.total_walkin_shipments_count || 0} Cash Shipments</span>
+                    <button onClick={() => setActiveTab('walkin')} className="text-primary hover:underline font-bold">
+                      View →
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-surface border border-border shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-text-secondary">Vendor Linehaul Payables</span>
+                    <Truck className="w-4 h-4 text-rose-500" />
+                  </div>
+                  <div className="text-xl font-bold text-rose-600 dark:text-rose-400 mt-2">
+                    ₹{(masterData?.payables?.total_vendor_payable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-text-tertiary mt-2 pt-2 border-t border-border/50">
+                    <span>Total Cost: ₹{(masterData?.payables?.total_vendor_linehaul_cost || 0).toLocaleString('en-IN')}</span>
+                    <button onClick={() => setActiveTab('vendors')} className="text-primary hover:underline font-bold">
+                      View →
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-surface border border-border shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-text-secondary">Gross Operating Margin</span>
+                    <TrendingUp className="w-4 h-4 text-blue-500" />
+                  </div>
+                  <div className="text-xl font-bold text-blue-600 dark:text-blue-400 mt-2">
+                    ₹{(masterData?.profitability?.gross_profit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-text-tertiary mt-2 pt-2 border-t border-border/50">
+                    <span>{masterData?.profitability?.margin_pct || 0}% Profit Margin</span>
+                    <span className="text-emerald-600 font-bold">Profitable</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Master Balance Sheet Layout (Assets vs Liabilities) */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left Card: Assets & Receivables */}
+                <div className="p-6 rounded-2xl bg-surface border border-border shadow-xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-border pb-3">
+                    <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                      <IndianRupee className="w-4 h-4 text-emerald-500" />
+                      Current Assets & Receivables (Money Coming In)
+                    </h3>
+                    <span className="text-xs font-bold text-emerald-600">ASSETS</span>
                   </div>
 
-                  <select
-                    value={voucherFilterType}
-                    onChange={(e) => setVoucherFilterType(e.target.value)}
-                    className="px-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  <div className="space-y-3 text-xs">
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-surface-alt/50 border border-border">
+                      <div>
+                        <div className="font-bold text-text-primary">Accounts Receivable (Customer Dues)</div>
+                        <div className="text-[11px] text-text-tertiary">Outstanding credit balances from registered customers</div>
+                      </div>
+                      <div className="font-mono font-bold text-sm text-text-primary">
+                        ₹{(masterData?.receivables?.total_customer_due || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-surface-alt/50 border border-border">
+                      <div>
+                        <div className="font-bold text-text-primary">Walk-in Counter Cash Revenue</div>
+                        <div className="text-[11px] text-text-tertiary">Direct retail shipments billed & collected</div>
+                      </div>
+                      <div className="font-mono font-bold text-sm text-emerald-600">
+                        ₹{(masterData?.walkin?.total_walkin_revenue || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-surface-alt/50 border border-border">
+                      <div>
+                        <div className="font-bold text-text-primary">Cash in Drawer (Petty Cash)</div>
+                        <div className="text-[11px] text-text-tertiary">Counter register drawer balance</div>
+                      </div>
+                      <div className="font-mono font-bold text-sm text-text-primary">
+                        ₹{(masterData?.liquid_funds?.cash_in_hand || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-surface-alt/50 border border-border">
+                      <div>
+                        <div className="font-bold text-text-primary">Operating Bank & UPI Clearing</div>
+                        <div className="text-[11px] text-text-tertiary">Current Account & Gateway funds</div>
+                      </div>
+                      <div className="font-mono font-bold text-sm text-text-primary">
+                        ₹{(masterData?.liquid_funds?.bank_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Card: Liabilities & Direct Costs */}
+                <div className="p-6 rounded-2xl bg-surface border border-border shadow-xs space-y-4">
+                  <div className="flex items-center justify-between border-b border-border pb-3">
+                    <h3 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                      <Truck className="w-4 h-4 text-rose-500" />
+                      Current Liabilities & Costs (Money Owed / Paid)
+                    </h3>
+                    <span className="text-xs font-bold text-rose-600">LIABILITIES</span>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-surface-alt/50 border border-border">
+                      <div>
+                        <div className="font-bold text-text-primary">Vendor Linehaul Costs Incurred</div>
+                        <div className="text-[11px] text-text-tertiary">Total forwarder bills (Pacific, ACX, Sairaj, etc.)</div>
+                      </div>
+                      <div className="font-mono font-bold text-sm text-text-primary">
+                        ₹{(masterData?.payables?.total_vendor_linehaul_cost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-surface-alt/50 border border-border">
+                      <div>
+                        <div className="font-bold text-text-primary">Payments Settled to Vendors</div>
+                        <div className="text-[11px] text-text-tertiary">Amount already transferred to carriers</div>
+                      </div>
+                      <div className="font-mono font-bold text-sm text-emerald-600">
+                        -₹{(masterData?.payables?.total_vendor_paid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-rose-50/50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900">
+                      <div>
+                        <div className="font-bold text-rose-700 dark:text-rose-300">Net Outstanding Vendor Payable</div>
+                        <div className="text-[11px] text-rose-600/80 dark:text-rose-400">Balance Prince Express currently owes to carriers</div>
+                      </div>
+                      <div className="font-mono font-bold text-sm text-rose-700 dark:text-rose-300">
+                        ₹{(masterData?.payables?.total_vendor_payable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-surface-alt/50 border border-border">
+                      <div>
+                        <div className="font-bold text-text-primary">Operating & Administrative Expenses</div>
+                        <div className="text-[11px] text-text-tertiary">Stationery, tape, rent, hub expenses</div>
+                      </div>
+                      <div className="font-mono font-bold text-sm text-text-primary">
+                        ₹{(masterData?.liquid_funds?.total_expenses || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Action Buttons Strip */}
+              <div className="p-4 rounded-2xl bg-surface border border-border flex flex-wrap items-center justify-between gap-3">
+                <span className="text-xs font-bold text-text-secondary">
+                  Fast Accounting Actions:
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => openNewEntry('customer_payment')}
+                    className="px-3.5 py-2 text-xs font-bold rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
                   >
-                    <option value="">All Voucher Types</option>
-                    <option value="receipt">Receipt Voucher (RV)</option>
-                    <option value="payment">Payment Voucher (PV)</option>
-                    <option value="sales_invoice">Sales Invoice (SV)</option>
-                    <option value="purchase_bill">Purchase Bill (PB)</option>
-                    <option value="journal">Journal Voucher (JV)</option>
-                    <option value="contra">Contra Voucher (CV)</option>
-                    <option value="credit_note">Credit Note (CN)</option>
-                    <option value="debit_note">Debit Note (DN)</option>
-                  </select>
+                    + Record Customer Payment
+                  </button>
+                  <button
+                    onClick={() => openNewEntry('vendor_payment')}
+                    className="px-3.5 py-2 text-xs font-bold rounded-xl bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors"
+                  >
+                    + Record Vendor Payment
+                  </button>
+                  <button
+                    onClick={() => openNewEntry('expense')}
+                    className="px-3.5 py-2 text-xs font-bold rounded-xl bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors"
+                  >
+                    + Record Office Expense
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ════════════════════════════════════════════════════════════════
+              TAB 2: CUSTOMERS ACCOUNTS BALANCE SHEET
+              ════════════════════════════════════════════════════════════════ */}
+          {activeTab === 'customers' && (
+            <div className="space-y-4">
+              {/* Summary Strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 rounded-xl bg-surface border border-border">
+                  <span className="text-xs font-medium text-text-secondary">Total Customers</span>
+                  <div className="text-lg font-bold text-text-primary mt-1">
+                    {customersSheetData?.total_customers || 0}
+                  </div>
+                </div>
+                <div className="p-4 rounded-xl bg-surface border border-border">
+                  <span className="text-xs font-medium text-text-secondary">Total Payments Received</span>
+                  <div className="text-lg font-bold text-emerald-600 mt-1">
+                    ₹{(customersSheetData?.grand_total_paid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="p-4 rounded-xl bg-surface border border-border">
+                  <span className="text-xs font-medium text-text-secondary">Total Outstanding Receivables</span>
+                  <div className="text-lg font-bold text-purple-600 mt-1">
+                    ₹{(customersSheetData?.grand_total_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Search Bar & Actions */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+                  <input
+                    type="text"
+                    placeholder="Search customer name, company, phone..."
+                    value={customerSearch}
+                    onChange={(e) => setCustomerSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
                 </div>
 
                 <button
-                  onClick={() => setActiveTab('new_voucher')}
+                  onClick={() => openNewEntry('customer_payment')}
                   className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-bold bg-primary hover:bg-primary-hover text-white flex items-center justify-center gap-2 shadow-xs"
                 >
                   <Plus className="w-4 h-4" />
-                  Record New Voucher
+                  + Record Customer Payment
                 </button>
               </div>
 
-              {/* Vouchers Table */}
+              {/* Customers Accounts Table */}
               <div className="rounded-2xl border border-border bg-surface overflow-hidden shadow-xs">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-border bg-surface-alt/50 text-text-secondary font-semibold">
-                        <th className="py-3 px-4">Voucher No</th>
-                        <th className="py-3 px-4">Date</th>
-                        <th className="py-3 px-4">Type</th>
-                        <th className="py-3 px-4">Narration / Particulars</th>
-                        <th className="py-3 px-4">Customer / Vendor</th>
-                        <th className="py-3 px-4 text-right">Debit (₹)</th>
-                        <th className="py-3 px-4 text-right">Credit (₹)</th>
-                        <th className="py-3 px-4 text-center">Tallied</th>
+                        <th className="py-3 px-4">Customer</th>
+                        <th className="py-3 px-4">Contact</th>
+                        <th className="py-3 px-4 text-center">Shipments</th>
+                        <th className="py-3 px-4 text-right">Total Invoiced (₹)</th>
+                        <th className="py-3 px-4 text-right">Total Paid (₹)</th>
+                        <th className="py-3 px-4 text-right">Balance Due (₹)</th>
+                        <th className="py-3 px-4 text-center">Status</th>
                         <th className="py-3 px-4 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {vouchersLoading ? (
+                      {custLoading ? (
                         <tr>
-                          <td colSpan={9} className="py-8 text-center text-text-tertiary">
+                          <td colSpan={8} className="py-8 text-center text-text-tertiary">
                             <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
-                            Loading vouchers...
+                            Loading customer accounts...
                           </td>
                         </tr>
-                      ) : vouchers.length === 0 ? (
+                      ) : filteredCustomers.length === 0 ? (
                         <tr>
-                          <td colSpan={9} className="py-12 text-center text-text-tertiary">
-                            <Receipt className="w-8 h-8 mx-auto mb-2 text-text-tertiary/50" />
-                            <p className="font-semibold text-text-secondary">No vouchers recorded yet</p>
-                            <p className="text-[11px] mt-1">Click "Record New Voucher" or pick a quick template to create your first balanced journal voucher.</p>
+                          <td colSpan={8} className="py-8 text-center text-text-tertiary">
+                            No customers found.
                           </td>
                         </tr>
                       ) : (
-                        vouchers.map(v => {
-                          const badge = VOUCHER_TYPE_COLORS[v.voucher_type] || { bg: '#f1f5f9', text: '#475569', label: v.voucher_type }
+                        filteredCustomers.map(c => {
+                          const bal = parseFloat(c.current_balance) || 0
                           return (
-                            <tr key={v.id} className="hover:bg-surface-alt/40 transition-colors">
-                              <td className="py-3 px-4 font-mono font-bold text-text-primary">
-                                {v.voucher_no}
-                                {v.reference_no && (
-                                  <span className="block text-[10px] font-normal text-text-tertiary">Ref: {v.reference_no}</span>
+                            <tr key={c.id} className="hover:bg-surface-alt/40 transition-colors">
+                              <td className="py-3 px-4">
+                                <div className="font-bold text-text-primary">{c.name}</div>
+                                {c.company && (
+                                  <div className="text-[11px] text-text-tertiary">{c.company}</div>
                                 )}
-                              </td>
-                              <td className="py-3 px-4 text-text-secondary whitespace-nowrap">
-                                {String(v.voucher_date).slice(0, 10)}
-                              </td>
-                              <td className="py-3 px-4 whitespace-nowrap">
-                                <span
-                                  className="px-2 py-0.5 rounded-md text-[10px] font-bold"
-                                  style={{ background: badge.bg, color: badge.text, border: `1px solid ${badge.border}` }}
-                                >
-                                  {badge.label}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 text-text-primary max-w-xs truncate">
-                                {v.narration || '—'}
                               </td>
                               <td className="py-3 px-4 text-text-secondary">
-                                {v.customer_name ? (
-                                  <span>{v.customer_name} {v.customer_company ? `(${v.customer_company})` : ''}</span>
-                                ) : (
-                                  '—'
-                                )}
+                                <div>{c.phone || '—'}</div>
+                                <div className="text-[11px] text-text-tertiary">{c.email || ''}</div>
                               </td>
-                              <td className="py-3 px-4 text-right font-mono font-semibold text-emerald-600 dark:text-emerald-400">
-                                ₹{parseFloat(v.total_debit).toFixed(2)}
+                              <td className="py-3 px-4 text-center font-bold font-mono">
+                                {c.shipments_count || 0}
                               </td>
-                              <td className="py-3 px-4 text-right font-mono font-semibold text-blue-600 dark:text-blue-400">
-                                ₹{parseFloat(v.total_credit).toFixed(2)}
+                              <td className="py-3 px-4 text-right font-mono font-semibold text-text-primary">
+                                ₹{(c.total_shipment_billing || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono font-semibold text-emerald-600">
+                                ₹{(c.total_paid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono font-bold text-sm">
+                                <span className={bal > 0 ? 'text-rose-600' : bal < 0 ? 'text-blue-600' : 'text-emerald-600'}>
+                                  ₹{bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </span>
                               </td>
                               <td className="py-3 px-4 text-center">
-                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  Tallied
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    bal > 0
+                                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                      : bal < 0
+                                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  }`}
+                                >
+                                  {c.status_label}
                                 </span>
                               </td>
                               <td className="py-3 px-4 text-right whitespace-nowrap">
-                                <div className="flex items-center justify-end gap-1">
+                                <div className="flex items-center justify-end gap-1.5">
                                   <button
-                                    onClick={async () => {
-                                      const res = await accountingApi.getVoucher(v.id)
-                                      if (res?.voucher) setSelectedVoucher(res.voucher)
-                                    }}
-                                    className="p-1.5 rounded-lg hover:bg-surface-alt text-text-secondary hover:text-text-primary"
-                                    title="View Voucher Breakdown"
+                                    onClick={() => openNewEntry('customer_payment', { customer_id: c.id, party_name: c.name })}
+                                    className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                    title="Record payment received from this customer"
                                   >
-                                    <Eye className="w-4 h-4" />
+                                    + Pay
                                   </button>
                                   <button
-                                    onClick={() => {
-                                      if (window.confirm(`Delete voucher ${v.voucher_no}? This will reverse all associated account balance changes.`)) {
-                                        deleteVoucherMutation.mutate(v.id)
-                                      }
-                                    }}
-                                    className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-500 hover:text-rose-700"
-                                    title="Delete & Reverse"
+                                    onClick={() => setStatementCustomer(c)}
+                                    className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-surface-alt border border-border text-text-primary hover:bg-surface"
+                                    title="View customer ledger statement"
                                   >
-                                    <Trash2 className="w-4 h-4" />
+                                    Statement
                                   </button>
                                 </div>
                               </td>
@@ -756,729 +721,116 @@ export default function AccountingPage() {
           )}
 
           {/* ════════════════════════════════════════════════════════════════
-              TAB 2: NEW VOUCHER ENTRY (DOUBLE ENTRY FORM)
+              TAB 3: WALK-IN CUSTOMERS BALANCE SHEET
               ════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'new_voucher' && (
-            <div className="space-y-6">
-              {/* Quick Template Presets */}
-              <div className="p-4 rounded-2xl bg-surface border border-border">
-                <span className="text-xs font-bold text-text-secondary uppercase tracking-wider block mb-2.5">
-                  Quick Voucher Presets (One-Click Setup)
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => applyPreset('walkin_cash')}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 transition-colors"
-                  >
-                    💵 Walk-in Cash Receipt (Dr Cash, Cr Revenue)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset('customer_bank_receipt')}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 transition-colors"
-                  >
-                    🏦 Customer UPI/Bank Payment (Dr Bank, Cr Debtors)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset('carrier_payment')}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800 transition-colors"
-                  >
-                    🚚 Carrier Linehaul Payment (Dr Payables, Cr Bank)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset('petty_cash')}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 transition-colors"
-                  >
-                    📦 Counter Petty Expense (Dr Stationery, Cr Cash)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyPreset('contra_deposit')}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800 transition-colors"
-                  >
-                    🔄 Contra Cash Deposit to Bank (Dr Bank, Cr Cash)
-                  </button>
+          {activeTab === 'walkin' && (
+            <div className="space-y-4">
+              {/* Summary Strip */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="p-4 rounded-xl bg-surface border border-border">
+                  <span className="text-xs font-medium text-text-secondary">Walk-in Bookings</span>
+                  <div className="text-lg font-bold text-text-primary mt-1">
+                    {walkinData?.summary?.total_count || 0}
+                  </div>
+                </div>
+                <div className="p-4 rounded-xl bg-surface border border-border">
+                  <span className="text-xs font-medium text-text-secondary">Total Billed / Revenue</span>
+                  <div className="text-lg font-bold text-emerald-600 mt-1">
+                    ₹{(walkinData?.summary?.total_revenue || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="p-4 rounded-xl bg-surface border border-border">
+                  <span className="text-xs font-medium text-text-secondary">Cash Drawer Collections</span>
+                  <div className="text-lg font-bold text-primary mt-1">
+                    ₹{(walkinData?.summary?.cash_collected || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="p-4 rounded-xl bg-surface border border-border">
+                  <span className="text-xs font-medium text-text-secondary">Digital / UPI Collections</span>
+                  <div className="text-lg font-bold text-blue-600 mt-1">
+                    ₹{(walkinData?.summary?.digital_collected || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
                 </div>
               </div>
 
-              {/* Form Card */}
-              <form onSubmit={handleSaveVoucher} className="p-6 rounded-2xl bg-surface border border-border shadow-xs space-y-6">
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                  {/* Voucher Type */}
-                  <div>
-                    <label className="block text-xs font-bold text-text-secondary mb-1">
-                      Voucher Type *
-                    </label>
-                    <select
-                      value={voucherForm.voucher_type}
-                      onChange={(e) => setVoucherForm({ ...voucherForm, voucher_type: e.target.value })}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    >
-                      <option value="receipt">Receipt Voucher (RV)</option>
-                      <option value="payment">Payment Voucher (PV)</option>
-                      <option value="sales_invoice">Sales Invoice (SV)</option>
-                      <option value="purchase_bill">Purchase Bill (PB)</option>
-                      <option value="journal">Journal Voucher (JV)</option>
-                      <option value="contra">Contra Voucher (CV)</option>
-                      <option value="credit_note">Credit Note (CN)</option>
-                      <option value="debit_note">Debit Note (DN)</option>
-                    </select>
-                  </div>
-
-                  {/* Voucher Date */}
-                  <div>
-                    <label className="block text-xs font-bold text-text-secondary mb-1">
-                      Date *
-                    </label>
-                    <input
-                      type="date"
-                      value={voucherForm.voucher_date}
-                      onChange={(e) => setVoucherForm({ ...voucherForm, voucher_date: e.target.value })}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                      required
-                    />
-                  </div>
-
-                  {/* Reference No */}
-                  <div>
-                    <label className="block text-xs font-bold text-text-secondary mb-1">
-                      Reference / Chq / UPI No
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. UPI-928372 or INV-1002"
-                      value={voucherForm.reference_no}
-                      onChange={(e) => setVoucherForm({ ...voucherForm, reference_no: e.target.value })}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-
-                  {/* Customer Linkage */}
-                  <div>
-                    <label className="block text-xs font-bold text-text-secondary mb-1">
-                      Link Customer (Optional)
-                    </label>
-                    <select
-                      value={voucherForm.customer_id}
-                      onChange={(e) => setVoucherForm({ ...voucherForm, customer_id: e.target.value })}
-                      className="w-full px-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    >
-                      <option value="">None / Walk-in</option>
-                      {customers.map(c => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} {c.company ? `(${c.company})` : ''} — Bal: ₹{parseFloat(c.current_balance || 0).toFixed(2)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Narration */}
-                <div>
-                  <label className="block text-xs font-bold text-text-secondary mb-1">
-                    Narration / Transaction Description
-                  </label>
+              {/* Search Bar */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
                   <input
                     type="text"
-                    placeholder="Provide a clear description for auditing & Day Book records..."
-                    value={voucherForm.narration}
-                    onChange={(e) => setVoucherForm({ ...voucherForm, narration: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="Search AWB, sender, receiver, country..."
+                    value={walkinSearch}
+                    onChange={(e) => setWalkinSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
 
-                {/* ── Double-Entry Line Items ── */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-text-primary uppercase tracking-wider">
-                      Double-Entry Breakdown Rows ($\sum Dr = \sum Cr$)
-                    </span>
-                    <button
-                      type="button"
-                      onClick={addVoucherRow}
-                      className="text-xs text-primary font-bold hover:underline flex items-center gap-1"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      Add Account Row
-                    </button>
-                  </div>
-
-                  <div className="rounded-xl border border-border overflow-hidden">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-border bg-surface-alt/60 text-text-secondary font-semibold">
-                          <th className="py-2.5 px-3 w-10">#</th>
-                          <th className="py-2.5 px-3">Master Account *</th>
-                          <th className="py-2.5 px-3">Particulars / Note</th>
-                          <th className="py-2.5 px-3 w-36 text-right">Debit ($Dr$) ₹</th>
-                          <th className="py-2.5 px-3 w-36 text-right">Credit ($Cr$) ₹</th>
-                          <th className="py-2.5 px-3 w-10 text-center"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {voucherForm.items.map((it, idx) => (
-                          <tr key={idx} className="hover:bg-surface-alt/20">
-                            <td className="py-2.5 px-3 text-text-tertiary font-mono">{idx + 1}</td>
-                            <td className="py-2.5 px-3">
-                              <select
-                                value={it.account_id}
-                                onChange={(e) => handleItemChange(idx, 'account_id', e.target.value)}
-                                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                                required
-                              >
-                                <option value="">Select Account...</option>
-                                <optgroup label="1000 - Assets (Dr Increases)">
-                                  {accounts.filter(a => a.account_type === 'asset').map(a => (
-                                    <option key={a.id} value={a.id}>
-                                      {a.account_code} - {a.account_name} (₹{parseFloat(a.current_balance).toFixed(2)})
-                                    </option>
-                                  ))}
-                                </optgroup>
-                                <optgroup label="2000 - Liabilities (Cr Increases)">
-                                  {accounts.filter(a => a.account_type === 'liability').map(a => (
-                                    <option key={a.id} value={a.id}>
-                                      {a.account_code} - {a.account_name} (₹{parseFloat(a.current_balance).toFixed(2)})
-                                    </option>
-                                  ))}
-                                </optgroup>
-                                <optgroup label="3000 - Equity (Cr Increases)">
-                                  {accounts.filter(a => a.account_type === 'equity').map(a => (
-                                    <option key={a.id} value={a.id}>
-                                      {a.account_code} - {a.account_name}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                                <optgroup label="4000 - Revenue (Cr Increases)">
-                                  {accounts.filter(a => a.account_type === 'revenue').map(a => (
-                                    <option key={a.id} value={a.id}>
-                                      {a.account_code} - {a.account_name}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                                <optgroup label="5000 - Expenses (Dr Increases)">
-                                  {accounts.filter(a => a.account_type === 'expense').map(a => (
-                                    <option key={a.id} value={a.id}>
-                                      {a.account_code} - {a.account_name}
-                                    </option>
-                                  ))}
-                                </optgroup>
-                              </select>
-                            </td>
-                            <td className="py-2.5 px-3">
-                              <input
-                                type="text"
-                                placeholder="Row particulars..."
-                                value={it.particulars}
-                                onChange={(e) => handleItemChange(idx, 'particulars', e.target.value)}
-                                className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                              />
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                placeholder="0.00"
-                                value={it.debit_amount}
-                                onChange={(e) => handleItemChange(idx, 'debit_amount', e.target.value)}
-                                className="w-full px-2.5 py-1.5 text-xs text-right font-mono font-bold rounded-lg border border-border bg-surface text-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                              />
-                            </td>
-                            <td className="py-2.5 px-3 text-right">
-                              <input
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                placeholder="0.00"
-                                value={it.credit_amount}
-                                onChange={(e) => handleItemChange(idx, 'credit_amount', e.target.value)}
-                                className="w-full px-2.5 py-1.5 text-xs text-right font-mono font-bold rounded-lg border border-border bg-surface text-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              />
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              {voucherForm.items.length > 2 && (
-                                <button
-                                  type="button"
-                                  onClick={() => removeVoucherRow(idx)}
-                                  className="text-text-tertiary hover:text-rose-500 p-1"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="border-t border-border bg-surface-alt/70 font-bold">
-                          <td colSpan={3} className="py-3 px-3 text-right text-text-secondary">
-                            Total Double-Entry Sum:
-                          </td>
-                          <td className="py-3 px-3 text-right font-mono text-emerald-600">
-                            ₹{voucherTotals.debits.toFixed(2)}
-                          </td>
-                          <td className="py-3 px-3 text-right font-mono text-blue-600">
-                            ₹{voucherTotals.credits.toFixed(2)}
-                          </td>
-                          <td></td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </div>
-
-                {/* ── Real-Time Tally Status Box ── */}
-                <div
-                  className={`p-4 rounded-xl border flex flex-col sm:flex-row items-center justify-between gap-3 ${
-                    voucherTotals.isTallied
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-200'
-                      : 'bg-rose-50 border-rose-300 text-rose-900 dark:bg-rose-950/30 dark:border-rose-800 dark:text-rose-200'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    {voucherTotals.isTallied ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                    ) : (
-                      <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0" />
-                    )}
-                    <div>
-                      <h4 className="text-xs font-bold">
-                        {voucherTotals.isTallied
-                          ? 'Voucher is Perfectly Tallied (Double Entry Valid)'
-                          : voucherTotals.debits === 0 && voucherTotals.credits === 0
-                          ? 'Enter Debit and Credit amounts'
-                          : `Unbalanced Voucher — Difference: ₹${voucherTotals.diff.toFixed(2)}`}
-                      </h4>
-                      <p className="text-[11px] opacity-80">
-                        {voucherTotals.isTallied
-                          ? `Total Debit: ₹${voucherTotals.debits.toFixed(2)} matches Total Credit: ₹${voucherTotals.credits.toFixed(2)}. Variance = ₹0.00`
-                          : `Total Debit (₹${voucherTotals.debits.toFixed(2)}) must equal Total Credit (₹${voucherTotals.credits.toFixed(2)}) before committing.`}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 w-full sm:w-auto">
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('vouchers')}
-                      className="px-4 py-2 rounded-xl text-xs font-semibold text-text-secondary hover:text-text-primary"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={!voucherTotals.isTallied || createVoucherMutation.isPending}
-                      className={`w-full sm:w-auto px-6 py-2.5 rounded-xl text-xs font-bold text-white shadow-xs transition-all ${
-                        voucherTotals.isTallied && !createVoucherMutation.isPending
-                          ? 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
-                          : 'bg-gray-400 cursor-not-allowed opacity-60'
-                      }`}
-                    >
-                      {createVoucherMutation.isPending ? 'Validating & Committing...' : 'Commit & Tally Voucher'}
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* ════════════════════════════════════════════════════════════════
-              TAB 3: DAY BOOK & CASH DRAWER TALLY
-              ════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'day_book' && (
-            <div className="space-y-6">
-              {/* Date Filter & Overview */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-2xl bg-surface border border-border">
-                <div>
-                  <h3 className="text-sm font-bold text-text-primary">Counter Day Book & Cash Drawer Tally</h3>
-                  <p className="text-xs text-text-secondary mt-0.5">
-                    Physical currency count verification against system booked transactions.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-text-tertiary" />
-                  <input
-                    type="date"
-                    value={dayBookDate}
-                    onChange={(e) => setDayBookDate(e.target.value)}
-                    className="px-3 py-1.5 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary font-bold"
-                  />
-                </div>
-              </div>
-
-              {/* Day Cash Movement Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                <div className="p-4 rounded-xl bg-surface border border-border">
-                  <span className="text-xs font-medium text-text-secondary">Counter Cash In ($Dr$)</span>
-                  <div className="text-lg font-bold text-emerald-600 mt-1">
-                    +₹{(dayBookData?.day_cash_in || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </div>
-                  <span className="text-[10px] text-text-tertiary">Walk-in & Receipts</span>
-                </div>
-
-                <div className="p-4 rounded-xl bg-surface border border-border">
-                  <span className="text-xs font-medium text-text-secondary">Counter Cash Out ($Cr$)</span>
-                  <div className="text-lg font-bold text-rose-600 mt-1">
-                    -₹{(dayBookData?.day_cash_out || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </div>
-                  <span className="text-[10px] text-text-tertiary">Petty Expenses & Contra</span>
-                </div>
-
-                <div className="p-4 rounded-xl bg-surface border border-border">
-                  <span className="text-xs font-medium text-text-secondary">Net Day Cash Flow</span>
-                  <div className={`text-lg font-bold mt-1 ${(dayBookData?.net_cash_flow || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    ₹{(dayBookData?.net_cash_flow || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </div>
-                  <span className="text-[10px] text-text-tertiary">Cash In minus Cash Out</span>
-                </div>
-
-                <div className="p-4 rounded-xl bg-surface border border-border">
-                  <span className="text-xs font-medium text-text-secondary">System Cash Drawer Balance</span>
-                  <div className="text-lg font-bold text-primary mt-1">
-                    ₹{parseFloat(dayBookData?.cash_account?.current_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </div>
-                  <span className="text-[10px] text-text-tertiary">Book Closing Balance</span>
-                </div>
-              </div>
-
-              {/* Interactive Currency Counting Denomination Sheet */}
-              <div className="p-6 rounded-2xl bg-surface border border-border shadow-xs space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
-                      <Coins className="w-4 h-4 text-amber-500" />
-                      Physical Cash Drawer Denomination Counter
-                    </h4>
-                    <p className="text-xs text-text-secondary mt-0.5">
-                      Count physical notes in the cash drawer to verify tally with system cash balance.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setDenominations({ d2000: 0, d500: 0, d200: 0, d100: 0, d50: 0, d20: 0, d10: 0, coins: 0 })}
-                    className="text-xs text-text-tertiary hover:text-text-primary"
-                  >
-                    Reset Count
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    { key: 'd2000', label: '₹2000 Notes', mult: 2000 },
-                    { key: 'd500', label: '₹500 Notes', mult: 500 },
-                    { key: 'd200', label: '₹200 Notes', mult: 200 },
-                    { key: 'd100', label: '₹100 Notes', mult: 100 },
-                    { key: 'd50', label: '₹50 Notes', mult: 50 },
-                    { key: 'd20', label: '₹20 Notes', mult: 20 },
-                    { key: 'd10', label: '₹10 Notes', mult: 10 },
-                    { key: 'coins', label: 'Coins / Small (₹)', mult: 1 }
-                  ].map(denom => {
-                    const count = denominations[denom.key] || 0
-                    const subtotal = count * denom.mult
-                    return (
-                      <div key={denom.key} className="p-3 rounded-xl bg-surface-alt/50 border border-border space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-semibold text-text-secondary">{denom.label}</span>
-                          <span className="font-mono font-bold text-text-primary">₹{subtotal.toFixed(0)}</span>
-                        </div>
-                        <input
-                          type="number"
-                          min="0"
-                          value={count || ''}
-                          onChange={(e) => setDenominations({ ...denominations, [denom.key]: parseInt(e.target.value, 10) || 0 })}
-                          placeholder="Count"
-                          className="w-full px-2.5 py-1 text-xs text-center font-mono font-bold rounded-lg border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                        />
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {/* Physical vs System Comparison Strip */}
-                {(() => {
-                  const systemCash = parseFloat(dayBookData?.cash_account?.current_balance || 0)
-                  const diff = Math.round((physicalCashTotal - systemCash) * 100) / 100
-                  const isMatch = Math.abs(diff) < 0.01 && physicalCashTotal > 0
-                  return (
-                    <div
-                      className={`p-4 rounded-xl border flex flex-col sm:flex-row items-center justify-between gap-3 ${
-                        isMatch
-                          ? 'bg-emerald-50 border-emerald-300 text-emerald-900 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-200'
-                          : physicalCashTotal === 0
-                          ? 'bg-surface-alt border-border text-text-secondary'
-                          : diff > 0
-                          ? 'bg-blue-50 border-blue-300 text-blue-900 dark:bg-blue-950/30 dark:border-blue-800 dark:text-blue-200'
-                          : 'bg-rose-50 border-rose-300 text-rose-900 dark:bg-rose-950/30 dark:border-rose-800 dark:text-rose-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        {isMatch ? (
-                          <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        ) : (
-                          <Calculator className="w-5 h-5 shrink-0 opacity-80" />
-                        )}
-                        <div>
-                          <div className="text-xs font-bold">
-                            Physical Count: ₹{physicalCashTotal.toFixed(2)} | System Book: ₹{systemCash.toFixed(2)}
-                          </div>
-                          <div className="text-[11px] opacity-80">
-                            {isMatch
-                              ? 'Cash Drawer is 100% Tallied with zero variance! (₹0.00)'
-                              : physicalCashTotal === 0
-                              ? 'Enter physical counts above to perform daily drawer verification.'
-                              : diff > 0
-                              ? `Cash Excess (Over): +₹${diff.toFixed(2)}`
-                              : `Cash Shortage (Deficit): -₹${Math.abs(diff).toFixed(2)}`}
-                          </div>
-                        </div>
-                      </div>
-
-                      {physicalCashTotal > 0 && !isMatch && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            applyPreset('petty_cash')
-                            setActiveTab('new_voucher')
-                            toast('Pre-filling discrepancy adjustment voucher...')
-                          }}
-                          className="px-3 py-1.5 rounded-lg text-xs font-bold bg-surface border border-border text-text-primary hover:bg-surface-alt shadow-2xs whitespace-nowrap"
-                        >
-                          Record Discrepancy Voucher
-                        </button>
-                      )}
-                    </div>
-                  )
-                })()}
-              </div>
-
-              {/* Day Vouchers List */}
-              <div className="rounded-2xl border border-border bg-surface overflow-hidden shadow-xs">
-                <div className="p-4 border-b border-border bg-surface-alt/40 font-bold text-xs text-text-primary">
-                  Vouchers Recorded on {dayBookDate} ({dayBookData?.vouchers?.length || 0} entries)
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-border text-text-secondary font-semibold">
-                        <th className="py-2.5 px-4">Voucher No</th>
-                        <th className="py-2.5 px-4">Type</th>
-                        <th className="py-2.5 px-4">Narration</th>
-                        <th className="py-2.5 px-4">Customer</th>
-                        <th className="py-2.5 px-4 text-right">Debit (₹)</th>
-                        <th className="py-2.5 px-4 text-right">Credit (₹)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {(dayBookData?.vouchers || []).length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="py-8 text-center text-text-tertiary">
-                            No vouchers recorded on {dayBookDate}
-                          </td>
-                        </tr>
-                      ) : (
-                        dayBookData.vouchers.map(v => (
-                          <tr key={v.id} className="hover:bg-surface-alt/30">
-                            <td className="py-2.5 px-4 font-mono font-bold text-text-primary">{v.voucher_no}</td>
-                            <td className="py-2.5 px-4 uppercase text-[10px] font-bold text-text-secondary">{v.voucher_type}</td>
-                            <td className="py-2.5 px-4 text-text-primary">{v.narration || '—'}</td>
-                            <td className="py-2.5 px-4 text-text-secondary">{v.customer_name || '—'}</td>
-                            <td className="py-2.5 px-4 text-right font-mono font-semibold text-emerald-600">
-                              ₹{parseFloat(v.total_debit).toFixed(2)}
-                            </td>
-                            <td className="py-2.5 px-4 text-right font-mono font-semibold text-blue-600">
-                              ₹{parseFloat(v.total_credit).toFixed(2)}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ════════════════════════════════════════════════════════════════
-              TAB 4: CHART OF ACCOUNTS (COA)
-              ════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'coa' && (
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-sm font-bold text-text-primary">Master Chart of Accounts (COA)</h3>
-                  <p className="text-xs text-text-secondary mt-0.5">
-                    General ledger hierarchy: Assets, Liabilities, Equity, Revenue, and Expenses.
-                  </p>
-                </div>
                 <button
-                  type="button"
-                  onClick={() => setShowAddAccountModal(true)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-primary hover:bg-primary-hover text-white flex items-center gap-2 shadow-xs"
+                  onClick={() => openNewEntry('walkin_cash')}
+                  className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-bold bg-primary hover:bg-primary-hover text-white flex items-center justify-center gap-2 shadow-xs"
                 >
                   <Plus className="w-4 h-4" />
-                  Add Master Account
+                  + Record Walk-in Cash
                 </button>
               </div>
 
-              {/* COA Table */}
-              <div className="rounded-2xl border border-border bg-surface overflow-hidden shadow-xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-border bg-surface-alt/50 text-text-secondary font-semibold">
-                        <th className="py-3 px-4">Code</th>
-                        <th className="py-3 px-4">Account Name</th>
-                        <th className="py-3 px-4">Type</th>
-                        <th className="py-3 px-4">Group Category</th>
-                        <th className="py-3 px-4">Linked Entity</th>
-                        <th className="py-3 px-4 text-right">Current Balance (₹)</th>
-                        <th className="py-3 px-4 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {accounts.map(acc => {
-                        const typeBadge = ACCOUNT_TYPE_COLORS[acc.account_type] || { bg: '#f1f5f9', text: '#475569', label: acc.account_type }
-                        const bal = parseFloat(acc.current_balance) || 0
-                        return (
-                          <tr key={acc.id} className="hover:bg-surface-alt/30 transition-colors">
-                            <td className="py-3 px-4 font-mono font-bold text-primary">{acc.account_code}</td>
-                            <td className="py-3 px-4 font-semibold text-text-primary">{acc.account_name}</td>
-                            <td className="py-3 px-4">
-                              <span
-                                className="px-2 py-0.5 rounded-md text-[10px] font-bold"
-                                style={{ background: typeBadge.bg, color: typeBadge.text }}
-                              >
-                                {typeBadge.label}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-text-secondary">{acc.group_category}</td>
-                            <td className="py-3 px-4 text-text-tertiary capitalize">{acc.linked_entity_type}</td>
-                            <td className="py-3 px-4 text-right font-mono font-bold text-text-primary">
-                              ₹{bal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="py-3 px-4 text-right">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedLedgerAccountId(acc.id)
-                                  setActiveTab('ledger')
-                                }}
-                                className="text-xs text-primary font-semibold hover:underline"
-                              >
-                                View Ledger →
-                              </button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ════════════════════════════════════════════════════════════════
-              TAB 5: ACCOUNT LEDGER STATEMENT
-              ════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'ledger' && (
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-2xl bg-surface border border-border">
-                <div className="flex-1 w-full sm:w-auto">
-                  <label className="block text-xs font-bold text-text-secondary mb-1">
-                    Select Master Account to Inspect Ledger
-                  </label>
-                  <select
-                    value={selectedLedgerAccountId}
-                    onChange={(e) => setSelectedLedgerAccountId(e.target.value)}
-                    className="w-full sm:w-96 px-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary font-semibold"
-                  >
-                    <option value="">-- Choose Account --</option>
-                    {accounts.map(a => (
-                      <option key={a.id} value={a.id}>
-                        {a.account_code} - {a.account_name} ({a.account_type.toUpperCase()})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {ledgerData?.account && (
-                  <div className="flex items-center gap-4 text-right">
-                    <div>
-                      <span className="text-[10px] text-text-tertiary uppercase font-bold">Closing Balance</span>
-                      <div className="text-lg font-bold font-mono text-primary">
-                        ₹{parseFloat(ledgerData.closing_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Ledger Statement Table */}
+              {/* Walk-in Shipments Table */}
               <div className="rounded-2xl border border-border bg-surface overflow-hidden shadow-xs">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="border-b border-border bg-surface-alt/50 text-text-secondary font-semibold">
                         <th className="py-3 px-4">Date</th>
-                        <th className="py-3 px-4">Voucher No</th>
-                        <th className="py-3 px-4">Type</th>
-                        <th className="py-3 px-4">Particulars</th>
-                        <th className="py-3 px-4">Narration</th>
-                        <th className="py-3 px-4 text-right">Debit ($Dr$) ₹</th>
-                        <th className="py-3 px-4 text-right">Credit ($Cr$) ₹</th>
-                        <th className="py-3 px-4 text-right">Running Balance (₹)</th>
+                        <th className="py-3 px-4">Tracking AWB</th>
+                        <th className="py-3 px-4">Sender</th>
+                        <th className="py-3 px-4">Receiver & Country</th>
+                        <th className="py-3 px-4 text-center">Weight</th>
+                        <th className="py-3 px-4 text-center">Payment Mode</th>
+                        <th className="py-3 px-4 text-right">Amount (₹)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {!selectedLedgerAccountId ? (
+                      {walkinLoading ? (
                         <tr>
-                          <td colSpan={8} className="py-10 text-center text-text-tertiary">
-                            Select an account above to view statement and running balance
-                          </td>
-                        </tr>
-                      ) : ledgerLoading ? (
-                        <tr>
-                          <td colSpan={8} className="py-8 text-center text-text-tertiary">
+                          <td colSpan={7} className="py-8 text-center text-text-tertiary">
                             <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
-                            Loading account ledger...
+                            Loading walk-in shipments...
                           </td>
                         </tr>
-                      ) : (ledgerData?.entries || []).length === 0 ? (
+                      ) : (walkinData?.shipments || []).length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="py-10 text-center text-text-tertiary">
-                            No transactions recorded for this account yet
+                          <td colSpan={7} className="py-8 text-center text-text-tertiary">
+                            No walk-in shipments found.
                           </td>
                         </tr>
                       ) : (
-                        ledgerData.entries.map((entry, idx) => (
-                          <tr key={idx} className="hover:bg-surface-alt/30">
-                            <td className="py-2.5 px-4 text-text-secondary whitespace-nowrap">
-                              {String(entry.voucher_date).slice(0, 10)}
+                        walkinData.shipments.map(s => (
+                          <tr key={s.id} className="hover:bg-surface-alt/40 transition-colors">
+                            <td className="py-3 px-4 text-text-secondary whitespace-nowrap">
+                              {String(s.created_at || '').slice(0, 10)}
                             </td>
-                            <td className="py-2.5 px-4 font-mono font-bold text-text-primary">
-                              {entry.voucher_no}
+                            <td className="py-3 px-4 font-mono font-bold text-primary">
+                              {s.tracking_number}
                             </td>
-                            <td className="py-2.5 px-4 uppercase text-[10px] font-bold text-text-secondary">
-                              {entry.voucher_type}
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-text-primary">{s.sender_name || 'Walk-in Sender'}</div>
+                              {s.sender_phone && <div className="text-[11px] text-text-tertiary">{s.sender_phone}</div>}
                             </td>
-                            <td className="py-2.5 px-4 text-text-primary">
-                              {entry.particulars || '—'}
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-text-primary">{s.receiver_name}</div>
+                              <div className="text-[11px] text-text-tertiary">{s.receiver_country}</div>
                             </td>
-                            <td className="py-2.5 px-4 text-text-secondary">
-                              {entry.narration || '—'}
+                            <td className="py-3 px-4 text-center font-mono font-semibold">
+                              {parseFloat(s.chargeable_weight || 0).toFixed(2)} kg
                             </td>
-                            <td className="py-2.5 px-4 text-right font-mono font-semibold text-emerald-600">
-                              {parseFloat(entry.debit_amount) > 0 ? `₹${parseFloat(entry.debit_amount).toFixed(2)}` : '—'}
+                            <td className="py-3 px-4 text-center">
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase bg-surface-alt border border-border">
+                                {s.payment_mode || 'cash'}
+                              </span>
                             </td>
-                            <td className="py-2.5 px-4 text-right font-mono font-semibold text-blue-600">
-                              {parseFloat(entry.credit_amount) > 0 ? `₹${parseFloat(entry.credit_amount).toFixed(2)}` : '—'}
-                            </td>
-                            <td className="py-2.5 px-4 text-right font-mono font-bold text-text-primary">
-                              ₹{parseFloat(entry.running_balance).toFixed(2)}
+                            <td className="py-3 px-4 text-right font-mono font-bold text-emerald-600 text-sm">
+                              ₹{parseFloat(s.total_amount || 0).toFixed(2)}
                             </td>
                           </tr>
                         ))
@@ -1491,89 +843,243 @@ export default function AccountingPage() {
           )}
 
           {/* ════════════════════════════════════════════════════════════════
-              TAB 6: TRIAL BALANCE REPORT
+              TAB 4: VENDORS BALANCE SHEET
               ════════════════════════════════════════════════════════════════ */}
-          {activeTab === 'trial_balance' && (
+          {activeTab === 'vendors' && (
             <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 rounded-2xl bg-surface border border-border">
-                <div>
-                  <h3 className="text-sm font-bold text-text-primary">Trial Balance Verification</h3>
-                  <p className="text-xs text-text-secondary mt-0.5">
-                    Double-entry validation showing Total Debits vs Total Credits across all general ledger accounts.
-                  </p>
+              {/* Summary Strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 rounded-xl bg-surface border border-border">
+                  <span className="text-xs font-medium text-text-secondary">Total Linehaul Cost Incurred</span>
+                  <div className="text-lg font-bold text-text-primary mt-1">
+                    ₹{(vendorsSheetData?.grand_total_cost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
                 </div>
-
-                <div
-                  className={`px-4 py-2 rounded-xl text-xs font-bold border flex items-center gap-2 ${
-                    trialBalanceData?.is_tallied
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                      : 'bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
-                  }`}
-                >
-                  {trialBalanceData?.is_tallied ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      Trial Balance is Perfectly Tallied ($\Delta = 0.00$)
-                    </>
-                  ) : (
-                    <>
-                      <AlertCircle className="w-4 h-4 text-rose-600" />
-                      Unbalanced Trial Balance (Variance: ₹{(trialBalanceData?.variance || 0).toFixed(2)})
-                    </>
-                  )}
+                <div className="p-4 rounded-xl bg-surface border border-border">
+                  <span className="text-xs font-medium text-text-secondary">Total Paid to Vendors</span>
+                  <div className="text-lg font-bold text-emerald-600 mt-1">
+                    ₹{(vendorsSheetData?.grand_total_paid || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div className="p-4 rounded-xl bg-surface border border-border">
+                  <span className="text-xs font-medium text-text-secondary">Total Outstanding Payables</span>
+                  <div className="text-lg font-bold text-rose-600 mt-1">
+                    ₹{(vendorsSheetData?.grand_total_payable || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </div>
                 </div>
               </div>
 
-              {/* Trial Balance Table */}
+              {/* Action Bar */}
+              <div className="flex justify-end">
+                <button
+                  onClick={() => openNewEntry('vendor_payment')}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-primary hover:bg-primary-hover text-white flex items-center gap-2 shadow-xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  + Record Vendor Payment
+                </button>
+              </div>
+
+              {/* Vendors Table */}
               <div className="rounded-2xl border border-border bg-surface overflow-hidden shadow-xs">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="border-b border-border bg-surface-alt/60 text-text-secondary font-semibold">
+                      <tr className="border-b border-border bg-surface-alt/50 text-text-secondary font-semibold">
+                        <th className="py-3 px-4">Vendor / Carrier</th>
                         <th className="py-3 px-4">Code</th>
-                        <th className="py-3 px-4">Master Account Name</th>
-                        <th className="py-3 px-4">Type</th>
-                        <th className="py-3 px-4 text-right">Debit Balance ($Dr$) ₹</th>
-                        <th className="py-3 px-4 text-right">Credit Balance ($Cr$) ₹</th>
+                        <th className="py-3 px-4 text-center">Shipments Forwarded</th>
+                        <th className="py-3 px-4 text-center">Total Weight</th>
+                        <th className="py-3 px-4 text-right">Freight Cost Billed (₹)</th>
+                        <th className="py-3 px-4 text-right">Total Paid (₹)</th>
+                        <th className="py-3 px-4 text-right">Payable Balance (₹)</th>
+                        <th className="py-3 px-4 text-center">Status</th>
+                        <th className="py-3 px-4 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {tbLoading ? (
+                      {vendorsLoading ? (
                         <tr>
-                          <td colSpan={5} className="py-8 text-center text-text-tertiary">
+                          <td colSpan={9} className="py-8 text-center text-text-tertiary">
                             <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
-                            Calculating Trial Balance...
+                            Loading vendors balance sheet...
+                          </td>
+                        </tr>
+                      ) : (vendorsSheetData?.vendors || []).length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="py-8 text-center text-text-tertiary">
+                            No vendors configured yet.
                           </td>
                         </tr>
                       ) : (
-                        (trialBalanceData?.accounts || []).map(acc => (
-                          <tr key={acc.id} className="hover:bg-surface-alt/30">
-                            <td className="py-2.5 px-4 font-mono font-bold text-primary">{acc.account_code}</td>
-                            <td className="py-2.5 px-4 font-semibold text-text-primary">{acc.account_name}</td>
-                            <td className="py-2.5 px-4 uppercase text-[10px] font-bold text-text-tertiary">{acc.account_type}</td>
-                            <td className="py-2.5 px-4 text-right font-mono font-semibold text-emerald-600">
-                              {acc.debit_balance > 0 ? `₹${parseFloat(acc.debit_balance).toFixed(2)}` : '—'}
+                        vendorsSheetData.vendors.map(v => (
+                          <tr key={v.id} className="hover:bg-surface-alt/40 transition-colors">
+                            <td className="py-3 px-4 font-bold text-text-primary">{v.name}</td>
+                            <td className="py-3 px-4 font-mono font-bold text-text-secondary">{v.vendor_code}</td>
+                            <td className="py-3 px-4 text-center font-bold font-mono">{v.shipments_count}</td>
+                            <td className="py-3 px-4 text-center font-mono">{v.total_weight.toFixed(2)} kg</td>
+                            <td className="py-3 px-4 text-right font-mono font-semibold text-text-primary">
+                              ₹{v.total_cost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
-                            <td className="py-2.5 px-4 text-right font-mono font-semibold text-blue-600">
-                              {acc.credit_balance > 0 ? `₹${parseFloat(acc.credit_balance).toFixed(2)}` : '—'}
+                            <td className="py-3 px-4 text-right font-mono font-semibold text-emerald-600">
+                              ₹{v.total_paid.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono font-bold text-sm">
+                              <span className={v.balance_payable > 0 ? 'text-rose-600' : 'text-emerald-600'}>
+                                ₹{v.balance_payable.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                  v.balance_payable > 0
+                                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                    : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                }`}
+                              >
+                                {v.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                onClick={() => openNewEntry('vendor_payment', { vendor_id: v.id, vendor_code: v.vendor_code, party_name: v.name })}
+                                className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100"
+                              >
+                                + Record Pay
+                              </button>
                             </td>
                           </tr>
                         ))
                       )}
                     </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 border-border bg-surface-alt font-bold text-xs">
-                        <td colSpan={3} className="py-3.5 px-4 text-right text-text-primary uppercase tracking-wider">
-                          Grand Total ($\sum Dr$ vs $\sum Cr$):
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono text-emerald-600 text-sm">
-                          ₹{(trialBalanceData?.grand_total_debit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono text-blue-600 text-sm">
-                          ₹{(trialBalanceData?.grand_total_credit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ════════════════════════════════════════════════════════════════
+              TAB 5: ENTRIES REGISTER
+              ════════════════════════════════════════════════════════════════ */}
+          {activeTab === 'entries' && (
+            <div className="space-y-4">
+              {/* Filter Strip */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-3 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:w-64">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-tertiary" />
+                    <input
+                      type="text"
+                      placeholder="Search entry no, party, reference..."
+                      value={entriesSearch}
+                      onChange={(e) => setEntriesSearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+
+                  <select
+                    value={entriesFilterType}
+                    onChange={(e) => setEntriesFilterType(e.target.value)}
+                    className="px-3 py-2 text-xs rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">All Entry Types</option>
+                    <option value="customer_payment">Customer Payment</option>
+                    <option value="customer_charge">Customer Charge</option>
+                    <option value="walkin_cash">Walk-in Cash</option>
+                    <option value="vendor_payment">Vendor Payment</option>
+                    <option value="expense">Office Expense</option>
+                  </select>
+                </div>
+
+                <button
+                  onClick={() => openNewEntry('customer_payment')}
+                  className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-bold bg-primary hover:bg-primary-hover text-white flex items-center justify-center gap-2 shadow-xs"
+                >
+                  <Plus className="w-4 h-4" />
+                  + Record Entry
+                </button>
+              </div>
+
+              {/* Entries Table */}
+              <div className="rounded-2xl border border-border bg-surface overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-border bg-surface-alt/50 text-text-secondary font-semibold">
+                        <th className="py-3 px-4">Entry No</th>
+                        <th className="py-3 px-4">Date</th>
+                        <th className="py-3 px-4">Type</th>
+                        <th className="py-3 px-4">Party Name</th>
+                        <th className="py-3 px-4">Mode / Ref</th>
+                        <th className="py-3 px-4">Description</th>
+                        <th className="py-3 px-4 text-right">Amount (₹)</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
                       </tr>
-                    </tfoot>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {entriesLoading ? (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-text-tertiary">
+                            <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2 text-primary" />
+                            Loading entries...
+                          </td>
+                        </tr>
+                      ) : (entriesData?.entries || []).length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-text-tertiary">
+                            No entries recorded yet. Click "+ Record Entry" above to add one.
+                          </td>
+                        </tr>
+                      ) : (
+                        entriesData.entries.map(e => {
+                          const badge = ENTRY_TYPE_BADGES[e.entry_type] || { bg: '#f1f5f9', text: '#475569', label: e.entry_type }
+                          return (
+                            <tr key={e.id} className="hover:bg-surface-alt/40 transition-colors">
+                              <td className="py-3 px-4 font-mono font-bold text-text-primary">
+                                {e.entry_number}
+                              </td>
+                              <td className="py-3 px-4 text-text-secondary whitespace-nowrap">
+                                {String(e.entry_date).slice(0, 10)}
+                              </td>
+                              <td className="py-3 px-4 whitespace-nowrap">
+                                <span
+                                  className="px-2 py-0.5 rounded-md text-[10px] font-bold"
+                                  style={{ background: badge.bg, color: badge.text, border: `1px solid ${badge.border}` }}
+                                >
+                                  {badge.label}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 font-bold text-text-primary">
+                                {e.party_name || '—'}
+                              </td>
+                              <td className="py-3 px-4 text-text-secondary">
+                                <span className="uppercase font-semibold">{e.payment_mode}</span>
+                                {e.reference_no && <span className="block text-[10px] text-text-tertiary">Ref: {e.reference_no}</span>}
+                              </td>
+                              <td className="py-3 px-4 text-text-secondary max-w-xs truncate">
+                                {e.description || '—'}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono font-bold text-sm text-text-primary">
+                                ₹{parseFloat(e.amount).toFixed(2)}
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm(`Delete entry ${e.entry_number}? Any customer balance updates will be reversed.`)) {
+                                      deleteEntryMutation.mutate(e.id)
+                                    }
+                                  }}
+                                  className="p-1 rounded-lg hover:bg-rose-50 text-rose-500 hover:text-rose-700"
+                                  title="Delete & Reverse"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          )
+                        })
+                      )}
+                    </tbody>
                   </table>
                 </div>
               </div>
@@ -1582,183 +1088,301 @@ export default function AccountingPage() {
         </>
       )}
 
-      {/* ── View Voucher Modal ── */}
-      {selectedVoucher && (
+      {/* ── NEW ENTRY MODAL ── */}
+      {showEntryModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface border border-border rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl animate-in fade-in zoom-in-95">
-            <div className="flex items-start justify-between border-b border-border pb-4">
-              <div>
-                <span className="text-xs font-mono font-bold text-primary">{selectedVoucher.voucher_no}</span>
-                <h3 className="text-base font-bold text-text-primary capitalize mt-0.5">
-                  {selectedVoucher.voucher_type.replace('_', ' ')} Voucher
-                </h3>
-                <span className="text-xs text-text-tertiary">
-                  Date: {String(selectedVoucher.voucher_date).slice(0, 10)} {selectedVoucher.reference_no ? `| Ref: ${selectedVoucher.reference_no}` : ''}
-                </span>
-              </div>
-              <button
-                onClick={() => setSelectedVoucher(null)}
-                className="p-1 rounded-lg hover:bg-surface-alt text-text-secondary hover:text-text-primary"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {selectedVoucher.narration && (
-              <div className="p-3 rounded-xl bg-surface-alt/60 text-xs text-text-secondary">
-                <span className="font-bold text-text-primary">Narration: </span>
-                {selectedVoucher.narration}
-              </div>
-            )}
-
-            {/* Line Items */}
-            <div className="rounded-xl border border-border overflow-hidden">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-border bg-surface-alt/60 text-text-secondary font-semibold">
-                    <th className="py-2 px-3">Account</th>
-                    <th className="py-2 px-3">Particulars</th>
-                    <th className="py-2 px-3 text-right">Debit (₹)</th>
-                    <th className="py-2 px-3 text-right">Credit (₹)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {(selectedVoucher.items || []).map((it, idx) => (
-                    <tr key={idx}>
-                      <td className="py-2 px-3 font-semibold text-text-primary">
-                        {it.account_code} - {it.account_name}
-                      </td>
-                      <td className="py-2 px-3 text-text-secondary">{it.particulars || '—'}</td>
-                      <td className="py-2 px-3 text-right font-mono font-semibold text-emerald-600">
-                        {parseFloat(it.debit_amount) > 0 ? `₹${parseFloat(it.debit_amount).toFixed(2)}` : '—'}
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono font-semibold text-blue-600">
-                        {parseFloat(it.credit_amount) > 0 ? `₹${parseFloat(it.credit_amount).toFixed(2)}` : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t border-border bg-surface-alt font-bold">
-                    <td colSpan={2} className="py-2.5 px-3 text-right text-text-secondary">Total:</td>
-                    <td className="py-2.5 px-3 text-right font-mono text-emerald-600">
-                      ₹{parseFloat(selectedVoucher.total_debit).toFixed(2)}
-                    </td>
-                    <td className="py-2.5 px-3 text-right font-mono text-blue-600">
-                      ₹{parseFloat(selectedVoucher.total_credit).toFixed(2)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setSelectedVoucher(null)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-surface-alt hover:bg-surface border border-border text-text-primary"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Add Master Account Modal ── */}
-      {showAddAccountModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface border border-border rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+          <div className="bg-surface border border-border rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-border pb-3">
-              <h3 className="text-sm font-bold text-text-primary">Create New Master Account</h3>
+              <h3 className="text-sm font-bold text-text-primary">Record Financial Entry</h3>
               <button
-                onClick={() => setShowAddAccountModal(false)}
+                onClick={() => setShowEntryModal(false)}
                 className="p-1 rounded-lg hover:bg-surface-alt text-text-secondary"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                createEntryMutation.mutate(entryForm)
+              }}
+              className="space-y-4 text-xs"
+            >
+              {/* Entry Type */}
               <div>
-                <label className="block font-bold text-text-secondary mb-1">Account Code *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. 5260"
-                  value={newAccountForm.account_code}
-                  onChange={(e) => setNewAccountForm({ ...newAccountForm, account_code: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-text-secondary mb-1">Account Name *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Vehicle Fuel & Maintenance"
-                  value={newAccountForm.account_name}
-                  onChange={(e) => setNewAccountForm({ ...newAccountForm, account_name: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-text-secondary mb-1">Account Type *</label>
+                <label className="block font-bold text-text-secondary mb-1">Entry Type *</label>
                 <select
-                  value={newAccountForm.account_type}
-                  onChange={(e) => setNewAccountForm({ ...newAccountForm, account_type: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  value={entryForm.entry_type}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setEntryForm({
+                      ...entryForm,
+                      entry_type: val,
+                      party_type: val.startsWith('customer') ? 'customer' : val.startsWith('vendor') ? 'vendor' : val === 'walkin_cash' ? 'walkin' : 'expense'
+                    })
+                  }}
+                  className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary font-bold focus:outline-none focus:ring-1 focus:ring-primary"
                 >
-                  <option value="asset">Asset (Normal Debit)</option>
-                  <option value="liability">Liability (Normal Credit)</option>
-                  <option value="equity">Equity (Normal Credit)</option>
-                  <option value="revenue">Revenue (Normal Credit)</option>
-                  <option value="expense">Expense (Normal Debit)</option>
+                  <option value="customer_payment">💰 Customer Payment Received (Credit Customer)</option>
+                  <option value="customer_charge">📄 Customer Shipment / Charge (Debit Customer)</option>
+                  <option value="walkin_cash">💵 Walk-in Cash Collected</option>
+                  <option value="vendor_payment">🚚 Vendor / Carrier Payment Paid (Debit Vendor)</option>
+                  <option value="vendor_bill">📦 Vendor Bill Incurred (Credit Vendor)</option>
+                  <option value="expense">🏢 Office / Counter Expense</option>
                 </select>
               </div>
 
+              {/* Conditional Customer / Vendor Selector */}
+              {entryForm.entry_type.startsWith('customer') && (
+                <div>
+                  <label className="block font-bold text-text-secondary mb-1">Select Customer *</label>
+                  <select
+                    value={entryForm.customer_id}
+                    onChange={(e) => {
+                      const cust = customersList.find(c => String(c.id) === e.target.value)
+                      setEntryForm({
+                        ...entryForm,
+                        customer_id: e.target.value,
+                        party_name: cust ? cust.name : ''
+                      })
+                    }}
+                    required
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary font-semibold focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">-- Choose Customer --</option>
+                    {customersList.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} {c.company ? `(${c.company})` : ''} — Bal: ₹{parseFloat(c.current_balance || 0).toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {entryForm.entry_type.startsWith('vendor') && (
+                <div>
+                  <label className="block font-bold text-text-secondary mb-1">Select Vendor / Carrier *</label>
+                  <select
+                    value={entryForm.vendor_code}
+                    onChange={(e) => {
+                      const v = vendorsList.find(item => item.vendor_code === e.target.value)
+                      setEntryForm({
+                        ...entryForm,
+                        vendor_code: e.target.value,
+                        vendor_id: v?.id || '',
+                        party_name: v ? v.name : ''
+                      })
+                    }}
+                    required
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary font-semibold focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">-- Choose Vendor --</option>
+                    {vendorsList.map(v => (
+                      <option key={v.id} value={v.vendor_code}>
+                        {v.name} ({v.vendor_code}) — Payable: ₹{parseFloat(v.balance_payable || 0).toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* General Party Name for Walkin or Expense */}
+              {['walkin_cash', 'expense'].includes(entryForm.entry_type) && (
+                <div>
+                  <label className="block font-bold text-text-secondary mb-1">Party / Expense Title</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Counter Cash Drawer or Packaging Tape Purchase"
+                    value={entryForm.party_name}
+                    onChange={(e) => setEntryForm({ ...entryForm, party_name: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              )}
+
+              {/* Amount & Mode */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-text-secondary mb-1">Amount (₹) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    placeholder="0.00"
+                    value={entryForm.amount}
+                    onChange={(e) => setEntryForm({ ...entryForm, amount: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary font-mono font-bold text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-text-secondary mb-1">Payment Mode *</label>
+                  <select
+                    value={entryForm.payment_mode}
+                    onChange={(e) => setEntryForm({ ...entryForm, payment_mode: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary font-semibold focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="cash">Cash (Counter Drawer)</option>
+                    <option value="upi">UPI / QR Code</option>
+                    <option value="bank_transfer">Bank Transfer (NEFT/RTGS)</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="card">Card / POS</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Reference & Date */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-text-secondary mb-1">Ref / UPI / Chq No</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. UPI-928372"
+                    value={entryForm.reference_no}
+                    onChange={(e) => setEntryForm({ ...entryForm, reference_no: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-text-secondary mb-1">Date *</label>
+                  <input
+                    type="date"
+                    value={entryForm.entry_date}
+                    onChange={(e) => setEntryForm({ ...entryForm, entry_date: e.target.value })}
+                    required
+                    className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary font-semibold focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Description */}
               <div>
-                <label className="block font-bold text-text-secondary mb-1">Group Category *</label>
+                <label className="block font-bold text-text-secondary mb-1">Notes / Description</label>
                 <input
                   type="text"
-                  placeholder="e.g. Operating Expenses"
-                  value={newAccountForm.group_category}
-                  onChange={(e) => setNewAccountForm({ ...newAccountForm, group_category: e.target.value })}
+                  placeholder="Additional remarks..."
+                  value={entryForm.description}
+                  onChange={(e) => setEntryForm({ ...entryForm, description: e.target.value })}
                   className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
 
-              <div>
-                <label className="block font-bold text-text-secondary mb-1">Linked Entity Type</label>
-                <select
-                  value={newAccountForm.linked_entity_type}
-                  onChange={(e) => setNewAccountForm({ ...newAccountForm, linked_entity_type: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-text-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              <div className="flex justify-end gap-2 pt-3 border-t border-border">
+                <button
+                  type="button"
+                  onClick={() => setShowEntryModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-text-secondary hover:text-text-primary"
                 >
-                  <option value="none">None</option>
-                  <option value="customer">Customer</option>
-                  <option value="vendor">Vendor</option>
-                  <option value="bank">Bank</option>
-                  <option value="cash">Cash</option>
-                  <option value="tax">Tax</option>
-                </select>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={createEntryMutation.isPending || !entryForm.amount}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-primary hover:bg-primary-hover text-white shadow-xs"
+                >
+                  {createEntryMutation.isPending ? 'Saving Entry...' : 'Save Entry'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── CUSTOMER STATEMENT MODAL ── */}
+      {statementCustomer && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-surface border border-border rounded-2xl max-w-2xl w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex items-start justify-between border-b border-border pb-3">
+              <div>
+                <h3 className="text-base font-bold text-text-primary">{statementCustomer.name}</h3>
+                <span className="text-xs text-text-tertiary">
+                  {statementCustomer.company ? `${statementCustomer.company} | ` : ''}Phone: {statementCustomer.phone || '—'}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] text-text-tertiary uppercase font-bold">Outstanding Balance</span>
+                <div className="text-base font-bold font-mono text-purple-600">
+                  ₹{parseFloat(statementCustomer.current_balance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </div>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
+            {/* Statement Table */}
+            <div className="rounded-xl border border-border overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border bg-surface-alt/60 text-text-secondary font-semibold">
+                    <th className="py-2.5 px-3">Date</th>
+                    <th className="py-2.5 px-3">Type</th>
+                    <th className="py-2.5 px-3">Reference</th>
+                    <th className="py-2.5 px-3">Description</th>
+                    <th className="py-2.5 px-3 text-right">Debit (₹)</th>
+                    <th className="py-2.5 px-3 text-right">Credit (₹)</th>
+                    <th className="py-2.5 px-3 text-right">Balance (₹)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {statementLoading ? (
+                    <tr>
+                      <td colSpan={7} className="py-6 text-center text-text-tertiary">
+                        <RefreshCw className="w-4 h-4 animate-spin mx-auto mb-1 text-primary" />
+                        Loading statement...
+                      </td>
+                    </tr>
+                  ) : (customerLedgerData?.entries || []).length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-6 text-center text-text-tertiary">
+                        No ledger entries for this customer.
+                      </td>
+                    </tr>
+                  ) : (
+                    customerLedgerData.entries.map((entry, idx) => (
+                      <tr key={idx} className="hover:bg-surface-alt/30">
+                        <td className="py-2 px-3 text-text-secondary whitespace-nowrap">
+                          {String(entry.entry_date).slice(0, 10)}
+                        </td>
+                        <td className="py-2 px-3 font-semibold uppercase text-[10px]">
+                          <span className={entry.entry_type === 'debit' ? 'text-rose-600' : 'text-emerald-600'}>
+                            {entry.entry_type === 'debit' ? 'Charge' : 'Payment'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-text-tertiary">{entry.reference_no || '—'}</td>
+                        <td className="py-2 px-3 text-text-primary">{entry.description || '—'}</td>
+                        <td className="py-2 px-3 text-right font-mono font-semibold text-rose-600">
+                          {entry.entry_type === 'debit' ? `₹${parseFloat(entry.amount).toFixed(2)}` : '—'}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono font-semibold text-emerald-600">
+                          {entry.entry_type === 'credit' ? `₹${parseFloat(entry.amount).toFixed(2)}` : '—'}
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono font-bold text-text-primary">
+                          ₹{parseFloat(entry.balance_after || 0).toFixed(2)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-between items-center pt-2">
               <button
-                type="button"
-                onClick={() => setShowAddAccountModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-text-secondary"
+                onClick={() => {
+                  const cust = statementCustomer
+                  setStatementCustomer(null)
+                  openNewEntry('customer_payment', { customer_id: cust.id, party_name: cust.name })
+                }}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
               >
-                Cancel
+                + Record Payment Received
               </button>
               <button
-                type="button"
-                onClick={() => createAccountMutation.mutate(newAccountForm)}
-                disabled={createAccountMutation.isPending || !newAccountForm.account_code || !newAccountForm.account_name}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-primary hover:bg-primary-hover text-white shadow-xs"
+                onClick={() => setStatementCustomer(null)}
+                className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-surface-alt border border-border text-text-primary hover:bg-surface"
               >
-                Save Account
+                Close
               </button>
             </div>
           </div>
