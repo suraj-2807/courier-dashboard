@@ -23,19 +23,6 @@ export async function ensureRateProfitRulesTable() {
       INDEX idx_rpr_country (country),
       INDEX idx_rpr_active (is_active)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
-
-    // Check if table is empty, seed user's two real-world examples as initial defaults
-    const countRows = await query('SELECT COUNT(*) as cnt FROM rate_profit_rules')
-    const count = countRows && countRows[0] ? countRows[0].cnt : 0
-    if (count === 0) {
-      await execute(`INSERT INTO rate_profit_rules 
-        (rule_type, vendor_code, country, min_weight, max_weight, margin_type, margin_value, is_active, notes)
-        VALUES 
-        ('weight', 'pacific', '', 0.000, 5.000, 'percentage', 15.00, 1, 'Pacific 0-5 kg standard weight profit (+15%)'),
-        ('country', 'sairaj', 'USA', 0.000, 9999.000, 'percentage', 20.00, 1, 'Sairaj USA country destination profit (+20%)')
-      `)
-      console.log('rate_profit_rules initialized with default example rules.')
-    }
   } catch (err) {
     if (err.code !== 'ER_TABLE_EXISTS_ERROR') {
       console.error('ensureRateProfitRulesTable error:', err.message)
@@ -159,12 +146,18 @@ export async function updateProfitRule(id, data) {
  */
 export async function deleteProfitRule(id) {
   await ensureRateProfitRulesTable()
-  const [existing] = await query('SELECT * FROM rate_profit_rules WHERE id = ?', [id])
-  if (!existing) {
-    throw new Error('Profit rule not found')
-  }
-  await execute('DELETE FROM rate_profit_rules WHERE id = ?', [id])
-  return { success: true, message: 'Rule deleted successfully', deletedId: id }
+  const numId = parseInt(id, 10)
+  await execute('DELETE FROM rate_profit_rules WHERE id = ?', [numId])
+  return { success: true, message: 'Rule deleted successfully', deletedId: numId }
+}
+
+/**
+ * Clear all profit margin rules
+ */
+export async function clearAllProfitRules() {
+  await ensureRateProfitRulesTable()
+  await execute('DELETE FROM rate_profit_rules')
+  return { success: true, message: 'All profit rules cleared successfully' }
 }
 
 /**
@@ -263,3 +256,4 @@ export async function calculateProfitMargin({
     applied_rules: appliedRules
   }
 }
+

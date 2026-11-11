@@ -75,6 +75,9 @@ export const updateProfitRule = (id, data) =>
 export const deleteProfitRule = (id) =>
   api.delete(`/rates/profit-rules/${id}`).then((res) => res.data)
 
+export const clearAllProfitRules = () =>
+  api.delete('/rates/profit-rules').then((res) => res.data)
+
 export const previewProfit = (data) =>
   api.post('/rates/preview-profit', data).then((res) => res.data)
 

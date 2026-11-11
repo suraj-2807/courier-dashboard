@@ -861,16 +861,6 @@ export async function initializeDb() {
         INDEX idx_rpr_active (is_active)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
 
-      const [countRows] = await pool.query('SELECT COUNT(*) as cnt FROM rate_profit_rules')
-      const count = countRows && countRows[0] ? countRows[0].cnt : 0
-      if (count === 0) {
-        await execute(`INSERT INTO rate_profit_rules 
-          (rule_type, vendor_code, country, min_weight, max_weight, margin_type, margin_value, is_active, notes)
-          VALUES 
-          ('weight', 'pacific', '', 0.000, 5.000, 'percentage', 15.00, 1, 'Pacific 0-5 kg standard weight profit (+15%)'),
-          ('country', 'sairaj', 'USA', 0.000, 9999.000, 'percentage', 20.00, 1, 'Sairaj USA country destination profit (+20%)')
-        `)
-      }
       console.log('rate_profit_rules table ready.')
     } catch (rprErr) {
       if (rprErr.code !== 'ER_TABLE_EXISTS_ERROR') {

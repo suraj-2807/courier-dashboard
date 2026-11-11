@@ -38,6 +38,7 @@ import {
   createProfitRule,
   updateProfitRule,
   deleteProfitRule,
+  clearAllProfitRules,
   previewProfit
 } from '../api/rates.api'
 
@@ -155,6 +156,18 @@ export default function RatesPage() {
     },
     onError: (err) => {
       toast.error(err.response?.data?.message || err.message || 'Failed to delete rule')
+    }
+  })
+
+  // Clear All Rules Mutation
+  const clearAllMutation = useMutation({
+    mutationFn: clearAllProfitRules,
+    onSuccess: () => {
+      toast.success('All profit rules deleted')
+      queryClient.invalidateQueries(['profit-rules'])
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || err.message || 'Failed to clear rules')
     }
   })
 
@@ -321,6 +334,21 @@ export default function RatesPage() {
             <div className="text-[10px] uppercase font-bold text-gray-500">Country Rules</div>
           </div>
           <div className="h-7 w-px bg-gray-200"></div>
+          {profitRules.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm('Are you sure you want to delete all profit margin rules? Rates will then be fetched at 0% markup (raw vendor cost).')) {
+                  clearAllMutation.mutate()
+                }
+              }}
+              className="px-3 py-2 bg-gray-100 hover:bg-red-50 hover:text-red-600 text-gray-500 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+              title="Delete all rules"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Clear All
+            </button>
+          )}
           <button
             type="button"
             onClick={() => openAddModal('weight')}

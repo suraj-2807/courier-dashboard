@@ -21,6 +21,7 @@ import {
   createProfitRuleHandler,
   updateProfitRuleHandler,
   deleteProfitRuleHandler,
+  clearAllProfitRulesHandler,
   previewProfit
 } from './rates.controller.js'
 
@@ -72,6 +73,7 @@ router.post('/proxy', authMiddleware, sandboxProxy)
 router.get('/profit-rules', authMiddleware, getProfitRules)
 router.post('/profit-rules', authMiddleware, createProfitRuleHandler)
 router.put('/profit-rules/:id', authMiddleware, updateProfitRuleHandler)
+router.delete('/profit-rules', authMiddleware, clearAllProfitRulesHandler)
 router.delete('/profit-rules/:id', authMiddleware, deleteProfitRuleHandler)
 router.post('/preview-profit', authMiddleware, previewProfit)
 

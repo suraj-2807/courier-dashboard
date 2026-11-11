@@ -5,7 +5,8 @@ import {
   getAllProfitRules,
   createProfitRule,
   updateProfitRule,
-  deleteProfitRule
+  deleteProfitRule,
+  clearAllProfitRules
 } from '../../services/rateProfit.service.js'
 
 /**
@@ -412,6 +413,16 @@ export const deleteProfitRuleHandler = async (req, res) => {
   } catch (error) {
     console.error('Error deleting profit rule:', error)
     return res.status(400).json({ success: false, message: error.message })
+  }
+}
+
+export const clearAllProfitRulesHandler = async (req, res) => {
+  try {
+    const result = await clearAllProfitRules()
+    return res.json(result)
+  } catch (error) {
+    console.error('Error clearing profit rules:', error)
+    return res.status(500).json({ success: false, message: error.message })
   }
 }
 
