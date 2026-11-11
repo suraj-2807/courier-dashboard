@@ -196,6 +196,7 @@ export async function initializeDb() {
       { name: 'customer_id', type: "INT DEFAULT NULL" },
       { name: 'customer_name', type: "VARCHAR(150) DEFAULT 'Walk-in Customer'" },
       { name: 'customer_type', type: "VARCHAR(50) DEFAULT 'walkin'" },
+      { name: 'vendor_rate', type: "DECIMAL(12,2) DEFAULT 0.00" },
       { name: 'vendor_invoice_url', type: "VARCHAR(500) DEFAULT ''" },
       { name: 'vendor_box_label_url', type: "VARCHAR(500) DEFAULT ''" },
       { name: 'vendor_shipper_copy_url', type: "VARCHAR(500) DEFAULT ''" }

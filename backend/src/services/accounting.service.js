@@ -695,6 +695,26 @@ export async function ensureAccountingEntriesTable() {
     INDEX idx_ae_cust (customer_id),
     INDEX idx_ae_vendor (vendor_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+
+  // Ensure vendor_rate column exists in shipments table
+  try {
+    const vrCols = await query("SHOW COLUMNS FROM shipments LIKE 'vendor_rate'")
+    if (!vrCols || vrCols.length === 0) {
+      await execute("ALTER TABLE shipments ADD COLUMN vendor_rate DECIMAL(12,2) DEFAULT 0.00")
+    }
+  } catch (vrErr) {}
+}
+
+let cachedHasVendorRate = null
+async function checkVendorRateColumn() {
+  if (cachedHasVendorRate !== null) return cachedHasVendorRate
+  try {
+    const cols = await query("SHOW COLUMNS FROM shipments LIKE 'vendor_rate'")
+    cachedHasVendorRate = cols && cols.length > 0
+  } catch {
+    cachedHasVendorRate = false
+  }
+  return cachedHasVendorRate
 }
 
 /**
@@ -732,9 +752,11 @@ export async function getMasterBalanceSheet() {
   `)
 
   // Total Vendor Freight Costs
+  const hasVendorRate = await checkVendorRateColumn()
+  const vendorRateCol = hasVendorRate ? 'COALESCE(SUM(vendor_rate), 0.00)' : '0.00'
   const [vendorCosts] = await query(`
     SELECT 
-      COALESCE(SUM(vendor_rate), 0.00) as total_vendor_linehaul
+      ${vendorRateCol} as total_vendor_linehaul
     FROM shipments
     WHERE (is_trashed = 0 OR is_trashed IS NULL)
   `)
@@ -928,13 +950,16 @@ export async function getVendorsBalanceSheet() {
 
   const vendorList = []
 
+  const hasVendorRate = await checkVendorRateColumn()
+  const vendorRateCol = hasVendorRate ? 'COALESCE(SUM(vendor_rate), 0.00)' : '0.00'
+
   for (const v of vendors) {
     // Shipments forwarded to this vendor
     const [shipRes] = await query(
       `SELECT 
         COUNT(*) as shipments_count,
         COALESCE(SUM(chargeable_weight), 0.00) as total_weight,
-        COALESCE(SUM(vendor_rate), 0.00) as total_cost
+        ${vendorRateCol} as total_cost
        FROM shipments
        WHERE (vendor_code = ? OR vendor_config_id = ?)
          AND (is_trashed = 0 OR is_trashed IS NULL)`,
