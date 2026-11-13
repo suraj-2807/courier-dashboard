@@ -25,6 +25,8 @@ function recordWorksheet(PDO $pdo, int $vendorId, int $batchId, string $sheetNam
  * When this sheet is present, all other sheets are ignored.
  */
 function importRateDataWorksheet(PDO $pdo, \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $ws, int $vendorId, int $batchId): array {
+    $pdo = ensureDbConnection($pdo);
+
     $rows = $ws->toArray(null, true, true, false);
     if (!$rows || count($rows) < 2) {
         return ['count' => 0, 'sheets' => [$ws->getTitle()]];
@@ -59,105 +61,149 @@ function importRateDataWorksheet(PDO $pdo, \PhpOffice\PhpSpreadsheet\Worksheet\W
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
 
-    $insertZoneSt = $pdo->prepare(
-        "INSERT INTO vendor_zone_rows (batch_id, vendor_id, country, postcode, zone, town_city, remote_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?)"
-    );
-
     $insertCsSt = $pdo->prepare(
         "INSERT IGNORE INTO vendor_country_services (batch_id, vendor_id, service_code, country)
          VALUES (?, ?, ?, ?)"
     );
 
+    $flushZoneChunk = function(array &$chunk) use ($pdo, $batchId, $vendorId) {
+        if (empty($chunk)) return;
+        $rowPlaceholders = [];
+        $values = [];
+        foreach ($chunk as $item) {
+            $rowPlaceholders[] = "(?, ?, ?, ?, ?, ?, ?)";
+            $values[] = $batchId;
+            $values[] = $vendorId;
+            $values[] = $item['country'];
+            $values[] = $item['postcode'];
+            $values[] = $item['zone'];
+            $values[] = $item['town_city'];
+            $values[] = $item['remote_status'];
+        }
+        $sql = "INSERT INTO vendor_zone_rows (batch_id, vendor_id, country, postcode, zone, town_city, remote_status) VALUES " . implode(',', $rowPlaceholders);
+        $pdo->prepare($sql)->execute($values);
+        $chunk = [];
+    };
+
     $rowCount = 0;
     $uniqueCs = [];
+    $zoneChunk = [];
 
-    foreach (array_slice($rows, 1) as $ri => $row) {
-        $dest = clean($row[0] ?? null);
-        if (!$dest) continue;
+    $pdo->beginTransaction();
 
-        $state = clean($row[1] ?? null);
-        $sc = clean($row[2] ?? null);
-        if (!$sc) continue;
+    try {
+        foreach (array_slice($rows, 1) as $ri => $row) {
+            $dest = clean($row[0] ?? null);
+            if (!$dest) continue;
 
-        $sName = clean($row[3] ?? null);
-        $zone = clean($row[4] ?? null);
-        $postcodeRaw = clean($row[5] ?? null);
-        $town = clean($row[6] ?? null);
-        $dutyPaid = clean($row[7] ?? null);
-        $transit = clean($row[8] ?? null);
+            $state = clean($row[1] ?? null);
+            $sc = clean($row[2] ?? null);
+            if (!$sc) continue;
 
-        // Extract weight rates
-        $weightRates = [];
-        $minWeight = 0.50;
-        $maxWeight = 0.50;
+            $sName = clean($row[3] ?? null);
+            $zone = clean($row[4] ?? null);
+            $postcodeRaw = clean($row[5] ?? null);
+            $town = clean($row[6] ?? null);
+            $dutyPaid = clean($row[7] ?? null);
+            $transit = clean($row[8] ?? null);
 
-        foreach ($weightColMap as $ci => $info) {
-            $val = $row[$ci] ?? null;
-            if ($val === null) continue;
-            [$num, $raw] = numericRate($val);
-            if ($num !== null && $num > 0) {
-                $weightRates[$info['key']] = $num;
-                if ($info['weight'] > $maxWeight) {
-                    $maxWeight = $info['weight'];
+            // Extract weight rates
+            $weightRates = [];
+            $minWeight = 0.50;
+            $maxWeight = 0.50;
+
+            foreach ($weightColMap as $ci => $info) {
+                $val = $row[$ci] ?? null;
+                if ($val === null) continue;
+                [$num, $raw] = numericRate($val);
+                if ($num !== null && $num > 0) {
+                    $weightRates[$info['key']] = $num;
+                    if ($info['weight'] > $maxWeight) {
+                        $maxWeight = $info['weight'];
+                    }
+                }
+            }
+
+            if (empty($weightRates)) continue;
+
+            $insertMatrixSt->execute([
+                $batchId,
+                $vendorId,
+                $vendorCode,
+                $dest,
+                $state ?: '',
+                $sc,
+                $sName ?: '',
+                $zone ?: '',
+                $postcodeRaw,
+                $town ?: '',
+                $dutyPaid ?: '',
+                $transit ?: '',
+                json_encode($weightRates, JSON_UNESCAPED_UNICODE),
+                $minWeight,
+                $maxWeight
+            ]);
+
+            $rowCount++;
+
+            // Track country services
+            $csKey = $sc . '|' . $dest;
+            if (!isset($uniqueCs[$csKey])) {
+                $uniqueCs[$csKey] = true;
+                $insertCsSt->execute([$batchId, $vendorId, $sc, $dest]);
+            }
+
+            // Parse Postcodes with Remote Area Tags (e.g. YES, NO, YES/NO -> BOTH)
+            if ($postcodeRaw !== null && $postcodeRaw !== '') {
+                $parsedPostcodes = parsePostcodesWithRemoteTags($postcodeRaw);
+                foreach ($parsedPostcodes as $pItem) {
+                    $zoneChunk[] = [
+                        'country' => $dest,
+                        'postcode' => $pItem['postcode'],
+                        'zone' => $zone ?: null,
+                        'town_city' => $town ?: ($state ?: null),
+                        'remote_status' => $pItem['remote_status']
+                    ];
+
+                    // Flush in chunks of 250 rows for fast bulk insertion
+                    if (count($zoneChunk) >= 250) {
+                        $flushZoneChunk($zoneChunk);
+                    }
                 }
             }
         }
 
-        if (empty($weightRates)) continue;
-
-        $insertMatrixSt->execute([
-            $batchId,
-            $vendorId,
-            $vendorCode,
-            $dest,
-            $state ?: '',
-            $sc,
-            $sName ?: '',
-            $zone ?: '',
-            $postcodeRaw,
-            $town ?: '',
-            $dutyPaid ?: '',
-            $transit ?: '',
-            json_encode($weightRates, JSON_UNESCAPED_UNICODE),
-            $minWeight,
-            $maxWeight
-        ]);
-
-        $rowCount++;
-
-        // Track country services
-        $csKey = $sc . '|' . $dest;
-        if (!isset($uniqueCs[$csKey])) {
-            $uniqueCs[$csKey] = true;
-            $insertCsSt->execute([$batchId, $vendorId, $sc, $dest]);
+        // Flush remaining zone rows
+        if (!empty($zoneChunk)) {
+            $flushZoneChunk($zoneChunk);
         }
 
-        // Parse Postcodes with Remote Area Tags (e.g. YES, NO, YES/NO -> BOTH)
-        if ($postcodeRaw !== null && $postcodeRaw !== '') {
-            $parsedPostcodes = parsePostcodesWithRemoteTags($postcodeRaw);
-            foreach ($parsedPostcodes as $pItem) {
-                $insertZoneSt->execute([
-                    $batchId,
-                    $vendorId,
-                    $dest,
-                    $pItem['postcode'],
-                    $zone ?: null,
-                    $town ?: ($state ?: null),
-                    $pItem['remote_status']
-                ]);
-            }
+        recordWorksheet($pdo, $vendorId, $batchId, $sheetTitle, 'rate_data', $rowCount, json_encode($headers), 0);
+
+        $pdo->commit();
+    } catch (\Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
         }
+        throw $e;
     }
-
-    recordWorksheet($pdo, $vendorId, $batchId, $sheetTitle, 'rate_data', $rowCount, json_encode($headers), 0);
 
     return ['count' => $rowCount, 'sheets' => [$sheetTitle]];
 }
 
 function importWorkbook(string $path, int $vendorId, int $batchId): array {
     $pdo = db();
-    $book = IOFactory::load($path);
+
+    // Use readDataOnly for faster loading and reduced memory usage
+    $reader = IOFactory::createReaderForFile($path);
+    if (method_exists($reader, 'setReadDataOnly')) {
+        $reader->setReadDataOnly(true);
+    }
+    $book = $reader->load($path);
+
+    // Ensure DB connection is active after workbook loading
+    $pdo = ensureDbConnection($pdo);
+
     $count = 0;
     $sheetNames = [];
     $sheetOrder = 0;
@@ -339,6 +385,7 @@ function processUpload(array $postData, array $fileData): array {
 
         if ($count === 0) throw new RuntimeException('No recognized rate/zone/service rows were found. Check the workbook headers.');
 
+        $pdo = ensureDbConnection($pdo);
         $pdo->beginTransaction();
         // Clear is_latest for previous batches of this vendor
         $pdo->prepare("UPDATE import_batches SET is_latest = 0 WHERE vendor_id = ? AND is_latest = 1")->execute([$vendorId]);
@@ -356,8 +403,11 @@ function processUpload(array $postData, array $fileData): array {
             'sheets' => $sheets
         ];
     } catch (Throwable $e) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        $pdo->prepare("UPDATE import_batches SET status = 'failed', error_message = ? WHERE id = ?")->execute([$e->getMessage(), $batchId]);
+        try {
+            $pdo = ensureDbConnection($pdo);
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $pdo->prepare("UPDATE import_batches SET status = 'failed', error_message = ? WHERE id = ?")->execute([$e->getMessage(), $batchId]);
+        } catch (\Throwable $suppressed) {}
         throw $e;
     }
 }
