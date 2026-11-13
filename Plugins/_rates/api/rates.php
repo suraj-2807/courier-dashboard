@@ -15,13 +15,18 @@ try {
         if (isset($_GET['id'])) {
             $id = (int)$_GET['id'];
             $table = trim((string)($_GET['table'] ?? 'vendor_rate_rows'));
-            if (!in_array($table, ['vendor_rate_rows', 'vendor_zone_rows', 'vendor_country_services'], true)) {
+            if (!in_array($table, ['vendor_rate_rows', 'vendor_zone_rows', 'vendor_country_services', 'vendor_rate_matrix'], true)) {
                 $table = 'vendor_rate_rows';
             }
             $st = $pdo->prepare("SELECT * FROM {$table} WHERE id = ?");
             $st->execute([$id]);
             $row = $st->fetch();
-            if (!$row) apiRespond(404, ['ok' => false, 'success' => false, 'error' => ($table === 'vendor_zone_rows' ? 'Zone' : ($table === 'vendor_country_services' ? 'Country service' : 'Rate')) . ' row not found.']);
+            if (!$row) apiRespond(404, ['ok' => false, 'success' => false, 'error' => match($table) {
+                'vendor_zone_rows' => 'Zone',
+                'vendor_country_services' => 'Country service',
+                'vendor_rate_matrix' => 'Tariff matrix',
+                default => 'Rate'
+            } . ' row not found.']);
             apiRespond(200, ['ok' => true, 'success' => true, 'table' => $table, 'rate' => $row, 'record' => $row]);
         }
 
@@ -295,10 +300,14 @@ try {
                 $weightRates = json_decode($row['weight_rates'] ?: '{}', true) ?: [];
                 $oldRate = $weightRates[$slabKey] ?? null;
                 $newRate = ($rateVal !== null && $rateVal !== '' && is_numeric($rateVal)) ? (float)$rateVal : null;
+                $cleanKey = trim(str_ireplace(['kg', 'kgs'], '', $slabKey));
+                $labelKey = $cleanKey . ' KG';
                 if ($newRate !== null) {
                     $weightRates[$slabKey] = $newRate;
+                    $weightRates[$cleanKey] = $newRate;
+                    $weightRates[$labelKey] = $newRate;
                 } else {
-                    unset($weightRates[$slabKey]);
+                    unset($weightRates[$slabKey], $weightRates[$cleanKey], $weightRates[$labelKey]);
                 }
                 $updates[] = "weight_rates = ?";
                 $params[] = json_encode($weightRates, JSON_UNESCAPED_UNICODE);

@@ -838,7 +838,8 @@ if (strtoupper($selectedSheet) === 'RATE DATA') {
             foreach ($matRows as $mr) {
                 $wr = json_decode($mr['weight_rates'] ?: '{}', true) ?: [];
                 foreach ($sampleSlabs as $sl) {
-                    if (isset($wr[$sl]) && !isset($activeSlabs[$sl])) {
+                    $cleanSl = str_replace(' KG', '', $sl);
+                    if ((isset($wr[$sl]) || isset($wr[$cleanSl])) && !isset($activeSlabs[$sl])) {
                         $activeSlabs[$sl] = true;
                     }
                 }
@@ -935,8 +936,10 @@ if (strtoupper($selectedSheet) === 'RATE DATA') {
                             <?php foreach ($displaySlabs as $sl):
                                 $colLetter = $slabColMap[$sl] ?? '';
                                 $cellRef = $colLetter . $sRow;
-                                $rateVal = isset($wr[$sl]) ? (float)$wr[$sl] : null;
-                                $isFirstSlab = ($sl === '0.5 KG');
+                                $cleanSl = str_replace(' KG', '', $sl);
+                                $rawNum = $wr[$sl] ?? ($wr[$cleanSl] ?? ($wr[$sl . ' KG'] ?? null));
+                                $rateVal = ($rawNum !== null && is_numeric($rawNum)) ? (float)$rawNum : null;
+                                $isFirstSlab = ($sl === '0.5 KG' || $sl === '0.5');
                                 $cellId = (int)$mr['id'];
                                 $isEdited = !empty($mr['is_manually_modified']);
                             ?>
@@ -1149,14 +1152,14 @@ if (strtoupper($selectedSheet) === 'RATE DATA') {
                         <td><?= $r['zone'] ? '<span class="badge badge-purple font-mono">' . h($r['zone']) . '</span>' : '—' ?></td>
                         <td><?= $r['duty_paid'] ? '<span class="badge badge-success">' . h($r['duty_paid']) . '</span>' : '—' ?></td>
                         <td class="text-sm font-mono"><?= h($r['transit_time'] ?: '—') ?></td>
-                        <td class="font-mono text-right" style="font-weight:600; color:#107c41;"><?= isset($wr['0.5 KG']) ? number_format((float)$wr['0.5 KG'], 0) : '—' ?></td>
-                        <td class="font-mono text-right"><?= isset($wr['1 KG']) ? number_format((float)$wr['1 KG'], 0) : '—' ?></td>
-                        <td class="font-mono text-right"><?= isset($wr['2 KG']) ? number_format((float)$wr['2 KG'], 0) : '—' ?></td>
-                        <td class="font-mono text-right"><?= isset($wr['5 KG']) ? number_format((float)$wr['5 KG'], 0) : '—' ?></td>
-                        <td class="font-mono text-right"><?= isset($wr['10 KG']) ? number_format((float)$wr['10 KG'], 0) : '—' ?></td>
-                        <td class="font-mono text-right"><?= isset($wr['20 KG']) ? number_format((float)$wr['20 KG'], 0) : '—' ?></td>
-                        <td class="font-mono text-right"><?= isset($wr['50 KG']) ? number_format((float)$wr['50 KG'], 0) : '—' ?></td>
-                        <td class="font-mono text-right"><?= isset($wr['100 KG']) ? number_format((float)$wr['100 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right" style="font-weight:600; color:#107c41;"><?= (($v = $wr['0.5 KG'] ?? ($wr['0.5'] ?? null)) !== null && is_numeric($v)) ? number_format((float)$v, 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= (($v = $wr['1 KG'] ?? ($wr['1'] ?? null)) !== null && is_numeric($v)) ? number_format((float)$v, 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= (($v = $wr['2 KG'] ?? ($wr['2'] ?? null)) !== null && is_numeric($v)) ? number_format((float)$v, 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= (($v = $wr['5 KG'] ?? ($wr['5'] ?? null)) !== null && is_numeric($v)) ? number_format((float)$v, 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= (($v = $wr['10 KG'] ?? ($wr['10'] ?? null)) !== null && is_numeric($v)) ? number_format((float)$v, 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= (($v = $wr['20 KG'] ?? ($wr['20'] ?? null)) !== null && is_numeric($v)) ? number_format((float)$v, 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= (($v = $wr['50 KG'] ?? ($wr['50'] ?? null)) !== null && is_numeric($v)) ? number_format((float)$v, 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= (($v = $wr['100 KG'] ?? ($wr['100'] ?? null)) !== null && is_numeric($v)) ? number_format((float)$v, 0) : '—' ?></td>
                         <td><?= ($r['is_manually_modified'] ?? 0) ? '<span class="badge-modified">edited</span>' : '<span class="badge badge-neutral">imported</span>' ?></td>
                         <td class="action-col"><button class="btn btn-ghost btn-sm" style="color:var(--accent-danger)" onclick="deleteRecord(<?= $r['id'] ?>, 'vendor_rate_matrix', this.closest('tr'))">🗑</button></td>
                     </tr>

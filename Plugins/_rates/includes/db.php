@@ -103,6 +103,27 @@ function ensureRateMatrixTable(?PDO $pdo = null): void {
                 GROUP BY vzr.vendor_id, vzr.batch_id");
         } catch (\Throwable $ignored) {}
 
+        // 4. Normalize weight_rates keys in vendor_rate_matrix (both '0.5' and '0.5 KG' keys present)
+        try {
+            $stFix = $pdo->query("SELECT id, weight_rates FROM vendor_rate_matrix WHERE weight_rates IS NOT NULL AND weight_rates != '' AND weight_rates != '{}' LIMIT 500");
+            $fixRows = $stFix->fetchAll();
+            $updateSt = $pdo->prepare("UPDATE vendor_rate_matrix SET weight_rates = ? WHERE id = ?");
+            foreach ($fixRows as $fr) {
+                $wr = json_decode($fr['weight_rates'] ?: '{}', true) ?: [];
+                $changed = false;
+                foreach ($wr as $k => $v) {
+                    if (!is_numeric($v)) continue;
+                    $cleanK = trim(str_ireplace(['kg', 'kgs'], '', (string)$k));
+                    $labelK = $cleanK . ' KG';
+                    if (!isset($wr[$cleanK])) { $wr[$cleanK] = (float)$v; $changed = true; }
+                    if (!isset($wr[$labelK])) { $wr[$labelK] = (float)$v; $changed = true; }
+                }
+                if ($changed) {
+                    $updateSt->execute([json_encode($wr, JSON_UNESCAPED_UNICODE), $fr['id']]);
+                }
+            }
+        } catch (\Throwable $ignored) {}
+
         $ensured = true;
     } catch (\Throwable $e) {
         // Table or column creation logged

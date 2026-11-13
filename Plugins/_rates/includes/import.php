@@ -116,11 +116,40 @@ function importRateDataWorksheet(PDO $pdo, \PhpOffice\PhpSpreadsheet\Worksheet\W
             $maxWeight = 0.50;
 
             foreach ($weightColMap as $ci => $info) {
-                $val = $row[$ci] ?? null;
-                if ($val === null) continue;
+                $val = null;
+                // If cell has a formula, retrieve the cached calculated value saved by Excel
+                try {
+                    $coord = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($ci + 1) . ($ri + 2);
+                    $cell = $ws->getCell($coord);
+                    if ($cell) {
+                        if ($cell->isFormula()) {
+                            // Extract pre-computed numeric value stored by Excel
+                            $val = $cell->getOldCalculatedValue();
+                            if ($val === null || $val === '' || is_object($val)) {
+                                try {
+                                    $val = $cell->getCalculatedValue();
+                                } catch (\Throwable $e) {
+                                    $val = null;
+                                }
+                            }
+                        } else {
+                            $val = $cell->getValue();
+                            if ($val instanceof \PhpOffice\PhpSpreadsheet\RichText\RichText) {
+                                $val = $val->getPlainText();
+                            }
+                        }
+                    }
+                } catch (\Throwable $e) {}
+
+                if ($val === null || $val === '') {
+                    $val = $row[$ci] ?? null;
+                }
+                if ($val === null || $val === '') continue;
+
                 [$num, $raw] = numericRate($val);
                 if ($num !== null && $num > 0) {
                     $weightRates[$info['key']] = $num;
+                    $weightRates[$info['key'] . ' KG'] = $num;
                     if ($info['weight'] > $maxWeight) {
                         $maxWeight = $info['weight'];
                     }
