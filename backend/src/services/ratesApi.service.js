@@ -96,6 +96,8 @@ export async function calculateRate({
   vendor = 'pacific',
   country,
   service_code = '',
+  serviceCode = '',
+  service = '',
   weight = 1,
   postcode = '',
   state = ''
@@ -103,7 +105,8 @@ export async function calculateRate({
   const query = new URLSearchParams()
   query.set('vendor', vendor || 'pacific')
   if (country) query.set('country', String(country).trim())
-  if (service_code) query.set('service_code', String(service_code).trim())
+  const resolvedService = service_code || serviceCode || service
+  if (resolvedService) query.set('service_code', String(resolvedService).trim())
   query.set('weight_kg', String(weight || 1))
   if (postcode) query.set('postcode', String(postcode).trim())
   if (state) query.set('state', String(state).trim())
