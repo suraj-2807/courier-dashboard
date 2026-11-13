@@ -20,12 +20,156 @@ function recordWorksheet(PDO $pdo, int $vendorId, int $batchId, string $sheetNam
     $st->execute([$vendorId, $batchId, $sheetName, $sheetType, $rowCount, $headers, $order]);
 }
 
+/**
+ * Ingest the standardized 115-column 'RATE DATA' worksheet.
+ * When this sheet is present, all other sheets are ignored.
+ */
+function importRateDataWorksheet(PDO $pdo, \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $ws, int $vendorId, int $batchId): array {
+    $rows = $ws->toArray(null, true, true, false);
+    if (!$rows || count($rows) < 2) {
+        return ['count' => 0, 'sheets' => [$ws->getTitle()]];
+    }
+
+    $vSt = $pdo->prepare("SELECT slug FROM vendors WHERE id = ?");
+    $vSt->execute([$vendorId]);
+    $vendorCode = $vSt->fetchColumn() ?: 'pacific';
+
+    $headers = array_map(fn($x) => trim((string)$x), $rows[0]);
+    $sheetTitle = $ws->getTitle();
+
+    // Map weight columns (Column index 9 onward, e.g. "0.5 KG", "1 KG", ..., "100 KG")
+    $weightColMap = [];
+    $totalCols = count($headers);
+    for ($c = 9; $c < $totalCols; $c++) {
+        $head = $headers[$c] ?? '';
+        if (preg_match('/(\d+(?:\.\d+)?)\s*(?:kg|kgs)?/i', $head, $m)) {
+            $w = (float)$m[1];
+            $key = (fmod($w, 1.0) == 0.0) ? (string)(int)$w : sprintf("%.1f", $w);
+            $weightColMap[$c] = [
+                'weight' => $w,
+                'key' => $key,
+                'label' => $head
+            ];
+        }
+    }
+
+    $insertMatrixSt = $pdo->prepare(
+        "INSERT INTO vendor_rate_matrix 
+         (batch_id, vendor_id, vendor_code, destination, state, service_code, service_name, zone, postcode_raw, town_city, duty_paid, transit_time, weight_rates, min_weight, max_weight)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    );
+
+    $insertZoneSt = $pdo->prepare(
+        "INSERT INTO vendor_zone_rows (batch_id, vendor_id, country, postcode, zone, town_city, remote_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?)"
+    );
+
+    $insertCsSt = $pdo->prepare(
+        "INSERT IGNORE INTO vendor_country_services (batch_id, vendor_id, service_code, country)
+         VALUES (?, ?, ?, ?)"
+    );
+
+    $rowCount = 0;
+    $uniqueCs = [];
+
+    foreach (array_slice($rows, 1) as $ri => $row) {
+        $dest = clean($row[0] ?? null);
+        if (!$dest) continue;
+
+        $state = clean($row[1] ?? null);
+        $sc = clean($row[2] ?? null);
+        if (!$sc) continue;
+
+        $sName = clean($row[3] ?? null);
+        $zone = clean($row[4] ?? null);
+        $postcodeRaw = clean($row[5] ?? null);
+        $town = clean($row[6] ?? null);
+        $dutyPaid = clean($row[7] ?? null);
+        $transit = clean($row[8] ?? null);
+
+        // Extract weight rates
+        $weightRates = [];
+        $minWeight = 0.50;
+        $maxWeight = 0.50;
+
+        foreach ($weightColMap as $ci => $info) {
+            $val = $row[$ci] ?? null;
+            if ($val === null) continue;
+            [$num, $raw] = numericRate($val);
+            if ($num !== null && $num > 0) {
+                $weightRates[$info['key']] = $num;
+                if ($info['weight'] > $maxWeight) {
+                    $maxWeight = $info['weight'];
+                }
+            }
+        }
+
+        if (empty($weightRates)) continue;
+
+        $insertMatrixSt->execute([
+            $batchId,
+            $vendorId,
+            $vendorCode,
+            $dest,
+            $state ?: '',
+            $sc,
+            $sName ?: '',
+            $zone ?: '',
+            $postcodeRaw,
+            $town ?: '',
+            $dutyPaid ?: '',
+            $transit ?: '',
+            json_encode($weightRates, JSON_UNESCAPED_UNICODE),
+            $minWeight,
+            $maxWeight
+        ]);
+
+        $rowCount++;
+
+        // Track country services
+        $csKey = $sc . '|' . $dest;
+        if (!isset($uniqueCs[$csKey])) {
+            $uniqueCs[$csKey] = true;
+            $insertCsSt->execute([$batchId, $vendorId, $sc, $dest]);
+        }
+
+        // Parse Postcodes with Remote Area Tags (e.g. YES, NO, YES/NO -> BOTH)
+        if ($postcodeRaw !== null && $postcodeRaw !== '') {
+            $parsedPostcodes = parsePostcodesWithRemoteTags($postcodeRaw);
+            foreach ($parsedPostcodes as $pItem) {
+                $insertZoneSt->execute([
+                    $batchId,
+                    $vendorId,
+                    $dest,
+                    $pItem['postcode'],
+                    $zone ?: null,
+                    $town ?: ($state ?: null),
+                    $pItem['remote_status']
+                ]);
+            }
+        }
+    }
+
+    recordWorksheet($pdo, $vendorId, $batchId, $sheetTitle, 'rate_data', $rowCount, json_encode($headers), 0);
+
+    return ['count' => $rowCount, 'sheets' => [$sheetTitle]];
+}
+
 function importWorkbook(string $path, int $vendorId, int $batchId): array {
     $pdo = db();
     $book = IOFactory::load($path);
     $count = 0;
     $sheetNames = [];
     $sheetOrder = 0;
+
+    // PRIORITY: Check for standardized 'RATE DATA' sheet first
+    // If present, ONLY process this worksheet and ignore all other sheets
+    foreach ($book->getWorksheetIterator() as $ws) {
+        $sheetTitle = trim($ws->getTitle());
+        if (strcasecmp($sheetTitle, 'RATE DATA') === 0 || strcasecmp($sheetTitle, 'RATEDATA') === 0) {
+            return importRateDataWorksheet($pdo, $ws, $vendorId, $batchId);
+        }
+    }
 
     foreach ($book->getWorksheetIterator() as $ws) {
         $sheet = $ws->getTitle();

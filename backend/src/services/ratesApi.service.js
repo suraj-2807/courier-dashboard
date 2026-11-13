@@ -156,6 +156,9 @@ export async function calculateRate({
     postcode: raw.postcode || postcode,
     zone: raw.zone || null,
     town_city: raw.town_city || null,
+    remote_status: raw.remote_status || 'NONE',
+    is_remote: raw.is_remote !== undefined ? raw.is_remote : (raw.remote_status === 'YES' || raw.remote_status === 'BOTH'),
+    duty_paid: raw.duty_paid || null,
     raw
   }
 }

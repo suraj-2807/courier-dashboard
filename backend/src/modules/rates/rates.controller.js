@@ -157,6 +157,9 @@ export const calculateVendorRate = async (req, res) => {
       rate_per_kg: ratePerKgWithProfit, // Populates into rate_per_kg on booking form (finalRateWithProfit / weight)
       base_vendor_cost: baseVendorRate,
       base_rate_per_kg: result.rate_per_kg,
+      remote_status: result.remote_status || 'NONE',
+      is_remote: !!result.is_remote,
+      duty_paid: result.duty_paid || null,
       profit_margin_amount: profitCalc.profit_margin_amount,
       profit_percentage: profitCalc.total_percentage,
       applied_profit_rules: profitCalc.applied_rules

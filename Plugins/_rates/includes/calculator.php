@@ -59,6 +59,20 @@ class RateCalculator {
         $aliases = $this->getCountryAliases($country);
         $placeholders = implode(',', array_fill(0, count($aliases), '?'));
 
+        // 0. Check if vendor_rate_matrix has multiple zones for this destination
+        try {
+            $st0 = $this->pdo->prepare(
+                "SELECT COUNT(DISTINCT zone) FROM vendor_rate_matrix 
+                 WHERE vendor_id = ? AND batch_id = ? 
+                   AND (destination IN ({$placeholders}) OR LOWER(TRIM(destination)) = LOWER(?))
+                   AND zone IS NOT NULL AND zone != ''"
+            );
+            $st0->execute(array_merge([$this->vendorId, $this->batchId], $aliases, [$country]));
+            if ((int)$st0->fetchColumn() > 1) {
+                return true;
+            }
+        } catch (\Throwable $e) {}
+
         // 1. Check if vendor_zone_rows contains postcode-to-zone mappings for this country
         $st = $this->pdo->prepare(
             "SELECT COUNT(*) FROM vendor_zone_rows 
@@ -95,6 +109,17 @@ class RateCalculator {
         return array_column($st->fetchAll(), 'country');
     }
 
+    public function hasMatrixRates(): bool {
+        if ($this->pdo === null) return false;
+        try {
+            $st = $this->pdo->prepare("SELECT COUNT(*) FROM vendor_rate_matrix WHERE vendor_id = ? AND batch_id = ? LIMIT 1");
+            $st->execute([$this->vendorId, $this->batchId]);
+            return ((int)$st->fetchColumn()) > 0;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
     public function calculate(string $country, string $serviceCode, float $weightKg, ?string $postcode = null, ?string $state = null): array {
         // Step 1: Validate inputs
         if ($weightKg <= 0) {
@@ -111,6 +136,11 @@ class RateCalculator {
         $serviceCode = trim($serviceCode);
         $postcode = clean($postcode);
         $state = clean($state);
+
+        // Priority: If vendor batch contains RATE DATA matrix, calculate directly from matrix
+        if ($this->hasMatrixRates()) {
+            return $this->calculateFromMatrix($country, $serviceCode, $weightKg, $postcode, $state);
+        }
 
         // Step 2: Determine if this destination country uses zone-wise pricing
         $isZonewiseCountry = $this->isCountryZonewise($country);
@@ -152,6 +182,205 @@ class RateCalculator {
 
         // 5E: No rate data found
         return $this->error("No rate data found for service '{$serviceCode}' to '{$country}'.");
+    }
+
+    public function calculateFromMatrix(string $country, string $serviceCode, float $weightKg, ?string $postcode = null, ?string $state = null): array {
+        $curr = $this->config['currency'] ?? 'INR';
+        $aliases = $this->getCountryAliases($country);
+        $placeholders = implode(',', array_fill(0, count($aliases), '?'));
+
+        // Query matching rows in vendor_rate_matrix
+        $st = $this->pdo->prepare(
+            "SELECT * FROM vendor_rate_matrix 
+             WHERE vendor_id = ? AND batch_id = ?
+               AND (destination IN ({$placeholders}) OR LOWER(TRIM(destination)) = LOWER(?))
+               AND (service_code = ? OR LOWER(TRIM(service_code)) = LOWER(?))"
+        );
+        $st->execute(array_merge([$this->vendorId, $this->batchId], $aliases, [$country, $serviceCode, $serviceCode]));
+        $matrixRows = $st->fetchAll();
+
+        if (empty($matrixRows)) {
+            return $this->error("No rate data found for service '{$serviceCode}' to destination '{$country}'.");
+        }
+
+        // Zone and remote status resolution
+        $zoneDetails = null;
+        if (!empty($postcode) || !empty($state)) {
+            $zoneDetails = $this->resolveZoneDetails($country, $postcode, $state);
+        }
+
+        $selectedRow = null;
+        if (count($matrixRows) === 1) {
+            $selectedRow = $matrixRows[0];
+        } else {
+            // Multiple rows represent zone-wise destinations (e.g. Canada, New Zealand, USA, Australia)
+            $resolvedZone = $zoneDetails['zone'] ?? null;
+
+            if ($resolvedZone !== null) {
+                foreach ($matrixRows as $r) {
+                    if (!empty($r['zone']) && strcasecmp(trim((string)$r['zone']), trim((string)$resolvedZone)) === 0) {
+                        $selectedRow = $r;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback match by state or postcode_raw substring
+            if ($selectedRow === null && !empty($state)) {
+                foreach ($matrixRows as $r) {
+                    if (!empty($r['state']) && strcasecmp(trim((string)$r['state']), trim((string)$state)) === 0) {
+                        $selectedRow = $r;
+                        break;
+                    }
+                }
+            }
+
+            if ($selectedRow === null && !empty($postcode)) {
+                foreach ($matrixRows as $r) {
+                    if (!empty($r['postcode_raw']) && stripos((string)$r['postcode_raw'], (string)$postcode) !== false) {
+                        $selectedRow = $r;
+                        break;
+                    }
+                }
+            }
+
+            if ($selectedRow === null) {
+                if (empty($postcode) && empty($state)) {
+                    return $this->error("Destination '{$country}' uses zone-wise pricing for service '{$serviceCode}'. Please provide a destination postcode or state.");
+                } else {
+                    $loc = trim(($postcode ?: '') . ($postcode && $state ? ' / ' : '') . ($state ?: ''));
+                    return $this->error("No shipping zone found for location '{$loc}' in destination '{$country}'.");
+                }
+            }
+        }
+
+        // Billable Weight Rounding:
+        // <=0.5 kg -> 0.5 kg
+        // <=5.5 kg -> nearest 0.5 kg increment
+        // >5.5 kg -> nearest 1.0 kg increment
+        if ($weightKg <= 0.5) {
+            $billableWeight = 0.5;
+            $slabKey = '0.5';
+        } elseif ($weightKg <= 5.5) {
+            $billableWeight = ceil($weightKg * 2.0) / 2.0;
+            $slabKey = (fmod($billableWeight, 1.0) == 0.0) ? (string)(int)$billableWeight : sprintf("%.1f", $billableWeight);
+        } elseif ($weightKg <= 100.0) {
+            $billableWeight = ceil($weightKg);
+            $slabKey = (string)(int)$billableWeight;
+        } else {
+            // Greater than 100 kg uses 100 KG slab per-kg rate
+            $billableWeight = ceil($weightKg);
+            $slabKey = '100';
+        }
+
+        $ratesMap = json_decode($selectedRow['weight_rates'] ?? '{}', true) ?: [];
+        $ratePerKg = isset($ratesMap[$slabKey]) && is_numeric($ratesMap[$slabKey]) ? (float)$ratesMap[$slabKey] : null;
+
+        $maxWeight = (float)($selectedRow['max_weight'] ?? 100.0);
+        if ($ratePerKg === null || $ratePerKg <= 0) {
+            if ($billableWeight > $maxWeight) {
+                return $this->error("Weight {$billableWeight} kg exceeds maximum allowable weight limit of {$maxWeight} kg for service '{$serviceCode}' to '{$country}'.");
+            }
+            return $this->error("Tariff rate not available for weight {$billableWeight} kg (slab {$slabKey} KG) for service '{$serviceCode}' to '{$country}'.");
+        }
+
+        // Arithmetic:
+        // Column J (0.5 KG) is flat base charge
+        // Other weight tiers are Rate per KG: Total cost = BillableWeight × RatePerKg
+        if ($billableWeight <= 0.5) {
+            $finalRate = $ratePerKg;
+            $effectiveRatePerKg = round($ratePerKg / 0.5, 2);
+            $formula = "Base Charge (0.5 KG) = " . number_format($finalRate, 2) . " {$curr}";
+            $breakdown = [
+                [
+                    'item' => "Base Charge (0.5 KG)",
+                    'unit_price' => $ratePerKg,
+                    'quantity' => "1 slab",
+                    'amount' => $finalRate
+                ]
+            ];
+        } else {
+            $finalRate = round($billableWeight * $ratePerKg, 2);
+            $effectiveRatePerKg = $ratePerKg;
+            $formula = number_format($billableWeight, 2) . " kg × " . number_format($ratePerKg, 2) . " /kg [Slab {$slabKey} KG] = " . number_format($finalRate, 2) . " {$curr}";
+            $breakdown = [
+                [
+                    'item' => "Weight Tariff: {$billableWeight} kg @ " . number_format($ratePerKg, 2) . " {$curr}/kg ({$slabKey} KG slab)",
+                    'unit_price' => $ratePerKg,
+                    'quantity' => number_format($billableWeight, 2) . " kg",
+                    'amount' => $finalRate
+                ]
+            ];
+        }
+
+        $remoteStatus = $zoneDetails['remote_status'] ?? 'NONE';
+        $isRemote = in_array($remoteStatus, ['YES', 'BOTH'], true);
+        $dutyPaid = !empty($selectedRow['duty_paid']) ? trim((string)$selectedRow['duty_paid']) : null;
+        $transitTime = !empty($selectedRow['transit_time']) ? trim((string)$selectedRow['transit_time']) : null;
+        $zoneName = !empty($selectedRow['zone']) ? trim((string)$selectedRow['zone']) : ($zoneDetails['zone'] ?? null);
+        $townCity = !empty($selectedRow['town_city']) ? trim((string)$selectedRow['town_city']) : ($zoneDetails['town_city'] ?? null);
+
+        // Build visual slab grid
+        $sheetGrid = [];
+        foreach ($ratesMap as $sKey => $sVal) {
+            $sheetGrid[] = [
+                'label' => $sKey . ' KG',
+                'weight_kg' => (float)$sKey,
+                'rate' => $sVal,
+                'is_active' => ($sKey === $slabKey)
+            ];
+        }
+
+        return $this->success([
+            'rate_type' => 'matrix',
+            'actual_weight' => $weightKg,
+            'chargeable_weight' => $billableWeight,
+            'base_rate' => $effectiveRatePerKg,
+            'final_rate' => $finalRate,
+            'currency' => $curr,
+            'sheet_name' => 'RATE DATA',
+            'transit_time' => $transitTime,
+            'duty_paid' => $dutyPaid,
+            'remote_status' => $remoteStatus,
+            'is_remote' => $isRemote,
+            'zone' => $zoneName,
+            'town_city' => $townCity,
+            'active_slab' => "{$slabKey} KG",
+            'formula' => $formula,
+            'breakdown' => $breakdown,
+            'sheet_grid' => $sheetGrid,
+            'calculation' => [
+                'method' => 'rate_data_matrix',
+                'selected_slab' => "{$slabKey} KG",
+                'slab_rate' => $ratePerKg,
+                'rate_per_kg' => $effectiveRatePerKg,
+                'billable_weight' => $billableWeight,
+                'remote_status' => $remoteStatus,
+                'is_remote' => $isRemote,
+                'duty_paid' => $dutyPaid,
+                'transit_time' => $transitTime,
+                'formula' => $formula,
+                'steps' => [
+                    [
+                        'step' => 1,
+                        'title' => 'Tariff Row Resolution',
+                        'detail' => "Matched RATE DATA row for '{$selectedRow['destination']}' service '{$selectedRow['service_code']}'" . ($zoneName ? " (Zone: {$zoneName})" : "") . "."
+                    ],
+                    [
+                        'step' => 2,
+                        'title' => 'Billable Weight Rounding',
+                        'detail' => "Actual weight ({$weightKg} kg) rounded to {$billableWeight} kg (qualifying slab: {$slabKey} KG)."
+                    ],
+                    [
+                        'step' => 3,
+                        'title' => ($billableWeight <= 0.5) ? 'Flat Base Charge Evaluation' : 'Per-KG Tariff Calculation',
+                        'detail' => ($billableWeight <= 0.5) 
+                            ? "0.5 KG slab is a flat base tariff charge of " . number_format($finalRate, 2) . " {$curr}."
+                            : "Tariff for {$slabKey} KG slab is " . number_format($ratePerKg, 2) . " {$curr}/kg. Total: {$billableWeight} kg × " . number_format($ratePerKg, 2) . " = " . number_format($finalRate, 2) . " {$curr}."
+                    ]
+                ]
+            ]
+        ], $country, $serviceCode);
     }
 
     private function calculateRegular(string $country, string $serviceCode, float $weightKg): array {
@@ -809,7 +1038,7 @@ class RateCalculator {
 
         // 1. Exact match against postcode OR town_city (which can store state code/name)
         $candPlaceholders = implode(',', array_fill(0, count($candidates), '?'));
-        $sql = "SELECT zone, town_city, postcode, country FROM vendor_zone_rows 
+        $sql = "SELECT zone, town_city, postcode, country, remote_status FROM vendor_zone_rows 
                 WHERE vendor_id = ? AND batch_id = ? 
                   AND (country IN ({$placeholders}) OR LOWER(TRIM(country)) = LOWER(?)) 
                   AND (postcode IN ({$candPlaceholders}) OR town_city IN ({$candPlaceholders})) LIMIT 1";
@@ -821,7 +1050,7 @@ class RateCalculator {
         // 2. Prefix match (e.g. Canadian forward sortation areas like L0H)
         foreach ($candidates as $cand) {
             $stPrefix = $this->pdo->prepare(
-                "SELECT zone, town_city, postcode, country FROM vendor_zone_rows 
+                "SELECT zone, town_city, postcode, country, remote_status FROM vendor_zone_rows 
                  WHERE vendor_id = ? AND batch_id = ? 
                    AND (country IN ({$placeholders}) OR LOWER(TRIM(country)) = LOWER(?)) 
                    AND ? LIKE CONCAT(postcode, '%') 
@@ -834,7 +1063,7 @@ class RateCalculator {
 
         // 3. Dynamic Range Match (e.g. for existing unexpanded rows with "113 to 209" or "BT1 to BT94")
         $stRange = $this->pdo->prepare(
-            "SELECT zone, town_city, postcode, country FROM vendor_zone_rows 
+            "SELECT zone, town_city, postcode, country, remote_status FROM vendor_zone_rows 
              WHERE vendor_id = ? AND batch_id = ? 
                AND (country IN ({$placeholders}) OR LOWER(TRIM(country)) = LOWER(?)) 
                AND (postcode LIKE '%to%' OR postcode LIKE '%-%')"
@@ -944,6 +1173,19 @@ class RateCalculator {
 
             $services = [];
 
+            // 0. RATE DATA matrix services explicitly for this destination
+            try {
+                $matSql = "SELECT DISTINCT service_code, service_name, 'matrix' as rate_type 
+                           FROM vendor_rate_matrix 
+                           WHERE vendor_id = ? AND batch_id = ? 
+                             AND (destination IN ({$placeholders}) OR LOWER(TRIM(destination)) = LOWER(?))";
+                $matSt = $this->pdo->prepare($matSql);
+                $matSt->execute(array_merge([$this->vendorId, $this->batchId], $aliases, [$country]));
+                foreach ($matSt->fetchAll() as $row) {
+                    $services[$row['service_code'] . '|matrix'] = $row;
+                }
+            } catch (\Throwable $e) {}
+
             // 1. Regular services explicitly for this country
             $regSql = "SELECT DISTINCT service_code, service_name, 'regular' as rate_type 
                        FROM vendor_rate_rows 
@@ -998,9 +1240,13 @@ class RateCalculator {
             usort($list, fn($a, $b) => strcmp($a['service_code'], $b['service_code']));
             return $list;
         } else {
-            $sql = "SELECT DISTINCT service_code, service_name, rate_type FROM vendor_rate_rows WHERE vendor_id = ? AND batch_id = ? ORDER BY service_code";
+            $sql = "SELECT DISTINCT service_code, service_name, rate_type FROM (
+                        SELECT service_code, service_name, rate_type FROM vendor_rate_rows WHERE vendor_id = ? AND batch_id = ?
+                        UNION
+                        SELECT service_code, service_name, 'matrix' as rate_type FROM vendor_rate_matrix WHERE vendor_id = ? AND batch_id = ?
+                    ) as all_s ORDER BY service_code";
             $st = $this->pdo->prepare($sql);
-            $st->execute([$this->vendorId, $this->batchId]);
+            $st->execute([$this->vendorId, $this->batchId, $this->vendorId, $this->batchId]);
             return $st->fetchAll();
         }
     }
@@ -1013,9 +1259,11 @@ class RateCalculator {
                     SELECT country FROM vendor_country_services WHERE vendor_id = ? AND batch_id = ? AND country IS NOT NULL AND country != ''
                     UNION
                     SELECT country FROM vendor_zone_rows WHERE vendor_id = ? AND batch_id = ? AND country IS NOT NULL AND country != ''
+                    UNION
+                    SELECT destination as country FROM vendor_rate_matrix WHERE vendor_id = ? AND batch_id = ? AND destination IS NOT NULL AND destination != ''
                 ) as all_c ORDER BY country";
         $st = $this->pdo->prepare($sql);
-        $st->execute([$this->vendorId, $this->batchId, $this->vendorId, $this->batchId, $this->vendorId, $this->batchId]);
+        $st->execute([$this->vendorId, $this->batchId, $this->vendorId, $this->batchId, $this->vendorId, $this->batchId, $this->vendorId, $this->batchId]);
         return array_column($st->fetchAll(), 'country');
     }
 

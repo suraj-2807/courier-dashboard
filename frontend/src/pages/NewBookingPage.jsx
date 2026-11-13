@@ -2861,7 +2861,7 @@ export default function NewBookingPage() {
                           </div>
 
                           {/* Quick Formula Banner */}
-                          <div className="flex items-center gap-1.5 text-[10px] text-gray-700 bg-white/80 rounded-lg px-2 py-1 border border-red-100">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-gray-700 bg-white/80 rounded-lg px-2 py-1 border border-red-100">
                             <span className="font-bold text-gray-900 shrink-0">
                               {rateSheetResult.active_slab || rateSheetResult.sheet_name || 'API Engine'}
                             </span>
@@ -2869,6 +2869,30 @@ export default function NewBookingPage() {
                               <>
                                 <span className="text-gray-300">•</span>
                                 <span className="text-amber-700 font-semibold">{rateSheetResult.transit_time}</span>
+                              </>
+                            )}
+                            {rateSheetResult.remote_status && rateSheetResult.remote_status !== 'NONE' && (
+                              <>
+                                <span className="text-gray-300">•</span>
+                                <span className={`px-1.5 py-0.2 rounded font-bold text-[9px] ${
+                                  rateSheetResult.remote_status === 'YES' 
+                                    ? 'bg-amber-100 text-amber-900 border border-amber-300' 
+                                    : rateSheetResult.remote_status === 'BOTH'
+                                    ? 'bg-blue-100 text-blue-900 border border-blue-300'
+                                    : 'bg-green-100 text-green-900 border border-green-300'
+                                }`}>
+                                  {rateSheetResult.remote_status === 'YES' && '⚠️ Remote Area'}
+                                  {rateSheetResult.remote_status === 'BOTH' && 'ℹ️ Partial Remote Area'}
+                                  {rateSheetResult.remote_status === 'NO' && '✓ Non-Remote Area'}
+                                </span>
+                              </>
+                            )}
+                            {rateSheetResult.duty_paid && (
+                              <>
+                                <span className="text-gray-300">•</span>
+                                <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 border border-purple-200 font-bold text-[9px]">
+                                  Duty: {rateSheetResult.duty_paid}
+                                </span>
                               </>
                             )}
                             {rateSheetResult.formula && (
@@ -2897,6 +2921,17 @@ export default function NewBookingPage() {
                                 <div><span className="font-semibold text-gray-800">Chargeable:</span> {rateSheetResult.chargeable_weight} kg</div>
                                 {rateSheetResult.active_slab && <div><span className="font-semibold text-gray-800">Tariff Slab:</span> {rateSheetResult.active_slab}</div>}
                                 {rateSheetResult.transit_time && <div><span className="font-semibold text-gray-800">Transit Time:</span> {rateSheetResult.transit_time}</div>}
+                                {rateSheetResult.remote_status && rateSheetResult.remote_status !== 'NONE' && (
+                                  <div>
+                                    <span className="font-semibold text-gray-800">Remote Area:</span>{' '}
+                                    <span className={`font-bold ${rateSheetResult.remote_status === 'YES' ? 'text-amber-700' : rateSheetResult.remote_status === 'BOTH' ? 'text-blue-700' : 'text-green-700'}`}>
+                                      {rateSheetResult.remote_status === 'BOTH' ? 'YES/NO (Conditional)' : rateSheetResult.remote_status}
+                                    </span>
+                                  </div>
+                                )}
+                                {rateSheetResult.duty_paid && (
+                                  <div><span className="font-semibold text-gray-800">Duty Paid:</span> <span className="font-bold text-purple-700">{rateSheetResult.duty_paid}</span></div>
+                                )}
                               </div>
 
                               {rateSheetResult.formula && (

@@ -869,6 +869,37 @@ export async function initializeDb() {
       }
     }
 
+    // ── Vendor Rate Matrix (RATE DATA 115-col format) ──
+    try {
+      await execute(`CREATE TABLE IF NOT EXISTS vendor_rate_matrix (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        batch_id INT NOT NULL,
+        vendor_id INT NOT NULL,
+        vendor_code VARCHAR(100) NOT NULL DEFAULT 'pacific',
+        destination VARCHAR(190) NOT NULL,
+        state VARCHAR(100) DEFAULT '',
+        service_code VARCHAR(100) NOT NULL,
+        service_name VARCHAR(190) DEFAULT '',
+        zone VARCHAR(80) DEFAULT '',
+        postcode_raw TEXT DEFAULT NULL,
+        town_city VARCHAR(190) DEFAULT '',
+        duty_paid VARCHAR(50) DEFAULT '',
+        transit_time VARCHAR(100) DEFAULT '',
+        weight_rates JSON NOT NULL,
+        min_weight DECIMAL(8,2) DEFAULT 0.50,
+        max_weight DECIMAL(8,2) DEFAULT 100.00,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_vrm_lookup (vendor_id, batch_id, destination, service_code),
+        INDEX idx_vrm_zone (vendor_id, batch_id, destination, zone),
+        INDEX idx_vrm_dest (destination)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`)
+      console.log('vendor_rate_matrix table ready.')
+    } catch (vrmErr) {
+      if (vrmErr.code !== 'ER_TABLE_EXISTS_ERROR') {
+        console.error('vendor_rate_matrix migration notice:', vrmErr.message)
+      }
+    }
+
     // ── Accounting Module Tables (Double-entry Ledger) ──
     try {
       await execute(`CREATE TABLE IF NOT EXISTS accounting_master_accounts (

@@ -900,6 +900,38 @@ export default function RatesPage() {
                       <span className="font-mono font-bold text-gray-800">{calcResult.zone}</span>
                     </div>
                   )}
+                  {calcResult.active_slab && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Tariff Slab:</span>
+                      <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                        {calcResult.active_slab}
+                      </span>
+                    </div>
+                  )}
+                  {calcResult.remote_status && calcResult.remote_status !== 'NONE' && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Remote Area Status:</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        calcResult.remote_status === 'YES'
+                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                          : calcResult.remote_status === 'BOTH'
+                          ? 'bg-blue-100 text-blue-900 border-blue-300'
+                          : 'bg-green-100 text-green-900 border-green-300'
+                      }`}>
+                        {calcResult.remote_status === 'YES' && '⚠️ Confirmed Remote Area (YES)'}
+                        {calcResult.remote_status === 'BOTH' && 'ℹ️ Partial Remote Area (YES/NO)'}
+                        {calcResult.remote_status === 'NO' && '✓ Standard Delivery (NO)'}
+                      </span>
+                    </div>
+                  )}
+                  {calcResult.duty_paid && (
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-gray-500 font-medium">Duty Paid:</span>
+                      <span className="font-mono font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                        {calcResult.duty_paid}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {calcResult.applied_profit_rules?.length > 0 && (

@@ -208,3 +208,56 @@ function matchesPostcodeRangeRule(string $candidate, string $ruleStr): bool {
     }
     return false;
 }
+
+/**
+ * Parse a raw postcode string from RATE DATA Column F that may contain remote area tags:
+ * e.g. "600 (NO), 604 (YES/NO), 116 (YES), X1A, BT1 to BT94 (YES)"
+ * Returns an array of ['postcode' => string, 'remote_status' => 'NONE'|'YES'|'NO'|'BOTH']
+ */
+function parsePostcodesWithRemoteTags(?string $raw): array {
+    $raw = clean($raw);
+    if ($raw === null) return [];
+
+    $results = [];
+    $parts = explode(',', $raw);
+
+    foreach ($parts as $part) {
+        $part = trim($part);
+        if ($part === '') continue;
+
+        // Extract remote tag like (YES), (NO), (YES/NO), (NO/YES)
+        $remoteStatus = 'NONE';
+        if (preg_match('/\((YES\/NO|NO\/YES|YES|NO)\)/i', $part, $tm)) {
+            $tag = strtoupper(trim($tm[1]));
+            if ($tag === 'YES/NO' || $tag === 'NO/YES') {
+                $remoteStatus = 'BOTH';
+            } elseif ($tag === 'YES') {
+                $remoteStatus = 'YES';
+            } elseif ($tag === 'NO') {
+                $remoteStatus = 'NO';
+            }
+            // Strip tag from string
+            $part = trim(preg_replace('/\((YES\/NO|NO\/YES|YES|NO)\)/i', '', $part));
+        }
+
+        if ($part === '') continue;
+
+        // Check if part is a range (e.g. "113 to 209")
+        $expanded = expandPostcodeRange($part);
+        if (!empty($expanded)) {
+            foreach ($expanded as $pc) {
+                $results[] = [
+                    'postcode' => trim((string)$pc),
+                    'remote_status' => $remoteStatus
+                ];
+            }
+        } else {
+            $results[] = [
+                'postcode' => $part,
+                'remote_status' => $remoteStatus
+            ];
+        }
+    }
+
+    return $results;
+}

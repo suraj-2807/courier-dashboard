@@ -136,3 +136,32 @@ FROM vendors;
 INSERT IGNORE INTO vendor_calc_config (vendor_id, config_key, config_value, description)
 SELECT id, 'currency', 'INR', 'Currency code for rates'
 FROM vendors;
+
+-- 11. Add remote_status to vendor_zone_rows
+ALTER TABLE vendor_zone_rows
+  ADD COLUMN IF NOT EXISTS remote_status ENUM('YES', 'NO', 'BOTH', 'NONE') NOT NULL DEFAULT 'NONE';
+
+-- 12. Create vendor_rate_matrix for RATE DATA format
+CREATE TABLE IF NOT EXISTS vendor_rate_matrix (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  batch_id BIGINT UNSIGNED NOT NULL,
+  vendor_id BIGINT UNSIGNED NOT NULL,
+  vendor_code VARCHAR(100) NOT NULL DEFAULT 'pacific',
+  destination VARCHAR(190) NOT NULL,
+  state VARCHAR(100) DEFAULT '',
+  service_code VARCHAR(100) NOT NULL,
+  service_name VARCHAR(190) DEFAULT '',
+  zone VARCHAR(80) DEFAULT '',
+  postcode_raw TEXT DEFAULT NULL,
+  town_city VARCHAR(190) DEFAULT '',
+  duty_paid VARCHAR(20) DEFAULT '',
+  transit_time VARCHAR(100) DEFAULT '',
+  weight_rates JSON NOT NULL,
+  min_weight DECIMAL(8,2) DEFAULT 0.50,
+  max_weight DECIMAL(8,2) DEFAULT 100.00,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_vrm_lookup (vendor_id, batch_id, destination, service_code),
+  INDEX idx_vrm_zone (vendor_id, batch_id, destination, zone),
+  CONSTRAINT fk_vrm_batch FOREIGN KEY (batch_id) REFERENCES import_batches(id),
+  CONSTRAINT fk_vrm_vendor FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+) ENGINE=InnoDB;

@@ -49,6 +49,8 @@ try {
         'state' => $state,
         'resolved_zone' => $result['zone'],
         'town_city' => $result['town_city'],
+        'remote_status' => $result['remote_status'] ?? 'NONE',
+        'is_remote' => in_array($result['remote_status'] ?? 'NONE', ['YES', 'BOTH'], true),
         'matched_postcode_rule' => $result['postcode']
     ]);
 
