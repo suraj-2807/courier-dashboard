@@ -26,6 +26,7 @@ function recordWorksheet(PDO $pdo, int $vendorId, int $batchId, string $sheetNam
  */
 function importRateDataWorksheet(PDO $pdo, \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $ws, int $vendorId, int $batchId): array {
     $pdo = ensureDbConnection($pdo);
+    ensureRateMatrixTable($pdo);
 
     $rows = $ws->toArray(null, true, true, false);
     if (!$rows || count($rows) < 2) {

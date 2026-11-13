@@ -6,7 +6,8 @@ $config = getConfig();
 $dbStatus = [];
 $tablesToCheck = [
     'vendors', 'import_batches', 'vendor_rate_rows', 'vendor_zone_rows',
-    'vendor_country_services', 'vendor_worksheets', 'vendor_calc_config', 'rate_audit_log'
+    'vendor_country_services', 'vendor_worksheets', 'vendor_calc_config', 'rate_audit_log',
+    'vendor_rate_matrix'
 ];
 
 $tableCounts = [];
