@@ -37,6 +37,9 @@ const ADAPTERS = {
   'itdservices': FlySwiftAdapter,
   'itd_services': FlySwiftAdapter,
   'itdservicescenter': FlySwiftAdapter,
+  'imperial': FlySwiftAdapter,         // Imperial India (ITDServices platform)
+  'imperial_india': FlySwiftAdapter,
+  'imperialindia': FlySwiftAdapter,
   'pacific': PacificAdapter,
   'pacifc': PacificAdapter,       // Support typo variation as requested
   'pacificexpress': PacificAdapter,

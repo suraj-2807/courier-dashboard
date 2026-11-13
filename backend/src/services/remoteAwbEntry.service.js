@@ -265,6 +265,23 @@ export function resolveVendorDetails(vendorCode, vendorName, serviceCode = null,
     }
   }
 
+  // 7. Imperial India (ITDServices platform)
+  if (
+    code.includes('imperial') || name.includes('imperial') ||
+    svcStr.includes('imperial')
+  ) {
+    return {
+      vendCode: 'IMPERIAL',
+      vendName: 'IMPERIAL',
+      service: svcInt > 0 ? svcInt : 0,
+      autotrack: 1,
+      accode: getCred('accode', 'customer_code', 'acc_code', 'customer_id') || '66',
+      tuser: getCred('tuser', 'username', 'email') || 'PRINCEINTERNATIONALCOURIER@GMAIL.COM',
+      tpass: getCred('tpass', 'password') || '',
+      apikey: getCred('apikey', 'api_key', 'company_id') || '27'
+    }
+  }
+
   // Fallback / custom service resolution
   const finalSvc = svcInt > 0 ? svcInt : 0
   const finalCode = (vendorCode || 'PXC').toUpperCase()

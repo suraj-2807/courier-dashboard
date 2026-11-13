@@ -181,6 +181,33 @@ const VENDOR_PRESETS = [
     }
   },
   {
+    id: 'imperial',
+    name: 'Imperial India',
+    badge: 'ITDServices Platform',
+    color: '#7c3aed',
+    values: {
+      name: 'Imperial India',
+      vendor_code: 'imperial',
+      auth_type: 'token',
+      auth_url: 'https://online.imperial-india.net/docket_api/get_token',
+      auth_token_path: 'data.token',
+      shipment_api_url: 'https://online.imperial-india.net/docket_api/create_docket',
+      tracking_api_url: 'https://online.imperial-india.net/api/tracking_api/get_tracking_data?api_company_id=27&customer_code=66&tracking_no={tracking_no}',
+      shipment_api_method: 'POST',
+      username: 'PRINCEINTERNATIONALCOURIER@GMAIL.COM',
+      user_id: 'PRINCEINTERNATIONALCOURIER@GMAIL.COM',
+      password: '9898787199',
+      company_code: '27',
+      customer_code: '66',
+      customer_id: '66',
+      response_tracking_path: 'data.tracking_number',
+      response_success_path: 'success',
+      response_success_value: 'true',
+      environment: 'production',
+      is_active: true
+    }
+  },
+  {
     id: 'bhabani',
     name: 'Bhabani Express',
     badge: 'ITDServices Platform',

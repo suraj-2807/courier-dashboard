@@ -833,19 +833,29 @@ if (strtoupper($selectedSheet) === 'RATE DATA') {
             $sampleSlabs = ['0.5 KG','1 KG','1.5 KG','2 KG','2.5 KG','3 KG','3.5 KG','4 KG','4.5 KG','5 KG','5.5 KG',
                             '6 KG','7 KG','8 KG','9 KG','10 KG','12 KG','15 KG','20 KG','25 KG','30 KG','40 KG','50 KG','60 KG','70 KG','80 KG','90 KG','100 KG'];
 
-            // Detect which slabs actually have data
+            // Detect which slabs actually have data and preserve numerical ascending order
             $activeSlabs = [];
             foreach ($matRows as $mr) {
                 $wr = json_decode($mr['weight_rates'] ?: '{}', true) ?: [];
-                foreach ($sampleSlabs as $sl) {
-                    $cleanSl = str_replace(' KG', '', $sl);
-                    if ((isset($wr[$sl]) || isset($wr[$cleanSl])) && !isset($activeSlabs[$sl])) {
-                        $activeSlabs[$sl] = true;
+                foreach ($wr as $k => $v) {
+                    if ($v !== null && $v !== '' && is_numeric($v)) {
+                        $clean = trim(str_ireplace('KG', '', (string)$k));
+                        if (is_numeric($clean)) {
+                            $num = (float)$clean;
+                            $activeSlabs[(string)$clean] = $num;
+                        }
                     }
                 }
             }
-            $displaySlabs = array_keys($activeSlabs);
-            if (empty($displaySlabs)) $displaySlabs = $sampleSlabs;
+            if (!empty($activeSlabs)) {
+                asort($activeSlabs, SORT_NUMERIC);
+                $displaySlabs = [];
+                foreach ($activeSlabs as $clean => $num) {
+                    $displaySlabs[] = ($num == (int)$num ? (int)$num : $num) . ' KG';
+                }
+            } else {
+                $displaySlabs = $sampleSlabs;
+            }
 
             // Build Excel-style columns
             $matColumns = [];
