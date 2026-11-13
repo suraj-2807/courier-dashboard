@@ -216,7 +216,7 @@ try {
         if ($id <= 0) apiRespond(400, ['ok' => false, 'success' => false, 'error' => 'id is required.']);
 
         $table = trim((string)($_GET['table'] ?? ($input['table'] ?? 'vendor_rate_rows')));
-        $validTables = ['vendor_rate_rows', 'vendor_zone_rows', 'vendor_country_services'];
+        $validTables = ['vendor_rate_rows', 'vendor_zone_rows', 'vendor_country_services', 'vendor_rate_matrix'];
         if (!in_array($table, $validTables, true)) {
             $table = 'vendor_rate_rows';
         }
@@ -273,6 +273,37 @@ try {
                     auditLog($pdo, $table, $id, $field, $row[$field] ?? null, $newVal, 'update');
                 }
             }
+        } elseif ($table === 'vendor_rate_matrix') {
+            $allowedMatrixCols = ['destination', 'state', 'service_code', 'service_name', 'zone', 'postcode_raw', 'town_city', 'duty_paid', 'transit_time'];
+            foreach ($allowedMatrixCols as $field) {
+                if (array_key_exists($field, $input)) {
+                    $newVal = clean($input[$field]);
+                    $updates[] = "{$field} = ?";
+                    $params[] = $newVal;
+                    auditLog($pdo, $table, $id, $field, $row[$field] ?? null, $newVal, 'update');
+                }
+            }
+
+            // Check if weight rate slab is updated
+            $slabKey = trim((string)($input['slab'] ?? ($input['weight_label'] ?? '')));
+            if ($slabKey === '' && isset($input['field']) && (str_contains($input['field'], 'KG') || str_contains($input['field'], 'kg'))) {
+                $slabKey = trim((string)$input['field']);
+            }
+
+            if ($slabKey !== '') {
+                $rateVal = $input['value'] ?? ($input['rate'] ?? ($input['price'] ?? null));
+                $weightRates = json_decode($row['weight_rates'] ?: '{}', true) ?: [];
+                $oldRate = $weightRates[$slabKey] ?? null;
+                $newRate = ($rateVal !== null && $rateVal !== '' && is_numeric($rateVal)) ? (float)$rateVal : null;
+                if ($newRate !== null) {
+                    $weightRates[$slabKey] = $newRate;
+                } else {
+                    unset($weightRates[$slabKey]);
+                }
+                $updates[] = "weight_rates = ?";
+                $params[] = json_encode($weightRates, JSON_UNESCAPED_UNICODE);
+                auditLog($pdo, $table, $id, "weight_rates[{$slabKey}]", (string)$oldRate, (string)$newRate, 'update');
+            }
         } else {
             $allowedRateFields = ['rate', 'rate_raw', 'transit_time', 'service_code', 'service_name', 'country', 'zone', 'weight_label', 'weight_kg', 'sheet_name', 'rate_type'];
             foreach ($allowedRateFields as $field) {
@@ -307,7 +338,12 @@ try {
         $sql = "UPDATE {$table} SET " . implode(', ', $updates) . " WHERE id = ?";
         $pdo->prepare($sql)->execute($params);
 
-        $tableLabel = ($table === 'vendor_zone_rows' ? 'Zone' : ($table === 'vendor_country_services' ? 'Country service' : 'Rate'));
+        $tableLabel = match($table) {
+            'vendor_zone_rows' => 'Zone',
+            'vendor_country_services' => 'Country service',
+            'vendor_rate_matrix' => 'Tariff matrix',
+            default => 'Rate'
+        };
         apiRespond(200, [
             'ok' => true,
             'success' => true,
@@ -322,7 +358,7 @@ try {
         if ($id <= 0) apiRespond(400, ['ok' => false, 'success' => false, 'error' => 'id parameter is required.']);
 
         $table = trim((string)($_GET['table'] ?? 'vendor_rate_rows'));
-        $validTables = ['vendor_rate_rows', 'vendor_zone_rows', 'vendor_country_services'];
+        $validTables = ['vendor_rate_rows', 'vendor_zone_rows', 'vendor_country_services', 'vendor_rate_matrix'];
         if (!in_array($table, $validTables, true)) {
             $table = 'vendor_rate_rows';
         }

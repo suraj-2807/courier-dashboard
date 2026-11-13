@@ -164,7 +164,8 @@ $logSize = file_exists($logFile) ? filesize($logFile) : 0;
                     'vendor_country_services' => 'Country and service code availability mappings',
                     'vendor_worksheets' => 'Detected worksheet metadata per workbook import',
                     'vendor_calc_config' => 'Configurable calculation rules (base kg, increments)',
-                    'rate_audit_log' => 'Audit trail of inline rate modifications'
+                    'rate_audit_log' => 'Audit trail of inline rate modifications',
+                    'vendor_rate_matrix' => 'Unified 115-column destination tariff matrix'
                 ];
                 ?>
                 <?php foreach ($tablesToCheck as $tbl): ?>

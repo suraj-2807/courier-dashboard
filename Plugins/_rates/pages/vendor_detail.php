@@ -45,24 +45,51 @@ if (isset($_POST['activate_version'])) {
 
 // Get worksheets
 $worksheets = $batchId ? getVendorWorksheets($pdo, $vendorId, $batchId) : [];
+
+// Normalize any RATE DATA sheet_type
+foreach ($worksheets as &$ws) {
+    if (strtoupper($ws['sheet_name']) === 'RATE DATA' && ($ws['sheet_type'] === 'unknown' || empty($ws['sheet_type']))) {
+        $ws['sheet_type'] = 'rate_data';
+    }
+}
+unset($ws);
+
 // If no worksheets in metadata table, detect from data
 if (empty($worksheets) && $batchId) {
+    try {
+        $stM = $pdo->prepare("SELECT COUNT(*) FROM vendor_rate_matrix WHERE vendor_id = ? AND batch_id = ?");
+        $stM->execute([$vendorId, $batchId]);
+        $matrixCnt = (int)$stM->fetchColumn();
+        if ($matrixCnt > 0) {
+            $worksheets[] = ['sheet_name' => 'RATE DATA', 'sheet_type' => 'rate_data', 'row_count' => $matrixCnt];
+        }
+    } catch (\Throwable $e) {}
+
     $st = $pdo->prepare("SELECT DISTINCT sheet_name, rate_type FROM vendor_rate_rows WHERE vendor_id = ? AND batch_id = ?");
     $st->execute([$vendorId, $batchId]);
     foreach ($st->fetchAll() as $row) {
         $worksheets[] = ['sheet_name' => $row['sheet_name'], 'sheet_type' => $row['rate_type'], 'row_count' => 0];
     }
-    // Check zone rows
-    $st = $pdo->prepare("SELECT COUNT(*) FROM vendor_zone_rows WHERE vendor_id = ? AND batch_id = ?");
-    $st->execute([$vendorId, $batchId]);
-    if ((int)$st->fetchColumn() > 0) {
-        $worksheets[] = ['sheet_name' => 'Postcode Zones', 'sheet_type' => 'zones', 'row_count' => 0];
+}
+
+// Ensure Postcode Zones tab is present if vendor_zone_rows has data
+if ($batchId) {
+    $hasZoneWs = false;
+    foreach ($worksheets as $ws) {
+        if ($ws['sheet_type'] === 'zones' || strtolower($ws['sheet_name']) === 'postcode zones') {
+            $hasZoneWs = true;
+            break;
+        }
     }
-    // Check country services
-    $st = $pdo->prepare("SELECT COUNT(*) FROM vendor_country_services WHERE vendor_id = ? AND batch_id = ?");
-    $st->execute([$vendorId, $batchId]);
-    if ((int)$st->fetchColumn() > 0) {
-        $worksheets[] = ['sheet_name' => 'Country Services', 'sheet_type' => 'country_services', 'row_count' => 0];
+    if (!$hasZoneWs) {
+        try {
+            $stZ = $pdo->prepare("SELECT COUNT(*) FROM vendor_zone_rows WHERE vendor_id = ? AND batch_id = ?");
+            $stZ->execute([$vendorId, $batchId]);
+            $zoneCnt = (int)$stZ->fetchColumn();
+            if ($zoneCnt > 0) {
+                $worksheets[] = ['sheet_name' => 'Postcode Zones', 'sheet_type' => 'zones', 'row_count' => $zoneCnt];
+            }
+        } catch (\Throwable $e) {}
     }
 }
 
@@ -258,6 +285,9 @@ if ($activeTab === 'history'):
     foreach ($worksheets as $ws) {
         if ($ws['sheet_name'] === $activeTab) { $sheetType = $ws['sheet_type']; break; }
     }
+    if (strtoupper($activeTab) === 'RATE DATA') {
+        $sheetType = 'rate_data';
+    }
 
     $pagination = paginationParams();
     $searchQuery = trim($_GET['q'] ?? '');
@@ -378,6 +408,118 @@ if ($activeTab === 'history'):
                         <td class="editable-cell" onclick="makeEditable(this, <?= $r['id'] ?>, 'country', 'vendor_country_services')"><?= h($r['country']) ?></td>
                         <td><?= ($r['is_manually_modified'] ?? 0) ? '<span class="badge-modified">edited</span>' : '' ?></td>
                         <td class="action-col"><button class="btn btn-ghost btn-sm" style="color:var(--accent-danger)" onclick="deleteRecord(<?= $r['id'] ?>, 'vendor_country_services', this.closest('tr'))">🗑</button></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                </div>
+                <?php include __DIR__ . '/_pagination.php'; ?>
+            </div>
+        </div>
+        <?php
+
+    } elseif ($sheetType === 'rate_data' || $sheetType === 'matrix') {
+        // Standardized 115-Column RATE DATA Matrix
+        $where = "vendor_id = ? AND batch_id = ?";
+        $args = [$vendorId, $batchId];
+        if ($searchQuery !== '') {
+            $where .= " AND (destination LIKE ? OR service_code LIKE ? OR service_name LIKE ? OR zone LIKE ? OR state LIKE ? OR town_city LIKE ?)";
+            $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%";
+        }
+        if ($filterCountry !== '') { $where .= " AND destination = ?"; $args[] = $filterCountry; }
+        if ($filterService !== '') { $where .= " AND service_code = ?"; $args[] = $filterService; }
+
+        $totalSt = $pdo->prepare("SELECT COUNT(*) FROM vendor_rate_matrix WHERE $where");
+        $totalSt->execute($args);
+        $total = (int)$totalSt->fetchColumn();
+
+        $st = $pdo->prepare("SELECT * FROM vendor_rate_matrix WHERE $where ORDER BY destination, service_code LIMIT {$pagination['per_page']} OFFSET {$pagination['offset']}");
+        $st->execute($args);
+        $rows = $st->fetchAll();
+
+        // Distinct countries & services for filters
+        $countriesSt = $pdo->prepare("SELECT DISTINCT destination FROM vendor_rate_matrix WHERE vendor_id = ? AND batch_id = ? ORDER BY destination");
+        $countriesSt->execute([$vendorId, $batchId]);
+        $countries = array_column($countriesSt->fetchAll(), 'destination');
+
+        $servicesSt = $pdo->prepare("SELECT DISTINCT service_code FROM vendor_rate_matrix WHERE vendor_id = ? AND batch_id = ? ORDER BY service_code");
+        $servicesSt->execute([$vendorId, $batchId]);
+        $services = array_column($servicesSt->fetchAll(), 'service_code');
+        ?>
+        <div class="card card-flush">
+            <div class="card-header">
+                <h3><?= h($activeTab) ?> <span class="text-muted text-sm">(<?= number_format($total) ?> destination records)</span></h3>
+                <div class="flex gap-8">
+                    <a href="?page=rate_management&vendor=<?= urlencode($slug) ?>&sheet=<?= urlencode($activeTab) ?>&view=grid" class="btn btn-primary btn-sm">📊 Open Spreadsheet Matrix</a>
+                    <button class="btn btn-outline btn-sm" onclick="exportTableCSV('data-table-main', 'rate_data_export.csv')">⬇ Export CSV</button>
+                </div>
+            </div>
+            <div style="padding:0 24px;">
+                <form class="filter-bar" method="get">
+                    <input type="hidden" name="page" value="vendor_detail">
+                    <input type="hidden" name="slug" value="<?= h($slug) ?>">
+                    <input type="hidden" name="tab" value="<?= h($activeTab) ?>">
+                    <div class="search-input">
+                        <input class="form-control" name="q" placeholder="Search destination, service, zone, state..." value="<?= h($searchQuery) ?>">
+                    </div>
+                    <select class="form-control" name="country" style="width:auto;min-width:150px;">
+                        <option value="">All Destinations</option>
+                        <?php foreach ($countries as $c): ?>
+                        <option value="<?= h($c) ?>" <?= $filterCountry === $c ? 'selected' : '' ?>><?= h($c) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <select class="form-control" name="service" style="width:auto;min-width:150px;">
+                        <option value="">All Services</option>
+                        <?php foreach ($services as $s): ?>
+                        <option value="<?= h($s) ?>" <?= $filterService === $s ? 'selected' : '' ?>><?= h($s) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+                    <a href="?page=vendor_detail&slug=<?= h($slug) ?>&tab=<?= urlencode($activeTab) ?>" class="btn btn-ghost btn-sm">Clear</a>
+                </form>
+            </div>
+            <div class="card-body">
+                <div class="table-wrapper">
+                <table class="data-table" id="data-table-main">
+                    <thead><tr>
+                        <th class="sortable">Destination</th>
+                        <th>State</th>
+                        <th class="sortable">Service Code</th>
+                        <th>Service</th>
+                        <th>Zone</th>
+                        <th>Duty Paid</th>
+                        <th>Transit</th>
+                        <th style="text-align:right;">0.5 KG (Flat)</th>
+                        <th style="text-align:right;">1 KG</th>
+                        <th style="text-align:right;">2 KG</th>
+                        <th style="text-align:right;">5 KG</th>
+                        <th style="text-align:right;">10 KG</th>
+                        <th style="text-align:right;">20 KG</th>
+                        <th style="text-align:right;">50 KG</th>
+                        <th style="text-align:right;">100 KG</th>
+                        <th class="action-col">Actions</th>
+                    </tr></thead>
+                    <tbody>
+                    <?php foreach ($rows as $r):
+                        $wr = json_decode($r['weight_rates'] ?: '{}', true) ?: [];
+                    ?>
+                    <tr data-id="<?= $r['id'] ?>">
+                        <td style="font-weight:600;"><?= h($r['destination']) ?></td>
+                        <td class="text-sm text-muted"><?= h($r['state'] ?: '—') ?></td>
+                        <td class="font-mono"><?= h($r['service_code']) ?></td>
+                        <td class="text-sm"><?= h($r['service_name'] ?: '—') ?></td>
+                        <td><?= $r['zone'] ? '<span class="badge badge-purple font-mono">' . h($r['zone']) . '</span>' : '—' ?></td>
+                        <td><?= $r['duty_paid'] ? '<span class="badge badge-success">' . h($r['duty_paid']) . '</span>' : '—' ?></td>
+                        <td class="text-sm font-mono"><?= h($r['transit_time'] ?: '—') ?></td>
+                        <td class="font-mono text-right" style="font-weight:600; color:#107c41;"><?= isset($wr['0.5 KG']) ? number_format((float)$wr['0.5 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['1 KG']) ? number_format((float)$wr['1 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['2 KG']) ? number_format((float)$wr['2 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['5 KG']) ? number_format((float)$wr['5 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['10 KG']) ? number_format((float)$wr['10 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['20 KG']) ? number_format((float)$wr['20 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['50 KG']) ? number_format((float)$wr['50 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['100 KG']) ? number_format((float)$wr['100 KG'], 0) : '—' ?></td>
+                        <td class="action-col"><button class="btn btn-ghost btn-sm" style="color:var(--accent-danger)" onclick="deleteRecord(<?= $r['id'] ?>, 'vendor_rate_matrix', this.closest('tr'))">🗑</button></td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>

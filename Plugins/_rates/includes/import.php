@@ -67,8 +67,14 @@ function importRateDataWorksheet(PDO $pdo, \PhpOffice\PhpSpreadsheet\Worksheet\W
          VALUES (?, ?, ?, ?)"
     );
 
-    $flushZoneChunk = function(array &$chunk) use ($pdo, $batchId, $vendorId) {
+    $rowCount = 0;
+    $zoneRowCount = 0;
+    $uniqueCs = [];
+    $zoneChunk = [];
+
+    $flushZoneChunk = function(array &$chunk) use ($pdo, $batchId, $vendorId, &$zoneRowCount) {
         if (empty($chunk)) return;
+        $zoneRowCount += count($chunk);
         $rowPlaceholders = [];
         $values = [];
         foreach ($chunk as $item) {
@@ -85,10 +91,6 @@ function importRateDataWorksheet(PDO $pdo, \PhpOffice\PhpSpreadsheet\Worksheet\W
         $pdo->prepare($sql)->execute($values);
         $chunk = [];
     };
-
-    $rowCount = 0;
-    $uniqueCs = [];
-    $zoneChunk = [];
 
     $pdo->beginTransaction();
 
@@ -180,6 +182,11 @@ function importRateDataWorksheet(PDO $pdo, \PhpOffice\PhpSpreadsheet\Worksheet\W
         }
 
         recordWorksheet($pdo, $vendorId, $batchId, $sheetTitle, 'rate_data', $rowCount, json_encode($headers), 0);
+        $importedSheets = [$sheetTitle];
+        if ($zoneRowCount > 0) {
+            recordWorksheet($pdo, $vendorId, $batchId, 'Postcode Zones', 'zones', $zoneRowCount, null, 1);
+            $importedSheets[] = 'Postcode Zones';
+        }
 
         $pdo->commit();
     } catch (\Throwable $e) {
@@ -189,7 +196,7 @@ function importRateDataWorksheet(PDO $pdo, \PhpOffice\PhpSpreadsheet\Worksheet\W
         throw $e;
     }
 
-    return ['count' => $rowCount, 'sheets' => [$sheetTitle]];
+    return ['count' => $rowCount, 'sheets' => $importedSheets];
 }
 
 function importWorkbook(string $path, int $vendorId, int $batchId): array {

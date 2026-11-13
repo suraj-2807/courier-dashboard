@@ -24,20 +24,52 @@ if ($selectedVendor) {
         $batchId = getActiveBatchId($pdo, (int)$vendorObj['id']);
         if ($batchId) {
             $worksheets = getVendorWorksheets($pdo, (int)$vendorObj['id'], $batchId);
+
+            // Normalize RATE DATA sheet_type
+            foreach ($worksheets as &$ws) {
+                if (strtoupper($ws['sheet_name']) === 'RATE DATA' && ($ws['sheet_type'] === 'unknown' || empty($ws['sheet_type']))) {
+                    $ws['sheet_type'] = 'rate_data';
+                }
+            }
+            unset($ws);
+
             if (empty($worksheets)) {
                 // Auto-detect from data
+                try {
+                    $stM = $pdo->prepare("SELECT COUNT(*) FROM vendor_rate_matrix WHERE vendor_id = ? AND batch_id = ?");
+                    $stM->execute([(int)$vendorObj['id'], $batchId]);
+                    $matrixCnt = (int)$stM->fetchColumn();
+                    if ($matrixCnt > 0) {
+                        $worksheets[] = ['sheet_name' => 'RATE DATA', 'sheet_type' => 'rate_data', 'row_count' => $matrixCnt];
+                    }
+                } catch (\Throwable $e) {}
+
                 $st = $pdo->prepare("SELECT DISTINCT sheet_name, rate_type FROM vendor_rate_rows WHERE vendor_id = ? AND batch_id = ?");
                 $st->execute([(int)$vendorObj['id'], $batchId]);
                 foreach ($st->fetchAll() as $row) {
                     $worksheets[] = ['sheet_name' => $row['sheet_name'], 'sheet_type' => $row['rate_type'], 'row_count' => 0];
                 }
-                // Check zone rows
-                $stZ = $pdo->prepare("SELECT COUNT(*) FROM vendor_zone_rows WHERE vendor_id = ? AND batch_id = ?");
-                $stZ->execute([(int)$vendorObj['id'], $batchId]);
-                if ((int)$stZ->fetchColumn() > 0) {
-                    $worksheets[] = ['sheet_name' => 'Postcode Zones', 'sheet_type' => 'zones', 'row_count' => 0];
+            }
+
+            // Ensure Postcode Zones is present if vendor_zone_rows has data
+            $hasZoneWs = false;
+            foreach ($worksheets as $ws) {
+                if ($ws['sheet_type'] === 'zones' || strtolower($ws['sheet_name']) === 'postcode zones') {
+                    $hasZoneWs = true;
+                    break;
                 }
             }
+            if (!$hasZoneWs) {
+                try {
+                    $stZ = $pdo->prepare("SELECT COUNT(*) FROM vendor_zone_rows WHERE vendor_id = ? AND batch_id = ?");
+                    $stZ->execute([(int)$vendorObj['id'], $batchId]);
+                    $zoneCnt = (int)$stZ->fetchColumn();
+                    if ($zoneCnt > 0) {
+                        $worksheets[] = ['sheet_name' => 'Postcode Zones', 'sheet_type' => 'zones', 'row_count' => $zoneCnt];
+                    }
+                } catch (\Throwable $e) {}
+            }
+
             if (!$selectedSheet && !empty($worksheets)) {
                 $selectedSheet = $worksheets[0]['sheet_name'];
             }
@@ -54,6 +86,9 @@ foreach ($worksheets as $ws) {
         $sheetType = $ws['sheet_type'];
         break;
     }
+}
+if (strtoupper($selectedSheet) === 'RATE DATA') {
+    $sheetType = 'rate_data';
 }
 ?>
 
@@ -324,9 +359,18 @@ foreach ($worksheets as $ws) {
             <div style="display:flex; align-items:center; gap:8px;">
                 <label class="form-label" style="margin:0; font-weight:700; font-size:0.85rem; color:#475569;">Worksheet:</label>
                 <select class="form-control" name="sheet" onchange="this.form.submit()" style="min-width:240px; font-weight:600;">
-                    <?php foreach ($worksheets as $ws): ?>
+                    <?php foreach ($worksheets as $ws): 
+                        $typeName = match($ws['sheet_type'] ?? '') {
+                            'rate_data', 'matrix' => 'Tariff Matrix' . (!empty($ws['row_count']) ? ' - ' . number_format($ws['row_count']) . ' rows' : ''),
+                            'zones' => 'Zone Directory' . (!empty($ws['row_count']) ? ' - ' . number_format($ws['row_count']) . ' postcodes' : ''),
+                            'country_services' => 'Country Services',
+                            'zonewise' => 'Zonewise',
+                            'regular' => 'Regular',
+                            default => $ws['sheet_name'] === 'RATE DATA' ? 'Tariff Matrix' : 'Worksheet'
+                        };
+                    ?>
                     <option value="<?= h($ws['sheet_name']) ?>" <?= $selectedSheet === $ws['sheet_name'] ? 'selected' : '' ?>>
-                        <?= h($ws['sheet_name']) ?> (<?= h(strtoupper($ws['sheet_type'])) ?>)
+                        <?= h($ws['sheet_name']) ?> (<?= h($typeName) ?>)
                     </option>
                     <?php endforeach; ?>
                 </select>
@@ -367,8 +411,13 @@ foreach ($worksheets as $ws) {
             <?php if ($sheetType !== 'zones'): ?>
             <?php
             // Distinct services for dropdown
-            $srvSt = $pdo->prepare("SELECT DISTINCT service_code FROM vendor_rate_rows WHERE vendor_id = ? AND batch_id = ? AND sheet_name = ? ORDER BY service_code");
-            $srvSt->execute([$vendorId, $batchId, $selectedSheet]);
+            if ($sheetType === 'rate_data' || $sheetType === 'matrix') {
+                $srvSt = $pdo->prepare("SELECT DISTINCT service_code FROM vendor_rate_matrix WHERE vendor_id = ? AND batch_id = ? ORDER BY service_code");
+                $srvSt->execute([$vendorId, $batchId]);
+            } else {
+                $srvSt = $pdo->prepare("SELECT DISTINCT service_code FROM vendor_rate_rows WHERE vendor_id = ? AND batch_id = ? AND sheet_name = ? ORDER BY service_code");
+                $srvSt->execute([$vendorId, $batchId, $selectedSheet]);
+            }
             $sheetServices = array_column($srvSt->fetchAll(), 'service_code');
             ?>
             <?php if (!empty($sheetServices)): ?>
@@ -751,6 +800,194 @@ foreach ($worksheets as $ws) {
             </div>
         </div>
 
+        <?php elseif ($sheetType === 'rate_data' || $sheetType === 'matrix'): ?>
+        <?php
+            // RATE DATA Spreadsheet Matrix View — 115-column tariff grid
+            // Columns: Destination, State, Service Code, Service, Zone, Duty Paid, Transit, then weight slabs from JSON
+            $matWhere = "vendor_id = ? AND batch_id = ?";
+            $matArgs = [$vendorId, $batchId];
+            if ($searchQuery !== '') {
+                $matWhere .= " AND (destination LIKE ? OR service_code LIKE ? OR service_name LIKE ? OR zone LIKE ?)";
+                $matArgs[] = "%$searchQuery%"; $matArgs[] = "%$searchQuery%"; $matArgs[] = "%$searchQuery%"; $matArgs[] = "%$searchQuery%";
+            }
+            if ($selectedServiceFilter !== '') {
+                $matWhere .= " AND service_code = ?";
+                $matArgs[] = $selectedServiceFilter;
+            }
+
+            // Get all rows (paginated)
+            $matTotalSt = $pdo->prepare("SELECT COUNT(*) FROM vendor_rate_matrix WHERE $matWhere");
+            $matTotalSt->execute($matArgs);
+            $matTotal = (int)$matTotalSt->fetchColumn();
+
+            $matLimit = min(200, max(20, (int)($_GET['limit'] ?? 60)));
+            $matPageNo = max(1, (int)($_GET['p'] ?? 1));
+            $matTotalPages = max(1, (int)ceil($matTotal / $matLimit));
+            $matOffset = ($matPageNo - 1) * $matLimit;
+
+            $matSt = $pdo->prepare("SELECT * FROM vendor_rate_matrix WHERE $matWhere ORDER BY destination, service_code LIMIT {$matLimit} OFFSET {$matOffset}");
+            $matSt->execute($matArgs);
+            $matRows = $matSt->fetchAll();
+
+            // Build column definitions: metadata + representative weight slabs
+            $sampleSlabs = ['0.5 KG','1 KG','1.5 KG','2 KG','2.5 KG','3 KG','3.5 KG','4 KG','4.5 KG','5 KG','5.5 KG',
+                            '6 KG','7 KG','8 KG','9 KG','10 KG','12 KG','15 KG','20 KG','25 KG','30 KG','40 KG','50 KG','60 KG','70 KG','80 KG','90 KG','100 KG'];
+
+            // Detect which slabs actually have data
+            $activeSlabs = [];
+            foreach ($matRows as $mr) {
+                $wr = json_decode($mr['weight_rates'] ?: '{}', true) ?: [];
+                foreach ($sampleSlabs as $sl) {
+                    if (isset($wr[$sl]) && !isset($activeSlabs[$sl])) {
+                        $activeSlabs[$sl] = true;
+                    }
+                }
+            }
+            $displaySlabs = array_keys($activeSlabs);
+            if (empty($displaySlabs)) $displaySlabs = $sampleSlabs;
+
+            // Build Excel-style columns
+            $matColumns = [];
+            $matColumns[] = ['col_letter' => 'A', 'title' => 'Destination', 'type' => 'text'];
+            $matColumns[] = ['col_letter' => 'B', 'title' => 'State', 'type' => 'text'];
+            $matColumns[] = ['col_letter' => 'C', 'title' => 'Service Code', 'type' => 'text'];
+            $matColumns[] = ['col_letter' => 'D', 'title' => 'Service', 'type' => 'text'];
+            $matColumns[] = ['col_letter' => 'E', 'title' => 'Zone', 'type' => 'text'];
+            $matColumns[] = ['col_letter' => 'F', 'title' => 'Duty Paid', 'type' => 'text'];
+            $matColumns[] = ['col_letter' => 'G', 'title' => 'Transit', 'type' => 'text'];
+            $colIdx = 7;
+            $slabColMap = [];
+            foreach ($displaySlabs as $sl) {
+                $letter = getExcelColName($colIdx);
+                $matColumns[] = ['col_letter' => $letter, 'title' => $sl, 'type' => 'rate', 'slab' => $sl];
+                $slabColMap[$sl] = $letter;
+                $colIdx++;
+            }
+        ?>
+
+        <div class="excel-matrix-card">
+            <div class="excel-matrix-toolbar">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <div class="excel-tab-pill">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" fill="#107c41" stroke="#107c41"/>
+                            <path d="M7 8h10M7 12h10M7 16h10" stroke="#ffffff" stroke-linecap="round"/>
+                        </svg>
+                        <span><?= h($selectedSheet) ?> — Tariff Matrix</span>
+                    </div>
+                    <span class="badge badge-success text-xs">RATE DATA Matrix</span>
+                </div>
+
+                <div class="excel-formula-bar">
+                    <span id="excel-name-box" class="excel-name-box">fx</span>
+                    <span class="excel-fx-icon">fx</span>
+                    <input id="excel-formula-input" class="excel-formula-display" readonly value="Click any rate cell to view details or double-click to edit live">
+                    <button type="button" id="excel-edit-btn" class="btn btn-sm btn-primary" style="display:none; font-size:0.75rem; padding:2px 8px;" onclick="triggerActiveCellEdit()">
+                        ✏ Edit Rate
+                    </button>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="badge badge-neutral text-xs font-mono">
+                        <?= number_format($matTotal) ?> Destinations • <?= count($displaySlabs) ?> Weight Slabs
+                    </span>
+                </div>
+            </div>
+
+            <div class="excel-scroll-wrapper">
+                <table class="excel-table" id="mgmt-table">
+                    <thead>
+                        <tr class="excel-letter-row">
+                            <th class="excel-gutter-col"></th>
+                            <?php foreach ($matColumns as $col): ?>
+                            <th><?= h($col['col_letter']) ?></th>
+                            <?php endforeach; ?>
+                        </tr>
+                        <tr class="excel-blue-header">
+                            <th class="excel-gutter-col">1</th>
+                            <?php foreach ($matColumns as $col): ?>
+                            <th class="<?= $col['type'] === 'text' ? 'text-left' : '' ?>"><?= h($col['title']) ?></th>
+                            <?php endforeach; ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($matRows)): ?>
+                        <tr>
+                            <td colspan="<?= count($matColumns) + 1 ?>" style="text-align:center; padding:32px; color:#64748b;">
+                                No tariff matrix rows found matching your filters.
+                            </td>
+                        </tr>
+                        <?php else: ?>
+                        <?php foreach ($matRows as $i => $mr):
+                            $sRow = $matOffset + $i + 2;
+                            $wr = json_decode($mr['weight_rates'] ?: '{}', true) ?: [];
+                        ?>
+                        <tr class="excel-row-normal" id="row-<?= $sRow ?>">
+                            <td class="excel-gutter-col"><?= $sRow ?></td>
+                            <td class="excel-cell-text" style="font-weight:600; color:#0f172a;"><?= h($mr['destination']) ?></td>
+                            <td class="excel-cell-text text-sm text-muted"><?= h($mr['state'] ?: '—') ?></td>
+                            <td class="excel-cell-text font-mono" style="font-weight:600;"><?= h($mr['service_code']) ?></td>
+                            <td class="excel-cell-text text-sm"><?= h($mr['service_name'] ?: '—') ?></td>
+                            <td class="excel-cell-text"><?= $mr['zone'] ? '<span class="badge badge-purple font-mono">' . h($mr['zone']) . '</span>' : '—' ?></td>
+                            <td class="excel-cell-text"><?= $mr['duty_paid'] ? '<span class="badge badge-success">' . h($mr['duty_paid']) . '</span>' : '—' ?></td>
+                            <td class="excel-cell-text text-sm font-mono"><?= h($mr['transit_time'] ?: '—') ?></td>
+
+                            <?php foreach ($displaySlabs as $sl):
+                                $colLetter = $slabColMap[$sl] ?? '';
+                                $cellRef = $colLetter . $sRow;
+                                $rateVal = isset($wr[$sl]) ? (float)$wr[$sl] : null;
+                                $isFirstSlab = ($sl === '0.5 KG');
+                                $cellId = (int)$mr['id'];
+                                $isEdited = !empty($mr['is_manually_modified']);
+                            ?>
+                            <td class="excel-cell-rate editable-cell"
+                                id="cell-<?= h($cellRef) ?>"
+                                data-cell-ref="<?= h($cellRef) ?>"
+                                data-service="<?= h($mr['service_code']) ?>"
+                                data-country="<?= h($mr['destination']) ?>"
+                                data-slab="<?= h($sl) ?>"
+                                data-rate-id="<?= $cellId ?>"
+                                data-table="vendor_rate_matrix"
+                                data-val="<?= $rateVal !== null ? number_format($rateVal, 0) : '' ?>"
+                                onclick="selectExcelCell(this)"
+                                ondblclick="editMatrixCell(this)"
+                                title="<?= h($cellRef) ?>: <?= h($mr['service_code']) ?> to <?= h($mr['destination']) ?> (<?= h($sl) ?>) — Double-click to edit"
+                                <?php if ($isFirstSlab): ?>style="font-weight:600; color:#107c41;"<?php endif; ?>>
+                                <?php if ($rateVal !== null): ?>
+                                    <?= number_format($rateVal, 0) ?>
+                                    <?php if ($isEdited): ?><span class="cell-modified-indicator" title="Manually edited"></span><?php endif; ?>
+                                <?php else: ?>
+                                    <span class="excel-dash">-</span>
+                                <?php endif; ?>
+                            </td>
+                            <?php endforeach; ?>
+                        </tr>
+                        <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="excel-matrix-footer">
+                <div>
+                    <span>Showing <strong><?= count($matRows) ?></strong> of <strong><?= number_format($matTotal) ?></strong> tariff rows (Page <?= $matPageNo ?> of <?= $matTotalPages ?>)</span>
+                    <span style="margin:0 8px; color:#cbd5e1;">•</span>
+                    <span class="text-xs">💡 0.5 KG = flat base charge · Other slabs = rate per KG × billable weight</span>
+                </div>
+                <?php if ($matTotalPages > 1): ?>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <?php if ($matPageNo > 1): ?>
+                    <a href="?page=rate_management&vendor=<?= urlencode($selectedVendor) ?>&sheet=<?= urlencode($selectedSheet) ?>&view=grid&q=<?= urlencode($searchQuery) ?>&service=<?= urlencode($selectedServiceFilter) ?>&p=<?= $matPageNo - 1 ?>" class="btn btn-outline btn-sm">‹ Prev</a>
+                    <?php endif; ?>
+                    <span class="font-mono text-xs" style="padding:4px 8px;">Page <?= $matPageNo ?> / <?= $matTotalPages ?></span>
+                    <?php if ($matPageNo < $matTotalPages): ?>
+                    <a href="?page=rate_management&vendor=<?= urlencode($selectedVendor) ?>&sheet=<?= urlencode($selectedSheet) ?>&view=grid&q=<?= urlencode($searchQuery) ?>&service=<?= urlencode($selectedServiceFilter) ?>&p=<?= $matPageNo + 1 ?>" class="btn btn-outline btn-sm">Next ›</a>
+                    <?php endif; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <?php else: ?>
         <!-- Zone Mappings in Grid view -->
         <?php
@@ -847,6 +1084,81 @@ foreach ($worksheets as $ws) {
                         <td class="editable-cell" onclick="makeEditable(this, <?= $r['id'] ?>, 'town_city', 'vendor_zone_rows')"><?= h($r['town_city'] ?? '—') ?></td>
                         <td><?= ($r['is_manually_modified'] ?? 0) ? '<span class="badge-modified">edited</span>' : '<span class="badge badge-neutral">imported</span>' ?></td>
                         <td><button class="btn btn-ghost btn-sm" style="color:var(--accent-danger)" onclick="deleteRecord(<?= $r['id'] ?>, 'vendor_zone_rows', this.closest('tr'))">🗑</button></td>
+                    </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <?php include __DIR__ . '/_pagination.php'; ?>
+            </div>
+        </div>
+
+        <?php elseif ($sheetType === 'rate_data' || $sheetType === 'matrix'): ?>
+        <?php
+            $where = "vendor_id = ? AND batch_id = ?";
+            $args = [$vendorId, $batchId];
+            if ($searchQuery !== '') {
+                $where .= " AND (destination LIKE ? OR service_code LIKE ? OR service_name LIKE ? OR zone LIKE ? OR state LIKE ?)";
+                $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%";
+            }
+            if ($selectedServiceFilter !== '') {
+                $where .= " AND service_code = ?";
+                $args[] = $selectedServiceFilter;
+            }
+            $total = $pdo->prepare("SELECT COUNT(*) FROM vendor_rate_matrix WHERE $where");
+            $total->execute($args);
+            $total = (int)$total->fetchColumn();
+
+            $st = $pdo->prepare("SELECT * FROM vendor_rate_matrix WHERE $where ORDER BY destination, service_code LIMIT {$pagination['per_page']} OFFSET {$pagination['offset']}");
+            $st->execute($args);
+            $rows = $st->fetchAll();
+        ?>
+        <div class="card card-flush">
+            <div class="card-header">
+                <h3><?= h($selectedSheet) ?> — Tariff Matrix Records <span class="text-muted text-sm">(<?= number_format($total) ?>)</span></h3>
+            </div>
+            <div class="card-body table-wrapper">
+                <table class="data-table" id="mgmt-table">
+                    <thead><tr>
+                        <th class="sortable">Destination</th>
+                        <th>State</th>
+                        <th class="sortable">Service Code</th>
+                        <th>Service</th>
+                        <th>Zone</th>
+                        <th>Duty Paid</th>
+                        <th>Transit</th>
+                        <th style="text-align:right;">0.5 KG (Flat)</th>
+                        <th style="text-align:right;">1 KG</th>
+                        <th style="text-align:right;">2 KG</th>
+                        <th style="text-align:right;">5 KG</th>
+                        <th style="text-align:right;">10 KG</th>
+                        <th style="text-align:right;">20 KG</th>
+                        <th style="text-align:right;">50 KG</th>
+                        <th style="text-align:right;">100 KG</th>
+                        <th>Status</th>
+                        <th class="action-col">Actions</th>
+                    </tr></thead>
+                    <tbody>
+                    <?php foreach ($rows as $r):
+                        $wr = json_decode($r['weight_rates'] ?: '{}', true) ?: [];
+                    ?>
+                    <tr data-id="<?= $r['id'] ?>">
+                        <td style="font-weight:600;"><?= h($r['destination']) ?></td>
+                        <td class="text-sm text-muted"><?= h($r['state'] ?: '—') ?></td>
+                        <td class="font-mono"><?= h($r['service_code']) ?></td>
+                        <td class="text-sm"><?= h($r['service_name'] ?: '—') ?></td>
+                        <td><?= $r['zone'] ? '<span class="badge badge-purple font-mono">' . h($r['zone']) . '</span>' : '—' ?></td>
+                        <td><?= $r['duty_paid'] ? '<span class="badge badge-success">' . h($r['duty_paid']) . '</span>' : '—' ?></td>
+                        <td class="text-sm font-mono"><?= h($r['transit_time'] ?: '—') ?></td>
+                        <td class="font-mono text-right" style="font-weight:600; color:#107c41;"><?= isset($wr['0.5 KG']) ? number_format((float)$wr['0.5 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['1 KG']) ? number_format((float)$wr['1 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['2 KG']) ? number_format((float)$wr['2 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['5 KG']) ? number_format((float)$wr['5 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['10 KG']) ? number_format((float)$wr['10 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['20 KG']) ? number_format((float)$wr['20 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['50 KG']) ? number_format((float)$wr['50 KG'], 0) : '—' ?></td>
+                        <td class="font-mono text-right"><?= isset($wr['100 KG']) ? number_format((float)$wr['100 KG'], 0) : '—' ?></td>
+                        <td><?= ($r['is_manually_modified'] ?? 0) ? '<span class="badge-modified">edited</span>' : '<span class="badge badge-neutral">imported</span>' ?></td>
+                        <td class="action-col"><button class="btn btn-ghost btn-sm" style="color:var(--accent-danger)" onclick="deleteRecord(<?= $r['id'] ?>, 'vendor_rate_matrix', this.closest('tr'))">🗑</button></td>
                     </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -986,9 +1298,23 @@ function editExcelCell(td) {
     }
 }
 
+function editMatrixCell(td) {
+    selectExcelCell(td);
+    const rateId = td.dataset.rateId;
+    const slab = td.dataset.slab;
+    const table = td.dataset.table || 'vendor_rate_matrix';
+    if (rateId && rateId !== '0') {
+        makeEditable(td, parseInt(rateId, 10), slab, table);
+    }
+}
+
 function triggerActiveCellEdit() {
     if (currentActiveCell) {
-        editExcelCell(currentActiveCell);
+        if (currentActiveCell.dataset.table === 'vendor_rate_matrix') {
+            editMatrixCell(currentActiveCell);
+        } else {
+            editExcelCell(currentActiveCell);
+        }
     }
 }
 </script>
