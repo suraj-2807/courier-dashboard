@@ -423,8 +423,8 @@ if ($activeTab === 'history'):
         $where = "vendor_id = ? AND batch_id = ?";
         $args = [$vendorId, $batchId];
         if ($searchQuery !== '') {
-            $where .= " AND (destination LIKE ? OR service_code LIKE ? OR service_name LIKE ? OR zone LIKE ? OR state LIKE ? OR town_city LIKE ?)";
-            $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%";
+            $where .= " AND (destination LIKE ? OR service_code LIKE ? OR service_name LIKE ? OR zone LIKE ? OR state LIKE ? OR town_city LIKE ? OR postcode_raw LIKE ?)";
+            $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%"; $args[] = "%$searchQuery%";
         }
         if ($filterCountry !== '') { $where .= " AND destination = ?"; $args[] = $filterCountry; }
         if ($filterService !== '') { $where .= " AND service_code = ?"; $args[] = $filterService; }
@@ -460,7 +460,7 @@ if ($activeTab === 'history'):
                     <input type="hidden" name="slug" value="<?= h($slug) ?>">
                     <input type="hidden" name="tab" value="<?= h($activeTab) ?>">
                     <div class="search-input">
-                        <input class="form-control" name="q" placeholder="Search destination, service, zone, state..." value="<?= h($searchQuery) ?>">
+                        <input class="form-control" name="q" placeholder="Search destination, service, zone, postcode, town..." value="<?= h($searchQuery) ?>">
                     </div>
                     <select class="form-control" name="country" style="width:auto;min-width:150px;">
                         <option value="">All Destinations</option>
@@ -487,6 +487,8 @@ if ($activeTab === 'history'):
                         <th class="sortable">Service Code</th>
                         <th>Service</th>
                         <th>Zone</th>
+                        <th>Post Code</th>
+                        <th>Town / City</th>
                         <th>Duty Paid</th>
                         <th>Transit</th>
                         <th style="text-align:right;">0.5 KG (Flat)</th>
@@ -509,6 +511,8 @@ if ($activeTab === 'history'):
                         <td class="font-mono"><?= h($r['service_code']) ?></td>
                         <td class="text-sm"><?= h($r['service_name'] ?: '—') ?></td>
                         <td><?= $r['zone'] ? '<span class="badge badge-purple font-mono">' . h($r['zone']) . '</span>' : '—' ?></td>
+                        <td class="text-xs" style="max-width:220px;"><?= formatPostcodeDisplayHtml($r['postcode_raw'], 2, (int)$r['id'], (string)$r['destination'], (string)$r['zone']) ?></td>
+                        <td class="text-sm editable-cell" onclick="makeEditable(this, <?= (int)$r['id'] ?>, 'town_city', 'vendor_rate_matrix')" title="<?= h($r['town_city'] ?: 'Click to edit town/city') ?>"><?= h($r['town_city'] ?: '—') ?></td>
                         <td><?= $r['duty_paid'] ? '<span class="badge badge-success">' . h($r['duty_paid']) . '</span>' : '—' ?></td>
                         <td class="text-sm font-mono"><?= h($r['transit_time'] ?: '—') ?></td>
                         <td class="font-mono text-right" style="font-weight:600; color:#107c41;"><?= (($v = $wr['0.5 KG'] ?? ($wr['0.5'] ?? null)) !== null && is_numeric($v)) ? number_format((float)$v, 0) : '—' ?></td>

@@ -245,6 +245,15 @@ try {
         if (array_key_exists('city', $input) && !array_key_exists('town_city', $input)) {
             $input['town_city'] = $input['city'];
         }
+        if (array_key_exists('town', $input) && !array_key_exists('town_city', $input)) {
+            $input['town_city'] = $input['town'];
+        }
+        if (array_key_exists('postcode', $input) && !array_key_exists('postcode_raw', $input)) {
+            $input['postcode_raw'] = $input['postcode'];
+        }
+        if (array_key_exists('post_code', $input) && !array_key_exists('postcode_raw', $input)) {
+            $input['postcode_raw'] = $input['post_code'];
+        }
 
         $existing = $pdo->prepare("SELECT * FROM {$table} WHERE id = ?");
         $existing->execute([$id]);

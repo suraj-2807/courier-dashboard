@@ -404,8 +404,8 @@ if (strtoupper($selectedSheet) === 'RATE DATA') {
             <input type="hidden" name="sheet" value="<?= h($selectedSheet) ?>">
             <input type="hidden" name="view" value="<?= h($viewMode) ?>">
 
-            <div class="search-input" style="flex:1; max-width:320px;">
-                <input class="form-control" name="q" placeholder="Search destination country or service..." value="<?= h($searchQuery) ?>" style="font-size:0.85rem;">
+            <div class="search-input" style="flex:1; max-width:340px;">
+                <input class="form-control" name="q" placeholder="Search destination, service, zone, postcode..." value="<?= h($searchQuery) ?>" style="font-size:0.85rem;">
             </div>
 
             <?php if ($sheetType !== 'zones'): ?>
@@ -807,8 +807,8 @@ if (strtoupper($selectedSheet) === 'RATE DATA') {
             $matWhere = "vendor_id = ? AND batch_id = ?";
             $matArgs = [$vendorId, $batchId];
             if ($searchQuery !== '') {
-                $matWhere .= " AND (destination LIKE ? OR service_code LIKE ? OR service_name LIKE ? OR zone LIKE ?)";
-                $matArgs[] = "%$searchQuery%"; $matArgs[] = "%$searchQuery%"; $matArgs[] = "%$searchQuery%"; $matArgs[] = "%$searchQuery%";
+                $matWhere .= " AND (destination LIKE ? OR service_code LIKE ? OR service_name LIKE ? OR zone LIKE ? OR postcode_raw LIKE ? OR town_city LIKE ?)";
+                $matArgs[] = "%$searchQuery%"; $matArgs[] = "%$searchQuery%"; $matArgs[] = "%$searchQuery%"; $matArgs[] = "%$searchQuery%"; $matArgs[] = "%$searchQuery%"; $matArgs[] = "%$searchQuery%";
             }
             if ($selectedServiceFilter !== '') {
                 $matWhere .= " AND service_code = ?";
@@ -857,16 +857,18 @@ if (strtoupper($selectedSheet) === 'RATE DATA') {
                 $displaySlabs = $sampleSlabs;
             }
 
-            // Build Excel-style columns
+            // Build Excel-style columns matching courier Excel workbook (Cols A to I metadata, J+ slabs)
             $matColumns = [];
             $matColumns[] = ['col_letter' => 'A', 'title' => 'Destination', 'type' => 'text'];
             $matColumns[] = ['col_letter' => 'B', 'title' => 'State', 'type' => 'text'];
             $matColumns[] = ['col_letter' => 'C', 'title' => 'Service Code', 'type' => 'text'];
             $matColumns[] = ['col_letter' => 'D', 'title' => 'Service', 'type' => 'text'];
             $matColumns[] = ['col_letter' => 'E', 'title' => 'Zone', 'type' => 'text'];
-            $matColumns[] = ['col_letter' => 'F', 'title' => 'Duty Paid', 'type' => 'text'];
-            $matColumns[] = ['col_letter' => 'G', 'title' => 'Transit', 'type' => 'text'];
-            $colIdx = 7;
+            $matColumns[] = ['col_letter' => 'F', 'title' => 'Post Code', 'type' => 'postcode'];
+            $matColumns[] = ['col_letter' => 'G', 'title' => 'Town / City', 'type' => 'text'];
+            $matColumns[] = ['col_letter' => 'H', 'title' => 'Duty Paid', 'type' => 'text'];
+            $matColumns[] = ['col_letter' => 'I', 'title' => 'Transit', 'type' => 'text'];
+            $colIdx = 9; // Col J starts at index 9
             $slabColMap = [];
             foreach ($displaySlabs as $sl) {
                 $letter = getExcelColName($colIdx);
@@ -935,13 +937,15 @@ if (strtoupper($selectedSheet) === 'RATE DATA') {
                         ?>
                         <tr class="excel-row-normal" id="row-<?= $sRow ?>">
                             <td class="excel-gutter-col"><?= $sRow ?></td>
-                            <td class="excel-cell-text" style="font-weight:600; color:#0f172a;"><?= h($mr['destination']) ?></td>
-                            <td class="excel-cell-text text-sm text-muted"><?= h($mr['state'] ?: '—') ?></td>
-                            <td class="excel-cell-text font-mono" style="font-weight:600;"><?= h($mr['service_code']) ?></td>
-                            <td class="excel-cell-text text-sm"><?= h($mr['service_name'] ?: '—') ?></td>
-                            <td class="excel-cell-text"><?= $mr['zone'] ? '<span class="badge badge-purple font-mono">' . h($mr['zone']) . '</span>' : '—' ?></td>
-                            <td class="excel-cell-text"><?= $mr['duty_paid'] ? '<span class="badge badge-success">' . h($mr['duty_paid']) . '</span>' : '—' ?></td>
-                            <td class="excel-cell-text text-sm font-mono"><?= h($mr['transit_time'] ?: '—') ?></td>
+                            <td class="excel-cell-text" id="cell-A<?= $sRow ?>" data-cell-ref="A<?= $sRow ?>" onclick="selectExcelCell(this)" style="font-weight:600; color:#0f172a;"><?= h($mr['destination']) ?></td>
+                            <td class="excel-cell-text text-sm text-muted" id="cell-B<?= $sRow ?>" data-cell-ref="B<?= $sRow ?>" onclick="selectExcelCell(this)"><?= h($mr['state'] ?: '—') ?></td>
+                            <td class="excel-cell-text font-mono" id="cell-C<?= $sRow ?>" data-cell-ref="C<?= $sRow ?>" onclick="selectExcelCell(this)" style="font-weight:600;"><?= h($mr['service_code']) ?></td>
+                            <td class="excel-cell-text text-sm" id="cell-D<?= $sRow ?>" data-cell-ref="D<?= $sRow ?>" onclick="selectExcelCell(this)"><?= h($mr['service_name'] ?: '—') ?></td>
+                            <td class="excel-cell-text" id="cell-E<?= $sRow ?>" data-cell-ref="E<?= $sRow ?>" onclick="selectExcelCell(this)"><?= $mr['zone'] ? '<span class="badge badge-purple font-mono">' . h($mr['zone']) . '</span>' : '—' ?></td>
+                            <td class="excel-cell-text" id="cell-F<?= $sRow ?>" data-cell-ref="F<?= $sRow ?>" onclick="selectExcelCell(this)" data-field="postcode_raw" data-val="<?= h($mr['postcode_raw'] ?? '') ?>" style="min-width:140px; max-width:220px;"><?= formatPostcodeDisplayHtml($mr['postcode_raw'], 2, (int)$mr['id'], (string)$mr['destination'], (string)$mr['zone']) ?></td>
+                            <td class="excel-cell-text text-sm editable-cell" id="cell-G<?= $sRow ?>" data-cell-ref="G<?= $sRow ?>" onclick="selectExcelCell(this)" ondblclick="makeEditable(this, <?= (int)$mr['id'] ?>, 'town_city', 'vendor_rate_matrix')" data-field="town_city" data-val="<?= h($mr['town_city'] ?? '') ?>" title="<?= h($mr['town_city'] ?: 'Double-click to edit town/city') ?>"><?= h($mr['town_city'] ?: '—') ?></td>
+                            <td class="excel-cell-text" id="cell-H<?= $sRow ?>" data-cell-ref="H<?= $sRow ?>" onclick="selectExcelCell(this)"><?= $mr['duty_paid'] ? '<span class="badge badge-success">' . h($mr['duty_paid']) . '</span>' : '—' ?></td>
+                            <td class="excel-cell-text text-sm font-mono" id="cell-I<?= $sRow ?>" data-cell-ref="I<?= $sRow ?>" onclick="selectExcelCell(this)"><?= h($mr['transit_time'] ?: '—') ?></td>
 
                             <?php foreach ($displaySlabs as $sl):
                                 $colLetter = $slabColMap[$sl] ?? '';
@@ -1137,6 +1141,8 @@ if (strtoupper($selectedSheet) === 'RATE DATA') {
                         <th class="sortable">Service Code</th>
                         <th>Service</th>
                         <th>Zone</th>
+                        <th>Post Code</th>
+                        <th>Town / City</th>
                         <th>Duty Paid</th>
                         <th>Transit</th>
                         <th style="text-align:right;">0.5 KG (Flat)</th>
@@ -1160,6 +1166,8 @@ if (strtoupper($selectedSheet) === 'RATE DATA') {
                         <td class="font-mono"><?= h($r['service_code']) ?></td>
                         <td class="text-sm"><?= h($r['service_name'] ?: '—') ?></td>
                         <td><?= $r['zone'] ? '<span class="badge badge-purple font-mono">' . h($r['zone']) . '</span>' : '—' ?></td>
+                        <td class="text-xs" style="max-width:200px;"><?= formatPostcodeDisplayHtml($r['postcode_raw'], 2, (int)$r['id'], (string)$r['destination'], (string)$r['zone']) ?></td>
+                        <td class="text-sm editable-cell" onclick="makeEditable(this, <?= (int)$r['id'] ?>, 'town_city', 'vendor_rate_matrix')"><?= h($r['town_city'] ?: '—') ?></td>
                         <td><?= $r['duty_paid'] ? '<span class="badge badge-success">' . h($r['duty_paid']) . '</span>' : '—' ?></td>
                         <td class="text-sm font-mono"><?= h($r['transit_time'] ?: '—') ?></td>
                         <td class="font-mono text-right" style="font-weight:600; color:#107c41;"><?= (($v = $wr['0.5 KG'] ?? ($wr['0.5'] ?? null)) !== null && is_numeric($v)) ? number_format((float)$v, 0) : '—' ?></td>
@@ -1288,10 +1296,14 @@ function selectExcelCell(td) {
 
     if (nameBox) nameBox.textContent = cellRef || 'fx';
     if (formulaInput) {
-        if (val !== '') {
-            formulaInput.value = `=${service}!${country}[${slab}] = ₹ ${val} INR`;
+        if (slab) {
+            if (val !== '') {
+                formulaInput.value = `=${service}!${country}[${slab}] = ₹ ${val} INR`;
+            } else {
+                formulaInput.value = `=${service}!${country}[${slab}] = - (No tariff quoted)`;
+            }
         } else {
-            formulaInput.value = `=${service}!${country}[${slab}] = - (No tariff quoted)`;
+            formulaInput.value = val || td.textContent.trim() || '—';
         }
     }
     if (editBtn) {

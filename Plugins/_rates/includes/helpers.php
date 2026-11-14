@@ -219,25 +219,25 @@ function parsePostcodesWithRemoteTags(?string $raw): array {
     if ($raw === null) return [];
 
     $results = [];
-    $parts = explode(',', $raw);
+    $parts = preg_split('/[,;\r\n]+/', $raw);
 
     foreach ($parts as $part) {
         $part = trim($part);
         if ($part === '') continue;
 
-        // Extract remote tag like (YES), (NO), (YES/NO), (NO/YES)
+        // Extract remote tag like (YES), (NO), (YES/NO), (NO/YES), (Y), (N)
         $remoteStatus = 'NONE';
-        if (preg_match('/\((YES\/NO|NO\/YES|YES|NO)\)/i', $part, $tm)) {
+        if (preg_match('/\(\s*(YES\/NO|NO\/YES|YES|NO|Y|N)\s*\)/i', $part, $tm)) {
             $tag = strtoupper(trim($tm[1]));
             if ($tag === 'YES/NO' || $tag === 'NO/YES') {
                 $remoteStatus = 'BOTH';
-            } elseif ($tag === 'YES') {
+            } elseif ($tag === 'YES' || $tag === 'Y') {
                 $remoteStatus = 'YES';
-            } elseif ($tag === 'NO') {
+            } elseif ($tag === 'NO' || $tag === 'N') {
                 $remoteStatus = 'NO';
             }
             // Strip tag from string
-            $part = trim(preg_replace('/\((YES\/NO|NO\/YES|YES|NO)\)/i', '', $part));
+            $part = trim(preg_replace('/\(\s*(YES\/NO|NO\/YES|YES|NO|Y|N)\s*\)/i', '', $part));
         }
 
         if ($part === '') continue;
@@ -260,4 +260,49 @@ function parsePostcodesWithRemoteTags(?string $raw): array {
     }
 
     return $results;
+}
+
+/**
+ * Format raw postcode list for table display with remote status badges
+ */
+function formatPostcodeDisplayHtml(?string $raw, int $limit = 3, int $rowId = 0, string $destination = '', string $zone = ''): string {
+    $raw = clean($raw);
+    if ($raw === null) return '<span class="text-muted">—</span>';
+
+    $items = preg_split('/[,;\r\n]+/', $raw);
+    $items = array_values(array_filter(array_map('trim', $items), fn($x) => $x !== ''));
+    $totalCount = count($items);
+    if ($totalCount === 0) return '<span class="text-muted">—</span>';
+
+    $rendered = [];
+    $displayItems = array_slice($items, 0, $limit);
+
+    foreach ($displayItems as $item) {
+        $cleanItem = $item;
+        $remoteTag = '';
+
+        if (preg_match('/\(\s*(YES\/NO|NO\/YES|YES|NO|Y|N)\s*\)/i', $item, $m)) {
+            $tag = strtoupper(trim($m[1]));
+            $cleanItem = trim(preg_replace('/\(\s*(YES\/NO|NO\/YES|YES|NO|Y|N)\s*\)/i', '', $item));
+            if ($tag === 'YES' || $tag === 'Y') {
+                $remoteTag = ' <span class="badge" style="font-size:0.6rem;padding:1px 4px;background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;font-weight:700;" title="Remote Area: YES">Remote</span>';
+            } elseif ($tag === 'NO' || $tag === 'N') {
+                $remoteTag = ' <span class="badge" style="font-size:0.6rem;padding:1px 4px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;" title="Remote Area: NO">No</span>';
+            } else {
+                $remoteTag = ' <span class="badge badge-info" style="font-size:0.6rem;padding:1px 4px;" title="Remote Area: YES/NO">Both</span>';
+            }
+        }
+
+        $rendered[] = '<span class="pc-chip font-mono text-xs" style="display:inline-flex;align-items:center;gap:3px;background:#f1f5f9;padding:1px 5px;border-radius:4px;border:1px solid #e2e8f0;margin:1px 2px 1px 0;">' . h($cleanItem) . $remoteTag . '</span>';
+    }
+
+    $html = implode('', $rendered);
+
+    if ($totalCount > $limit) {
+        $remaining = $totalCount - $limit;
+        $destLabel = h(trim($destination . ($zone ? " ($zone)" : "")));
+        $html .= ' <button type="button" class="btn btn-outline btn-xs" style="padding:1px 6px;font-size:0.7rem;font-weight:600;color:#2563eb;border-color:#93c5fd;background:#eff6ff;" onclick="openPostcodesModal(this)" data-title="' . $destLabel . '" data-id="' . $rowId . '" data-raw="' . h($raw) . '" title="Click to view all ' . $totalCount . ' postcodes">+' . $remaining . ' more</button>';
+    }
+
+    return $html;
 }

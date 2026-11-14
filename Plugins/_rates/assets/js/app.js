@@ -375,6 +375,130 @@ document.addEventListener('click', e => {
     }
 });
 
+// ---- Postcodes Inspector Modal ----
+let modalPostcodesList = [];
+
+function openPostcodesModal(btn) {
+    let modal = document.getElementById('postcodes-inspector-modal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'postcodes-inspector-modal';
+        modal.className = 'modal-backdrop';
+        modal.style.cssText = 'display:none; position:fixed; inset:0; background:rgba(15,23,42,0.6); z-index:9999; align-items:center; justify-content:center; backdrop-filter:blur(2px);';
+        modal.innerHTML = `
+            <div class="card" style="width:90%; max-width:680px; max-height:85vh; display:flex; flex-direction:column; background:#ffffff; border-radius:12px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); overflow:hidden; padding:0;">
+                <div style="padding:16px 20px; border-bottom:1px solid #e2e8f0; display:flex; justify-content:space-between; align-items:center; background:#f8fafc;">
+                    <div>
+                        <h3 id="pc-modal-title" style="margin:0; font-size:1.1rem; color:#0f172a; font-weight:700;">Postcodes Directory</h3>
+                        <span id="pc-modal-subtitle" class="text-xs text-muted"></span>
+                    </div>
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="closePostcodesModal()" style="font-size:1.2rem; line-height:1; padding:4px 8px;">✕</button>
+                </div>
+                <div style="padding:12px 20px; border-bottom:1px solid #f1f5f9; background:#fff; display:flex; gap:10px; align-items:center;">
+                    <input type="text" id="pc-search-input" class="form-control form-control-sm" placeholder="Filter postcodes (e.g. 2000, Remote, Yes, No)..." oninput="filterPostcodesInModal(this.value)" style="flex:1;">
+                    <button type="button" class="btn btn-outline btn-sm" onclick="copyPostcodesFromModal()" style="display:inline-flex; align-items:center; gap:4px; font-weight:600;">
+                        📋 Copy All
+                    </button>
+                </div>
+                <div id="pc-modal-body" style="padding:16px 20px; overflow-y:auto; flex:1; display:flex; flex-wrap:wrap; gap:6px; max-height:55vh; align-content:flex-start;">
+                </div>
+                <div style="padding:12px 20px; border-top:1px solid #e2e8f0; background:#f8fafc; display:flex; justify-content:space-between; align-items:center;">
+                    <span id="pc-modal-count" class="text-xs text-muted" style="font-weight:600;"></span>
+                    <button type="button" class="btn btn-primary btn-sm" onclick="closePostcodesModal()">Close</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closePostcodesModal();
+        });
+    }
+
+    const raw = btn.dataset.raw || '';
+    const title = btn.dataset.title || 'Postcodes Directory';
+    document.getElementById('pc-modal-title').textContent = title;
+    document.getElementById('pc-modal-subtitle').textContent = `Full postcode list with remote area status`;
+    document.getElementById('pc-search-input').value = '';
+
+    // Parse postcodes
+    const items = raw.split(/[,;\r\n]+/).map(s => s.trim()).filter(Boolean);
+    modalPostcodesList = items.map(item => {
+        let clean = item;
+        let remoteStatus = 'NONE';
+        const m = item.match(/\(\s*(YES\/NO|NO\/YES|YES|NO|Y|N)\s*\)/i);
+        if (m) {
+            const tag = m[1].toUpperCase().trim();
+            if (tag === 'YES' || tag === 'Y') remoteStatus = 'YES';
+            else if (tag === 'NO' || tag === 'N') remoteStatus = 'NO';
+            else remoteStatus = 'BOTH';
+            clean = item.replace(/\(\s*(YES\/NO|NO\/YES|YES|NO|Y|N)\s*\)/i, '').trim();
+        }
+        return { original: item, clean, remoteStatus };
+    });
+
+    renderPostcodesInModal(modalPostcodesList);
+    modal.style.display = 'flex';
+    setTimeout(() => document.getElementById('pc-search-input')?.focus(), 50);
+}
+
+function renderPostcodesInModal(list) {
+    const body = document.getElementById('pc-modal-body');
+    const countEl = document.getElementById('pc-modal-count');
+    if (!body) return;
+
+    if (list.length === 0) {
+        body.innerHTML = '<div style="color:#64748b; font-size:0.9rem; padding:20px; width:100%; text-align:center;">No matching postcodes found.</div>';
+        if (countEl) countEl.textContent = '0 postcodes';
+        return;
+    }
+
+    let remoteCount = 0;
+    body.innerHTML = list.map(item => {
+        let tagHtml = '';
+        if (item.remoteStatus === 'YES') {
+            remoteCount++;
+            tagHtml = `<span style="font-size:0.6rem; padding:1px 4px; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; border-radius:3px; font-weight:700; margin-left:4px;">Remote</span>`;
+        } else if (item.remoteStatus === 'NO') {
+            tagHtml = `<span style="font-size:0.6rem; padding:1px 4px; background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; border-radius:3px; margin-left:4px;">No</span>`;
+        } else if (item.remoteStatus === 'BOTH') {
+            remoteCount++;
+            tagHtml = `<span style="font-size:0.6rem; padding:1px 4px; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; border-radius:3px; margin-left:4px;">Both</span>`;
+        }
+        return `<span style="display:inline-flex; align-items:center; background:#f8fafc; border:1px solid #cbd5e1; border-radius:5px; padding:3px 8px; font-family:monospace; font-size:0.8rem; color:#0f172a;">${escapeHtml(item.clean)}${tagHtml}</span>`;
+    }).join('');
+
+    if (countEl) {
+        countEl.textContent = `${list.length} postcode${list.length === 1 ? '' : 's'}${remoteCount > 0 ? ` (${remoteCount} remote)` : ''}`;
+    }
+}
+
+function filterPostcodesInModal(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) {
+        renderPostcodesInModal(modalPostcodesList);
+        return;
+    }
+    const filtered = modalPostcodesList.filter(item => {
+        if (item.clean.toLowerCase().includes(q)) return true;
+        if (q === 'remote' || q === 'yes') return item.remoteStatus === 'YES' || item.remoteStatus === 'BOTH';
+        if (q === 'no') return item.remoteStatus === 'NO';
+        return false;
+    });
+    renderPostcodesInModal(filtered);
+}
+
+function copyPostcodesFromModal() {
+    const text = modalPostcodesList.map(item => item.original).join(', ');
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('All postcodes copied to clipboard');
+    });
+}
+
+function closePostcodesModal() {
+    const modal = document.getElementById('postcodes-inspector-modal');
+    if (modal) modal.style.display = 'none';
+}
+
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
