@@ -280,7 +280,13 @@ export default function NewBookingPage() {
 
   const removeInvoiceItem = (index) => {
     if (invoiceItems.length <= 1) return
-    setInvoiceItems(prev => prev.filter((_, i) => i !== index).map((item, i) => ({ ...item, sr_no: i + 1 })))
+    setInvoiceItems(prev => {
+      const updated = prev.filter((_, i) => i !== index).map((item, i) => ({ ...item, sr_no: i + 1 }))
+      const itemDescriptions = updated.map(i => (i.description || '').trim()).filter(Boolean)
+      const derived = itemDescriptions.join(', ')
+      setForm(f => ({ ...f, content_description: derived }))
+      return updated
+    })
   }
 
   const updateInvoiceItem = (index, field, value) => {
@@ -433,15 +439,21 @@ export default function NewBookingPage() {
     }).slice(0, 6)
   }
 
-  // Select Product for Invoice Item (ONLY autofills Description and HSN Code)
+  // Select Product for Invoice Item (Autofills Description and HSN Code, and syncs content_description)
   const selectProductForItem = (idx, product) => {
+    const fullName = (product.name || '').toUpperCase()
     setInvoiceItems(prev => {
       const updated = [...prev]
-      updated[idx] = {
-        ...updated[idx],
-        description: product.name,
-        hs_code: product.hs_code
+      if (updated[idx]) {
+        updated[idx] = {
+          ...updated[idx],
+          description: fullName,
+          hs_code: product.hs_code || updated[idx].hs_code || ''
+        }
       }
+      const itemDescriptions = updated.map(i => (i.description || '').trim()).filter(Boolean)
+      const derived = itemDescriptions.join(', ')
+      setForm(f => ({ ...f, content_description: derived }))
       return updated
     })
     setActiveItemSuggestionIndex(null)
@@ -1540,10 +1552,11 @@ export default function NewBookingPage() {
     const extraChargeVal = parseFloat(extraCharge) || 0
     const totAmount = parseFloat((shipCharge + extraChargeVal).toFixed(2))
 
-    const derivedContent = (invoiceItems || []).map(i => i.description).filter(Boolean).join(', ')
+    const derivedContent = (invoiceItems || []).map(i => (i.description || '').trim()).filter(Boolean).join(', ')
     const cleanContent = (form.content_description || '').trim()
-    const isGeneric = ['general goods', 'items / goods inside', 'goods'].includes(cleanContent.toLowerCase())
-    const resolvedContent = (!isGeneric && cleanContent) ? cleanContent : (derivedContent || cleanContent || '')
+    const isGeneric = !cleanContent || ['general goods', 'items / goods inside', 'goods', 'sample', 'gift'].includes(cleanContent.toLowerCase())
+    const isPrefixOfDerived = derivedContent && cleanContent && derivedContent.toLowerCase().startsWith(cleanContent.toLowerCase()) && derivedContent.length > cleanContent.length
+    const resolvedContent = (derivedContent && (isGeneric || isPrefixOfDerived || !cleanContent)) ? derivedContent : (cleanContent || derivedContent || '')
 
     return {
     id: editId ? parseInt(editId) : undefined,
@@ -1837,10 +1850,11 @@ export default function NewBookingPage() {
     const extra = parseFloat(extraCharge) || 0
     const total = parseFloat((ship + extra).toFixed(2))
 
-    const derivedContent = (invoiceItems || []).map(i => i.description).filter(Boolean).join(', ')
+    const derivedContent = (invoiceItems || []).map(i => (i.description || '').trim()).filter(Boolean).join(', ')
     const cleanContent = (form.content_description || '').trim()
-    const isGeneric = ['general goods', 'items / goods inside', 'goods'].includes(cleanContent.toLowerCase())
-    const effectiveContent = (!isGeneric && cleanContent) ? cleanContent : (derivedContent || cleanContent || '')
+    const isGeneric = !cleanContent || ['general goods', 'items / goods inside', 'goods', 'sample', 'gift'].includes(cleanContent.toLowerCase())
+    const isPrefixOfDerived = derivedContent && cleanContent && derivedContent.toLowerCase().startsWith(cleanContent.toLowerCase()) && derivedContent.length > cleanContent.length
+    const effectiveContent = (derivedContent && (isGeneric || isPrefixOfDerived || !cleanContent)) ? derivedContent : (cleanContent || derivedContent || '')
 
     setSavingDraft(true)
     try {

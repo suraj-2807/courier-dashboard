@@ -745,18 +745,22 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     unit_weight: (item.unit_weight !== undefined && item.unit_weight !== null && String(item.unit_weight).trim() !== '') ? String(item.unit_weight).trim() : '00'
   }))
 
-  const itemDescriptions = invoiceItemsList.map(i => i.description).filter(Boolean)
+  const itemDescriptions = invoiceItemsList.map(i => (i.description || '').trim()).filter(Boolean)
   const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
 
+  const trimmedFieldContent = (fields.content_description || '').trim()
+  const isGeneric = !trimmedFieldContent || ['general goods', 'items / goods inside', 'goods', 'sample', 'gift'].includes(trimmedFieldContent.toLowerCase())
+  const isPrefixOfDerived = derivedContent && trimmedFieldContent && derivedContent.toLowerCase().startsWith(trimmedFieldContent.toLowerCase()) && derivedContent.length > trimmedFieldContent.length
+
   let contentDescription = ''
-  if (fields.content_description && !['general goods', 'items / goods inside', 'goods'].includes(fields.content_description.trim().toLowerCase())) {
-    contentDescription = fields.content_description.trim()
+  if (derivedContent && (isGeneric || isPrefixOfDerived)) {
+    contentDescription = derivedContent
+  } else if (trimmedFieldContent && !isGeneric) {
+    contentDescription = trimmedFieldContent
   } else if (derivedContent) {
     contentDescription = derivedContent
-  } else if (fields.content_description) {
-    contentDescription = fields.content_description.trim()
   } else {
-    contentDescription = ''
+    contentDescription = trimmedFieldContent
   }
 
   let parcelsList = []
@@ -972,17 +976,22 @@ export const saveBooking = async (req, res) => {
     const parsedInvoiceItems = Array.isArray(fields.invoice_items)
       ? fields.invoice_items
       : (typeof fields.invoice_items === 'string' ? (JSON.parse(fields.invoice_items || '[]') || []) : [])
-    const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => i.description).filter(Boolean) : []
+    const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => (i.description || '').trim()).filter(Boolean) : []
     const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
+
+    const trimmedFieldContent = (fields.content_description || '').trim()
+    const isGeneric = !trimmedFieldContent || ['general goods', 'items / goods inside', 'goods', 'sample', 'gift'].includes(trimmedFieldContent.toLowerCase())
+    const isPrefixOfDerived = derivedContent && trimmedFieldContent && derivedContent.toLowerCase().startsWith(trimmedFieldContent.toLowerCase()) && derivedContent.length > trimmedFieldContent.length
+
     let contentDescription = ''
-    if (fields.content_description && !['general goods', 'items / goods inside', 'goods'].includes(fields.content_description.trim().toLowerCase())) {
-      contentDescription = fields.content_description.trim()
+    if (derivedContent && (isGeneric || isPrefixOfDerived)) {
+      contentDescription = derivedContent
+    } else if (trimmedFieldContent && !isGeneric) {
+      contentDescription = trimmedFieldContent
     } else if (derivedContent) {
       contentDescription = derivedContent
-    } else if (fields.content_description) {
-      contentDescription = fields.content_description.trim()
     } else {
-      contentDescription = ''
+      contentDescription = trimmedFieldContent
     }
 
     const parsedParcelsList = normalizeParcels(fields.parcels, fields.weight, fields.length, fields.breadth, fields.height)
@@ -1643,16 +1652,17 @@ export const pushBookingToApi = async (req, res) => {
     )
 
     if (vendorResult.success) {
-      // Success → update status to booked, lock the booking
+      // Success → update status to booked, lock the booking, record pushed_at and ensure content_description is full
+      const resolvedPushContent = shipmentDataForVendor.content_description || booking.content_description || ''
       try {
         await execute(
-          `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ?, pushed_at = NOW() WHERE id = ?`,
-          [targetVendorCode, targetServiceCode, targetProductCode, id]
+          `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ?, pushed_at = NOW(), content_description = ? WHERE id = ?`,
+          [targetVendorCode, targetServiceCode, targetProductCode, resolvedPushContent, id]
         )
       } catch (colErr) {
         await execute(
-          `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ? WHERE id = ?`,
-          [targetVendorCode, targetServiceCode, targetProductCode, id]
+          `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ?, content_description = ? WHERE id = ?`,
+          [targetVendorCode, targetServiceCode, targetProductCode, resolvedPushContent, id]
         )
       }
 
@@ -1808,17 +1818,22 @@ export const createBooking = async (req, res) => {
     const parsedInvoiceItems = Array.isArray(fields.invoice_items)
       ? fields.invoice_items
       : (typeof fields.invoice_items === 'string' ? (JSON.parse(fields.invoice_items || '[]') || []) : [])
-    const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => i.description).filter(Boolean) : []
+    const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => (i.description || '').trim()).filter(Boolean) : []
     const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
+
+    const trimmedFieldContent = (fields.content_description || '').trim()
+    const isGeneric = !trimmedFieldContent || ['general goods', 'items / goods inside', 'goods', 'sample', 'gift'].includes(trimmedFieldContent.toLowerCase())
+    const isPrefixOfDerived = derivedContent && trimmedFieldContent && derivedContent.toLowerCase().startsWith(trimmedFieldContent.toLowerCase()) && derivedContent.length > trimmedFieldContent.length
+
     let contentDescription = ''
-    if (fields.content_description && !['general goods', 'items / goods inside', 'goods'].includes(fields.content_description.trim().toLowerCase())) {
-      contentDescription = fields.content_description.trim()
+    if (derivedContent && (isGeneric || isPrefixOfDerived)) {
+      contentDescription = derivedContent
+    } else if (trimmedFieldContent && !isGeneric) {
+      contentDescription = trimmedFieldContent
     } else if (derivedContent) {
       contentDescription = derivedContent
-    } else if (fields.content_description) {
-      contentDescription = fields.content_description.trim()
     } else {
-      contentDescription = ''
+      contentDescription = trimmedFieldContent
     }
 
     // Validate content before pushing to vendor API
@@ -2345,11 +2360,13 @@ export const getBookings = async (req, res) => {
     const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 10))
     const offset = (pageNum - 1) * limitNum
 
-    const allowedSortColumns = ['created_at', 'order_id', 'tracking_number', 'status', 'total_amount']
+    const allowedSortColumns = ['created_at', 'order_id', 'tracking_number', 'status', 'total_amount', 'pushed_at']
     const safeSortBy = allowedSortColumns.includes(sort_by) ? sort_by : 'created_at'
     const safeSortOrder = sort_order === 'asc' ? 'ASC' : 'DESC'
 
     const cols = await getSafeTableColumns()
+    const hasPushedAt = Boolean(cols?.s?.has('pushed_at'))
+    const dateExpr = hasPushedAt ? 'COALESCE(s.pushed_at, s.created_at)' : 's.created_at'
 
     let whereConditions = []
     const params = []
@@ -2488,13 +2505,13 @@ export const getBookings = async (req, res) => {
       }
     }
 
-    // Date range filters
+    // Date range filters — match on push date for pushed shipments, or created date for drafts
     if (from_date && from_date.trim()) {
-      whereConditions.push('s.created_at >= ?')
+      whereConditions.push(`${dateExpr} >= ?`)
       params.push(`${from_date.trim()} 00:00:00`)
     }
     if (to_date && to_date.trim()) {
-      whereConditions.push('s.created_at <= ?')
+      whereConditions.push(`${dateExpr} <= ?`)
       params.push(`${to_date.trim()} 23:59:59`)
     }
 
@@ -2557,6 +2574,10 @@ export const getBookings = async (req, res) => {
           }
         }
         if (cols.s.has('created_at')) {
+          if (hasPushedAt) {
+            activeFields.push("CONVERT(DATE_FORMAT(COALESCE(s.pushed_at, s.created_at), '%d/%m/%Y') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
+            activeFields.push("CONVERT(DATE_FORMAT(COALESCE(s.pushed_at, s.created_at), '%Y-%m-%d') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
+          }
           activeFields.push("CONVERT(DATE_FORMAT(s.created_at, '%d/%m/%Y') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
           activeFields.push("CONVERT(DATE_FORMAT(s.created_at, '%Y-%m-%d') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
         }
@@ -2662,7 +2683,7 @@ export const getBookings = async (req, res) => {
        LEFT JOIN courier_providers cp ON s.courier_provider_id = cp.id
        LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
        ${whereClause}
-       ORDER BY s.${safeSortBy} ${safeSortOrder}
+       ORDER BY ${safeSortBy === 'created_at' ? `${dateExpr} ${safeSortOrder}, s.id ${safeSortOrder}` : `s.${safeSortBy} ${safeSortOrder}`}
        LIMIT ${limitNum} OFFSET ${offset}`,
       params
     )

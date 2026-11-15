@@ -1054,8 +1054,16 @@ export default function BookingsPage() {
                             <CopyButton text={b.tracking_number} label="Our AWB copied!" />
                           )}
                         </div>
-                        <div className="text-[11px] font-medium text-text-tertiary mt-0.5">
-                          {formatDateDDMMYYYY(b.created_at || b.booking_date)}
+                        <div
+                          className="text-[11px] font-medium text-text-tertiary mt-0.5 flex items-center gap-1"
+                          title={b.pushed_at ? `Push Date: ${formatDateDDMMYYYY(b.pushed_at)} (Draft created: ${formatDateDDMMYYYY(b.created_at || b.booking_date)})` : ''}
+                        >
+                          <span>{formatDateDDMMYYYY(b.pushed_at || b.created_at || b.booking_date)}</span>
+                          {b.pushed_at && b.created_at && formatDateDDMMYYYY(b.pushed_at) !== formatDateDDMMYYYY(b.created_at) && (
+                            <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                              Pushed
+                            </span>
+                          )}
                         </div>
                       </td>
 

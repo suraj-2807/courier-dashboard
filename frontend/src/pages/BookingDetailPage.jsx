@@ -617,7 +617,7 @@ export default function BookingDetailPage() {
               Shipment Details
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-x-5 gap-y-4">
-              <InfoField icon={Calendar} label="Booked On" value={formatDate(booking.created_at)} />
+              <InfoField icon={Calendar} label={booking.pushed_at ? "Pushed On" : "Booked On"} value={formatDate(booking.pushed_at || booking.created_at)} />
               <InfoField
                 icon={User}
                 label="Customer / Account"

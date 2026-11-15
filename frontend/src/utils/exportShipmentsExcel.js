@@ -166,6 +166,7 @@ export function exportShipmentsToExcel(shipments = [], fileName = '') {
       'Booking Date': s.booking_date || (s.created_at ? s.created_at.split('T')[0] : '—'),
       'Booking Time': s.booking_time || '—',
       'Created At': s.created_at ? new Date(s.created_at).toLocaleString() : '—',
+      'Pushed At': s.pushed_at ? new Date(s.pushed_at).toLocaleString() : '—',
       'Updated At': s.updated_at ? new Date(s.updated_at).toLocaleString() : '—'
     }
   })
