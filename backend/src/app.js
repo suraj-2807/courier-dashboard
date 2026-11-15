@@ -32,6 +32,14 @@ app.use((req, res, next) => {
   next()
 })
 
+// Automatically rewrite accidental duplicate /api/api/ to /api/
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api/api/')) {
+    req.url = req.url.replace(/^\/api\/api\//, '/api/')
+  }
+  next()
+})
+
 app.use('/api', routes)
 
 // Serve uploads (e.g. vendor label PDFs)

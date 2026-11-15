@@ -56,6 +56,13 @@ const upload = multer({
 })
 
 // Document Upload endpoint for KYC documents (accepts field name 'document' or 'file')
+router.get('/upload-document', (req, res) => {
+  return res.json({
+    success: true,
+    message: 'KYC Document upload endpoint is active. Use POST with multipart/form-data.'
+  })
+})
+
 router.post('/upload-document', upload.fields([{ name: 'document', maxCount: 1 }, { name: 'file', maxCount: 1 }]), (req, res) => {
   const file = req.files?.document?.[0] || req.files?.file?.[0] || req.file
   if (!file) {

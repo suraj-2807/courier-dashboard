@@ -16,5 +16,8 @@ export const bookingsApi = {
   trash: (ids) => api.post('/bookings/trash', { ids: Array.isArray(ids) ? ids : [ids] }),
   restore: (ids) => api.post('/bookings/restore', { ids: Array.isArray(ids) ? ids : [ids] }),
   deletePermanent: (ids) => api.post('/bookings/delete-permanent', { ids: Array.isArray(ids) ? ids : [ids] }),
-  clone: (id) => api.post(`/bookings/${id}/clone`)
+  clone: (id) => api.post(`/bookings/${id}/clone`),
+  uploadDocument: (formData) => api.post('/bookings/upload-document', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
 }

@@ -223,7 +223,7 @@ export default function NewBookingPage() {
     try {
       const fd = new FormData()
       fd.append('document', file)
-      const res = await api.post('/api/bookings/upload-document', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const res = await bookingsApi.uploadDocument(fd)
       if (res.data?.success) {
         setKycFileName(file.name)
         setForm(prev => ({
