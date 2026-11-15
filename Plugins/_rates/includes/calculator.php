@@ -1175,7 +1175,7 @@ class RateCalculator {
 
             // 0. RATE DATA matrix services explicitly for this destination
             try {
-                $matSql = "SELECT DISTINCT service_code, service_name, 'matrix' as rate_type 
+                $matSql = "SELECT DISTINCT service_code, service_name, duty_paid, 'matrix' as rate_type 
                            FROM vendor_rate_matrix 
                            WHERE vendor_id = ? AND batch_id = ? 
                              AND (destination IN ({$placeholders}) OR LOWER(TRIM(destination)) = LOWER(?))";

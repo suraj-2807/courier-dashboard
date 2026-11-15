@@ -40,7 +40,10 @@ import {
   RefreshCw,
   Sparkles,
   AlertCircle,
-  TrendingUp
+  TrendingUp,
+  Upload,
+  X,
+  FileCheck
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -162,7 +165,13 @@ const INITIAL_FORM = {
   otp: '',
   lsp_type: '',
   required_performa: '',
-  required_label: ''
+  required_label: '',
+  // KYC Document
+  kyc_file_url: '',
+  kyc_doc_name: '',
+  kyc_file_url_2: '',
+  kyc_doc_name_2: '',
+  kyc_details: null
 }
 
 export default function NewBookingPage() {
@@ -197,6 +206,48 @@ export default function NewBookingPage() {
   const [parcels, setParcels] = useState([
     { parcel_no: 1, box_no: '1', weight: '', length: '', breadth: '', height: '', volumetric_weight: '', chargeable_weight: '' }
   ])
+
+  // KYC Document upload state
+  const [kycUploading, setKycUploading] = useState(false)
+  const [kycFileName, setKycFileName] = useState('')
+
+  const handleKycUpload = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setKycUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('document', file)
+      const res = await api.post('/api/bookings/upload-document', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      if (res.data?.success) {
+        setKycFileName(file.name)
+        setForm(prev => ({
+          ...prev,
+          kyc_file_url: res.data.fileUrl,
+          kyc_doc_name: file.name,
+          kyc_details: JSON.stringify([{
+            document_type: 'KYC',
+            document_no: '',
+            document_sub_type: 'doc_1',
+            document_name: file.name,
+            file_path: `https://admin.princeexp.com${res.data.fileUrl}`
+          }])
+        }))
+        toast.success(`KYC document uploaded: ${file.name}`)
+      } else {
+        toast.error('KYC upload failed')
+      }
+    } catch (err) {
+      toast.error('KYC upload error: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setKycUploading(false)
+    }
+  }
+
+  const removeKycDoc = () => {
+    setKycFileName('')
+    setForm(prev => ({ ...prev, kyc_file_url: '', kyc_doc_name: '', kyc_details: null }))
+  }
 
   // Invoice items state — default unit_type from last invoice if available
   const getLastUsedUnitType = () => {
@@ -633,8 +684,20 @@ export default function NewBookingPage() {
       extra_charge: String(b.extra_charge || ''),
       final_chargeable_weight: String(b.final_chargeable_weight || b.chargeable_weight || ''),
       order_reference: b.order_reference || '',
-      remarks: b.remarks || ''
+      remarks: b.remarks || '',
+      kyc_file_url: b.kyc_file_url || '',
+      kyc_doc_name: b.kyc_doc_name || '',
+      kyc_file_url_2: b.kyc_file_url_2 || '',
+      kyc_doc_name_2: b.kyc_doc_name_2 || '',
+      kyc_details: b.kyc_details || null,
+      duty_paid: b.duty_paid || '',
+      is_remote: b.is_remote || '',
+      remote_status: b.remote_status || ''
     }))
+
+    if (b.kyc_doc_name || b.kyc_file_url) {
+      setKycFileName(b.kyc_doc_name || 'Attached Document')
+    }
 
     if (b.final_chargeable_weight || b.chargeable_weight) {
       setFinalChargeableWeight(String(b.final_chargeable_weight || b.chargeable_weight))
@@ -936,16 +999,23 @@ export default function NewBookingPage() {
       if (countryServicesData?.ok) {
         const apiServices = Array.isArray(countryServicesData.services) ? countryServicesData.services : []
         if (apiServices.length > 0) {
-          return apiServices.map(s => {
+          // Map API services and enrich with vendor service labels + duty_paid
+          const mapped = apiServices.map(s => {
             const matching = vendorServices.find(vs => vs.code?.toUpperCase() === s.service_code?.toUpperCase())
             return {
               code: s.service_code,
               label: matching?.label || s.service_name || s.service_code,
-              rate_type: s.rate_type
+              rate_type: s.rate_type,
+              duty_paid: s.duty_paid || ''
             }
           })
+          // Merge in any vendor services not already in the API result
+          const apiCodes = new Set(mapped.map(s => s.code?.toUpperCase()))
+          const extraVendor = vendorServices.filter(vs => !apiCodes.has(vs.code?.toUpperCase()))
+          return [...mapped, ...extraVendor]
         }
-        return []
+        // API returned ok but no services for this country — fallback to vendor services
+        return vendorServices
       }
     }
     return vendorServices
@@ -1074,7 +1144,10 @@ export default function NewBookingPage() {
         setForm(prev => ({
           ...prev,
           shipping_charge: String(res.vendor_rate),
-          rate_per_kg: res.rate_per_kg ? String(res.rate_per_kg) : prev.rate_per_kg
+          rate_per_kg: res.rate_per_kg ? String(res.rate_per_kg) : prev.rate_per_kg,
+          duty_paid: res.duty_paid || '',
+          is_remote: res.is_remote || '',
+          remote_status: res.remote_status || ''
         }))
         if (showToast) {
           const profitNotice = res.profit_margin_amount > 0 ? ` (+₹${res.profit_margin_amount} profit added)` : ''
@@ -2253,6 +2326,28 @@ export default function NewBookingPage() {
                     />
                   </CompactField>
                 </div>
+
+                {/* KYC Document Upload (Optional) */}
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5 flex items-center gap-1">
+                    <FileCheck className="w-3 h-3" /> KYC Document <span className="text-gray-400 font-normal">(Optional)</span>
+                  </label>
+                  {kycFileName || form.kyc_file_url ? (
+                    <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                      <FileCheck className="w-4 h-4 text-green-600 shrink-0" />
+                      <span className="text-xs text-green-800 truncate flex-1">{kycFileName || form.kyc_doc_name || 'Document uploaded'}</span>
+                      <button type="button" onClick={removeKycDoc} className="text-red-400 hover:text-red-600 transition-colors">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className={`flex items-center gap-2 cursor-pointer bg-gray-50 hover:bg-blue-50 border border-dashed border-gray-300 hover:border-blue-400 rounded-lg px-3 py-2 transition-colors ${kycUploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                      {kycUploading ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Upload className="w-4 h-4 text-gray-400" />}
+                      <span className="text-xs text-gray-500">{kycUploading ? 'Uploading...' : 'Click to upload KYC document'}</span>
+                      <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" onChange={handleKycUpload} disabled={kycUploading} />
+                    </label>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -2574,7 +2669,7 @@ export default function NewBookingPage() {
                             <option value="">— Select Service —</option>
                             {countryFilteredServices.map((svc, i) => (
                               <option key={i} value={svc.code}>
-                                {svc.code} {svc.label && svc.label !== svc.code ? `— ${svc.label}` : ''}
+                                {svc.code} {svc.label && svc.label !== svc.code ? `— ${svc.label}` : ''}{svc.duty_paid === 'Yes' ? ' 🛡️ DDP' : ''}
                               </option>
                             ))}
                             <option value="__custom__">Custom Service Code...</option>

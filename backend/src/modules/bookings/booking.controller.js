@@ -221,7 +221,17 @@ function extractBookingFields(body) {
     // Invoice items (JSON array)
     invoice_items: body.invoice_items,
     invoice_type: body.invoice_type,
-    invoice_note: body.invoice_note
+    invoice_note: body.invoice_note,
+    // KYC Document fields
+    kyc_file_url: body.kyc_file_url,
+    kyc_doc_name: body.kyc_doc_name,
+    kyc_file_url_2: body.kyc_file_url_2,
+    kyc_doc_name_2: body.kyc_doc_name_2,
+    kyc_details: body.kyc_details,
+    // Duty Paid & Remote status
+    duty_paid: body.duty_paid,
+    is_remote: body.is_remote,
+    remote_status: body.remote_status
   }
 }
 
@@ -904,6 +914,13 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     parcels: parcelsList,
     invoice_items: invoiceItemsList,
     kyc_details: fields.kyc_details,
+    kyc_file_url: fields.kyc_file_url || '',
+    kyc_doc_name: fields.kyc_doc_name || '',
+    kyc_file_url_2: fields.kyc_file_url_2 || '',
+    kyc_doc_name_2: fields.kyc_doc_name_2 || '',
+    duty_paid: fields.duty_paid || '',
+    is_remote: fields.is_remote || '',
+    remote_status: fields.remote_status || '',
     multiple_invoice: fields.multiple_invoice,
     chargeable_weight: chargeableWeight,
     final_chargeable_weight: chargeableWeight,
@@ -1176,7 +1193,9 @@ export const saveBooking = async (req, res) => {
           receiver_address = ?, receiver_address_2 = ?, receiver_city = ?, receiver_state = ?,
           receiver_pincode = ?, receiver_country = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
           invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
-          invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?
+          invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?,
+          kyc_file_url = ?, kyc_doc_name = ?, kyc_file_url_2 = ?, kyc_doc_name_2 = ?,
+          kyc_details = ?, duty_paid = ?, is_remote = ?, remote_status = ?
         WHERE id = ?`,
         [
           fields.customer_id || null,
@@ -1241,6 +1260,14 @@ export const saveBooking = async (req, res) => {
           fields.invoice_note || '',
           invoiceItemsJson,
           parcelsJson,
+          fields.kyc_file_url || '',
+          fields.kyc_doc_name || '',
+          fields.kyc_file_url_2 || '',
+          fields.kyc_doc_name_2 || '',
+          fields.kyc_details ? (typeof fields.kyc_details === 'string' ? fields.kyc_details : JSON.stringify(fields.kyc_details)) : null,
+          fields.duty_paid || '',
+          fields.is_remote || '',
+          fields.remote_status || '',
           shipmentId
         ]
       )
@@ -1269,8 +1296,10 @@ export const saveBooking = async (req, res) => {
           receiver_address, receiver_address_2, receiver_city, receiver_state,
           receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
-          invoice_type, invoice_note, invoice_items, parcels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          invoice_type, invoice_note, invoice_items, parcels,
+          kyc_file_url, kyc_doc_name, kyc_file_url_2, kyc_doc_name_2,
+          kyc_details, duty_paid, is_remote, remote_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
           fields.customer_id || null,
@@ -1340,7 +1369,15 @@ export const saveBooking = async (req, res) => {
           fields.invoice_type || 'INVOICE',
           fields.invoice_note || '',
           invoiceItemsJson,
-          parcelsJson
+          parcelsJson,
+          fields.kyc_file_url || '',
+          fields.kyc_doc_name || '',
+          fields.kyc_file_url_2 || '',
+          fields.kyc_doc_name_2 || '',
+          fields.kyc_details ? (typeof fields.kyc_details === 'string' ? fields.kyc_details : JSON.stringify(fields.kyc_details)) : null,
+          fields.duty_paid || '',
+          fields.is_remote || '',
+          fields.remote_status || ''
         ]
       )
       shipmentId = shipmentResult.insertId
@@ -1858,7 +1895,9 @@ export const createBooking = async (req, res) => {
           receiver_address = ?, receiver_address_2 = ?, receiver_city = ?, receiver_state = ?,
           receiver_pincode = ?, receiver_country = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
           invoice_no = ?, invoice_date = ?, invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
-          invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?
+          invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?,
+          kyc_file_url = ?, kyc_doc_name = ?, kyc_file_url_2 = ?, kyc_doc_name_2 = ?,
+          kyc_details = ?, duty_paid = ?, is_remote = ?, remote_status = ?
         WHERE id = ?`,
         [
           fields.customer_id || null,
@@ -1927,6 +1966,14 @@ export const createBooking = async (req, res) => {
           fields.invoice_note || '',
           invoiceItemsJson,
           parcelsJson,
+          fields.kyc_file_url || '',
+          fields.kyc_doc_name || '',
+          fields.kyc_file_url_2 || '',
+          fields.kyc_doc_name_2 || '',
+          fields.kyc_details ? (typeof fields.kyc_details === 'string' ? fields.kyc_details : JSON.stringify(fields.kyc_details)) : null,
+          fields.duty_paid || '',
+          fields.is_remote || '',
+          fields.remote_status || '',
           shipmentId
         ]
       )
@@ -1955,8 +2002,10 @@ export const createBooking = async (req, res) => {
           receiver_address, receiver_address_2, receiver_city, receiver_state,
           receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no,
           invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
-          invoice_type, invoice_note, invoice_items, parcels
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          invoice_type, invoice_note, invoice_items, parcels,
+          kyc_file_url, kyc_doc_name, kyc_file_url_2, kyc_doc_name_2,
+          kyc_details, duty_paid, is_remote, remote_status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           order_id,
           fields.customer_id || null,
@@ -2026,7 +2075,15 @@ export const createBooking = async (req, res) => {
           fields.invoice_type || 'INVOICE',
           fields.invoice_note || '',
           invoiceItemsJson,
-          parcelsJson
+          parcelsJson,
+          fields.kyc_file_url || '',
+          fields.kyc_doc_name || '',
+          fields.kyc_file_url_2 || '',
+          fields.kyc_doc_name_2 || '',
+          fields.kyc_details ? (typeof fields.kyc_details === 'string' ? fields.kyc_details : JSON.stringify(fields.kyc_details)) : null,
+          fields.duty_paid || '',
+          fields.is_remote || '',
+          fields.remote_status || ''
         ]
       )
 

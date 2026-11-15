@@ -43,7 +43,8 @@ import {
   DollarSign,
   Receipt,
   Tag,
-  Share2
+  Share2,
+  FileCheck
 } from 'lucide-react'
 import StatusBadge from '../components/ui/StatusBadge'
 import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters'
@@ -803,6 +804,8 @@ export default function BookingDetailPage() {
               fallbackCountry={liveTracking?.shipmentInfo?.originCountry}
               iconBg="bg-blue-50"
               iconColor="text-blue-600"
+              kycUrl={booking?.kyc_file_url}
+              kycDocName={booking?.kyc_doc_name}
             />
             <PersonCard
               title="Destination — Receiver"
@@ -1170,6 +1173,28 @@ function VendorResponseCard({ booking, vendorConfig, liveTracking }) {
           <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-1">Service Code</p>
           <p className="text-[13px] font-bold text-text-primary">{booking.service_code || '—'}</p>
         </div>
+        {booking.duty_paid && (
+          <div>
+            <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-1">Duty Paid</p>
+            <span className="inline-flex items-center gap-1 text-[12px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+              🛡️ {booking.duty_paid}
+            </span>
+          </div>
+        )}
+        {booking.remote_status && booking.remote_status !== 'NONE' && (
+          <div>
+            <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-1">Remote Area Status</p>
+            <span className={`inline-flex items-center gap-1 text-[12px] font-bold px-2 py-0.5 rounded-full border ${
+              booking.remote_status === 'YES' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+              booking.remote_status === 'BOTH' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+              'bg-green-50 text-green-800 border-green-200'
+            }`}>
+              {booking.remote_status === 'YES' && '⚠️ Remote Area (Yes)'}
+              {booking.remote_status === 'BOTH' && 'ℹ️ Conditional (Both)'}
+              {booking.remote_status === 'NO' && '✓ Non-Remote (No)'}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Error message for failed pushes */}
@@ -1206,7 +1231,7 @@ function VendorResponseCard({ booking, vendorConfig, liveTracking }) {
   )
 }
 
-function PersonCard({ title, icon: Icon, person, fallbackName, fallbackCity, fallbackCountry, iconBg, iconColor }) {
+function PersonCard({ title, icon: Icon, person, fallbackName, fallbackCity, fallbackCountry, iconBg, iconColor, kycUrl, kycDocName }) {
   const name = person?.name || fallbackName || person?.company
   const company = person?.company && person?.company !== name ? person?.company : ''
   const address = person?.address
@@ -1275,6 +1300,20 @@ function PersonCard({ title, icon: Icon, person, fallbackName, fallbackCity, fal
             <p className="text-[11px] text-text-tertiary font-mono pt-1">
               <span className="font-bold">{gstinType || 'Tax ID / GST'}:</span> {gstinNo}
             </p>
+          )}
+          {kycUrl && (
+            <div className="pt-2 mt-2 border-t border-border/60 flex items-center justify-between">
+              <span className="text-[11px] font-bold text-text-tertiary uppercase">KYC Document</span>
+              <a
+                href={kycUrl.startsWith('http') ? kycUrl : `https://admin.princeexp.com${kycUrl}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs text-primary font-bold hover:underline bg-primary/5 px-2 py-1 rounded"
+              >
+                <FileCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span className="truncate max-w-[140px]">{kycDocName || 'View Document'}</span>
+              </a>
+            </div>
           )}
         </div>
       </div>

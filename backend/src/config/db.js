@@ -199,7 +199,15 @@ export async function initializeDb() {
       { name: 'vendor_rate', type: "DECIMAL(12,2) DEFAULT 0.00" },
       { name: 'vendor_invoice_url', type: "VARCHAR(500) DEFAULT ''" },
       { name: 'vendor_box_label_url', type: "VARCHAR(500) DEFAULT ''" },
-      { name: 'vendor_shipper_copy_url', type: "VARCHAR(500) DEFAULT ''" }
+      { name: 'vendor_shipper_copy_url', type: "VARCHAR(500) DEFAULT ''" },
+      { name: 'kyc_file_url', type: "VARCHAR(500) DEFAULT ''" },
+      { name: 'kyc_doc_name', type: "VARCHAR(255) DEFAULT ''" },
+      { name: 'kyc_file_url_2', type: "VARCHAR(500) DEFAULT ''" },
+      { name: 'kyc_doc_name_2', type: "VARCHAR(255) DEFAULT ''" },
+      { name: 'kyc_details', type: "JSON DEFAULT NULL" },
+      { name: 'duty_paid', type: "VARCHAR(50) DEFAULT ''" },
+      { name: 'is_remote', type: "TINYINT(1) DEFAULT 0" },
+      { name: 'remote_status', type: "VARCHAR(50) DEFAULT 'NONE'" }
     ]
 
     for (const col of requiredShipmentCols) {
