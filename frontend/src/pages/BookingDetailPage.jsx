@@ -1195,6 +1195,14 @@ function VendorResponseCard({ booking, vendorConfig, liveTracking }) {
             </span>
           </div>
         )}
+        {booking.destination_variant && (
+          <div>
+            <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-1">Destination Option</p>
+            <span className="inline-flex items-center gap-1 text-[12px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-800 border border-indigo-200">
+              🏷️ {booking.destination_variant}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Error message for failed pushes */}

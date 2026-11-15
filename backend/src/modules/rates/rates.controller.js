@@ -104,6 +104,7 @@ export const calculateVendorRate = async (req, res) => {
     const params = { ...(req.body || {}), ...(req.query || {}) }
     const vendor = params.vendor || params.vendor_code || 'pacific'
     const country = params.country || params.receiver_country || ''
+    const destination = params.destination || params.destination_variant || params.variant || ''
     const service_code = params.service_code || params.service || ''
     const weight = params.weight_kg !== undefined ? params.weight_kg : (params.weight || 1)
     const postcode = params.postcode || params.pincode || params.zipcode || params.receiver_pincode || ''
@@ -128,6 +129,7 @@ export const calculateVendorRate = async (req, res) => {
     const result = await ratesApiService.calculateRate({
       vendor,
       country,
+      destination,
       service_code,
       weight: parseFloat(weight),
       postcode,
@@ -177,7 +179,8 @@ export const getServices = async (req, res) => {
   try {
     const vendor = req.query.vendor || req.params.vendorCode || 'pacific'
     const country = req.query.country || ''
-    const data = await ratesApiService.getServices({ vendor, country })
+    const destination = req.query.destination || ''
+    const data = await ratesApiService.getServices({ vendor, country, destination })
     return res.json(data)
   } catch (error) {
     console.error('Error fetching services:', error)

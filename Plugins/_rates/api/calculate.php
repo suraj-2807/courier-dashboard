@@ -14,6 +14,7 @@ try {
     // Resolve inputs from JSON body, POST, or GET
     $vendorSlug = trim((string)($json['vendor'] ?? ($_POST['vendor'] ?? ($_GET['vendor'] ?? ''))));
     $country = trim((string)($json['country'] ?? ($_POST['country'] ?? ($_GET['country'] ?? ''))));
+    $destination = clean($json['destination'] ?? ($json['destination_variant'] ?? ($json['variant'] ?? ($_POST['destination'] ?? ($_GET['destination'] ?? null)))));
     $serviceCode = trim((string)($json['service_code'] ?? ($_POST['service_code'] ?? ($_GET['service_code'] ?? ''))));
     $postcode = clean($json['postcode'] ?? ($_POST['postcode'] ?? ($_GET['postcode'] ?? null)));
     $state = clean($json['state'] ?? ($_POST['state'] ?? ($_GET['state'] ?? null)));
@@ -46,7 +47,7 @@ try {
     }
 
     $calc = new RateCalculator($pdo, (int)$v['id'], $batchId, $v['name']);
-    $result = $calc->calculate($country, $serviceCode, $weightKg, $postcode, $state);
+    $result = $calc->calculate($country, $serviceCode, $weightKg, $postcode, $state, $destination);
 
     if (empty($result['success'])) {
         apiRespond(422, [

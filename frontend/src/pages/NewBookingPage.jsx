@@ -171,7 +171,12 @@ const INITIAL_FORM = {
   kyc_doc_name: '',
   kyc_file_url_2: '',
   kyc_doc_name_2: '',
-  kyc_details: null
+  kyc_details: null,
+  // Rate sheet destination variant
+  destination_variant: '',
+  duty_paid: '',
+  is_remote: '',
+  remote_status: ''
 }
 
 export default function NewBookingPage() {
@@ -985,15 +990,60 @@ export default function NewBookingPage() {
   const vendorCode = selectedVendor?.vendor_code || (isPacificVendor ? 'pacific' : (selectedVendor?.name?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'pacific'))
   const destCountry = (form.receiver_country || '').trim()
 
+  const [selectedDestinationVariant, setSelectedDestinationVariant] = useState(form.destination_variant || '')
+
   // Fetch destination country services for this vendor from Rates API
   const { data: countryServicesData } = useQuery({
-    queryKey: ['rates-country-services', vendorCode, destCountry],
-    queryFn: () => getVendorServices(vendorCode, destCountry),
+    queryKey: ['rates-country-services', vendorCode, destCountry, selectedDestinationVariant],
+    queryFn: () => getVendorServices(vendorCode, destCountry, selectedDestinationVariant),
     enabled: Boolean(form.vendor_config_id && destCountry && isRatesApiEnabled),
     staleTime: 60 * 1000
   })
 
-  // Services dropdown strictly filtered to vendor's available services for that destination country
+  // Extract destination variants / bracket data from rate sheet (e.g. Kenya vs Kenya(Duty Paid), Tanzania variants)
+  const destinationVariants = useMemo(() => {
+    if (countryServicesData?.ok && Array.isArray(countryServicesData.destination_variants)) {
+      return countryServicesData.destination_variants
+    }
+    return []
+  }, [countryServicesData])
+
+  // Automatically sync selectedDestinationVariant with available variants
+  useEffect(() => {
+    if (destinationVariants.length > 0) {
+      const matchExisting = destinationVariants.find(v => v.destination === form.destination_variant || v.destination === selectedDestinationVariant)
+      if (matchExisting) {
+        if (selectedDestinationVariant !== matchExisting.destination) {
+          setSelectedDestinationVariant(matchExisting.destination)
+        }
+      } else {
+        const std = destinationVariants.find(v => v.label === 'Standard') || destinationVariants[0]
+        setSelectedDestinationVariant(std.destination)
+        updateForm('destination_variant', std.destination)
+      }
+    } else {
+      setSelectedDestinationVariant('')
+      if (form.destination_variant) {
+        updateForm('destination_variant', '')
+      }
+    }
+  }, [destCountry, destinationVariants])
+
+  const handleVariantChange = (newDest) => {
+    setSelectedDestinationVariant(newDest)
+    updateForm('destination_variant', newDest)
+    const matchingVariant = destinationVariants.find(v => v.destination === newDest)
+    if (matchingVariant?.is_duty_paid) {
+      updateForm('duty_paid', 'Yes')
+    } else if (matchingVariant) {
+      updateForm('duty_paid', '')
+    }
+    if (matchingVariant?.services?.length > 0) {
+      updateForm('service_code', matchingVariant.services[0])
+    }
+  }
+
+  // Services dropdown strictly filtered to vendor's available services for that destination country and variant
   const countryFilteredServices = useMemo(() => {
     if (isRatesApiEnabled && destCountry) {
       if (countryServicesData?.ok) {
@@ -1009,17 +1059,26 @@ export default function NewBookingPage() {
               duty_paid: s.duty_paid || ''
             }
           })
+          // If a destination variant is selected and has specific services, prioritize those
+          const activeVariant = destinationVariants.find(v => v.destination === selectedDestinationVariant)
+          let prioritized = mapped
+          if (activeVariant?.services?.length > 0) {
+            const variantSvcs = mapped.filter(s => activeVariant.services.includes(s.code))
+            if (variantSvcs.length > 0) {
+              prioritized = variantSvcs
+            }
+          }
           // Merge in any vendor services not already in the API result
-          const apiCodes = new Set(mapped.map(s => s.code?.toUpperCase()))
+          const apiCodes = new Set(prioritized.map(s => s.code?.toUpperCase()))
           const extraVendor = vendorServices.filter(vs => !apiCodes.has(vs.code?.toUpperCase()))
-          return [...mapped, ...extraVendor]
+          return [...prioritized, ...extraVendor]
         }
         // API returned ok but no services for this country — fallback to vendor services
         return vendorServices
       }
     }
     return vendorServices
-  }, [isRatesApiEnabled, destCountry, countryServicesData, vendorServices])
+  }, [isRatesApiEnabled, destCountry, countryServicesData, vendorServices, selectedDestinationVariant, destinationVariants])
 
   // Sync selected service_code when country or filtered services change
   useEffect(() => {
@@ -1133,6 +1192,8 @@ export default function NewBookingPage() {
       const res = await calculateVendorRate({
         vendor_code: vendorCode,
         country: destCountry,
+        destination: selectedDestinationVariant || form.destination_variant || '',
+        destination_variant: selectedDestinationVariant || form.destination_variant || '',
         service_code: form.service_code || '',
         weight: chgWt,
         postcode: form.receiver_pincode || form.receiver_state || '',
@@ -1145,7 +1206,7 @@ export default function NewBookingPage() {
           ...prev,
           shipping_charge: String(res.vendor_rate),
           rate_per_kg: res.rate_per_kg ? String(res.rate_per_kg) : prev.rate_per_kg,
-          duty_paid: res.duty_paid || '',
+          duty_paid: res.duty_paid || prev.duty_paid || '',
           is_remote: res.is_remote || '',
           remote_status: res.remote_status || ''
         }))
@@ -1190,6 +1251,8 @@ export default function NewBookingPage() {
     takeRateFromSheet,
     form.vendor_config_id,
     form.receiver_country,
+    selectedDestinationVariant,
+    form.destination_variant,
     form.service_code,
     form.receiver_state,
     form.receiver_pincode,
@@ -2633,6 +2696,23 @@ export default function NewBookingPage() {
                       </CompactField>
                     )}
 
+                    {/* Rate Sheet Destination Option Dropdown — Rendered automatically when a country has multiple options in the sheet */}
+                    {destinationVariants.length > 1 && (
+                      <CompactField label="Rate Sheet Destination Option">
+                        <select
+                          value={selectedDestinationVariant || form.destination_variant || ''}
+                          onChange={e => handleVariantChange(e.target.value)}
+                          className="w-full bg-transparent focus:outline-none text-[13px] text-purple-900 font-bold cursor-pointer"
+                        >
+                          {destinationVariants.map((v, i) => (
+                            <option key={i} value={v.destination}>
+                              {v.label} {v.is_duty_paid ? '🛡️ (Duty Paid)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </CompactField>
+                    )}
+
                     {/* Service Code */}
                     {vendorRequiresField('service_code') && (
                       <CompactField label="Service Code">
@@ -2987,6 +3067,14 @@ export default function NewBookingPage() {
                                 <span className="text-gray-300">•</span>
                                 <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 border border-purple-200 font-bold text-[9px]">
                                   Duty: {rateSheetResult.duty_paid}
+                                </span>
+                              </>
+                            )}
+                            {(selectedDestinationVariant || form.destination_variant) && (
+                              <>
+                                <span className="text-gray-300">•</span>
+                                <span className="px-1.5 py-0.2 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold text-[9px]">
+                                  Option: {selectedDestinationVariant || form.destination_variant}
                                 </span>
                               </>
                             )}

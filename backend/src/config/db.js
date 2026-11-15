@@ -207,7 +207,8 @@ export async function initializeDb() {
       { name: 'kyc_details', type: "JSON DEFAULT NULL" },
       { name: 'duty_paid', type: "VARCHAR(50) DEFAULT ''" },
       { name: 'is_remote', type: "TINYINT(1) DEFAULT 0" },
-      { name: 'remote_status', type: "VARCHAR(50) DEFAULT 'NONE'" }
+      { name: 'remote_status', type: "VARCHAR(50) DEFAULT 'NONE'" },
+      { name: 'destination_variant', type: "VARCHAR(255) DEFAULT ''" }
     ]
 
     for (const col of requiredShipmentCols) {

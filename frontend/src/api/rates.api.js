@@ -20,8 +20,8 @@ export const getVendorCountries = (vendor = 'pacific') =>
 /**
  * 3. Get available services (optionally filtered by country)
  */
-export const getVendorServices = (vendor = 'pacific', country = '') =>
-  api.get('/rates/services', { params: { vendor, country } }).then((res) => res.data)
+export const getVendorServices = (vendor = 'pacific', country = '', destination = '') =>
+  api.get('/rates/services', { params: { vendor, country, destination } }).then((res) => res.data)
 
 /**
  * 4. Resolve destination postcode / state to shipping zone and town/city

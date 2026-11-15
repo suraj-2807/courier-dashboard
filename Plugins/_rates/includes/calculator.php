@@ -120,7 +120,7 @@ class RateCalculator {
         }
     }
 
-    public function calculate(string $country, string $serviceCode, float $weightKg, ?string $postcode = null, ?string $state = null): array {
+    public function calculate(string $country, string $serviceCode, float $weightKg, ?string $postcode = null, ?string $state = null, ?string $destination = null): array {
         // Step 1: Validate inputs
         if ($weightKg <= 0) {
             return $this->error('Weight must be greater than 0 kg.');
@@ -133,13 +133,14 @@ class RateCalculator {
         }
 
         $country = trim($country);
+        $destination = clean($destination);
         $serviceCode = trim($serviceCode);
         $postcode = clean($postcode);
         $state = clean($state);
 
         // Priority: If vendor batch contains RATE DATA matrix, calculate directly from matrix
         if ($this->hasMatrixRates()) {
-            return $this->calculateFromMatrix($country, $serviceCode, $weightKg, $postcode, $state);
+            return $this->calculateFromMatrix($country, $serviceCode, $weightKg, $postcode, $state, $destination);
         }
 
         // Step 2: Determine if this destination country uses zone-wise pricing
@@ -184,10 +185,19 @@ class RateCalculator {
         return $this->error("No rate data found for service '{$serviceCode}' to '{$country}'.");
     }
 
-    public function calculateFromMatrix(string $country, string $serviceCode, float $weightKg, ?string $postcode = null, ?string $state = null): array {
+    public function calculateFromMatrix(string $country, string $serviceCode, float $weightKg, ?string $postcode = null, ?string $state = null, ?string $destination = null): array {
         $curr = $this->config['currency'] ?? 'INR';
-        $aliases = $this->getCountryAliases($country);
-        $placeholders = implode(',', array_fill(0, count($aliases), '?'));
+        $destination = trim((string)$destination);
+
+        if ($destination !== '') {
+            $destMatches = [$destination];
+            $placeholders = '?';
+            $destArgs = [$destination, $destination];
+        } else {
+            $destMatches = $this->getCountryAliases($country);
+            $placeholders = implode(',', array_fill(0, count($destMatches), '?'));
+            $destArgs = array_merge($destMatches, [$country]);
+        }
 
         // Query matching rows in vendor_rate_matrix
         $st = $this->pdo->prepare(
@@ -196,11 +206,30 @@ class RateCalculator {
                AND (destination IN ({$placeholders}) OR LOWER(TRIM(destination)) = LOWER(?))
                AND (service_code = ? OR LOWER(TRIM(service_code)) = LOWER(?))"
         );
-        $st->execute(array_merge([$this->vendorId, $this->batchId], $aliases, [$country, $serviceCode, $serviceCode]));
+        $st->execute(array_merge([$this->vendorId, $this->batchId], $destArgs, [$serviceCode, $serviceCode]));
         $matrixRows = $st->fetchAll();
 
+        // If no direct row was found and destination wasn't explicitly specified,
+        // search against all destination variants for this country
+        if (empty($matrixRows) && $destination === '') {
+            $variants = $this->getDestinationVariants($country);
+            if (!empty($variants)) {
+                $variantDests = array_column($variants, 'destination');
+                $vPlaceholders = implode(',', array_fill(0, count($variantDests), '?'));
+                $stV = $this->pdo->prepare(
+                    "SELECT * FROM vendor_rate_matrix 
+                     WHERE vendor_id = ? AND batch_id = ?
+                       AND destination IN ({$vPlaceholders})
+                       AND (service_code = ? OR LOWER(TRIM(service_code)) = LOWER(?))"
+                );
+                $stV->execute(array_merge([$this->vendorId, $this->batchId], $variantDests, [$serviceCode, $serviceCode]));
+                $matrixRows = $stV->fetchAll();
+            }
+        }
+
         if (empty($matrixRows)) {
-            return $this->error("No rate data found for service '{$serviceCode}' to destination '{$country}'.");
+            $targetDest = $destination ?: $country;
+            return $this->error("No rate data found for service '{$serviceCode}' to destination '{$targetDest}'.");
         }
 
         // Zone and remote status resolution
@@ -1162,25 +1191,49 @@ class RateCalculator {
         return false;
     }
 
-    public function getAvailableServices(?string $country = null): array {
+    public function getAvailableServices(?string $country = null, ?string $destination = null): array {
         if ($this->pdo === null) return [];
         $country = trim((string)$country);
+        $destination = trim((string)$destination);
+
+        if ($destination !== '') {
+            $services = [];
+            try {
+                $matSql = "SELECT DISTINCT service_code, service_name, duty_paid, 'matrix' as rate_type 
+                           FROM vendor_rate_matrix 
+                           WHERE vendor_id = ? AND batch_id = ? 
+                             AND (destination = ? OR LOWER(TRIM(destination)) = LOWER(?))";
+                $matSt = $this->pdo->prepare($matSql);
+                $matSt->execute([$this->vendorId, $this->batchId, $destination, $destination]);
+                foreach ($matSt->fetchAll() as $row) {
+                    $services[$row['service_code'] . '|matrix'] = $row;
+                }
+            } catch (\Throwable $e) {}
+            if (!empty($services)) {
+                $list = array_values($services);
+                usort($list, fn($a, $b) => strcmp($a['service_code'], $b['service_code']));
+                return $list;
+            }
+        }
 
         if ($country !== '') {
             $aliases = $this->getCountryAliases($country);
-            $placeholders = implode(',', array_fill(0, count($aliases), '?'));
+            $variants = $this->getDestinationVariants($country);
+            $allDestNames = array_unique(array_merge($aliases, array_column($variants, 'destination')));
+            if (empty($allDestNames)) $allDestNames = $aliases;
+            $placeholders = implode(',', array_fill(0, count($allDestNames), '?'));
             $isZonewise = $this->isCountryZonewise($country);
 
             $services = [];
 
-            // 0. RATE DATA matrix services explicitly for this destination
+            // 0. RATE DATA matrix services explicitly for this destination and all its variants
             try {
                 $matSql = "SELECT DISTINCT service_code, service_name, duty_paid, 'matrix' as rate_type 
                            FROM vendor_rate_matrix 
                            WHERE vendor_id = ? AND batch_id = ? 
                              AND (destination IN ({$placeholders}) OR LOWER(TRIM(destination)) = LOWER(?))";
                 $matSt = $this->pdo->prepare($matSql);
-                $matSt->execute(array_merge([$this->vendorId, $this->batchId], $aliases, [$country]));
+                $matSt->execute(array_merge([$this->vendorId, $this->batchId], $allDestNames, [$country]));
                 foreach ($matSt->fetchAll() as $row) {
                     $services[$row['service_code'] . '|matrix'] = $row;
                 }
@@ -1249,6 +1302,176 @@ class RateCalculator {
             $st->execute([$this->vendorId, $this->batchId, $this->vendorId, $this->batchId]);
             return $st->fetchAll();
         }
+    }
+
+    /**
+     * Get destination variants / qualifiers from the rate sheet for a given country.
+     * Detects bracket data like (Duty Paid), (Dar es salaam), (SKYNET), (DHL), (LUSAKA), etc.
+     */
+    public function getDestinationVariants(string $country): array {
+        if ($this->pdo === null) return [];
+        $country = trim($country);
+        if ($country === '') return [];
+
+        $aliases = $this->getCountryAliases($country);
+        $normCountry = strtolower($country);
+
+        // Fetch all distinct destinations in matrix
+        try {
+            $st = $this->pdo->prepare(
+                "SELECT DISTINCT destination, duty_paid, service_code, service_name 
+                 FROM vendor_rate_matrix 
+                 WHERE vendor_id = ? AND batch_id = ? 
+                   AND destination IS NOT NULL AND destination != ''"
+            );
+            $st->execute([$this->vendorId, $this->batchId]);
+            $rows = $st->fetchAll();
+        } catch (\Throwable $e) {
+            $rows = [];
+        }
+
+        // Group rows by destination
+        $destMap = [];
+        foreach ($rows as $r) {
+            $d = trim((string)$r['destination']);
+            if ($d === '') continue;
+            if (!isset($destMap[$d])) {
+                $destMap[$d] = [
+                    'destination' => $d,
+                    'duty_paid' => $r['duty_paid'] ?? null,
+                    'services' => []
+                ];
+            }
+            if (!empty($r['duty_paid']) && strcasecmp((string)$r['duty_paid'], 'yes') === 0) {
+                $destMap[$d]['duty_paid'] = 'Yes';
+            }
+            if (!empty($r['service_code']) && !in_array($r['service_code'], $destMap[$d]['services'], true)) {
+                $destMap[$d]['services'][] = $r['service_code'];
+            }
+        }
+
+        if (empty($destMap)) {
+            return [[
+                'destination' => $country,
+                'label' => 'Standard',
+                'is_duty_paid' => false,
+                'is_bracket' => false,
+                'bracket_text' => '',
+                'services' => []
+            ]];
+        }
+
+        $matched = [];
+        foreach ($destMap as $dest => $info) {
+            $dLower = strtolower($dest);
+            $isMatch = false;
+
+            // 1. Exact match with alias
+            foreach ($aliases as $alias) {
+                if (strcasecmp($dest, $alias) === 0) {
+                    $isMatch = true;
+                    break;
+                }
+            }
+
+            // 2. Base name before '(' or '-'
+            if (!$isMatch) {
+                $parts = preg_split('/[\(\-]/', $dest);
+                $base = trim($parts[0] ?? '');
+                foreach ($aliases as $alias) {
+                    if (strcasecmp($base, $alias) === 0) {
+                        $isMatch = true;
+                        break;
+                    }
+                }
+            }
+
+            // 3. Special aliases
+            if (!$isMatch) {
+                if (in_array($normCountry, ['uk', 'united kingdom', 'great britain', 'gb'], true)) {
+                    if (stripos($dest, 'uk') !== false || stripos($dest, 'scotland') !== false || stripos($dest, 'northern ireland') !== false || stripos($dest, 'isle of') !== false || stripos($dest, 'guernsey') !== false || stripos($dest, 'jersey') !== false) {
+                        // Ensure not Republic of Ireland
+                        if (strcasecmp($dest, 'ireland') !== 0) {
+                            $isMatch = true;
+                        }
+                    }
+                } elseif (in_array($normCountry, ['sri lanka', 'srilanka'], true)) {
+                    if (stripos($dest, 'srilanka') !== false || stripos($dest, 'sri lanka') !== false) {
+                        $isMatch = true;
+                    }
+                } elseif ($normCountry === 'malaysia') {
+                    if (stripos($dest, 'malaysia') !== false) {
+                        $isMatch = true;
+                    }
+                } elseif (in_array($normCountry, ['usa', 'united states', 'us'], true)) {
+                    if (stripos($dest, 'u.s.a') !== false || stripos($dest, 'usa') !== false || stripos($dest, 'united states') !== false) {
+                        $isMatch = true;
+                    }
+                } elseif ($normCountry === 'canada') {
+                    if (stripos($dest, 'canada') !== false) {
+                        $isMatch = true;
+                    }
+                }
+            }
+
+            if ($isMatch) {
+                // Determine label and duty paid
+                $isDuty = (!empty($info['duty_paid']) && strcasecmp((string)$info['duty_paid'], 'yes') === 0) || (stripos($dest, 'duty paid') !== false);
+                $bracketText = '';
+                if (preg_match('/\(([^)]+)\)/', $dest, $bm)) {
+                    $bracketText = trim($bm[1]);
+                }
+
+                $label = $dest;
+                $isExactCountry = false;
+                foreach ($aliases as $alias) {
+                    if (strcasecmp($dest, $alias) === 0) {
+                        $isExactCountry = true;
+                        break;
+                    }
+                }
+
+                if ($isExactCountry) {
+                    $label = 'Standard';
+                } elseif ($bracketText !== '') {
+                    if ($isDuty) {
+                        $label = 'Duty Paid (DDP)';
+                    } else {
+                        $prefix = trim(preg_split('/\(/', $dest)[0]);
+                        $prefixMatchesCountry = false;
+                        foreach ($aliases as $alias) {
+                            if (strcasecmp($prefix, $alias) === 0) {
+                                $prefixMatchesCountry = true;
+                                break;
+                            }
+                        }
+                        if (!$prefixMatchesCountry && $prefix !== '') {
+                            $label = $prefix . ' (' . $bracketText . ')';
+                        } else {
+                            $label = $bracketText;
+                        }
+                    }
+                }
+
+                $matched[] = [
+                    'destination' => $dest,
+                    'label' => $label,
+                    'is_duty_paid' => $isDuty,
+                    'is_bracket' => $bracketText !== '',
+                    'bracket_text' => $bracketText,
+                    'services' => $info['services']
+                ];
+            }
+        }
+
+        // Sort: Standard first, then alphabetical
+        usort($matched, function($a, $b) {
+            if ($a['label'] === 'Standard') return -1;
+            if ($b['label'] === 'Standard') return 1;
+            return strcmp($a['label'], $b['label']);
+        });
+
+        return $matched;
     }
 
     public function getAvailableCountries(): array {

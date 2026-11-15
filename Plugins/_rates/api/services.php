@@ -25,9 +25,11 @@ try {
     }
 
     $country = clean($_GET['country'] ?? null);
+    $destination = clean($_GET['destination'] ?? null);
 
     $calc = new RateCalculator($pdo, (int)$v['id'], $batchId, $v['name']);
-    $services = $calc->getAvailableServices($country);
+    $services = $calc->getAvailableServices($country, $destination);
+    $destinationVariants = $country ? $calc->getDestinationVariants($country) : [];
     $isZonewiseCountry = $country ? $calc->isCountryZonewise($country) : false;
 
     $serviceCodes = array_values(array_unique(array_filter(array_column($services, 'service_code'))));
@@ -41,6 +43,8 @@ try {
             'batch_id' => $batchId
         ],
         'country' => $country,
+        'destination' => $destination,
+        'destination_variants' => $destinationVariants,
         'is_country_zonewise' => $isZonewiseCountry,
         'count' => count($serviceCodes),
         'service_codes' => $serviceCodes,

@@ -95,6 +95,7 @@ function requestRatesApi(endpointPath, options = {}) {
 export async function calculateRate({
   vendor = 'pacific',
   country,
+  destination = '',
   service_code = '',
   serviceCode = '',
   service = '',
@@ -105,6 +106,7 @@ export async function calculateRate({
   const query = new URLSearchParams()
   query.set('vendor', vendor || 'pacific')
   if (country) query.set('country', String(country).trim())
+  if (destination) query.set('destination', String(destination).trim())
   const resolvedService = service_code || serviceCode || service
   if (resolvedService) query.set('service_code', String(resolvedService).trim())
   query.set('weight_kg', String(weight || 1))
@@ -169,10 +171,11 @@ export async function calculateRate({
 /**
  * 2. Get available services for vendor and optional country
  */
-export async function getServices({ vendor = 'pacific', country = '' } = {}) {
+export async function getServices({ vendor = 'pacific', country = '', destination = '' } = {}) {
   const query = new URLSearchParams()
   query.set('vendor', vendor || 'pacific')
   if (country) query.set('country', String(country).trim())
+  if (destination) query.set('destination', String(destination).trim())
 
   const endpoint = `/api/services.php?${query.toString()}`
   const response = await requestRatesApi(endpoint)
