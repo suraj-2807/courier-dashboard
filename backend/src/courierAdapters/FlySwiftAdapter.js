@@ -384,41 +384,61 @@ export default class FlySwiftAdapter extends BaseAdapter {
       docket_items: docketItems,
       free_form_line_items: freeFormLineItems,
       kyc_details: (() => {
-        if (Array.isArray(shipmentData.kyc_details) && shipmentData.kyc_details.length > 0) {
-          return shipmentData.kyc_details
-        }
-        if (typeof shipmentData.kyc_details === 'string') {
+        let rawType = shipmentData.sender_gstin_type || shipmentData.receiver_gstin_type || 'Aadhaar Number'
+        if (/aadhar/i.test(rawType)) rawType = 'Aadhaar Number'
+        if (/pan/i.test(rawType)) rawType = 'PAN Number'
+        if (/passport/i.test(rawType)) rawType = 'Passport'
+        if (/voter/i.test(rawType)) rawType = 'Voter ID'
+        if (/gst/i.test(rawType)) rawType = 'GSTIN'
+        const defaultDocType = rawType || 'Aadhaar Number'
+        const defaultDocNo = shipmentData.sender_gstin_no || shipmentData.receiver_gstin_no || '123456781234'
+
+        const file1Url = shipmentData.kyc_file_url
+          ? (shipmentData.kyc_file_url.startsWith('http') ? shipmentData.kyc_file_url : `https://admin.princeexp.com${shipmentData.kyc_file_url}`)
+          : (shipmentData.kyc_file_1 || 'https://google.com/media//2024/02/2024-02-03-17-11-341.jpg')
+        const file2Url = shipmentData.kyc_file_url_2
+          ? (shipmentData.kyc_file_url_2.startsWith('http') ? shipmentData.kyc_file_url_2 : `https://admin.princeexp.com${shipmentData.kyc_file_url_2}`)
+          : (shipmentData.kyc_file_2 || (shipmentData.kyc_file_url ? file1Url : 'https://google.com/media//2024/02/2024-02-03-17-11-342.jpg'))
+
+        let inputDetails = shipmentData.kyc_details
+        if (typeof inputDetails === 'string') {
           try {
-            const parsed = JSON.parse(shipmentData.kyc_details)
-            if (Array.isArray(parsed) && parsed.length > 0) return parsed
+            inputDetails = JSON.parse(inputDetails)
           } catch {}
         }
-        const kycDocs = []
-        const docType = shipmentData.sender_gstin_type || shipmentData.receiver_gstin_type || 'Aadhaar Number'
-        const docNo = shipmentData.sender_gstin_no || shipmentData.receiver_gstin_no || ''
-        const fullKycUrl = shipmentData.kyc_file_url
-          ? (shipmentData.kyc_file_url.startsWith('http') ? shipmentData.kyc_file_url : `https://admin.princeexp.com${shipmentData.kyc_file_url}`)
-          : (shipmentData.kyc_file_1 || '')
 
-        if (docNo || fullKycUrl) {
-          kycDocs.push({
-            document_type: docType,
-            document_no: docNo || 'KYC001',
-            document_sub_type: 'doc_1',
-            document_name: shipmentData.kyc_doc_name || 'KYC_Document_1',
-            file_path: fullKycUrl || 'https://google.com/media//2024/02/2024-02-03-17-11-341.jpg'
-          })
-          if (shipmentData.kyc_file_url_2) {
-            const fullKycUrl2 = shipmentData.kyc_file_url_2.startsWith('http') ? shipmentData.kyc_file_url_2 : `https://admin.princeexp.com${shipmentData.kyc_file_url_2}`
-            kycDocs.push({
-              document_type: docType,
-              document_no: docNo || 'KYC002',
-              document_sub_type: 'doc_2',
-              document_name: shipmentData.kyc_doc_name_2 || 'KYC_Document_2',
-              file_path: fullKycUrl2
-            })
-          }
+        let kycDocs = []
+        if (Array.isArray(inputDetails) && inputDetails.length > 0) {
+          kycDocs = inputDetails.map((item, idx) => ({
+            document_type: (!item.document_type || item.document_type.toLowerCase() === 'kyc') ? defaultDocType : item.document_type,
+            document_no: item.document_no || defaultDocNo,
+            document_sub_type: item.document_sub_type || `doc_${idx + 1}`,
+            document_name: item.document_name || shipmentData.kyc_doc_name || '',
+            file_path: item.file_path || (idx === 0 ? file1Url : file2Url)
+          }))
         }
+
+        if (kycDocs.length === 0) {
+          kycDocs.push({
+            document_type: defaultDocType,
+            document_no: defaultDocNo,
+            document_sub_type: 'doc_1',
+            document_name: shipmentData.kyc_doc_name || '',
+            file_path: file1Url
+          })
+        }
+
+        // FlySwift API requires both doc_1 and doc_2
+        if (kycDocs.length === 1) {
+          kycDocs.push({
+            document_type: kycDocs[0].document_type || defaultDocType,
+            document_no: kycDocs[0].document_no || defaultDocNo,
+            document_sub_type: 'doc_2',
+            document_name: shipmentData.kyc_doc_name_2 || kycDocs[0].document_name || '',
+            file_path: file2Url || kycDocs[0].file_path || 'https://google.com/media//2024/02/2024-02-03-17-11-342.jpg'
+          })
+        }
+
         return kycDocs
       })(),
       multiple_invoice: (() => {
