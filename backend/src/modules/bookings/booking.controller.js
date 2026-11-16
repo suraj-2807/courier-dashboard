@@ -148,7 +148,7 @@ function extractBookingFields(body) {
     receiver_country: body.receiver_country,
     // Additional
     no_of_pieces: body.no_of_pieces,
-    content_description: body.content_description !== undefined ? body.content_description : (body.content !== undefined ? body.content : undefined),
+    content_description: body.content_description,
     declared_value: body.declared_value,
     cod_amount: body.cod_amount,
     // Extended
@@ -221,18 +221,7 @@ function extractBookingFields(body) {
     // Invoice items (JSON array)
     invoice_items: body.invoice_items,
     invoice_type: body.invoice_type,
-    invoice_note: body.invoice_note,
-    // KYC Document fields
-    kyc_file_url: body.kyc_file_url,
-    kyc_doc_name: body.kyc_doc_name,
-    kyc_file_url_2: body.kyc_file_url_2,
-    kyc_doc_name_2: body.kyc_doc_name_2,
-    kyc_details: body.kyc_details,
-    // Duty Paid & Remote status
-    duty_paid: body.duty_paid,
-    is_remote: body.is_remote,
-    remote_status: body.remote_status,
-    destination_variant: body.destination_variant || body.variant || ''
+    invoice_note: body.invoice_note
   }
 }
 
@@ -622,18 +611,112 @@ async function upsertReceiver(fields) {
   return result.insertId
 }
 
+async function insertShipment({
+  orderId,
+  fields,
+  senderId,
+  receiverId,
+  weight,
+  chargeableWeight,
+  length,
+  breadth,
+  height,
+  pieces,
+  contentDescription,
+  snap,
+  status,
+  vendorPushStatus,
+  isLocked,
+  invoiceItemsJson,
+  parcelsJson
+}) {
+  const values = {
+    order_id: orderId,
+    customer_id: fields.customer_id || null,
+    customer_name: fields.customer_name || 'Walk-in Customer',
+    customer_type: fields.customer_type || 'walkin',
+    sender_id: senderId || null,
+    receiver_id: receiverId || null,
+    courier_provider_id: fields.courier_provider_id || null,
+    vendor_config_id: fields.vendor_config_id || null,
+    vendor_code: fields.vendor_code || '',
+    service_code: fields.service_code || '',
+    product_code: fields.product_code || '',
+    tracking_number: orderId,
+    weight,
+    chargeable_weight: chargeableWeight,
+    length,
+    breadth,
+    height,
+    no_of_pieces: pieces,
+    content_description: contentDescription,
+    declared_value: parseFloat(fields.declared_value) || 0,
+    cod_amount: parseFloat(fields.cod_amount) || 0,
+    payment_mode: fields.payment_mode || 'prepaid',
+    package_type: fields.package_type || 'parcel',
+    total_amount: parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
+    shipping_charge: parseFloat(fields.shipping_charge) || 0,
+    rate_per_kg: parseFloat(fields.rate_per_kg) || 0,
+    extra_charge: parseFloat(fields.extra_charge) || 0,
+    final_chargeable_weight: parseFloat(fields.final_chargeable_weight) || chargeableWeight || 0,
+    order_reference: fields.order_reference || '',
+    remarks: fields.remarks || '',
+    status,
+    vendor_push_status: vendorPushStatus,
+    is_locked: isLocked,
+    sender_name: snap.sender_name,
+    sender_company: snap.sender_company,
+    sender_phone: snap.sender_phone,
+    sender_phone_2: snap.sender_phone_2,
+    sender_email: snap.sender_email,
+    sender_address: snap.sender_address,
+    sender_address_2: snap.sender_address_2,
+    sender_city: snap.sender_city,
+    sender_state: snap.sender_state,
+    sender_pincode: snap.sender_pincode,
+    sender_country: snap.sender_country,
+    sender_gstin_type: snap.sender_gstin_type,
+    sender_gstin_no: snap.sender_gstin_no,
+    receiver_name: snap.receiver_name,
+    receiver_company: snap.receiver_company,
+    receiver_phone: snap.receiver_phone,
+    receiver_phone_2: snap.receiver_phone_2,
+    receiver_email: snap.receiver_email,
+    receiver_address: snap.receiver_address,
+    receiver_address_2: snap.receiver_address_2,
+    receiver_city: snap.receiver_city,
+    receiver_state: snap.receiver_state,
+    receiver_pincode: snap.receiver_pincode,
+    receiver_country: snap.receiver_country,
+    receiver_gstin_type: snap.receiver_gstin_type,
+    receiver_gstin_no: snap.receiver_gstin_no,
+    invoice_no: fields.invoice_no || '',
+    invoice_date: fields.invoice_date || new Date().toISOString().split('T')[0],
+    invoice_currency: fields.invoice_currency || 'INR',
+    hs_code: fields.hs_code || '',
+    export_reason: fields.export_reason || '',
+    terms_of_trade: fields.terms_of_trade || 'CIF',
+    invoice_type: fields.invoice_type || 'INVOICE',
+    invoice_note: fields.invoice_note || '',
+    invoice_items: invoiceItemsJson,
+    parcels: parcelsJson
+  }
+  const columns = Object.keys(values)
+
+  return execute(
+    `INSERT INTO shipments (${columns.map(column => `\`${column}\``).join(', ')})
+     VALUES (${columns.map(() => '?').join(', ')})`,
+    Object.values(values)
+  )
+}
+
 /**
  * Generate invoice PDF for a booking.
  */
 async function generateInvoiceForBooking(trackingNumber, fields, senderId, receiverId) {
-  let invoiceItems = Array.isArray(fields.invoice_items)
+  const invoiceItems = Array.isArray(fields.invoice_items)
     ? fields.invoice_items
     : (typeof fields.invoice_items === 'string' ? JSON.parse(fields.invoice_items || '[]') : [])
-
-  if (!Array.isArray(invoiceItems)) invoiceItems = []
-  if (invoiceItems.length === 1 && !invoiceItems[0].description && fields.content_description) {
-    invoiceItems[0].description = fields.content_description
-  }
 
   // Fetch sender/receiver details if we have IDs
   let senderData = {}
@@ -710,8 +793,7 @@ async function generateInvoiceForBooking(trackingNumber, fields, senderId, recei
       breadth: fields.breadth,
       height: fields.height,
       no_of_pieces: fields.no_of_pieces,
-      package_type: fields.package_type,
-      content_description: fields.content_description || ''
+      package_type: fields.package_type
     },
     invoiceItems,
     invoiceMeta: {
@@ -745,22 +827,18 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     unit_weight: (item.unit_weight !== undefined && item.unit_weight !== null && String(item.unit_weight).trim() !== '') ? String(item.unit_weight).trim() : '00'
   }))
 
-  const itemDescriptions = invoiceItemsList.map(i => (i.description || '').trim()).filter(Boolean)
+  const itemDescriptions = invoiceItemsList.map(i => i.description).filter(Boolean)
   const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
 
-  const trimmedFieldContent = (fields.content_description || '').trim()
-  const isGeneric = !trimmedFieldContent || ['general goods', 'items / goods inside', 'goods', 'sample', 'gift'].includes(trimmedFieldContent.toLowerCase())
-  const isPrefixOfDerived = derivedContent && trimmedFieldContent && derivedContent.toLowerCase().startsWith(trimmedFieldContent.toLowerCase()) && derivedContent.length > trimmedFieldContent.length
-
   let contentDescription = ''
-  if (derivedContent && (isGeneric || isPrefixOfDerived)) {
-    contentDescription = derivedContent
-  } else if (trimmedFieldContent && !isGeneric) {
-    contentDescription = trimmedFieldContent
+  if (fields.content_description && !['general goods', 'items / goods inside', 'goods'].includes(fields.content_description.trim().toLowerCase())) {
+    contentDescription = fields.content_description.trim()
   } else if (derivedContent) {
     contentDescription = derivedContent
+  } else if (fields.content_description) {
+    contentDescription = fields.content_description.trim()
   } else {
-    contentDescription = trimmedFieldContent
+    contentDescription = 'Books'
   }
 
   let parcelsList = []
@@ -919,14 +997,6 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     parcels: parcelsList,
     invoice_items: invoiceItemsList,
     kyc_details: fields.kyc_details,
-    kyc_file_url: fields.kyc_file_url || '',
-    kyc_doc_name: fields.kyc_doc_name || '',
-    kyc_file_url_2: fields.kyc_file_url_2 || '',
-    kyc_doc_name_2: fields.kyc_doc_name_2 || '',
-    duty_paid: fields.duty_paid || '',
-    is_remote: fields.is_remote || '',
-    remote_status: fields.remote_status || '',
-    destination_variant: fields.destination_variant || '',
     multiple_invoice: fields.multiple_invoice,
     chargeable_weight: chargeableWeight,
     final_chargeable_weight: chargeableWeight,
@@ -976,22 +1046,17 @@ export const saveBooking = async (req, res) => {
     const parsedInvoiceItems = Array.isArray(fields.invoice_items)
       ? fields.invoice_items
       : (typeof fields.invoice_items === 'string' ? (JSON.parse(fields.invoice_items || '[]') || []) : [])
-    const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => (i.description || '').trim()).filter(Boolean) : []
+    const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => i.description).filter(Boolean) : []
     const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
-
-    const trimmedFieldContent = (fields.content_description || '').trim()
-    const isGeneric = !trimmedFieldContent || ['general goods', 'items / goods inside', 'goods', 'sample', 'gift'].includes(trimmedFieldContent.toLowerCase())
-    const isPrefixOfDerived = derivedContent && trimmedFieldContent && derivedContent.toLowerCase().startsWith(trimmedFieldContent.toLowerCase()) && derivedContent.length > trimmedFieldContent.length
-
     let contentDescription = ''
-    if (derivedContent && (isGeneric || isPrefixOfDerived)) {
-      contentDescription = derivedContent
-    } else if (trimmedFieldContent && !isGeneric) {
-      contentDescription = trimmedFieldContent
+    if (fields.content_description && !['general goods', 'items / goods inside', 'goods'].includes(fields.content_description.trim().toLowerCase())) {
+      contentDescription = fields.content_description.trim()
     } else if (derivedContent) {
       contentDescription = derivedContent
+    } else if (fields.content_description) {
+      contentDescription = fields.content_description.trim()
     } else {
-      contentDescription = trimmedFieldContent
+      contentDescription = 'Books'
     }
 
     const parsedParcelsList = normalizeParcels(fields.parcels, fields.weight, fields.length, fields.breadth, fields.height)
@@ -1072,7 +1137,6 @@ export const saveBooking = async (req, res) => {
           }
         }
 
-        const effectiveContent = contentDescription || fields.content_description || null
         await execute(
           `UPDATE shipments SET
             customer_id = ?,
@@ -1083,11 +1147,7 @@ export const saveBooking = async (req, res) => {
             rate_per_kg = ?,
             shipping_charge = ?,
             extra_charge = ?,
-            total_amount = ?,
-            content_description = COALESCE(?, content_description),
-            invoice_items = COALESCE(?, invoice_items),
-            parcels = COALESCE(?, parcels),
-            no_of_pieces = COALESCE(?, no_of_pieces)
+            total_amount = ?
            WHERE id = ?`,
           [
             newCustomerId,
@@ -1099,30 +1159,9 @@ export const saveBooking = async (req, res) => {
             shippingCharge,
             extraCharge,
             totalAmount,
-            effectiveContent,
-            invoiceItemsJson && invoiceItemsJson !== '[]' ? invoiceItemsJson : null,
-            parcelsJson,
-            finalPieces || null,
             existingId
           ]
         )
-
-        // Regenerate invoice PDF with updated content and items
-        try {
-          const invPath = await generateInvoiceForBooking(
-            existing[0].tracking_number,
-            {
-              ...fields,
-              content_description: effectiveContent || existing[0].content_description,
-              invoice_items: (invoiceItemsJson && invoiceItemsJson !== '[]') ? invoiceItemsJson : existing[0].invoice_items
-            },
-            existing[0].sender_id,
-            existing[0].receiver_id
-          )
-          await execute('UPDATE shipments SET invoice_pdf_path = ? WHERE id = ?', [invPath, existingId])
-        } catch (pdfErr) {
-          console.warn('[saveBooking locked invoice regeneration notice]:', pdfErr.message)
-        }
 
         // Sync customer update & confirm to local booking_requests if linked
         try {
@@ -1204,9 +1243,7 @@ export const saveBooking = async (req, res) => {
           receiver_address = ?, receiver_address_2 = ?, receiver_city = ?, receiver_state = ?,
           receiver_pincode = ?, receiver_country = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
           invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
-          invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?,
-          kyc_file_url = ?, kyc_doc_name = ?, kyc_file_url_2 = ?, kyc_doc_name_2 = ?,
-          kyc_details = ?, duty_paid = ?, is_remote = ?, remote_status = ?, destination_variant = ?
+          invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?
         WHERE id = ?`,
         [
           fields.customer_id || null,
@@ -1271,15 +1308,6 @@ export const saveBooking = async (req, res) => {
           fields.invoice_note || '',
           invoiceItemsJson,
           parcelsJson,
-          fields.kyc_file_url || '',
-          fields.kyc_doc_name || '',
-          fields.kyc_file_url_2 || '',
-          fields.kyc_doc_name_2 || '',
-          fields.kyc_details ? (typeof fields.kyc_details === 'string' ? fields.kyc_details : JSON.stringify(fields.kyc_details)) : null,
-          fields.duty_paid || '',
-          fields.is_remote || '',
-          fields.remote_status || '',
-          fields.destination_variant || '',
           shipmentId
         ]
       )
@@ -1292,107 +1320,25 @@ export const saveBooking = async (req, res) => {
       }
       const order_id = tracking_number
 
-      const shipmentResult = await execute(
-        `INSERT INTO shipments (
-          order_id, customer_id, customer_name, customer_type,
-          sender_id, receiver_id, courier_provider_id, vendor_config_id,
-          vendor_code, service_code, product_code, tracking_number, weight, chargeable_weight, \`length\`, breadth, height,
-          no_of_pieces, content_description, declared_value, cod_amount,
-          payment_mode, package_type, total_amount, shipping_charge,
-          rate_per_kg, extra_charge, final_chargeable_weight,
-          order_reference, remarks, status, vendor_push_status, is_locked,
-          sender_name, sender_company, sender_phone, sender_phone_2, sender_email,
-          sender_address, sender_address_2, sender_city, sender_state,
-          sender_pincode, sender_country, sender_gstin_type, sender_gstin_no,
-          receiver_name, receiver_company, receiver_phone, receiver_phone_2, receiver_email,
-          receiver_address, receiver_address_2, receiver_city, receiver_state,
-          receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no,
-          invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
-          invoice_type, invoice_note, invoice_items, parcels,
-          kyc_file_url, kyc_doc_name, kyc_file_url_2, kyc_doc_name_2,
-          kyc_details, duty_paid, is_remote, remote_status, destination_variant
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          order_id,
-          fields.customer_id || null,
-          fields.customer_name || 'Walk-in Customer',
-          fields.customer_type || 'walkin',
-          finalSenderId || null,
-          finalReceiverId || null,
-          fields.courier_provider_id || null,
-          fields.vendor_config_id || null,
-          fields.vendor_code || '',
-          fields.service_code || '',
-          fields.product_code || '',
-          tracking_number,
-          finalWeight,
-          finalChgWeight,
-          finalLength,
-          finalBreadth,
-          finalHeight,
-          finalPieces,
-          contentDescription,
-          parseFloat(fields.declared_value) || 0,
-          parseFloat(fields.cod_amount) || 0,
-          fields.payment_mode || 'prepaid',
-          fields.package_type || 'parcel',
-          parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
-          parseFloat(fields.shipping_charge) || 0,
-          parseFloat(fields.rate_per_kg) || 0,
-          parseFloat(fields.extra_charge) || 0,
-          parseFloat(fields.final_chargeable_weight) || finalChgWeight || 0,
-          fields.order_reference || '',
-          fields.remarks || '',
-          'draft',
-          'skipped',
-          false,
-          snap.sender_name,
-          snap.sender_company,
-          snap.sender_phone,
-          snap.sender_phone_2,
-          snap.sender_email,
-          snap.sender_address,
-          snap.sender_address_2,
-          snap.sender_city,
-          snap.sender_state,
-          snap.sender_pincode,
-          snap.sender_country,
-          snap.sender_gstin_type,
-          snap.sender_gstin_no,
-          snap.receiver_name,
-          snap.receiver_company,
-          snap.receiver_phone,
-          snap.receiver_phone_2,
-          snap.receiver_email,
-          snap.receiver_address,
-          snap.receiver_address_2,
-          snap.receiver_city,
-          snap.receiver_state,
-          snap.receiver_pincode,
-          snap.receiver_country,
-          snap.receiver_gstin_type,
-          snap.receiver_gstin_no,
-          tracking_number,
-          fields.invoice_date || new Date().toISOString().split('T')[0],
-          fields.invoice_currency || 'INR',
-          fields.hs_code || '',
-          fields.export_reason || '',
-          fields.terms_of_trade || 'CIF',
-          fields.invoice_type || 'INVOICE',
-          fields.invoice_note || '',
-          invoiceItemsJson,
-          parcelsJson,
-          fields.kyc_file_url || '',
-          fields.kyc_doc_name || '',
-          fields.kyc_file_url_2 || '',
-          fields.kyc_doc_name_2 || '',
-          fields.kyc_details ? (typeof fields.kyc_details === 'string' ? fields.kyc_details : JSON.stringify(fields.kyc_details)) : null,
-          fields.duty_paid || '',
-          fields.is_remote || '',
-          fields.remote_status || '',
-          fields.destination_variant || ''
-        ]
-      )
+      const shipmentResult = await insertShipment({
+        orderId: order_id,
+        fields,
+        senderId: finalSenderId,
+        receiverId: finalReceiverId,
+        weight: finalWeight,
+        chargeableWeight: finalChgWeight,
+        length: finalLength,
+        breadth: finalBreadth,
+        height: finalHeight,
+        pieces: finalPieces,
+        contentDescription,
+        snap,
+        status: 'draft',
+        vendorPushStatus: 'skipped',
+        isLocked: false,
+        invoiceItemsJson,
+        parcelsJson
+      })
       shipmentId = shipmentResult.insertId
     }
 
@@ -1600,22 +1546,6 @@ export const pushBookingToApi = async (req, res) => {
       return res.status(400).json({ success: false, message: 'No vendor API selected for this booking. Please select a vendor first.' })
     }
 
-    // Validate that content is provided before pushing to vendor API
-    let parsedBookingItems = []
-    if (booking.invoice_items) {
-      try {
-        parsedBookingItems = typeof booking.invoice_items === 'string' ? JSON.parse(booking.invoice_items) : booking.invoice_items
-      } catch { }
-    }
-    const hasBookingContent = Boolean(booking.content_description && booking.content_description.trim() && !['general goods', 'items / goods inside', 'goods'].includes(booking.content_description.trim().toLowerCase()))
-    const hasBookingItems = Array.isArray(parsedBookingItems) && parsedBookingItems.some(i => (i.description && i.description.trim()) || (parseFloat(i.quantity) > 0))
-    if (!hasBookingContent && !hasBookingItems) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot push to vendor API: Content description or invoice item is required'
-      })
-    }
-
     // Build vendor data
     const shipmentDataForVendor = buildVendorShipmentData({
       ...booking,
@@ -1652,17 +1582,16 @@ export const pushBookingToApi = async (req, res) => {
     )
 
     if (vendorResult.success) {
-      // Success → update status to booked, lock the booking, record pushed_at and ensure content_description is full
-      const resolvedPushContent = shipmentDataForVendor.content_description || booking.content_description || ''
+      // Success → update status to booked, lock the booking
       try {
         await execute(
-          `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ?, pushed_at = NOW(), content_description = ? WHERE id = ?`,
-          [targetVendorCode, targetServiceCode, targetProductCode, resolvedPushContent, id]
+          `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ?, pushed_at = NOW() WHERE id = ?`,
+          [targetVendorCode, targetServiceCode, targetProductCode, id]
         )
       } catch (colErr) {
         await execute(
-          `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ?, content_description = ? WHERE id = ?`,
-          [targetVendorCode, targetServiceCode, targetProductCode, resolvedPushContent, id]
+          `UPDATE shipments SET status = 'booked', is_locked = TRUE, vendor_push_status = 'success', vendor_code = ?, service_code = ?, product_code = ? WHERE id = ?`,
+          [targetVendorCode, targetServiceCode, targetProductCode, id]
         )
       }
 
@@ -1818,34 +1747,17 @@ export const createBooking = async (req, res) => {
     const parsedInvoiceItems = Array.isArray(fields.invoice_items)
       ? fields.invoice_items
       : (typeof fields.invoice_items === 'string' ? (JSON.parse(fields.invoice_items || '[]') || []) : [])
-    const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => (i.description || '').trim()).filter(Boolean) : []
+    const itemDescriptions = Array.isArray(parsedInvoiceItems) ? parsedInvoiceItems.map(i => i.description).filter(Boolean) : []
     const derivedContent = itemDescriptions.length > 0 ? itemDescriptions.join(', ') : ''
-
-    const trimmedFieldContent = (fields.content_description || '').trim()
-    const isGeneric = !trimmedFieldContent || ['general goods', 'items / goods inside', 'goods', 'sample', 'gift'].includes(trimmedFieldContent.toLowerCase())
-    const isPrefixOfDerived = derivedContent && trimmedFieldContent && derivedContent.toLowerCase().startsWith(trimmedFieldContent.toLowerCase()) && derivedContent.length > trimmedFieldContent.length
-
     let contentDescription = ''
-    if (derivedContent && (isGeneric || isPrefixOfDerived)) {
-      contentDescription = derivedContent
-    } else if (trimmedFieldContent && !isGeneric) {
-      contentDescription = trimmedFieldContent
+    if (fields.content_description && !['general goods', 'items / goods inside', 'goods'].includes(fields.content_description.trim().toLowerCase())) {
+      contentDescription = fields.content_description.trim()
     } else if (derivedContent) {
       contentDescription = derivedContent
+    } else if (fields.content_description) {
+      contentDescription = fields.content_description.trim()
     } else {
-      contentDescription = trimmedFieldContent
-    }
-
-    // Validate content before pushing to vendor API
-    if (fields.vendor_config_id) {
-      const hasContent = Boolean(contentDescription && contentDescription.trim() && !['general goods', 'items / goods inside', 'goods'].includes(contentDescription.trim().toLowerCase()))
-      const hasItems = Array.isArray(parsedInvoiceItems) && parsedInvoiceItems.some(i => (i.description && i.description.trim()) || (parseFloat(i.quantity) > 0))
-      if (!hasContent && !hasItems) {
-        return res.status(400).json({
-          success: false,
-          message: 'Cannot push to vendor API: Content description or invoice item is required'
-        })
-      }
+      contentDescription = 'Books'
     }
 
     const parsedParcelsList = normalizeParcels(fields.parcels, fields.weight, fields.length, fields.breadth, fields.height)
@@ -1914,9 +1826,7 @@ export const createBooking = async (req, res) => {
           receiver_address = ?, receiver_address_2 = ?, receiver_city = ?, receiver_state = ?,
           receiver_pincode = ?, receiver_country = ?, receiver_gstin_type = ?, receiver_gstin_no = ?,
           invoice_no = ?, invoice_date = ?, invoice_currency = ?, hs_code = ?, export_reason = ?, terms_of_trade = ?,
-          invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?,
-          kyc_file_url = ?, kyc_doc_name = ?, kyc_file_url_2 = ?, kyc_doc_name_2 = ?,
-          kyc_details = ?, duty_paid = ?, is_remote = ?, remote_status = ?, destination_variant = ?
+          invoice_type = ?, invoice_note = ?, invoice_items = ?, parcels = ?
         WHERE id = ?`,
         [
           fields.customer_id || null,
@@ -1985,15 +1895,6 @@ export const createBooking = async (req, res) => {
           fields.invoice_note || '',
           invoiceItemsJson,
           parcelsJson,
-          fields.kyc_file_url || '',
-          fields.kyc_doc_name || '',
-          fields.kyc_file_url_2 || '',
-          fields.kyc_doc_name_2 || '',
-          fields.kyc_details ? (typeof fields.kyc_details === 'string' ? fields.kyc_details : JSON.stringify(fields.kyc_details)) : null,
-          fields.duty_paid || '',
-          fields.is_remote || '',
-          fields.remote_status || '',
-          fields.destination_variant || '',
           shipmentId
         ]
       )
@@ -2006,107 +1907,25 @@ export const createBooking = async (req, res) => {
       }
       order_id = tracking_number
 
-      const shipmentResult = await execute(
-        `INSERT INTO shipments (
-          order_id, customer_id, customer_name, customer_type,
-          sender_id, receiver_id, courier_provider_id, vendor_config_id,
-          vendor_code, service_code, product_code, tracking_number, weight, chargeable_weight, \`length\`, breadth, height,
-          no_of_pieces, content_description, declared_value, cod_amount,
-          payment_mode, package_type, total_amount, shipping_charge,
-          rate_per_kg, extra_charge, final_chargeable_weight,
-          order_reference, remarks, status, vendor_push_status, is_locked,
-          sender_name, sender_company, sender_phone, sender_phone_2, sender_email,
-          sender_address, sender_address_2, sender_city, sender_state,
-          sender_pincode, sender_country, sender_gstin_type, sender_gstin_no,
-          receiver_name, receiver_company, receiver_phone, receiver_phone_2, receiver_email,
-          receiver_address, receiver_address_2, receiver_city, receiver_state,
-          receiver_pincode, receiver_country, receiver_gstin_type, receiver_gstin_no,
-          invoice_no, invoice_date, invoice_currency, hs_code, export_reason, terms_of_trade,
-          invoice_type, invoice_note, invoice_items, parcels,
-          kyc_file_url, kyc_doc_name, kyc_file_url_2, kyc_doc_name_2,
-          kyc_details, duty_paid, is_remote, remote_status, destination_variant
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          order_id,
-          fields.customer_id || null,
-          fields.customer_name || 'Walk-in Customer',
-          fields.customer_type || 'walkin',
-          finalSenderId || null,
-          finalReceiverId || null,
-          fields.courier_provider_id || null,
-          fields.vendor_config_id || null,
-          fields.vendor_code || '',
-          fields.service_code || '',
-          fields.product_code || '',
-          tracking_number,
-          finalWeight,
-          finalChgWeight,
-          finalLength,
-          finalBreadth,
-          finalHeight,
-          finalPieces,
-          contentDescription,
-          parseFloat(fields.declared_value) || 0,
-          parseFloat(fields.cod_amount) || 0,
-          fields.payment_mode || 'prepaid',
-          fields.package_type || 'parcel',
-          parseFloat(fields.total_amount) || parseFloat(fields.shipping_charge) || 0,
-          parseFloat(fields.shipping_charge) || 0,
-          parseFloat(fields.rate_per_kg) || 0,
-          parseFloat(fields.extra_charge) || 0,
-          parseFloat(fields.final_chargeable_weight) || finalChgWeight || 0,
-          fields.order_reference || '',
-          fields.remarks || '',
-          fields.vendor_config_id ? 'processing' : 'booked',
-          fields.vendor_config_id ? 'pending' : 'skipped',
-          fields.vendor_config_id ? true : false,
-          snap.sender_name,
-          snap.sender_company,
-          snap.sender_phone,
-          snap.sender_phone_2,
-          snap.sender_email,
-          snap.sender_address,
-          snap.sender_address_2,
-          snap.sender_city,
-          snap.sender_state,
-          snap.sender_pincode,
-          snap.sender_country,
-          snap.sender_gstin_type,
-          snap.sender_gstin_no,
-          snap.receiver_name,
-          snap.receiver_company,
-          snap.receiver_phone,
-          snap.receiver_phone_2,
-          snap.receiver_email,
-          snap.receiver_address,
-          snap.receiver_address_2,
-          snap.receiver_city,
-          snap.receiver_state,
-          snap.receiver_pincode,
-          snap.receiver_country,
-          snap.receiver_gstin_type,
-          snap.receiver_gstin_no,
-          tracking_number,
-          fields.invoice_date || new Date().toISOString().split('T')[0],
-          fields.invoice_currency || 'INR',
-          fields.hs_code || '',
-          fields.export_reason || '',
-          fields.terms_of_trade || 'CIF',
-          fields.invoice_type || 'INVOICE',
-          fields.invoice_note || '',
-          invoiceItemsJson,
-          parcelsJson,
-          fields.kyc_file_url || '',
-          fields.kyc_doc_name || '',
-          fields.kyc_file_url_2 || '',
-          fields.kyc_doc_name_2 || '',
-          fields.kyc_details ? (typeof fields.kyc_details === 'string' ? fields.kyc_details : JSON.stringify(fields.kyc_details)) : null,
-          fields.duty_paid || '',
-          fields.is_remote || '',
-          fields.remote_status || '',
-          fields.destination_variant || ''
-        ]
-      )
+      const shipmentResult = await insertShipment({
+        orderId: order_id,
+        fields,
+        senderId: finalSenderId,
+        receiverId: finalReceiverId,
+        weight: finalWeight,
+        chargeableWeight: finalChgWeight,
+        length: finalLength,
+        breadth: finalBreadth,
+        height: finalHeight,
+        pieces: finalPieces,
+        contentDescription,
+        snap,
+        status: fields.vendor_config_id ? 'processing' : 'booked',
+        vendorPushStatus: fields.vendor_config_id ? 'pending' : 'skipped',
+        isLocked: Boolean(fields.vendor_config_id),
+        invoiceItemsJson,
+        parcelsJson
+      })
 
       shipmentId = shipmentResult.insertId
     }
@@ -2360,13 +2179,11 @@ export const getBookings = async (req, res) => {
     const limitNum = Math.min(200, Math.max(1, parseInt(limit) || 10))
     const offset = (pageNum - 1) * limitNum
 
-    const allowedSortColumns = ['created_at', 'order_id', 'tracking_number', 'status', 'total_amount', 'pushed_at']
+    const allowedSortColumns = ['created_at', 'order_id', 'tracking_number', 'status', 'total_amount']
     const safeSortBy = allowedSortColumns.includes(sort_by) ? sort_by : 'created_at'
     const safeSortOrder = sort_order === 'asc' ? 'ASC' : 'DESC'
 
     const cols = await getSafeTableColumns()
-    const hasPushedAt = Boolean(cols?.s?.has('pushed_at'))
-    const dateExpr = hasPushedAt ? 'COALESCE(s.pushed_at, s.created_at)' : 's.created_at'
 
     let whereConditions = []
     const params = []
@@ -2505,13 +2322,13 @@ export const getBookings = async (req, res) => {
       }
     }
 
-    // Date range filters — match on push date for pushed shipments, or created date for drafts
+    // Date range filters
     if (from_date && from_date.trim()) {
-      whereConditions.push(`${dateExpr} >= ?`)
+      whereConditions.push('s.created_at >= ?')
       params.push(`${from_date.trim()} 00:00:00`)
     }
     if (to_date && to_date.trim()) {
-      whereConditions.push(`${dateExpr} <= ?`)
+      whereConditions.push('s.created_at <= ?')
       params.push(`${to_date.trim()} 23:59:59`)
     }
 
@@ -2574,10 +2391,6 @@ export const getBookings = async (req, res) => {
           }
         }
         if (cols.s.has('created_at')) {
-          if (hasPushedAt) {
-            activeFields.push("CONVERT(DATE_FORMAT(COALESCE(s.pushed_at, s.created_at), '%d/%m/%Y') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
-            activeFields.push("CONVERT(DATE_FORMAT(COALESCE(s.pushed_at, s.created_at), '%Y-%m-%d') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
-          }
           activeFields.push("CONVERT(DATE_FORMAT(s.created_at, '%d/%m/%Y') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
           activeFields.push("CONVERT(DATE_FORMAT(s.created_at, '%Y-%m-%d') USING utf8mb4) COLLATE utf8mb4_unicode_ci")
         }
@@ -2683,7 +2496,7 @@ export const getBookings = async (req, res) => {
        LEFT JOIN courier_providers cp ON s.courier_provider_id = cp.id
        LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
        ${whereClause}
-       ORDER BY ${safeSortBy === 'created_at' ? `${dateExpr} ${safeSortOrder}, s.id ${safeSortOrder}` : `s.${safeSortBy} ${safeSortOrder}`}
+       ORDER BY s.${safeSortBy} ${safeSortOrder}
        LIMIT ${limitNum} OFFSET ${offset}`,
       params
     )
@@ -3681,22 +3494,6 @@ export const updateBookingBilling = async (req, res) => {
       }
     }
 
-    // Extract content_description if provided or derive from invoice_items
-    let updatedContent = null
-    const rawContent = body.content_description !== undefined ? body.content_description : (body.content !== undefined ? body.content : undefined)
-    if (rawContent !== undefined) {
-      updatedContent = String(rawContent).trim()
-    } else if (body.invoice_items !== undefined) {
-      let parsedItems = []
-      try {
-        parsedItems = Array.isArray(body.invoice_items) ? body.invoice_items : JSON.parse(body.invoice_items || '[]')
-      } catch {}
-      const descs = Array.isArray(parsedItems) ? parsedItems.map(i => i.description).filter(Boolean) : []
-      if (descs.length > 0) {
-        updatedContent = descs.join(', ')
-      }
-    }
-
     // Update the local shipments table
     await execute(
       `UPDATE shipments SET
@@ -3709,7 +3506,6 @@ export const updateBookingBilling = async (req, res) => {
         shipping_charge = ?,
         extra_charge = ?,
         total_amount = ?,
-        content_description = COALESCE(?, content_description),
         invoice_items = COALESCE(?, invoice_items),
         parcels = COALESCE(?, parcels),
         no_of_pieces = COALESCE(?, no_of_pieces)
@@ -3724,7 +3520,6 @@ export const updateBookingBilling = async (req, res) => {
         shippingCharge,
         extraCharge,
         totalAmount,
-        updatedContent,
         invItemsJson,
         parcelsJson,
         updatedPieces,
@@ -3738,11 +3533,10 @@ export const updateBookingBilling = async (req, res) => {
         `UPDATE booking_requests SET 
           customer_id = ?, 
           customer_name = ?,
-          content_description = COALESCE(?, content_description),
           invoice_items = COALESCE(?, invoice_items),
           parcels = COALESCE(?, parcels)
          WHERE shipment_id = ? OR tracking_number = ?`,
-        [newCustomerId, newCustomerName, updatedContent, invItemsJson, parcelsJson, id, current.tracking_number]
+        [newCustomerId, newCustomerName, invItemsJson, parcelsJson, id, current.tracking_number]
       )
     } catch (brErr) {
       console.warn('[updateBookingBilling local br sync notice]:', brErr.message)
@@ -3777,14 +3571,6 @@ export const updateBookingBilling = async (req, res) => {
       remoteSyncSuccess = syncResult?.success ?? true
     } catch (syncErr) {
       console.error('[Remote AWBENTRY Billing Sync Error]:', syncErr.message)
-    }
-
-    // Regenerate invoice PDF with updated content/items
-    try {
-      const invPath = await generateInvoiceForBooking(updatedShipment.tracking_number, updatedShipment, updatedShipment.sender_id, updatedShipment.receiver_id)
-      await execute('UPDATE shipments SET invoice_pdf_path = ? WHERE id = ?', [invPath, id])
-    } catch (pdfErr) {
-      console.warn('[updateBookingBilling invoice regeneration notice]:', pdfErr.message)
     }
 
     // Synchronize customer & billing to WordPress REST API
