@@ -1313,7 +1313,7 @@ function PersonCard({ title, icon: Icon, person, fallbackName, fallbackCity, fal
             <div className="pt-2 mt-2 border-t border-border/60 flex items-center justify-between">
               <span className="text-[11px] font-bold text-text-tertiary uppercase">KYC Document</span>
               <a
-                href={kycUrl.startsWith('http') ? kycUrl : `https://admin.princeexp.com${kycUrl}`}
+                href={kycUrl.startsWith('http') ? kycUrl : `https://purple-raccoon-753399.hostingersite.com${kycUrl}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-xs text-primary font-bold hover:underline bg-primary/5 px-2 py-1 rounded"

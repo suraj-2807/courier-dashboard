@@ -230,12 +230,12 @@ export default function NewBookingPage() {
       if (res.data?.success) {
         const docType = form.sender_gstin_type || 'Aadhaar Number'
         const docNo = form.sender_gstin_no || '123456781234'
-        const fullPath = `https://admin.princeexp.com${res.data.fileUrl}`
+        const fullPath = `https://purple-raccoon-753399.hostingersite.com${res.data.fileUrl}`
         
         if (slot === 1) {
           setKycFileName(file.name)
           setForm(prev => {
-            const file2Url = prev.kyc_file_url_2 ? `https://admin.princeexp.com${prev.kyc_file_url_2}` : fullPath
+            const file2Url = prev.kyc_file_url_2 ? `https://purple-raccoon-753399.hostingersite.com${prev.kyc_file_url_2}` : fullPath
             const kycArr = [
               {
                 document_type: docType,
@@ -262,7 +262,7 @@ export default function NewBookingPage() {
         } else {
           setKycFileName2(file.name)
           setForm(prev => {
-            const file1Url = prev.kyc_file_url ? `https://admin.princeexp.com${prev.kyc_file_url}` : fullPath
+            const file1Url = prev.kyc_file_url ? `https://purple-raccoon-753399.hostingersite.com${prev.kyc_file_url}` : fullPath
             const kycArr = [
               {
                 document_type: docType,
@@ -311,7 +311,7 @@ export default function NewBookingPage() {
           document_no: prev.sender_gstin_no || '123456781234',
           document_sub_type: 'doc_1',
           document_name: prev.kyc_doc_name_2,
-          file_path: `https://admin.princeexp.com${prev.kyc_file_url_2}`
+          file_path: `https://purple-raccoon-753399.hostingersite.com${prev.kyc_file_url_2}`
         }]) : null
       }))
     } else {
@@ -325,7 +325,7 @@ export default function NewBookingPage() {
           document_no: prev.sender_gstin_no || '123456781234',
           document_sub_type: 'doc_1',
           document_name: prev.kyc_doc_name,
-          file_path: `https://admin.princeexp.com${prev.kyc_file_url}`
+          file_path: `https://purple-raccoon-753399.hostingersite.com${prev.kyc_file_url}`
         }]) : null
       }))
     }

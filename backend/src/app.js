@@ -42,11 +42,24 @@ app.use((req, res, next) => {
 
 app.use('/api', routes)
 
-// Serve uploads (e.g. vendor label PDFs)
+// Serve uploads (e.g. vendor label PDFs, KYC documents)
 const uploadsPath = path.resolve(__dirname, '..', 'uploads')
-if (!fs.existsSync(uploadsPath)) {
-  fs.mkdirSync(uploadsPath, { recursive: true })
+const docsPath = path.join(uploadsPath, 'documents')
+if (!fs.existsSync(docsPath)) {
+  fs.mkdirSync(docsPath, { recursive: true })
 }
+try {
+  const logoPath = path.resolve(__dirname, 'assets', 'PRINCE LOGO.png')
+  if (fs.existsSync(logoPath)) {
+    const front = path.join(docsPath, 'default_kyc_front.jpg')
+    const back = path.join(docsPath, 'default_kyc_back.jpg')
+    if (!fs.existsSync(front)) fs.copyFileSync(logoPath, front)
+    if (!fs.existsSync(back)) fs.copyFileSync(logoPath, back)
+  }
+} catch (e) {
+  console.warn('Could not initialize default KYC files:', e.message)
+}
+
 app.use('/uploads', express.static(uploadsPath))
 app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')))
 app.use('/uploads', (req, res) => {

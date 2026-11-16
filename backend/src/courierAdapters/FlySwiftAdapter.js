@@ -393,12 +393,32 @@ export default class FlySwiftAdapter extends BaseAdapter {
         const defaultDocType = rawType || 'Aadhaar Number'
         const defaultDocNo = shipmentData.sender_gstin_no || shipmentData.receiver_gstin_no || '123456781234'
 
-        const file1Url = shipmentData.kyc_file_url
-          ? (shipmentData.kyc_file_url.startsWith('http') ? shipmentData.kyc_file_url : `https://admin.princeexp.com${shipmentData.kyc_file_url}`)
-          : (shipmentData.kyc_file_1 || 'https://google.com/media//2024/02/2024-02-03-17-11-341.jpg')
-        const file2Url = shipmentData.kyc_file_url_2
-          ? (shipmentData.kyc_file_url_2.startsWith('http') ? shipmentData.kyc_file_url_2 : `https://admin.princeexp.com${shipmentData.kyc_file_url_2}`)
-          : (shipmentData.kyc_file_2 || (shipmentData.kyc_file_url ? file1Url : 'https://google.com/media//2024/02/2024-02-03-17-11-342.jpg'))
+        const baseUrl = process.env.PUBLIC_APP_URL || process.env.APP_URL || 'https://purple-raccoon-753399.hostingersite.com'
+
+        const resolveUrl = (rawUrl, fallbackFileName) => {
+          if (!rawUrl) return `${baseUrl}/uploads/documents/${fallbackFileName}`
+          let u = String(rawUrl).trim()
+          if (u.startsWith('/')) {
+            return `${baseUrl}${u}`
+          }
+          if (u.includes('admin.princeexp.com')) {
+            return u.replace('https://admin.princeexp.com', baseUrl).replace('http://admin.princeexp.com', baseUrl)
+          }
+          if (u.includes('google.com/media')) {
+            return `${baseUrl}/uploads/documents/${fallbackFileName}`
+          }
+          return u
+        }
+
+        const cleanDocType = defaultDocType.replace(/\s+/g, '_')
+        const defaultName1 = shipmentData.kyc_doc_name || `${cleanDocType}_doc_1.jpg`
+        const defaultName2 = shipmentData.kyc_doc_name_2 || `${cleanDocType}_doc_2.jpg`
+
+        const file1Url = resolveUrl(shipmentData.kyc_file_url || shipmentData.kyc_file_1, 'default_kyc_front.jpg')
+        const file2Url = resolveUrl(
+          shipmentData.kyc_file_url_2 || shipmentData.kyc_file_2 || (shipmentData.kyc_file_url ? shipmentData.kyc_file_url : null),
+          'default_kyc_back.jpg'
+        )
 
         let inputDetails = shipmentData.kyc_details
         if (typeof inputDetails === 'string') {
@@ -413,8 +433,8 @@ export default class FlySwiftAdapter extends BaseAdapter {
             document_type: (!item.document_type || item.document_type.toLowerCase() === 'kyc') ? defaultDocType : item.document_type,
             document_no: item.document_no || defaultDocNo,
             document_sub_type: item.document_sub_type || `doc_${idx + 1}`,
-            document_name: item.document_name || shipmentData.kyc_doc_name || '',
-            file_path: item.file_path || (idx === 0 ? file1Url : file2Url)
+            document_name: item.document_name || (idx === 0 ? defaultName1 : defaultName2),
+            file_path: resolveUrl(item.file_path, idx === 0 ? 'default_kyc_front.jpg' : 'default_kyc_back.jpg')
           }))
         }
 
@@ -423,7 +443,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
             document_type: defaultDocType,
             document_no: defaultDocNo,
             document_sub_type: 'doc_1',
-            document_name: shipmentData.kyc_doc_name || '',
+            document_name: defaultName1,
             file_path: file1Url
           })
         }
@@ -434,8 +454,8 @@ export default class FlySwiftAdapter extends BaseAdapter {
             document_type: kycDocs[0].document_type || defaultDocType,
             document_no: kycDocs[0].document_no || defaultDocNo,
             document_sub_type: 'doc_2',
-            document_name: shipmentData.kyc_doc_name_2 || kycDocs[0].document_name || '',
-            file_path: file2Url || kycDocs[0].file_path || 'https://google.com/media//2024/02/2024-02-03-17-11-342.jpg'
+            document_name: defaultName2,
+            file_path: file2Url || kycDocs[0].file_path
           })
         }
 
