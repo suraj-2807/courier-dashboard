@@ -308,6 +308,10 @@ export default class FlySwiftAdapter extends BaseAdapter {
       }
     }
 
+    const resolvedService = String(shipmentData.service || shipmentData.service_code || shipmentData.api_service_code || shipmentData.dhl_service || 'STANDARD').trim() || 'STANDARD'
+    const resolvedNote = String(shipmentData.invoice_note || shipmentData.note || shipmentData.remarks || contentDescription || 'Commercial Goods').trim() || 'Commercial Goods'
+    const resolvedInvoiceType = String(shipmentData.invoice_type || 'INVOICE').trim() || 'INVOICE'
+
     // Default FlySwift / ACX / Bhabani create_docket payload structure
     const payload = {
       tracking_no: shipmentData.tracking_number || shipmentData.order_id || '',
@@ -324,11 +328,16 @@ export default class FlySwiftAdapter extends BaseAdapter {
       shipment_invoice_no: invoiceNo,
       shipment_invoice_date: invoiceDate,
       shipment_content: contentDescription,
-      remark: shipmentData.remarks || '',
+      remark: shipmentData.remarks || contentDescription || 'Shipment',
+      note: resolvedNote,
+      invoice_note: resolvedNote,
       new_docket_free_form_invoice: '1',
       free_form_currency: shipmentData.invoice_currency || 'INR',
       terms_of_trade: shipmentData.terms_of_trade || 'FOB',
-      api_service_code: shipmentData.service_code || shipmentData.api_service_code || '',
+      invoice_type: resolvedInvoiceType,
+      service: resolvedService,
+      service_code: resolvedService,
+      api_service_code: resolvedService,
       api_vendor_code: shipmentData.vendor_code || shipmentData.api_vendor_code || '',
 
       // Shipper (Sender)

@@ -1017,7 +1017,13 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     final_chargeable_weight: chargeableWeight,
     // Booking Request linkage
     from_request: fields.from_request || fields.booking_request_id || null,
-    request_awb: fields.request_awb || null
+    request_awb: fields.request_awb || null,
+    // Service & Invoice & Note
+    service: fields.service || fields.service_code || fields.api_service_code || '',
+    service_code: fields.service_code || fields.service || fields.api_service_code || '',
+    invoice_type: fields.invoice_type || 'INVOICE',
+    invoice_note: fields.invoice_note || '',
+    note: fields.invoice_note || fields.note || fields.remarks || ''
   }
 }
 
@@ -1592,7 +1598,12 @@ export const pushBookingToApi = async (req, res) => {
       sender_gstin_no: booking.sender_gstin_no || '',
       receiver_address_2: booking.receiver_address_2 || '',
       receiver_gstin_type: booking.receiver_gstin_type || '',
-      receiver_gstin_no: booking.receiver_gstin_no || ''
+      receiver_gstin_no: booking.receiver_gstin_no || '',
+      service: targetServiceCode || booking.service_code || '',
+      service_code: targetServiceCode || booking.service_code || '',
+      invoice_type: booking.invoice_type || 'INVOICE',
+      invoice_note: booking.invoice_note || '',
+      note: booking.invoice_note || booking.remarks || ''
     }, booking.order_id, booking.tracking_number)
 
     // Push to vendor API
