@@ -1023,7 +1023,10 @@ function buildVendorShipmentData(fields, orderId, trackingNumber) {
     service_code: fields.service_code || fields.service || fields.api_service_code || '',
     invoice_type: fields.invoice_type || 'INVOICE',
     invoice_note: fields.invoice_note || '',
-    note: fields.invoice_note || fields.note || fields.remarks || ''
+    note: fields.invoice_note || fields.note || fields.remarks || '',
+    free_form_invoice_type_id: fields.free_form_invoice_type_id || fields.invoice_type_id || undefined,
+    free_form_note_master_code: fields.free_form_note_master_code || undefined,
+    free_form_currency: fields.free_form_currency || fields.invoice_currency || 'INR'
   }
 }
 
@@ -1603,7 +1606,10 @@ export const pushBookingToApi = async (req, res) => {
       service_code: targetServiceCode || booking.service_code || '',
       invoice_type: booking.invoice_type || 'INVOICE',
       invoice_note: booking.invoice_note || '',
-      note: booking.invoice_note || booking.remarks || ''
+      note: booking.invoice_note || booking.remarks || '',
+      free_form_invoice_type_id: booking.free_form_invoice_type_id || booking.invoice_type_id,
+      free_form_note_master_code: booking.free_form_note_master_code,
+      free_form_currency: booking.free_form_currency || booking.invoice_currency || 'INR'
     }, booking.order_id, booking.tracking_number)
 
     // Push to vendor API

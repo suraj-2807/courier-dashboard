@@ -312,7 +312,50 @@ export default class FlySwiftAdapter extends BaseAdapter {
     const resolvedNote = String(shipmentData.invoice_note || shipmentData.note || shipmentData.remarks || contentDescription || 'Commercial Goods').trim() || 'Commercial Goods'
     const resolvedInvoiceType = String(shipmentData.invoice_type || 'INVOICE').trim() || 'INVOICE'
 
-    // Default FlySwift / ACX / Bhabani create_docket payload structure
+    const vendorCode = String(
+      this.config?.vendor_code ||
+      shipmentData.vendor_code ||
+      shipmentData.api_vendor_code ||
+      this.config?.name ||
+      ''
+    ).trim().toLowerCase()
+    const isImperial = vendorCode.includes('imperial')
+
+    // Resolve free_form_invoice_type_id (integer required if new_docket_free_form_invoice is 1)
+    let invoiceTypeId = 1
+    if (shipmentData.free_form_invoice_type_id !== undefined && shipmentData.free_form_invoice_type_id !== null && String(shipmentData.free_form_invoice_type_id).trim() !== '') {
+      const parsed = parseInt(shipmentData.free_form_invoice_type_id, 10)
+      if (!isNaN(parsed)) invoiceTypeId = parsed
+    } else if (shipmentData.invoice_type_id !== undefined && shipmentData.invoice_type_id !== null && String(shipmentData.invoice_type_id).trim() !== '') {
+      const parsed = parseInt(shipmentData.invoice_type_id, 10)
+      if (!isNaN(parsed)) invoiceTypeId = parsed
+    }
+
+    // Resolve free_form_note_master_code (string: GIFT or SAMPLE)
+    let noteMasterCode = 'SAMPLE'
+    const rawNote = String(shipmentData.free_form_note_master_code || shipmentData.export_reason || shipmentData.invoice_note || shipmentData.note || '').trim().toUpperCase()
+    if (rawNote.includes('GIFT')) {
+      noteMasterCode = 'GIFT'
+    } else if (rawNote.includes('SAMPLE')) {
+      noteMasterCode = 'SAMPLE'
+    } else {
+      noteMasterCode = 'SAMPLE'
+    }
+
+    const freeFormCurrency = shipmentData.free_form_currency || shipmentData.invoice_currency || 'INR'
+    const termsOfTrade = shipmentData.terms_of_trade || (isImperial ? 'CIF' : 'FOB')
+
+    // Document type resolution for KYC
+    let rawDocType = shipmentData.sender_gstin_type || shipmentData.receiver_gstin_type || 'Aadhaar Number'
+    if (/aadhar/i.test(rawDocType)) rawDocType = 'Aadhaar Number'
+    if (/pan/i.test(rawDocType)) rawDocType = 'PAN Number'
+    if (/passport/i.test(rawDocType)) rawDocType = 'Passport'
+    if (/voter/i.test(rawDocType)) rawDocType = 'Voter ID'
+    if (/gst/i.test(rawDocType)) rawDocType = 'GSTIN'
+    const defaultDocType = rawDocType || 'Aadhaar Number'
+    const defaultDocNo = shipmentData.sender_gstin_no || shipmentData.receiver_gstin_no || '123456781234'
+
+    // Default FlySwift / ACX / Bhabani / Imperial create_docket payload structure
     const payload = {
       tracking_no: shipmentData.tracking_number || shipmentData.order_id || '',
       reference_name: shipmentData.sender_name || shipmentData.order_reference || '',
@@ -329,12 +372,11 @@ export default class FlySwiftAdapter extends BaseAdapter {
       shipment_invoice_date: invoiceDate,
       shipment_content: contentDescription,
       remark: shipmentData.remarks || contentDescription || 'Shipment',
-      note: resolvedNote,
-      invoice_note: resolvedNote,
       new_docket_free_form_invoice: '1',
-      free_form_currency: shipmentData.invoice_currency || 'INR',
-      terms_of_trade: shipmentData.terms_of_trade || 'FOB',
-      invoice_type: resolvedInvoiceType,
+      free_form_invoice_type_id: invoiceTypeId,
+      free_form_note_master_code: noteMasterCode,
+      free_form_currency: freeFormCurrency,
+      terms_of_trade: termsOfTrade,
       service: resolvedService,
       service_code: resolvedService,
       api_service_code: resolvedService,
@@ -352,8 +394,8 @@ export default class FlySwiftAdapter extends BaseAdapter {
       shipper_state: shipmentData.sender_state || '',
       shipper_country: originCode,
       shipper_zip_code: shipmentData.sender_pincode || '',
-      shipper_gstin_type: shipmentData.sender_gstin_type || '',
-      shipper_gstin_no: shipmentData.sender_gstin_no || '',
+      shipper_gstin_type: shipmentData.sender_gstin_type || defaultDocType,
+      shipper_gstin_no: shipmentData.sender_gstin_no || defaultDocNo,
 
       // Consignee (Receiver)
       consignee_name: shipmentData.receiver_name || '',
@@ -382,8 +424,8 @@ export default class FlySwiftAdapter extends BaseAdapter {
       pickup_address_state: shipmentData.pickup_address_state || shipmentData.sender_state || '',
       pickup_address_country: originCode,
       pickup_address_zip_code: shipmentData.pickup_address_zip_code || shipmentData.sender_pincode || '',
-      pickup_address_gstin_type: shipmentData.pickup_address_gstin_type || shipmentData.sender_gstin_type || '',
-      pickup_address_gstin_no: shipmentData.pickup_address_gstin_no || shipmentData.sender_gstin_no || '',
+      pickup_address_gstin_type: shipmentData.pickup_address_gstin_type || shipmentData.sender_gstin_type || defaultDocType,
+      pickup_address_gstin_no: shipmentData.pickup_address_gstin_no || shipmentData.sender_gstin_no || defaultDocNo,
 
       // DHL-specific fields
       dhl_otp: shipmentData.otp || shipmentData.dhl_otp || '',
@@ -493,6 +535,12 @@ export default class FlySwiftAdapter extends BaseAdapter {
         }
         return invoices
       })()
+    }
+
+    if (!isImperial) {
+      payload.note = resolvedNote
+      payload.invoice_note = resolvedNote
+      payload.invoice_type = resolvedInvoiceType
     }
 
     if (authContext && authContext.customerId) {
