@@ -322,7 +322,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
     const isImperial = vendorCode.includes('imperial')
 
     // Resolve free_form_invoice_type_id (integer required if new_docket_free_form_invoice is 1)
-    let invoiceTypeId = 1
+    let invoiceTypeId = isImperial ? 123 : 1
     if (shipmentData.free_form_invoice_type_id !== undefined && shipmentData.free_form_invoice_type_id !== null && String(shipmentData.free_form_invoice_type_id).trim() !== '') {
       const parsed = parseInt(shipmentData.free_form_invoice_type_id, 10)
       if (!isNaN(parsed)) invoiceTypeId = parsed
@@ -372,6 +372,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
       shipment_invoice_date: invoiceDate,
       shipment_content: contentDescription,
       remark: shipmentData.remarks || contentDescription || 'Shipment',
+      entry_type: shipmentData.entry_type !== undefined ? parseInt(shipmentData.entry_type, 10) : 2,
       new_docket_free_form_invoice: '1',
       free_form_invoice_type_id: invoiceTypeId,
       free_form_note_master_code: noteMasterCode,
@@ -380,7 +381,7 @@ export default class FlySwiftAdapter extends BaseAdapter {
       service: resolvedService,
       service_code: resolvedService,
       api_service_code: resolvedService,
-      api_vendor_code: shipmentData.vendor_code || shipmentData.api_vendor_code || '',
+      api_vendor_code: shipmentData.api_vendor_code || (isImperial ? 'IMPERIAL' : (shipmentData.vendor_code || '')),
 
       // Shipper (Sender)
       shipper_name: shipmentData.sender_name || '',
@@ -537,7 +538,13 @@ export default class FlySwiftAdapter extends BaseAdapter {
       })()
     }
 
-    if (!isImperial) {
+    if (isImperial) {
+      delete payload.service
+      delete payload.service_code
+      delete payload.invoice_type
+      delete payload.note
+      delete payload.invoice_note
+    } else {
       payload.note = resolvedNote
       payload.invoice_note = resolvedNote
       payload.invoice_type = resolvedInvoiceType
