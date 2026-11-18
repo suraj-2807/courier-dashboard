@@ -1779,7 +1779,7 @@ export const manualVendorAwbPush = async (req, res) => {
 
     let targetVendorConfigId = vendor_config_id || booking.vendor_config_id || 7
     let targetVendorCode = vendor_code || booking.vendor_code || 'imperial'
-    let targetServiceCode = service_code || booking.service_code || ''
+    const finalServiceCode = (service_code && String(service_code).trim()) ? String(service_code).trim() : (booking.service_code || '')
 
     if (targetVendorConfigId) {
       const cfgRows = await query('SELECT * FROM vendor_api_configs WHERE id = ?', [targetVendorConfigId])
@@ -1792,7 +1792,7 @@ export const manualVendorAwbPush = async (req, res) => {
       `UPDATE shipments SET
         vendor_config_id = ?,
         vendor_code = ?,
-        service_code = COALESCE(NULLIF(?, ''), service_code),
+        service_code = ?,
         vendor_awb_number = ?,
         vendor_awb_number_2 = ?,
         forwarding_no = ?,
@@ -1801,7 +1801,7 @@ export const manualVendorAwbPush = async (req, res) => {
         vendor_push_status = 'success',
         pushed_at = NOW()
       WHERE id = ?`,
-      [targetVendorConfigId, targetVendorCode, targetServiceCode, cleanAwb, cleanAwb2, cleanAwb2, id]
+      [targetVendorConfigId, targetVendorCode, finalServiceCode, cleanAwb, cleanAwb2, cleanAwb2, id]
     )
 
     // Ensure initial booked event exists
