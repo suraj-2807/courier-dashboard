@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { useBookingById, usePushBookingToApi } from '../hooks/useBookings'
+import { useBookingById, usePushBookingToApi, useSetManualVendorAwb } from '../hooks/useBookings'
 import { useLiveTracking } from '../hooks/useTracking'
 import { bookingsApi } from '../api/bookings.api'
+import { getActiveVendors } from '../api/apiSettings.api'
 import { parseForwardingNumbers } from './BookingsPage'
 import { getFullCountryName } from '../utils/countryUtils'
 import {
@@ -79,9 +80,68 @@ export default function BookingDetailPage() {
   const { data, isLoading, isError, refetch } = useBookingById(id)
   const booking = data?.booking
   const pushToApiMutation = usePushBookingToApi()
+  const setManualAwbMutation = useSetManualVendorAwb()
 
   const handleBack = () => {
     navigate('/bookings')
+  }
+
+  // Manual Vendor AWB modal state
+  const [showManualAwbModal, setShowManualAwbModal] = useState(false)
+  const [manualAwbForm, setManualAwbForm] = useState({
+    vendor_config_id: '',
+    vendor_code: '',
+    vendor_awb_number: '',
+    vendor_awb_number_2: '',
+    service_code: ''
+  })
+
+  // Active vendors query
+  const { data: activeVendorsData } = useQuery({
+    queryKey: ['active-vendors'],
+    queryFn: getActiveVendors
+  })
+  const activeVendors = activeVendorsData?.vendors || []
+
+  const openManualAwbModal = () => {
+    if (!booking) return
+    const defaultVendor = activeVendors.find(v => v.id === booking.vendor_config_id) ||
+      activeVendors.find(v => v.vendor_code?.includes('imperial')) ||
+      activeVendors[0]
+    setManualAwbForm({
+      vendor_config_id: booking.vendor_config_id ? String(booking.vendor_config_id) : (defaultVendor?.id ? String(defaultVendor.id) : '7'),
+      vendor_code: booking.vendor_code || defaultVendor?.vendor_code || 'imperial',
+      vendor_awb_number: booking.vendor_awb_number || '',
+      vendor_awb_number_2: booking.vendor_awb_number_2 || booking.forwarding_no || '',
+      service_code: booking.service_code || ''
+    })
+    setShowManualAwbModal(true)
+  }
+
+  const handleSaveManualAwb = async (e) => {
+    e.preventDefault()
+    if (!manualAwbForm.vendor_awb_number.trim()) {
+      toast.error('Please enter a Vendor AWB number')
+      return
+    }
+    const tId = toast.loading('Assigning vendor AWB and marking as booked...')
+    try {
+      const selectedVendor = activeVendors.find(v => String(v.id) === String(manualAwbForm.vendor_config_id))
+      await setManualAwbMutation.mutateAsync({
+        id: booking.id,
+        vendor_config_id: manualAwbForm.vendor_config_id ? parseInt(manualAwbForm.vendor_config_id) : 7,
+        vendor_code: selectedVendor?.vendor_code || manualAwbForm.vendor_code || 'imperial',
+        vendor_awb_number: manualAwbForm.vendor_awb_number.trim(),
+        vendor_awb_number_2: manualAwbForm.vendor_awb_number_2.trim(),
+        service_code: manualAwbForm.service_code
+      })
+      toast.success('Vendor AWB updated successfully!', { id: tId })
+      setShowManualAwbModal(false)
+      refetch()
+      refetchLiveTracking()
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to assign vendor AWB', { id: tId })
+    }
   }
 
   // Billing edit modal state
@@ -586,6 +646,16 @@ export default function BookingDetailPage() {
             </button>
           )}
 
+          {/* Manual Vendor AWB button (assign without pushing) */}
+          <button
+            onClick={openManualAwbModal}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-900 text-[12px] font-bold rounded-xl transition-colors cursor-pointer"
+            title="Manually assign vendor AWB without calling external vendor API"
+          >
+            <FileCheck className="w-3.5 h-3.5 text-purple-700" />
+            {booking.vendor_awb_number ? 'Update Vendor AWB' : 'Manual Vendor AWB'}
+          </button>
+
           <button
             onClick={async () => {
               const toastId = toast.loading('Pushing live tracking sync to carrier API...')
@@ -785,11 +855,12 @@ export default function BookingDetailPage() {
           )}
 
           {/* Vendor API Response Card */}
-          {booking.vendor_config_id && (
+          {(booking.vendor_config_id || booking.vendor_awb_number) && (
             <VendorResponseCard
               booking={booking}
               vendorConfig={vendorConfig}
               liveTracking={liveTracking}
+              onOpenManualAwb={openManualAwbModal}
             />
           )}
 
@@ -1044,6 +1115,119 @@ export default function BookingDetailPage() {
           ) : null}
         </div>
       </div>
+
+      {/* ── Manual Vendor AWB Modal ── */}
+      {showManualAwbModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-surface rounded-2xl shadow-xl border border-border w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-5 border-b border-border bg-surface-alt">
+              <div>
+                <h3 className="text-[16px] font-black text-navy flex items-center gap-2">
+                  <FileCheck className="w-5 h-5 text-purple-600" />
+                  Assign Vendor AWB (Without Pushing)
+                </h3>
+                <p className="text-[12px] text-text-tertiary mt-0.5">
+                  Directly save vendor tracking number & mark booking as booked/pushed.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowManualAwbModal(false)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-text-tertiary hover:bg-surface-hover hover:text-navy cursor-pointer transition-colors"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveManualAwb} className="p-6 space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">
+                  Vendor Partner *
+                </label>
+                <select
+                  value={manualAwbForm.vendor_config_id}
+                  onChange={(e) => {
+                    const selId = e.target.value
+                    const v = activeVendors.find(x => String(x.id) === String(selId))
+                    setManualAwbForm(prev => ({
+                      ...prev,
+                      vendor_config_id: selId,
+                      vendor_code: v?.vendor_code || prev.vendor_code
+                    }))
+                  }}
+                  className="w-full h-10 px-3 bg-surface border border-border rounded-xl text-[13px] font-semibold text-text-primary focus:outline-none focus:border-primary"
+                >
+                  {activeVendors.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.name} ({v.vendor_code || 'API'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">
+                  Primary Vendor AWB Number *
+                </label>
+                <input
+                  required
+                  type="text"
+                  placeholder="e.g. IP123402, 1629258"
+                  value={manualAwbForm.vendor_awb_number}
+                  onChange={(e) => setManualAwbForm(prev => ({ ...prev, vendor_awb_number: e.target.value }))}
+                  className="w-full h-10 px-3 font-mono bg-surface border border-border rounded-xl text-[13px] font-bold text-primary focus:outline-none focus:border-primary"
+                />
+                <p className="text-[10px] text-text-tertiary mt-1">
+                  The primary carrier/vendor AWB (e.g. from Imperial India, FlySwift, etc.)
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">
+                  Forwarding / Secondary AWB (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 9737260984, 1Z9999999999999999"
+                  value={manualAwbForm.vendor_awb_number_2}
+                  onChange={(e) => setManualAwbForm(prev => ({ ...prev, vendor_awb_number_2: e.target.value }))}
+                  className="w-full h-10 px-3 font-mono bg-surface border border-border rounded-xl text-[13px] font-medium text-text-primary focus:outline-none focus:border-primary"
+                />
+                <p className="text-[10px] text-text-tertiary mt-1">
+                  Optional UPS, FedEx, DPD, or forwarder tracking number.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-border flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowManualAwbModal(false)}
+                  className="px-4 py-2 border border-border rounded-xl text-[12px] font-bold text-text-secondary hover:bg-surface-hover cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={setManualAwbMutation.isPending}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-dark text-white text-[12px] font-bold rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {setManualAwbMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Save & Mark Booked
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1062,7 +1246,7 @@ function InfoField({ icon: Icon, label, value, highlight = false }) {
   )
 }
 
-function VendorResponseCard({ booking, vendorConfig, liveTracking }) {
+function VendorResponseCard({ booking, vendorConfig, liveTracking, onOpenManualAwb }) {
   const [showRaw, setShowRaw] = useState(false)
 
   const pushStatus = booking.vendor_push_status
@@ -1112,7 +1296,18 @@ function VendorResponseCard({ booking, vendorConfig, liveTracking }) {
 
         {/* Vendor AWB */}
         <div>
-          <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px] mb-1">Vendor AWB1</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-[1px]">Vendor AWB1</p>
+            {onOpenManualAwb && (
+              <button
+                type="button"
+                onClick={onOpenManualAwb}
+                className="text-[10px] font-bold text-purple-600 hover:text-purple-800 underline cursor-pointer"
+              >
+                {booking.vendor_awb_number ? 'Edit' : '+ Set'}
+              </button>
+            )}
+          </div>
           {booking.vendor_awb_number ? (
             <button
               onClick={copyAwb}

@@ -6,6 +6,7 @@ export const bookingsApi = {
   create: (data) => api.post('/bookings', data),
   save: (data) => api.post('/bookings/save', data),
   pushToApi: (id, data) => api.post(`/bookings/${id}/push`, data),
+  setManualVendorAwb: (id, data) => api.post(`/bookings/${id}/manual-vendor-awb`, data),
   downloadInvoice: (id) => api.get(`/bookings/${id}/invoice-pdf`, { responseType: 'blob' }),
   downloadWaybill: (id) => api.get(`/bookings/${id}/bill-pdf`, { responseType: 'blob' }),
   downloadBoxLabels: (id) => api.get(`/bookings/${id}/labels-pdf`, { responseType: 'blob' }),

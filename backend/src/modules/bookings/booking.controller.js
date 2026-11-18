@@ -1756,6 +1756,132 @@ export const pushBookingToApi = async (req, res) => {
   }
 }
 
+/**
+ * Manually assign vendor AWB and mark shipment as pushed/booked without calling external API
+ */
+export const manualVendorAwbPush = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { vendor_config_id, vendor_code, vendor_awb_number, vendor_awb_number_2, forwarding_no, service_code } = req.body
+
+    if (!vendor_awb_number || !String(vendor_awb_number).trim()) {
+      return res.status(400).json({ success: false, message: 'Vendor AWB number is required' })
+    }
+
+    const cleanAwb = String(vendor_awb_number).trim()
+    const cleanAwb2 = String(vendor_awb_number_2 || forwarding_no || '').trim()
+
+    const rows = await query('SELECT * FROM shipments WHERE id = ?', [id])
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Shipment not found' })
+    }
+    const booking = rows[0]
+
+    let targetVendorConfigId = vendor_config_id || booking.vendor_config_id || 7
+    let targetVendorCode = vendor_code || booking.vendor_code || 'imperial'
+    let targetServiceCode = service_code || booking.service_code || ''
+
+    if (targetVendorConfigId) {
+      const cfgRows = await query('SELECT * FROM vendor_api_configs WHERE id = ?', [targetVendorConfigId])
+      if (cfgRows.length > 0) {
+        targetVendorCode = cfgRows[0].vendor_code || targetVendorCode
+      }
+    }
+
+    await execute(
+      `UPDATE shipments SET
+        vendor_config_id = ?,
+        vendor_code = ?,
+        service_code = COALESCE(NULLIF(?, ''), service_code),
+        vendor_awb_number = ?,
+        vendor_awb_number_2 = ?,
+        forwarding_no = ?,
+        status = 'booked',
+        is_locked = TRUE,
+        vendor_push_status = 'success',
+        pushed_at = NOW()
+      WHERE id = ?`,
+      [targetVendorConfigId, targetVendorCode, targetServiceCode, cleanAwb, cleanAwb2, cleanAwb2, id]
+    )
+
+    // Ensure initial booked event exists
+    try {
+      const existingBooked = await query(
+        `SELECT id FROM tracking_events WHERE shipment_id = ? AND status LIKE '%Booked%' LIMIT 1`,
+        [id]
+      )
+      if (existingBooked.length === 0) {
+        await execute(
+          `INSERT INTO tracking_events (shipment_id, status, description, location, event_time)
+           VALUES (?, ?, ?, ?, ?)`,
+          [id, 'Shipment Booked & Order Created', 'Shipment booked & order created', booking.s_city || booking.sender_city || 'Origin Hub', booking.created_at || booking.booking_date || new Date()]
+        )
+      }
+    } catch {}
+
+    // Tracking entry: Dispatched with manual vendor AWB
+    await execute(
+      `INSERT INTO tracking_events (shipment_id, status, description, location, event_time)
+       VALUES (?, ?, ?, ?, NOW())`,
+      [id, 'Shipment Manifested & Dispatched from Origin Hub', `Manual Vendor AWB assigned: ${cleanAwb}${cleanAwb2 ? ' | Forwarding: ' + cleanAwb2 : ''}`, 'Origin Hub']
+    )
+
+    // Trigger background tracking sync
+    setTimeout(() => {
+      import('../../services/trackingSync.service.js').then(m => m.syncShipmentTracking(id)).catch(() => {})
+    }, 1000)
+
+    const updatedRows = await query(
+      `SELECT s.*, 
+        snd.name as s_name, snd.email as s_email, snd.phone as s_phone, 
+        snd.address as s_address, snd.city as s_city, snd.state as s_state,
+        snd.pincode as s_pincode, snd.country as s_country,
+        rcv.name as r_name, rcv.email as r_email, rcv.phone as r_phone,
+        rcv.address as r_address, rcv.city as r_city, rcv.state as r_state,
+        rcv.pincode as r_pincode, rcv.country as r_country,
+        vac.name as vendor_name, vac.vendor_code as vac_vendor_code,
+        vac.auth_credentials as vac_auth_credentials, vac.available_services as vac_services
+       FROM shipments s
+       LEFT JOIN senders snd ON s.sender_id = snd.id
+       LEFT JOIN receivers rcv ON s.receiver_id = rcv.id
+       LEFT JOIN vendor_api_configs vac ON s.vendor_config_id = vac.id
+       WHERE s.id = ?`,
+      [id]
+    )
+
+    const updated = updatedRows[0] || booking
+
+    // Sync to Remote Operations AWBENTRY and parcel_history (Hostinger DB)
+    try {
+      await syncToRemoteAwbEntry(updated, { awbNumber: cleanAwb, forwardingNumber: cleanAwb2, success: true })
+    } catch (syncErr) {
+      console.error('[Remote AWBENTRY Sync Error]:', syncErr.message)
+    }
+
+    try {
+      await syncToRemoteParcelHistory(
+        updated,
+        'Shipment Manifested & Dispatched from Origin Hub',
+        (updated.s_city || updated.sender_city || 'SURAT') + ' HUB',
+        new Date()
+      )
+    } catch (syncErr) {
+      console.error('[Remote parcel_history Sync Error]:', syncErr.message)
+    }
+
+    return res.json({
+      success: true,
+      message: `Vendor AWB ${cleanAwb} assigned successfully! Shipment marked as booked.`,
+      booking: updated
+    })
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    })
+  }
+}
+
 
 // ═══════════════════════════════════════════════════════════════
 //  CREATE BOOKING (Legacy — saves and pushes in one step)

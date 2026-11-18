@@ -52,6 +52,18 @@ export const usePushBookingToApi = () => {
   })
 }
 
+export const useSetManualVendorAwb = () => {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, ...data }) =>
+      bookingsApi.setManualVendorAwb(id, data).then((res) => res.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['bookings'] })
+      queryClient.invalidateQueries({ queryKey: ['booking'] })
+    }
+  })
+}
+
 export const useUpdateBookingStatus = () => {
   const queryClient = useQueryClient()
   return useMutation({

@@ -20,7 +20,8 @@ import {
   restoreBookings,
   deletePermanentBookings,
   syncTrackingController,
-  cloneBooking
+  cloneBooking,
+  manualVendorAwbPush
 } from './booking.controller.js'
 
 const router = express.Router()
@@ -85,6 +86,7 @@ router.post('/trash', authMiddleware, trashBookings)
 router.post('/restore', authMiddleware, restoreBookings)
 router.post('/delete-permanent', authMiddleware, deletePermanentBookings)
 router.post('/:id/push', authMiddleware, pushBookingToApi)
+router.post('/:id/manual-vendor-awb', authMiddleware, manualVendorAwbPush)
 router.post('/:id/clone', authMiddleware, cloneBooking)
 router.get('/', authMiddleware, getBookings)
 router.get('/:id', authMiddleware, getBookingById)
