@@ -18,5 +18,8 @@ export const customerApi = {
   // Booking Requests
   submitBookingRequest: (data) => api.post('/customer/booking-requests', data),
   getMyRequests: (params) => api.get('/customer/my-requests', { params }),
-  getRequestDetail: (requestAwb) => api.get(`/customer/my-requests/${requestAwb}`)
+  getRequestDetail: (requestAwb) => api.get(`/customer/my-requests/${requestAwb}`),
+
+  // Public Rate Calculation
+  calculateRate: (params) => api.post('/customer/calculate-rate', params).then((res) => res.data)
 }

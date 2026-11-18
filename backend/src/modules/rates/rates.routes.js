@@ -36,9 +36,9 @@ const upload = multer({
 // LIVE PRINCE EXPRESS RATES API ROUTES
 // ═══════════════════════════════════════════════════════════════════════
 
-// 1. Calculate Rate (Primary endpoint used by bookings & calculator)
-router.post('/calculate', authMiddleware, calculateVendorRate)
-router.get('/calculate', authMiddleware, calculateVendorRate)
+// 1. Calculate Rate (Primary endpoint used by bookings, customer portal & calculator)
+router.post('/calculate', calculateVendorRate)
+router.get('/calculate', calculateVendorRate)
 
 // 2. Vendors List
 router.get('/vendors', authMiddleware, getVendors)

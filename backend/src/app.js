@@ -20,15 +20,10 @@ app.use(express.json())
 
 app.use(morgan('dev'))
 
-// X-Frame-Options: Allow iframe embedding for customer-facing pages only
+// Frame embedding headers: Allow embedding in WordPress customer portal and external iframes
 app.use((req, res, next) => {
-  if (req.path.startsWith('/customer')) {
-    // Allow embedding in iframes from any origin (WP site)
-    res.setHeader('X-Frame-Options', 'ALLOWALL')
-    res.removeHeader('X-Frame-Options')
-  } else {
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN')
-  }
+  res.removeHeader('X-Frame-Options')
+  res.setHeader('Content-Security-Policy', "frame-ancestors *")
   next()
 })
 

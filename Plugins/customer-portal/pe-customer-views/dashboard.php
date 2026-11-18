@@ -2304,7 +2304,7 @@ if (!$is_accounting_enabled) {
       </div>
       <div
         style="background:var(--cpcard); border-radius:16px; border:1px solid var(--cpbdr); overflow:hidden; box-shadow:var(--cpsh);">
-        <iframe id="pe-booking-iframe" src="<?php echo $iframe_booking_url; ?>"
+        <iframe id="pe-booking-iframe" src="<?php echo $iframe_booking_url; ?>" data-src="<?php echo $iframe_booking_url; ?>"
           style="width:100%; height:calc(100vh - 180px); border:none;" title="Booking Request Form"></iframe>
       </div>
     </div>
@@ -3279,7 +3279,12 @@ if (!$is_accounting_enabled) {
     // Reload iframe when hitting tab 2
     if (tabId === 'new-booking') {
       var frame = document.getElementById('pe-booking-iframe');
-      if (frame) frame.src = frame.src;
+      if (frame) {
+        var origSrc = frame.getAttribute('data-src') || frame.src;
+        if (!frame.src || frame.src.indexOf('/customer/booking') === -1) {
+          frame.src = origSrc;
+        }
+      }
     }
     if (tabId === 'requests') {
       cpLoadRequests(1);

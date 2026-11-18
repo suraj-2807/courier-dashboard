@@ -456,14 +456,25 @@ export default function CustomerBookingPage() {
     if (!dest || w <= 0) return
 
     const timer = setTimeout(() => {
-      calculateVendorRate({
-        vendor_code: 'pacific',
-        country: dest,
-        service_code: '',
-        weight: w,
-        postcode: form.receiver_pincode || '',
-        state: form.receiver_state || ''
-      })
+      const rateCalc = customerApi.calculateRate
+        ? customerApi.calculateRate({
+            vendor_code: 'pacific',
+            country: dest,
+            service_code: '',
+            weight: w,
+            postcode: form.receiver_pincode || '',
+            state: form.receiver_state || ''
+          })
+        : calculateVendorRate({
+            vendor_code: 'pacific',
+            country: dest,
+            service_code: '',
+            weight: w,
+            postcode: form.receiver_pincode || '',
+            state: form.receiver_state || ''
+          })
+
+      rateCalc
         .then((res) => {
           if (res && res.success && res.vendor_rate !== undefined) {
             setForm(prev => ({

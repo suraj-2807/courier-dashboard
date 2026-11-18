@@ -20,13 +20,14 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
-// Response interceptor — handle 401 (skip for auth endpoints so login errors display properly)
+// Response interceptor — handle 401 (skip for auth endpoints and public customer pages)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     const requestUrl = error.config?.url || ''
     const isAuthEndpoint = requestUrl.includes('/auth/')
-    if (error.response?.status === 401 && !isAuthEndpoint) {
+    const isCustomerPath = typeof window !== 'undefined' && window.location.pathname.startsWith('/customer')
+    if (error.response?.status === 401 && !isAuthEndpoint && !isCustomerPath) {
       useAuthStore.getState().logout()
       window.location.href = '/login'
     }

@@ -1,3 +1,9 @@
+<IfModule mod_headers.c>
+  Header unset X-Frame-Options
+  Header always unset X-Frame-Options
+  Header set Content-Security-Policy "frame-ancestors *;"
+</IfModule>
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
