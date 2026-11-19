@@ -206,10 +206,10 @@ export function resolveVendorDetails(vendorCode, vendorName, serviceCode = null,
       vendName: 'ACX',
       service: svcInt > 0 ? svcInt : 1020,
       autotrack: 1,
-      accode: getCred('accode', 'customer_code', 'acc_code') || 'A0872',
+      accode: getCred('accode', 'customer_code', 'acc_code') || 'A0967',
       tuser: getCred('tuser', 'username') || '',
       tpass: getCred('tpass', 'password') || '',
-      apikey: getCred('apikey', 'api_key') || ''
+      apikey: getCred('apikey', 'api_key', 'company_id') || '60'
     }
   }
 
@@ -273,9 +273,9 @@ export function resolveVendorDetails(vendorCode, vendorName, serviceCode = null,
     return {
       vendCode: 'IMPERIAL',
       vendName: 'IMPERIAL',
-      service: svcInt > 0 ? svcInt : 0,
+      service: svcInt > 0 ? svcInt : 1023,
       autotrack: 1,
-      accode: getCred('accode', 'customer_code', 'acc_code', 'customer_id') || '66',
+      accode: getCred('accode', 'customer_code', 'acc_code', 'customer_id') || 'P007',
       tuser: getCred('tuser', 'username', 'email') || 'PRINCEINTERNATIONALCOURIER@GMAIL.COM',
       tpass: getCred('tpass', 'password') || '',
       apikey: getCred('apikey', 'api_key', 'company_id') || '27'

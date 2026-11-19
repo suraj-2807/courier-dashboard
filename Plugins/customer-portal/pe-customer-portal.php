@@ -591,8 +591,8 @@ function pe_cp_ajax_shipments()
             }
         }
 
-        // Live vendor API fallback if forwarding number is still empty and service is configured
-        if ($fwd === '' && intval($r->SERVICE ?? 0) > 0 && function_exists('pe_fetch_tracking')) {
+        // Live vendor API fallback if forwarding number is still empty and service/vendor is configured
+        if ($fwd === '' && (intval($r->SERVICE ?? 0) > 0 || !empty($r->VENDCODE) || !empty($vendor_name)) && function_exists('pe_fetch_tracking')) {
             $c = new stdClass();
             $c->AWBNO = strval($r->AWBNO);
             $c->VENDORID1 = $vAwb ?: '';
@@ -1219,8 +1219,8 @@ function pe_cp_ajax_shipment_detail()
         }
     }
 
-    // Live vendor API fallback if forwarding number is still empty and service configured
-    if ($forwarding_no === '' && intval($row->SERVICE ?? 0) > 0 && function_exists('pe_fetch_tracking')) {
+    // Live vendor API fallback if forwarding number is still empty and service/vendor is configured
+    if ($forwarding_no === '' && (intval($row->SERVICE ?? 0) > 0 || !empty($row->VENDCODE) || !empty($vendor_name)) && function_exists('pe_fetch_tracking')) {
         $c = new stdClass();
         $c->AWBNO = strval($row->AWBNO);
         $c->VENDORID1 = $vendor_awb ?: '';

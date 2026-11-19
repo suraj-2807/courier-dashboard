@@ -111,6 +111,7 @@ class PE_Data {
             $r->ACCODE      = $awb_row->ACCODE;
             $r->APIKEY      = $awb_row->APIKEY;
             $r->PIECES      = $awb_row->PIECES;
+            $r->ORIGIN      = $awb_row->ORIGIN ?? 'SURAT';
             $r->DELIVERYDATE = '';
             $r->DELVTIME     = '';
             $r->RECEIVER     = '';
@@ -196,7 +197,7 @@ class PE_Data {
                 }
             }
 
-            // Always ensure the first two company origin events exist
+            // Always ensure the company origin events exist
             pe_attach_company_origin_events(self::$tracking, $r);
 
             // Filter out numeric-only locations from tracking
@@ -241,6 +242,7 @@ class PE_Data {
                 $r->REMARKS     = $bk_req->remarks ?? '';
                 $r->STATUS      = ucfirst($bk_req->status);
                 $r->PIECES      = $bk_req->no_of_pieces ?? 1;
+                $r->ORIGIN      = $bk_req->sender_city ?? 'SURAT';
                 self::$result = $r;
                 self::$status = $r->STATUS;
 
@@ -258,24 +260,20 @@ class PE_Data {
                         ];
                     }
                 }
+                pe_attach_company_origin_events(self::$tracking, $r);
                 return;
             }
-
-            self::log('Shipment Not Found in AWBENTRY or consignee or booking_requests table', ['searched_awb' => self::$awb]);
             return;
         }
 
         $r = self::$result;
         self::$status = !empty($r->STATUS) ? $r->STATUS : "In Transit";
         $api = intval($r->API);
-        self::log('Legacy Consignee Row Matched', ['c_id' => $r->c_id ?? null, 'API' => $api]);
 
-        if ($api == 1 || !empty($r->SERVICE)) {
+        if ($api == 1) {
             self::$tracking = pe_fetch_tracking($r);
             self::$status = !empty($r->STATUS) ? $r->STATUS : "In Transit";
-        }
-
-        if (empty(self::$tracking)) {
+        } else {
             $rows = $wpdb->get_results($wpdb->prepare(
                 "SELECT * FROM parcel_history WHERE AWBNO = %s ORDER BY date ASC, time ASC", self::$awb
             ));
@@ -290,6 +288,7 @@ class PE_Data {
                 }
             }
         }
+        pe_attach_company_origin_events(self::$tracking, $r);
     }
 }
 
@@ -313,10 +312,7 @@ function pe_attach_company_origin_events(&$tracking, $result) {
         $tracking = [];
     }
 
-    // ── Filter out vendor generic placeholder events ──
-    // Vendors (Bhabani, ACX, FlySwift etc.) return initial EDI events like
-    // "Shipment Information Received" from "MUMBAI" which are redundant
-    // and conflict with our own origin events.
+    // Filter out vendor generic placeholder events
     $vendor_placeholder_patterns = [
         'information received',
         'data received',
@@ -332,11 +328,9 @@ function pe_attach_company_origin_events(&$tracking, $result) {
     $tracking = array_values(array_filter($tracking, function($ev) use ($vendor_placeholder_patterns) {
         $act = strtolower(trim($ev['activity'] ?? ''));
         $loc = strtolower(trim($ev['location'] ?? ''));
-        // Keep events that are from PRINCE EXPRESS (our own events)
         if (strpos($loc, 'prince express') !== false) {
             return true;
         }
-        // Remove vendor placeholder events
         foreach ($vendor_placeholder_patterns as $pattern) {
             if (strpos($act, $pattern) !== false) {
                 return false;
@@ -346,47 +340,17 @@ function pe_attach_company_origin_events(&$tracking, $result) {
     }));
 
     $company_events = [];
-
-    // 2. Check if shipment is dispatched (API pushed / vendor AWB exists)
     $is_dispatched = !empty($result->VENDORID1) || !empty($result->VENDORID2) || !empty($result->VENDNAME) || intval($result->SERVICE ?? 0) > 0 || !empty($tracking);
 
     if ($is_dispatched) {
-        // Query parcel_history for manifest/dispatch event date, fallback to current date
-        global $wpdb;
-        $disp_date = current_time('M d, Y');
-        $disp_time = '11:15 AM';
-        if (!empty($result->AWBNO)) {
-            $disp_row = $wpdb->get_row($wpdb->prepare(
-                "SELECT date, time FROM parcel_history WHERE (AWBNO = %d OR CAST(AWBNO AS CHAR) = %s) AND (LOWER(activity) LIKE '%manifest%' OR LOWER(activity) LIKE '%dispatch%') ORDER BY date DESC, time DESC LIMIT 1",
-                intval($result->AWBNO), strval($result->AWBNO)
-            ));
-            if ($disp_row && !empty($disp_row->date) && $disp_row->date !== '0000-00-00') {
-                $disp_date = pe_fdate($disp_row->date);
-                if (!empty($disp_row->time) && $disp_row->time !== '00:00:00') {
-                    $disp_time = date('h:i A', strtotime($disp_row->time));
-                }
-            }
-        }
-
-        // Two entries are ours:
-        // 1. Shipment Manifested & Dispatched from Origin Hub (push date)
         $company_events[] = [
-            'date' => $disp_date,
-            'time' => $disp_time,
+            'date' => $bdate,
+            'time' => '11:15 AM',
             'location' => $origin_location . ' (PRINCE EXPRESS HUB)',
             'activity' => 'Shipment Manifested & Dispatched from Origin Hub',
             '_pe_origin' => 2,
         ];
-        // 2. Shipment Booked & Order Created (original draft date)
-        $company_events[] = [
-            'date' => $bdate,
-            'time' => '10:00 AM',
-            'location' => $origin_location . ' (PRINCE EXPRESS)',
-            'activity' => 'Shipment Booked & Order Created',
-            '_pe_origin' => 1,
-        ];
     } else {
-        // Draft: ONLY show "Shipment Booked & Order Created"
         $company_events[] = [
             'date' => $bdate,
             'time' => '10:00 AM',
@@ -396,7 +360,6 @@ function pe_attach_company_origin_events(&$tracking, $result) {
         ];
     }
 
-    // Remove any existing duplicates of our company events from tracking
     $tracking = array_values(array_filter($tracking, function($ev) {
         $act = strtolower(trim($ev['activity'] ?? ''));
         if (strpos($act, 'shipment booked & order created') !== false) return false;
@@ -407,6 +370,9 @@ function pe_attach_company_origin_events(&$tracking, $result) {
     $tracking = array_merge($tracking, $company_events);
 }
 
+// ========================================
+// HELPERS
+// ========================================
 function pe_short_status($status) {
     $s = strtolower(trim($status));
     if (strpos($s,'delivered')!==false) return 'Delivered';
@@ -439,7 +405,8 @@ function pe_status_badge_class($status) {
 function pe_service_name($svc) {
     $m = [0=>'Prince Express Standard',5=>'Prince Express Premium',1001=>'Sain Express',
           1007=>'Prince Express Global',1008=>'Pace Group International',
-          1009=>'Sairaj International',1019=>'FlySwift Express'];
+          1009=>'Sairaj International',1019=>'FlySwift Express',
+          1020=>'ACX International',1021=>'Bhabani Express',1023=>'Imperial India'];
     return $m[$svc] ?? 'Prince Express';
 }
 
@@ -751,7 +718,7 @@ function pe_fetch_tracking($result) {
 
     // 1. BHABANI EXPRESS
     if ($svc == 1021 || strpos($vend, 'bhabani') !== false || strpos($vend, 'bhavani') !== false) {
-        $accode = !empty($result->ACCODE) ? trim($result->ACCODE) : 'T001';
+        $accode = '1050';
         $company_id = '913';
         $url = "https://bhabani.itdservices.in/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
         PE_Data::log('Calling Bhabani Express Tracking API', ['url' => $url]);
@@ -768,9 +735,9 @@ function pe_fetch_tracking($result) {
     }
     // 2. ACX INTERNATIONAL
     elseif ($svc == 1020 || strpos($vend, 'acx') !== false) {
-        $accode = !empty($result->ACCODE) ? trim($result->ACCODE) : 'A0872';
-        $company_id = '5';
-        $url = "https://admin.acxintl.in/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
+        $accode = (!empty($result->ACCODE) && $result->ACCODE !== 'A0872' && $result->ACCODE !== '879') ? trim($result->ACCODE) : 'A0967';
+        $company_id = (!empty($result->APIKEY) && $result->APIKEY !== '5') ? trim($result->APIKEY) : '60';
+        $url = "https://online.acxintl.in/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
         PE_Data::log('Calling ACX International Tracking API', ['url' => $url]);
         
         $r = wp_remote_get($url, ['timeout' => 15, 'sslverify' => false]);
@@ -781,6 +748,23 @@ function pe_fetch_tracking($result) {
             $body = wp_remote_retrieve_body($r);
             PE_Data::log('ACX API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
             $history = pe_parse_flyswift_events($body, $result, 'ACX International');
+        }
+    }
+    // 2b. IMPERIAL INDIA (ITDServices Platform)
+    elseif (strpos($vend, 'imperial') !== false || strpos($vend, 'imp') !== false) {
+        $accode = (!empty($result->ACCODE) && $result->ACCODE !== '66') ? trim($result->ACCODE) : 'P007';
+        $company_id = !empty($result->APIKEY) ? trim($result->APIKEY) : '27';
+        $url = "https://admin.imperial-india.net/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
+        PE_Data::log('Calling Imperial India Tracking API', ['url' => $url]);
+        
+        $r = wp_remote_get($url, ['timeout' => 15, 'sslverify' => false]);
+        if (is_wp_error($r)) {
+            PE_Data::log('Imperial API HTTP Error', ['error' => $r->get_error_message()]);
+        } else {
+            $code = wp_remote_retrieve_response_code($r);
+            $body = wp_remote_retrieve_body($r);
+            PE_Data::log('Imperial API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
+            $history = pe_parse_flyswift_events($body, $result, 'Imperial India');
         }
     }
     // 3. FLYSWIFT / TRACKMATE
@@ -926,95 +910,6 @@ function pe_fetch_tracking($result) {
     }
 
     return $history;
-}
-
-/**
- * Render browser console logs and visual debugging panel
- */
-function pe_render_debug_output() {
-    $logs = PE_Data::$debug_logs;
-    $is_debug_requested = isset($_GET['debug']) || isset($_POST['debug']) || current_user_can('manage_options');
-    $json_logs = json_encode($logs);
-    $json_result = json_encode(PE_Data::$result);
-    $json_tracking = json_encode(PE_Data::$tracking);
-
-    ob_start();
-    ?>
-    <!-- ======================================================= -->
-    <!--  PRINCE EXPRESS TRACKING DEBUG LOGS (BROWSER CONSOLE)   -->
-    <!-- ======================================================= -->
-    <script>
-    (function() {
-        var logs = <?php echo $json_logs ?: '[]'; ?>;
-        var shipment = <?php echo $json_result ?: 'null'; ?>;
-        var tracking = <?php echo $json_tracking ?: '[]'; ?>;
-        var awb = <?php echo json_encode(PE_Data::$awb); ?>;
-        var status = <?php echo json_encode(PE_Data::$status); ?>;
-
-        if (window.console && console.groupCollapsed) {
-            console.groupCollapsed(
-                "%c📦 [Prince Express Tracking Debug] %c" + (awb ? "AWB: " + awb : "No Search"),
-                "background:#0f172a;color:#38bdf8;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:12px;border:1px solid #38bdf8;",
-                "background:#1e293b;color:#f59e0b;padding:3px 8px;border-radius:4px;font-weight:bold;font-size:12px;"
-            );
-            console.log("%c🔍 Searched Term:", "font-weight:bold;color:#94a3b8;", awb);
-            console.log("%c📋 Current Status:", "font-weight:bold;color:#10b981;", status);
-            console.log("%c🗄️ Database Record:", "font-weight:bold;color:#6366f1;", shipment);
-            console.log("%c⏱️ Tracking Events (" + tracking.length + "):", "font-weight:bold;color:#ec4899;", tracking);
-            
-            console.group("%c📜 Step-by-Step Diagnostic Logs", "color:#f59e0b;font-weight:bold;");
-            logs.forEach(function(l, idx) {
-                console.log("%c[" + l.time + "] #" + (idx + 1) + " " + l.title, "color:#0284c7;font-weight:bold;", l.data || "");
-            });
-            console.groupEnd();
-            
-            console.info("💡 ProTip: Add '?debug=1' to your tracking URL to view the live visual diagnostic inspector on page.");
-            console.groupEnd();
-        }
-    })();
-    </script>
-    <?php if ($is_debug_requested && !empty(PE_Data::$awb)): ?>
-    <div style="margin:24px 0;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:20px;color:#f8fafc;font-family:monospace;font-size:13px;line-height:1.5;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:1px solid #334155;padding-bottom:10px;">
-            <div style="font-size:15px;font-weight:700;color:#38bdf8;">
-                <i class="fa-solid fa-bug" style="margin-right:8px;"></i> Prince Express Diagnostic Panel (?debug=1)
-            </div>
-            <span style="background:#1e293b;color:#94a3b8;padding:3px 8px;border-radius:6px;font-size:11px;">AWB: <?php echo esc_html(PE_Data::$awb); ?></span>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:16px;">
-            <div style="background:#1e293b;padding:10px;border-radius:8px;">
-                <div style="color:#94a3b8;font-size:11px;">STATUS</div>
-                <div style="color:#10b981;font-weight:700;font-size:14px;"><?php echo esc_html(PE_Data::$status ?: 'N/A'); ?></div>
-            </div>
-            <div style="background:#1e293b;padding:10px;border-radius:8px;">
-                <div style="color:#94a3b8;font-size:11px;">VENDOR CODE / NAME</div>
-                <div style="color:#f59e0b;font-weight:700;font-size:14px;"><?php echo esc_html((PE_Data::$result->VENDNAME ?? '') . ' (' . (PE_Data::$result->VENDCODE ?? '') . ')'); ?></div>
-            </div>
-            <div style="background:#1e293b;padding:10px;border-radius:8px;">
-                <div style="color:#94a3b8;font-size:11px;">VENDOR AWB1</div>
-                <div style="color:#38bdf8;font-weight:700;font-size:14px;"><?php echo esc_html(PE_Data::$result->VENDORID1 ?? 'N/A'); ?></div>
-            </div>
-            <div style="background:#1e293b;padding:10px;border-radius:8px;">
-                <div style="color:#94a3b8;font-size:11px;">SERVICE ID</div>
-                <div style="color:#c084fc;font-weight:700;font-size:14px;"><?php echo esc_html(PE_Data::$result->SERVICE ?? '0'); ?></div>
-            </div>
-        </div>
-        <div style="color:#94a3b8;font-size:12px;margin-bottom:8px;font-weight:700;">EXECUTION LOGS:</div>
-        <div style="background:#020617;border:1px solid #1e293b;border-radius:8px;padding:12px;max-height:260px;overflow-y:auto;">
-            <?php foreach ($logs as $idx => $l): ?>
-            <div style="margin-bottom:8px;border-bottom:1px dashed #1e293b;padding-bottom:6px;">
-                <span style="color:#64748b;">[<?php echo esc_html($l['time']); ?>]</span>
-                <span style="color:#38bdf8;font-weight:600;margin-left:6px;"><?php echo esc_html($l['title']); ?></span>
-                <?php if ($l['data']): ?>
-                <pre style="margin:4px 0 0;color:#94a3b8;font-size:11px;white-space:pre-wrap;"><?php echo esc_html(json_encode($l['data'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)); ?></pre>
-                <?php endif; ?>
-            </div>
-            <?php endforeach; ?>
-        </div>
-    </div>
-    <?php endif; ?>
-    <?php
-    return ob_get_clean();
 }
 
 // ========================================
@@ -1729,7 +1624,6 @@ function pe_tracking_form($atts) {
         </div>
     </div>
     <?php }
-    echo pe_render_debug_output();
     return ob_get_clean();
 }
 add_shortcode('pe_tracking', 'pe_tracking_form');
@@ -2203,20 +2097,6 @@ function pe_tracking_history_shortcode($atts) {
 
     $display = $tracking;
     usort($display, function($a, $b) {
-        // Company origin events always go to the end (bottom = oldest in reverse-chrono)
-        $a_origin = $a['_pe_origin'] ?? 0;
-        $b_origin = $b['_pe_origin'] ?? 0;
-
-        // If one is a company origin event and the other isn't, origin goes last
-        if ($a_origin && !$b_origin) return 1;
-        if (!$a_origin && $b_origin) return -1;
-
-        // If both are company origin events, "Manifested" (_pe_origin=2) goes second-to-last, "Booked" (_pe_origin=1) goes last (very bottom)
-        if ($a_origin && $b_origin) {
-            return $b_origin - $a_origin; // 2 before 1 — Manifested above Booked
-        }
-
-        // Normal events: reverse chronological (newest first)
         $ta = strtotime(str_replace(',', '', $a['date']) . ' ' . $a['time']);
         $tb = strtotime(str_replace(',', '', $b['date']) . ' ' . $b['time']);
         return $tb - $ta;

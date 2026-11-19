@@ -145,8 +145,11 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
     defaultCompanyId = '144'
     defaultCustomerCode = '1447'
   } else if (code.includes('acx') || nameLower.includes('acx')) {
-    defaultCompanyId = '5'
-    defaultCustomerCode = 'A0872'
+    defaultCompanyId = '60'
+    defaultCustomerCode = 'A0967'
+  } else if (code.includes('imperial') || nameLower.includes('imperial')) {
+    defaultCompanyId = '27'
+    defaultCustomerCode = 'P007'
   } else if (code.includes('bhabani') || code.includes('bhavani') || nameLower.includes('bhabani')) {
     defaultCompanyId = '913'
     defaultCustomerCode = 'T001'
@@ -157,9 +160,19 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
   if ((code.includes('sairaj') || nameLower.includes('sairaj')) && (!customerCode || customerCode === 'T001' || customerCode === '1032')) {
     customerCode = '1447'
   }
+  if ((code.includes('acx') || nameLower.includes('acx')) && (!customerCode || customerCode === 'A0872' || customerCode === '879' || customerCode === '1032')) {
+    customerCode = 'A0967'
+  }
+  if ((code.includes('imperial') || nameLower.includes('imperial')) && (!customerCode || customerCode === '66' || customerCode === '1032')) {
+    customerCode = 'P007'
+  }
 
   let host = 'admin.flyswift.net'
-  if (config?.tracking_api_url) {
+  if (code.includes('imperial') || nameLower.includes('imperial')) {
+    host = 'admin.imperial-india.net'
+  } else if (code.includes('acx') || nameLower.includes('acx')) {
+    host = 'online.acxintl.in'
+  } else if (config?.tracking_api_url) {
     try {
       const urlStr = config.tracking_api_url.startsWith('http') ? config.tracking_api_url : `https://${config.tracking_api_url}`
       host = new URL(urlStr).host
@@ -180,8 +193,16 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
   if (host.includes('sairaj') && !host.startsWith('admin.')) {
     host = `admin.${host}`
   }
+  // Ensure Imperial tracking uses admin.imperial-india.net
+  if (host.includes('imperial-india.net')) {
+    host = 'admin.imperial-india.net'
+  }
+  // Ensure ACX tracking uses online.acxintl.in
+  if (host.includes('acxintl.in')) {
+    host = 'online.acxintl.in'
+  }
 
-  const vendorDisplayName = config?.name || (code.includes('sairaj') ? 'Sairaj International' : defaultVendorName) || 'Courier Partner'
+  const vendorDisplayName = config?.name || (code.includes('sairaj') ? 'Sairaj International' : (code.includes('acx') ? 'ACX International' : (code.includes('imperial') ? 'Imperial India' : defaultVendorName))) || 'Courier Partner'
   const cleanAwb = String(awb).trim()
 
   let trackingUrl
@@ -195,6 +216,18 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
       if (configuredUrl.startsWith('https://admin.sairajinternational.online')) {
         configuredUrl = configuredUrl.replace('https://', 'http://')
       }
+    }
+    if (code.includes('acx') || nameLower.includes('acx')) {
+      configuredUrl = configuredUrl
+        .replace(/admin\.acxintl\.in/gi, 'online.acxintl.in')
+        .replace(/api_company_id=5/gi, 'api_company_id=60')
+        .replace(/customer_code=A0872/gi, 'customer_code=A0967')
+        .replace(/customer_code=879/gi, 'customer_code=A0967')
+    }
+    if (code.includes('imperial') || nameLower.includes('imperial')) {
+      configuredUrl = configuredUrl
+        .replace(/online\.imperial-india\.net/gi, 'admin.imperial-india.net')
+        .replace(/customer_code=66/gi, 'customer_code=P007')
     }
     if (configuredUrl.includes('{tracking_no}') || configuredUrl.includes('{awb}')) {
       trackingUrl = configuredUrl

@@ -432,7 +432,8 @@ function pe_status_badge_class($status) {
 function pe_service_name($svc) {
     $m = [0=>'Prince Express Standard',5=>'Prince Express Premium',1001=>'Sain Express',
           1007=>'Prince Express Global',1008=>'Pace Group International',
-          1009=>'Sairaj International',1019=>'FlySwift Express'];
+          1009=>'Sairaj International',1019=>'FlySwift Express',
+          1020=>'ACX International',1021=>'Bhabani Express',1023=>'Imperial India'];
     return $m[$svc] ?? 'Prince Express';
 }
 
@@ -761,9 +762,9 @@ function pe_fetch_tracking($result) {
     }
     // 2. ACX INTERNATIONAL
     elseif ($svc == 1020 || strpos($vend, 'acx') !== false) {
-        $accode = !empty($result->ACCODE) ? trim($result->ACCODE) : 'A0872';
-        $company_id = '5';
-        $url = "https://admin.acxintl.in/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
+        $accode = (!empty($result->ACCODE) && $result->ACCODE !== 'A0872' && $result->ACCODE !== '879') ? trim($result->ACCODE) : 'A0967';
+        $company_id = (!empty($result->APIKEY) && $result->APIKEY !== '5') ? trim($result->APIKEY) : '60';
+        $url = "https://online.acxintl.in/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
         PE_Data::log('Calling ACX International Tracking API', ['url' => $url]);
         
         $r = wp_remote_get($url, ['timeout' => 15, 'sslverify' => false]);
@@ -774,6 +775,23 @@ function pe_fetch_tracking($result) {
             $body = wp_remote_retrieve_body($r);
             PE_Data::log('ACX API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
             $history = pe_parse_flyswift_events($body, $result, 'ACX International');
+        }
+    }
+    // 2b. IMPERIAL INDIA (ITDServices Platform)
+    elseif (strpos($vend, 'imperial') !== false || strpos($vend, 'imp') !== false) {
+        $accode = (!empty($result->ACCODE) && $result->ACCODE !== '66') ? trim($result->ACCODE) : 'P007';
+        $company_id = !empty($result->APIKEY) ? trim($result->APIKEY) : '27';
+        $url = "https://admin.imperial-india.net/api/tracking_api/get_tracking_data?api_company_id={$company_id}&customer_code={$accode}&tracking_no={$vendor_awb}";
+        PE_Data::log('Calling Imperial India Tracking API', ['url' => $url]);
+        
+        $r = wp_remote_get($url, ['timeout' => 15, 'sslverify' => false]);
+        if (is_wp_error($r)) {
+            PE_Data::log('Imperial API HTTP Error', ['error' => $r->get_error_message()]);
+        } else {
+            $code = wp_remote_retrieve_response_code($r);
+            $body = wp_remote_retrieve_body($r);
+            PE_Data::log('Imperial API Response Received', ['status_code' => $code, 'body_preview' => substr($body, 0, 300)]);
+            $history = pe_parse_flyswift_events($body, $result, 'Imperial India');
         }
     }
     // 3. FLYSWIFT / TRACKMATE
