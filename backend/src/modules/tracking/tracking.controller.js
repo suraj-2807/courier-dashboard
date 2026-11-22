@@ -527,10 +527,44 @@ export const searchTracking = async (req, res) => {
 
     const { senders, receivers, courier_providers, ...shipment } = rows[0]
 
-    const events = await query(
+    let events = await query(
       'SELECT * FROM tracking_events WHERE shipment_id = ? ORDER BY event_time DESC',
       [shipment.id]
     )
+
+    const hasBooked = events.some(e => /booked/i.test(e.status || ''))
+    const isPushed = shipment.vendor_push_status === 'success' || shipment.is_locked == 1 || (shipment.vendor_awb_number && shipment.vendor_awb_number !== shipment.tracking_number)
+    const hasManifest = events.some(e => /manifest|dispatch/i.test(e.status || ''))
+
+    const originCity = senders?.city || shipment.sender_city || 'SURAT'
+    const addedEvents = []
+
+    if (!hasBooked) {
+      addedEvents.push({
+        id: 'auto-booked',
+        shipment_id: shipment.id,
+        status: 'Shipment Booked & Order Created',
+        description: 'Shipment booked & order created',
+        location: `${originCity}, INDIA (PRINCE EXPRESS)`,
+        event_time: shipment.booking_date || shipment.created_at || new Date()
+      })
+    }
+
+    if (isPushed && !hasManifest) {
+      addedEvents.push({
+        id: 'auto-manifest',
+        shipment_id: shipment.id,
+        status: 'Shipment Manifested & Dispatched from Origin Hub',
+        description: `Shipment Manifested & Dispatched from Origin Hub${shipment.vendor_awb_number ? ' | Vendor AWB: ' + shipment.vendor_awb_number : ''}`,
+        location: `${originCity}, INDIA (PRINCE EXPRESS HUB)`,
+        event_time: shipment.pushed_at || shipment.last_push_at || new Date()
+      })
+    }
+
+    if (addedEvents.length > 0) {
+      events = [...events, ...addedEvents]
+      events.sort((a, b) => new Date(b.event_time) - new Date(a.event_time))
+    }
 
     return res.json({
       success: true,

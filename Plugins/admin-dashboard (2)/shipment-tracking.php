@@ -117,20 +117,47 @@ class PE_Data {
             $r->RECEIVER     = '';
             $r->STATUS       = '';
 
-            // Auto-create parcel_history "SHIPMENT BOOKED" if none exists
+            // 1. Auto-create parcel_history "SHIPMENT BOOKED" if none exists
             $history_awb_no = intval($awb_row->AWBNO);
-            $has_history = $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM parcel_history WHERE AWBNO = %d", $history_awb_no
+            $has_booked = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) FROM parcel_history WHERE AWBNO = %d AND (activity LIKE '%%BOOK%%' OR activity = 'SHIPMENT BOOKED')", $history_awb_no
             ));
-            if (!$has_history) {
+            if (!$has_booked) {
                 self::log('Creating Initial parcel_history Entry: SHIPMENT BOOKED', ['AWBNO' => $history_awb_no]);
                 $wpdb->insert('parcel_history', [
                     'AWBNO'    => $history_awb_no,
                     'date'     => !empty($awb_row->BOOKINGDATE) ? $awb_row->BOOKINGDATE : current_time('Y-m-d'),
-                    'time'     => current_time('H:i:s'),
+                    'time'     => '10:00:00',
                     'activity' => 'SHIPMENT BOOKED',
                     'location' => strtoupper(trim($awb_row->ORIGIN ?: 'SURAT')),
                 ]);
+            }
+
+            // 2. Auto-create parcel_history "MANIFESTED & DISPATCHED" if pushed and missing
+            $is_dispatched_init = !empty($r->VENDORID1) || !empty($r->VENDORID2) || !empty($r->VENDNAME) || intval($r->SERVICE ?? 0) > 0;
+            if ($is_dispatched_init) {
+                $has_manifest = $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM parcel_history WHERE AWBNO = %d AND (activity LIKE '%%MANIFEST%%' OR activity LIKE '%%DISPATCH%%')", $history_awb_no
+                ));
+                if (!$has_manifest) {
+                    $p_date = current_time('Y-m-d');
+                    $shp = $wpdb->get_row($wpdb->prepare(
+                        "SELECT pushed_at, last_push_at, updated_at FROM shipments WHERE (tracking_number = %s OR order_id = %s) LIMIT 1",
+                        $awb_row->AWBNO, $awb_row->AWBNO
+                    ));
+                    if ($shp) {
+                        $p_raw = !empty($shp->pushed_at) ? $shp->pushed_at : (!empty($shp->last_push_at) ? $shp->last_push_at : $shp->updated_at);
+                        if ($p_raw) $p_date = date('Y-m-d', strtotime($p_raw));
+                    }
+                    self::log('Creating parcel_history Entry: MANIFESTED & DISPATCHED', ['AWBNO' => $history_awb_no, 'date' => $p_date]);
+                    $wpdb->insert('parcel_history', [
+                        'AWBNO'    => $history_awb_no,
+                        'date'     => $p_date,
+                        'time'     => current_time('H:i:s'),
+                        'activity' => 'MANIFESTED & DISPATCHED',
+                        'location' => strtoupper(trim($awb_row->ORIGIN ?: 'SURAT')),
+                    ]);
+                }
             }
 
             self::$result = $r;

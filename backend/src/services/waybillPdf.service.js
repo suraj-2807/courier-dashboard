@@ -154,9 +154,11 @@ export async function generateWaybillPdf(params) {
       drawBox(startX, outerStartY, contentWidth, totalBoxHeight, 1.25)
 
       // ── SECTION 1: HEADER BLOCK ──
-      const col1Width = 300
-      const col2Width = 145
-      const col3Width = 110
+      // Total contentWidth = 555 (Left: 440, Right: 115)
+      // Perfectly aligned at startX + 440 across all 4 rows
+      const col1Width = 275
+      const col2Width = 165
+      const col3Width = 115
 
       // Header vertical dividers
       doc.moveTo(startX + col1Width, curY).lineTo(startX + col1Width, curY + totalHeaderHeight).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
@@ -179,14 +181,14 @@ export async function generateWaybillPdf(params) {
         .text('PRINCE INTERNATIONAL COURIER SERVICES', textLeft, curY + 6, { width: col1Width - (textLeft - startX) - 4 })
 
       doc.fillColor(TEXT_DARK).fontSize(6.3).font('Helvetica')
-        .text('SHOP NO. 4, AL MARHABA APT OPP. SAI BABA EYE HOSPITAL,', textLeft, curY + 19, { width: col1Width - (textLeft - startX) - 4, lineGap: 1 })
-        .text('MACHHLIPITH B/H LALAGATE, SURAT-395003.', textLeft, curY + 28, { width: col1Width - (textLeft - startX) - 4 })
-        .text('Ph: 9898787199', textLeft, curY + 38)
-        .text('Website : http://www.princeexp.com', textLeft, curY + 46)
+        .text('SHOP NO. 4, AL MARHABA APT OPP. SAI BABA EYE HOSPITAL,', textLeft, curY + 18, { width: col1Width - (textLeft - startX) - 4, lineGap: 1 })
+        .text('MACHHLIPITH B/H LALAGATE, SURAT-395003.', textLeft, curY + 27, { width: col1Width - (textLeft - startX) - 4 })
+        .text('Ph: 9898787199', textLeft, curY + 36)
+        .text('Website : https://www.princeexp.com', textLeft, curY + 44)
 
       // Header Col 2: AWB, Destination (Full country name), Pieces
       const col2X = startX + col1Width + 6
-      const labelCol2W = 52
+      const labelCol2W = 50
       const destFullName = getFullCountryName(receiver.country || shipment.destination_country || '')
 
       doc.fillColor(TEXT_DARK).fontSize(7.5).font('Helvetica-Bold')
@@ -202,15 +204,29 @@ export async function generateWaybillPdf(params) {
         .text(':', col2X + labelCol2W, curY + 38)
         .text(String(shipment.no_of_pieces || parcels.length || 1), col2X + labelCol2W + 6, curY + 38)
 
-      // Header Col 3: Date
-      const col3X = startX + col1Width + col2Width + 6
+      // Header Col 3: Date & Direct Tracking Link
+      const col3X = startX + col1Width + col2Width + 8
       const bookingDate = shipment.created_at
         ? new Date(shipment.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
         : new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
 
-      doc.fillColor(TEXT_DARK).fontSize(7.5).font('Helvetica-Bold')
+      const trackingUrl = `https://princeexp.com/tracking/?awb=${encodeURIComponent(awbNumber)}`
+
+      doc.fillColor(TEXT_DARK).fontSize(7.2).font('Helvetica-Bold')
         .text('Date :', col3X, curY + 6)
-        .font('Helvetica').text(bookingDate, col3X + 30, curY + 6)
+        .font('Helvetica').text(bookingDate, col3X + 28, curY + 6)
+
+      doc.fillColor(NAVY).fontSize(6.6).font('Helvetica-Bold')
+        .text('Track Online :', col3X, curY + 20)
+      doc.fillColor(RED).fontSize(6.2).font('Helvetica-Bold')
+        .text('Click to Track', col3X, curY + 30, {
+          link: trackingUrl,
+          underline: true
+        })
+      doc.fillColor(TEXT_DARK).fontSize(5.6).font('Helvetica')
+        .text('princeexp.com/tracking', col3X, curY + 41, {
+          link: trackingUrl
+        })
 
       curY += totalHeaderHeight
 
@@ -384,8 +400,10 @@ export async function generateWaybillPdf(params) {
       curY += row3Height
 
       // ── SECTION 4: TERMS & CONDITIONS & SIGNATURE ──
-      const termsWidth = 390
-      const sigWidth = 165
+      // Total contentWidth = 555 (Terms: 440, Sig: 115)
+      // Exactly matches the vertical line of Row 1, Row 2, and Row 3
+      const termsWidth = 440
+      const sigWidth = 115
 
       // Vertical divider for Row 4
       doc.moveTo(startX + termsWidth, curY).lineTo(startX + termsWidth, curY + row4Height).strokeColor(BORDER_COLOR).lineWidth(0.75).stroke()
@@ -402,15 +420,16 @@ export async function generateWaybillPdf(params) {
         '5. No Guarantee for Duty Amount in Any Country.'
       ]
 
-      let tLineY = curY + 15
+      let tLineY = curY + 14
       termsList.forEach(term => {
         doc.fillColor(TEXT_DARK).fontSize(5.8).font('Helvetica').text(term, tX, tLineY, { width: termsWidth - 12, lineGap: 0.8 })
-        tLineY += (term.length > 85 ? 16 : 10)
+        tLineY += (term.length > 95 ? 15 : 9.5)
       })
 
       // Receiver's Signature Right Block
       const sigX = startX + termsWidth + 6
-      doc.fillColor(NAVY).fontSize(7.5).font('Helvetica-Bold').text("Receiver's Signature", sigX, curY + 4)
+      doc.fillColor(NAVY).fontSize(7.5).font('Helvetica-Bold')
+        .text("Receiver's Signature", sigX, curY + 6, { width: sigWidth - 12, align: 'center' })
 
       doc.end()
 

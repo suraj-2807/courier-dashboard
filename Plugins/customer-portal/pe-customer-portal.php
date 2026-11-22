@@ -1366,53 +1366,108 @@ function pe_cp_ajax_shipment_detail()
         }
     }
 
-    // Initial fallback if still completely empty
-    if (empty($tracking_events)) {
-        $bDate = (!empty($row->AWBDATE) && $row->AWBDATE !== '0000-00-00') ? date('d/m/Y', strtotime($row->AWBDATE)) : date('d/m/Y');
-        $is_dispatched = !empty($row->VENDORID1) || !empty($row->VENDORID2) || !empty($row->VENDNAME) || intval($row->SERVICE ?? 0) > 0;
-        if ($is_dispatched) {
-            $disp_row = $wpdb->get_row($wpdb->prepare(
-                "SELECT date, time FROM parcel_history WHERE (AWBNO = %d OR CAST(AWBNO AS CHAR) = %s) AND (LOWER(activity) LIKE '%manifest%' OR LOWER(activity) LIKE '%dispatch%') ORDER BY date DESC, time DESC LIMIT 1",
-                intval($row->AWBNO), strval($row->AWBNO)
-            ));
-            $disp_date = ($disp_row && !empty($disp_row->date) && $disp_row->date !== '0000-00-00') ? date('d/m/Y', strtotime($disp_row->date)) : date('d/m/Y');
-            $disp_time = ($disp_row && !empty($disp_row->time) && $disp_row->time !== '00:00:00') ? date('h:i A', strtotime($disp_row->time)) : '11:15 AM';
+    // Always ensure company origin events (Booking & Manifest/Dispatch) are present in tracking
+    $origin_city = !empty($row->ORIGIN) ? strtoupper(trim($row->ORIGIN)) : (!empty($row->SCITY) ? strtoupper(trim($row->SCITY)) : 'SURAT');
+    $origin_location = $origin_city . ', INDIA';
+    $raw_bdate = (!empty($row->AWBDATE) && $row->AWBDATE !== '0000-00-00') ? $row->AWBDATE : current_time('Y-m-d');
+    $bDateFormatted = date('d/m/Y', strtotime($raw_bdate));
 
-            // Manifested & Dispatched (push date)
-            $tracking_events[] = [
-                'activity' => 'Shipment Manifested & Dispatched from Origin Hub',
-                'date' => $disp_date,
-                'time' => $disp_time,
-                'location' => 'SURAT, INDIA (PRINCE EXPRESS HUB)'
-            ];
-            // Shipment Booked & Order Created (original draft date)
-            $tracking_events[] = [
-                'activity' => 'Shipment Booked & Order Created',
-                'date' => $bDate,
-                'time' => '10:00 AM',
-                'location' => 'SURAT, INDIA (PRINCE EXPRESS)'
-            ];
-            if (empty($live_status)) {
-                $live_status = 'Shipment Manifested & Dispatched from Origin Hub';
-            }
-            if (empty($live_stage)) {
-                $live_stage = 'in_transit';
-            }
-        } else {
-            $tracking_events[] = [
-                'activity' => 'Shipment Booked & Order Created',
-                'date' => $bDate,
-                'time' => '10:00 AM',
-                'location' => 'SURAT, INDIA (PRINCE EXPRESS)'
-            ];
-            if (empty($live_status)) {
-                $live_status = 'Shipment Booked & Order Created';
-            }
-            if (empty($live_stage)) {
-                $live_stage = 'booked';
+    $is_dispatched = !empty($row->VENDORID1) || !empty($row->VENDORID2) || !empty($row->VENDNAME) || intval($row->SERVICE ?? 0) > 0 || (!empty($shp) && (!empty($shp->vendor_awb_number) || $shp->vendor_push_status === 'success' || $shp->is_locked == 1));
+
+    // Filter out vendor generic placeholders and previous duplicates of company events
+    $vendor_placeholders = [
+        'information received', 'data received', 'info received', 'order created',
+        'record created', 'shipment created', 'booking received', 'manifest received', 'shipment booked'
+    ];
+    $clean_events = [];
+    foreach ($tracking_events as $ev) {
+        $act = strtolower(trim($ev['activity'] ?? ''));
+        $loc = strtolower(trim($ev['location'] ?? ''));
+        if (strpos($loc, 'prince express') !== false || strpos($act, 'shipment booked & order created') !== false || strpos($act, 'manifested & dispatched') !== false) {
+            continue; // Re-add canonically with correct dates and locations
+        }
+        $skip = false;
+        foreach ($vendor_placeholders as $vp) {
+            if (strpos($act, $vp) !== false) {
+                $skip = true;
+                break;
             }
         }
+        if (!$skip) {
+            $clean_events[] = $ev;
+        }
     }
+
+    $company_events = [];
+    if ($is_dispatched) {
+        $disp_row = $wpdb->get_row($wpdb->prepare(
+            "SELECT `date`, `time` FROM parcel_history WHERE (AWBNO = %d OR CAST(AWBNO AS CHAR) = %s) AND (LOWER(activity) LIKE '%%manifest%%' OR LOWER(activity) LIKE '%%dispatch%%') ORDER BY `date` DESC, `time` DESC LIMIT 1",
+            intval($row->AWBNO), strval($row->AWBNO)
+        ));
+        $disp_date = ($disp_row && !empty($disp_row->date) && $disp_row->date !== '0000-00-00') ? date('d/m/Y', strtotime($disp_row->date)) : '';
+        $disp_time = ($disp_row && !empty($disp_row->time) && $disp_row->time !== '00:00:00') ? date('h:i A', strtotime($disp_row->time)) : '11:15 AM';
+
+        if (empty($disp_date) && !empty($shp)) {
+            $p_raw = !empty($shp->pushed_at) ? $shp->pushed_at : (!empty($shp->last_push_at) ? $shp->last_push_at : $shp->updated_at);
+            if ($p_raw) {
+                $disp_date = date('d/m/Y', strtotime($p_raw));
+                $disp_time = date('h:i A', strtotime($p_raw));
+            }
+        }
+        if (empty($disp_date)) {
+            $disp_date = date('d/m/Y');
+        }
+
+        // 1. Manifested & Dispatched (push date)
+        $company_events[] = [
+            'activity' => 'Shipment Manifested & Dispatched from Origin Hub',
+            'date' => $disp_date,
+            'time' => $disp_time,
+            'location' => $origin_location . ' (PRINCE EXPRESS HUB)'
+        ];
+        // 2. Shipment Booked & Order Created (booking date)
+        $company_events[] = [
+            'activity' => 'Shipment Booked & Order Created',
+            'date' => $bDateFormatted,
+            'time' => '10:00 AM',
+            'location' => $origin_location . ' (PRINCE EXPRESS)'
+        ];
+        if (empty($live_status)) {
+            $live_status = 'Shipment Manifested & Dispatched from Origin Hub';
+        }
+        if (empty($live_stage)) {
+            $live_stage = 'in_transit';
+        }
+    } else {
+        $company_events[] = [
+            'activity' => 'Shipment Booked & Order Created',
+            'date' => $bDateFormatted,
+            'time' => '10:00 AM',
+            'location' => $origin_location . ' (PRINCE EXPRESS)'
+        ];
+        if (empty($live_status)) {
+            $live_status = 'Shipment Booked & Order Created';
+        }
+        if (empty($live_stage)) {
+            $live_stage = 'booked';
+        }
+    }
+
+    $tracking_events = array_merge($clean_events, $company_events);
+
+    // Sort newest on top (descending)
+    usort($tracking_events, function($a, $b) {
+        $da = str_replace('/', '-', $a['date'] ?? '');
+        $db = str_replace('/', '-', $b['date'] ?? '');
+        $ta = strtotime($da . ' ' . ($a['time'] ?? ''));
+        $tb = strtotime($db . ' ' . ($b['time'] ?? ''));
+        if ($tb !== $ta) return $tb - $ta;
+        $isManA = stripos($a['activity'] ?? '', 'manifest') !== false;
+        $isManB = stripos($b['activity'] ?? '', 'manifest') !== false;
+        if ($isManA && !$isManB) return -1;
+        if (!$isManA && $isManB) return 1;
+        return 0;
+    });
 
     wp_send_json_success([
         'shipment' => [

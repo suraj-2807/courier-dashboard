@@ -613,6 +613,7 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
       console.log(`[Remote AWBENTRY Sync] Successfully updated AWBNO ${awbNo} in remote DB.`)
       await syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode, custName, isWalkin)
       await autoConfirmBookingRequestInRemoteDb(pool, shipment, awbNo)
+      await autoSyncParcelHistoryEntries(pool, shipment, awbNo, senderCity, bookingDate, vendorAwb, vendorResult)
       return { success: true, action: 'updated', awbNo }
     }
 
@@ -738,6 +739,7 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
     console.log(`[Remote AWBENTRY Sync] Successfully inserted AWBNO ${awbNo} (AWBID: ${result.insertId}) into remote DB.`)
     await syncCustomerToRemoteRelatedTables(pool, shipment, awbNo, custCode, custName, isWalkin)
     await autoConfirmBookingRequestInRemoteDb(pool, shipment, awbNo)
+    await autoSyncParcelHistoryEntries(pool, shipment, awbNo, senderCity, bookingDate, vendorAwb, vendorResult)
 
     return { success: true, action: 'inserted', awbId: result.insertId, awbNo }
   } catch (err) {
@@ -816,23 +818,37 @@ export async function syncToRemoteParcelHistory(shipment, activity = 'SHIPMENT B
       return { success: false, message: 'Invalid AWBNO' }
     }
 
-    const act = (activity || 'SHIPMENT BOOKED').toUpperCase().slice(0, 80)
-    const isManifestOrDispatch = act.includes('MANIFEST') || act.includes('DISPATCH')
-    
+    let rawAct = String(activity || 'SHIPMENT BOOKED').toUpperCase().trim()
+    const isManifestOrDispatch = rawAct.includes('MANIFEST') || rawAct.includes('DISPATCH')
+    const isBooked = rawAct.includes('BOOK')
+
+    // Enforce 30 char constraint safely
+    const act = isManifestOrDispatch
+      ? 'MANIFESTED & DISPATCHED'
+      : (isBooked ? 'SHIPMENT BOOKED' : rawAct.slice(0, 30))
+
     // For dispatch/manifested events, use push date (today or eventDateOverride)
     // For booked events, keep original booking/draft date
     const bookingDate = eventDateOverride
       ? formatToYMD(eventDateOverride)
-      : (isManifestOrDispatch ? formatToYMD(shipment.pushed_at || shipment.last_push_at || new Date()) : formatToYMD(shipment.booking_date || shipment.invoice_date || shipment.created_at))
+      : (isManifestOrDispatch ? formatToYMD(shipment.pushed_at || shipment.last_push_at || new Date()) : formatToYMD(shipment.booking_date || shipment.invoice_date || shipment.created_at || new Date()))
     const now = new Date()
-    const currentTime = now.toTimeString().split(' ')[0] // HH:MM:SS
-    const loc = (location || shipment.s_city || shipment.sender_city || 'SURAT').toUpperCase().slice(0, 80)
+    const currentTime = isBooked ? '10:00:00' : (now.toTimeString().split(' ')[0] || '11:15:00')
+    const loc = String(location || shipment.s_city || shipment.sender_city || 'SURAT').toUpperCase().slice(0, 30)
 
-    // Check if entry with identical AWBNO and activity already exists to avoid redundant rows
-    const [existing] = await pool.execute(
-      'SELECT HISTORYID FROM parcel_history WHERE AWBNO = ? AND activity = ? LIMIT 1',
-      [awbNo, act]
-    )
+    // Check if entry with identical AWBNO and matching activity already exists
+    let existingQuery = 'SELECT HISTORYID FROM parcel_history WHERE AWBNO = ? AND activity = ? LIMIT 1'
+    let existingParams = [awbNo, act]
+
+    if (isBooked) {
+      existingQuery = "SELECT HISTORYID FROM parcel_history WHERE AWBNO = ? AND (activity LIKE '%BOOK%' OR activity = 'SHIPMENT BOOKED') LIMIT 1"
+      existingParams = [awbNo]
+    } else if (isManifestOrDispatch) {
+      existingQuery = "SELECT HISTORYID FROM parcel_history WHERE AWBNO = ? AND (activity LIKE '%MANIFEST%' OR activity LIKE '%DISPATCH%') LIMIT 1"
+      existingParams = [awbNo]
+    }
+
+    const [existing] = await pool.execute(existingQuery, existingParams)
 
     if (existing.length > 0) {
       console.log(`[Remote parcel_history Sync] Entry for AWBNO ${awbNo} with activity '${act}' already exists (HISTORYID: ${existing[0].HISTORYID}).`)
@@ -851,6 +867,64 @@ export async function syncToRemoteParcelHistory(shipment, activity = 'SHIPMENT B
     console.error('[Remote parcel_history Sync] Error syncing to parcel_history:', err.message)
     // Non-blocking
     return { success: false, error: err.message }
+  }
+}
+
+/**
+ * Auto-sync helper to guarantee both initial tracking entries exist in remote parcel_history:
+ * 1. SHIPMENT BOOKED (with original booking date)
+ * 2. MANIFESTED & DISPATCHED (with push date, if pushed to vendor)
+ */
+export async function autoSyncParcelHistoryEntries(pool, shipment, awbNo, senderCity, bookingDate, vendorAwb, vendorResult = {}) {
+  try {
+    if (!pool || !awbNo) return
+    const loc = String(senderCity || shipment.s_city || shipment.sender_city || 'SURAT').toUpperCase().slice(0, 30)
+    const bDate = formatToYMD(bookingDate || shipment.booking_date || shipment.invoice_date || shipment.created_at || new Date())
+    const now = new Date()
+    const currentTime = now.toTimeString().split(' ')[0] || '11:15:00'
+
+    // 1. Check and ensure 'SHIPMENT BOOKED' exists
+    const [existingBooked] = await pool.execute(
+      "SELECT HISTORYID FROM parcel_history WHERE AWBNO = ? AND (activity LIKE '%BOOK%' OR activity = 'SHIPMENT BOOKED') LIMIT 1",
+      [awbNo]
+    )
+    if (existingBooked.length === 0) {
+      console.log(`[Remote parcel_history AutoSync] Inserting SHIPMENT BOOKED for AWBNO ${awbNo}...`)
+      await pool.execute(
+        'INSERT INTO parcel_history (AWBNO, `date`, `time`, activity, location) VALUES (?, ?, ?, ?, ?)',
+        [awbNo, bDate, '10:00:00', 'SHIPMENT BOOKED', loc]
+      )
+    }
+
+    // 2. Check if shipment has been pushed to vendor / dispatched
+    const isPushed = !!(
+      shipment.is_pushed_to_vendor ||
+      shipment.vendor_push_status === 'success' ||
+      shipment.vendor_awb ||
+      shipment.vendor_awb_number ||
+      vendorAwb ||
+      vendorResult?.vendorAwb ||
+      vendorResult?.awbNo ||
+      vendorResult?.awbNumber ||
+      ['manifested', 'dispatched', 'in_transit'].includes(String(shipment.tracking_status || shipment.status || '').toLowerCase())
+    )
+
+    if (isPushed) {
+      const [existingManifest] = await pool.execute(
+        "SELECT HISTORYID FROM parcel_history WHERE AWBNO = ? AND (activity LIKE '%MANIFEST%' OR activity LIKE '%DISPATCH%') LIMIT 1",
+        [awbNo]
+      )
+      if (existingManifest.length === 0) {
+        const pushDate = formatToYMD(shipment.pushed_at || shipment.last_push_at || new Date())
+        console.log(`[Remote parcel_history AutoSync] Inserting MANIFESTED & DISPATCHED for AWBNO ${awbNo} on ${pushDate}...`)
+        await pool.execute(
+          'INSERT INTO parcel_history (AWBNO, `date`, `time`, activity, location) VALUES (?, ?, ?, ?, ?)',
+          [awbNo, pushDate, currentTime, 'MANIFESTED & DISPATCHED', loc]
+        )
+      }
+    }
+  } catch (err) {
+    console.error('[Remote parcel_history AutoSync] Error:', err.message)
   }
 }
 
