@@ -404,7 +404,8 @@ if (!$is_accounting_enabled) {
     flex-direction: column;
     flex-shrink: 0;
     position: relative;
-    z-index: 10
+    z-index: 10;
+    overflow-x: hidden;
   }
 
   .cp-sidebar-brand {
@@ -446,7 +447,9 @@ if (!$is_accounting_enabled) {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    overflow-y: auto
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
   }
 
   .cp-nav-item {
@@ -586,7 +589,8 @@ if (!$is_accounting_enabled) {
     }
 
     .cp-sidebar.collapsed {
-      width: 74px
+      width: 74px;
+      overflow-x: hidden !important;
     }
 
     .cp-sidebar.collapsed .cp-sidebar-brand > div {
@@ -607,7 +611,8 @@ if (!$is_accounting_enabled) {
 
     .cp-sidebar.collapsed .cp-sidebar-nav {
       padding: 16px 8px;
-      gap: 4px
+      gap: 4px;
+      overflow-x: hidden !important;
     }
 
     .cp-sidebar.collapsed .cp-nav-item {
@@ -638,7 +643,8 @@ if (!$is_accounting_enabled) {
 
     .cp-sidebar.collapsed .cp-sidebar-footer {
       padding: 14px 8px;
-      align-items: center
+      align-items: center;
+      overflow-x: hidden !important;
     }
 
     .cp-sidebar.collapsed .cp-user-details {
@@ -679,6 +685,7 @@ if (!$is_accounting_enabled) {
       font-weight: 600;
       white-space: nowrap;
       opacity: 0;
+      display: none;
       pointer-events: none;
       transition: opacity .15s;
       z-index: 100;
@@ -686,6 +693,7 @@ if (!$is_accounting_enabled) {
     }
 
     .cp-sidebar.collapsed .cp-nav-item:hover::after {
+      display: block;
       opacity: 1
     }
   }
@@ -2023,31 +2031,31 @@ if (!$is_accounting_enabled) {
     </div>
 
     <nav class="cp-sidebar-nav">
-      <button class="cp-nav-item active" data-tooltip="My Shipments" onclick="cpSwitchTab('shipments', this); cpCloseMobileSidebar();">
+      <button class="cp-nav-item active" data-tooltip="My Shipments" title="My Shipments" onclick="cpSwitchTab('shipments', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-boxes-stacked"></i> <span class="cp-nav-text">My Shipments</span>
       </button>
-      <button class="cp-nav-item" data-tooltip="My Requests" onclick="cpSwitchTab('requests', this); cpCloseMobileSidebar();">
+      <button class="cp-nav-item" data-tooltip="My Requests" title="My Requests" onclick="cpSwitchTab('requests', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-clipboard-list"></i> <span class="cp-nav-text">My Requests</span>
         <?php if ($pending_requests_count > 0): ?>
           <span class="cp-nav-badge"
             style="background:var(--cpamber);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:auto"><?php echo $pending_requests_count; ?></span>
         <?php endif; ?>
       </button>
-      <button class="cp-nav-item" data-tooltip="Request Booking" onclick="cpSwitchTab('new-booking', this); cpCloseMobileSidebar();">
+      <button class="cp-nav-item" data-tooltip="Request Booking" title="Request Booking" onclick="cpSwitchTab('new-booking', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-plus"></i> <span class="cp-nav-text">Request Booking</span>
       </button>
-      <button class="cp-nav-item" data-tooltip="Address Book" onclick="cpSwitchTab('addresses', this); cpCloseMobileSidebar();">
+      <button class="cp-nav-item" data-tooltip="Address Book" title="Address Book" onclick="cpSwitchTab('addresses', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-address-book"></i> <span class="cp-nav-text">Address Book</span>
       </button>
-      <button class="cp-nav-item" data-tooltip="My Documents" onclick="cpSwitchTab('documents', this); cpCloseMobileSidebar();">
+      <button class="cp-nav-item" data-tooltip="My Documents" title="My Documents" onclick="cpSwitchTab('documents', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-file-shield"></i> <span class="cp-nav-text">My Documents</span>
       </button>
       <?php if (!empty($is_accounting_enabled)): ?>
-      <button class="cp-nav-item" data-tooltip="Account Statement" onclick="cpSwitchTab('ledger', this); cpCloseMobileSidebar();">
+      <button class="cp-nav-item" data-tooltip="Account Statement" title="Account Statement" onclick="cpSwitchTab('ledger', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-file-invoice-dollar"></i> <span class="cp-nav-text">Account Statement</span>
       </button>
       <?php endif; ?>
-      <button class="cp-nav-item" data-tooltip="My Profile" onclick="cpSwitchTab('profile', this); cpCloseMobileSidebar();">
+      <button class="cp-nav-item" data-tooltip="My Profile" title="My Profile" onclick="cpSwitchTab('profile', this); cpCloseMobileSidebar();">
         <i class="fa-solid fa-user-gear"></i> <span class="cp-nav-text">My Profile</span>
       </button>
     </nav>

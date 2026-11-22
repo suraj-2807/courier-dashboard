@@ -719,6 +719,43 @@ export const liveTrack = async (req, res) => {
       }
     }
 
+// Helper to parse event date and time into timestamp
+function parseEventTimestamp(e) {
+  if (!e) return 0
+  const dateStr = String(e.rawDate || e.date || '').trim()
+  const timeStr = String(e.rawTime || e.time || '00:00:00').trim()
+  if (!dateStr) return 0
+
+  // 1. Check if format is DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = dateStr.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+  if (dmyMatch) {
+    const day = parseInt(dmyMatch[1], 10)
+    const month = parseInt(dmyMatch[2], 10) - 1
+    const year = parseInt(dmyMatch[3], 10)
+
+    const tMatch = timeStr.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?/i)
+    let hours = 0, minutes = 0, seconds = 0
+    if (tMatch) {
+      hours = parseInt(tMatch[1], 10)
+      minutes = parseInt(tMatch[2], 10)
+      seconds = tMatch[3] ? parseInt(tMatch[3], 10) : 0
+      const ampm = tMatch[4]?.toUpperCase()
+      if (ampm === 'PM' && hours < 12) hours += 12
+      if (ampm === 'AM' && hours === 12) hours = 0
+    }
+    const d = new Date(year, month, day, hours, minutes, seconds)
+    return d.getTime() || 0
+  }
+
+  // 2. Try direct Date.parse
+  const full = `${dateStr} ${timeStr}`.trim()
+  const ts = Date.parse(full)
+  if (!isNaN(ts)) return ts
+
+  const tsDate = Date.parse(dateStr)
+  return isNaN(tsDate) ? 0 : tsDate
+}
+
 // Helper to attach Prince Express origin & manifest events
 function attachCompanyOriginEvents(result, matchedShipment) {
   if (!result) return
@@ -848,10 +885,23 @@ function attachCompanyOriginEvents(result, matchedShipment) {
 
   result.events = [...filteredEvents, ...companyEvents]
 
-  // If no external events exist, adjust current status and stage based on draft vs api pushed
-  if (!filteredEvents.length || filteredEvents.every(e => companyEvents.some(ce => ce.status === e.status))) {
+  // Chronological sort: newest event on top (so delayed push date sorts to top)
+  result.events.sort((a, b) => {
+    const ta = parseEventTimestamp(a)
+    const tb = parseEventTimestamp(b)
+    if (tb !== ta) return tb - ta // Newest first
+    const isManifestA = /manifest|dispatch/i.test(a.status || a.activity || '')
+    const isManifestB = /manifest|dispatch/i.test(b.status || b.activity || '')
+    if (isManifestA && !isManifestB) return -1
+    if (!isManifestA && isManifestB) return 1
+    return 0
+  })
+
+  // If no external events exist or top event is our manifest, update current status and stage
+  if (result.events.length > 0) {
+    const topEvent = result.events[0]
     if (isApiPushed) {
-      result.currentStatus = 'Shipment Manifested & Dispatched from Origin Hub'
+      result.currentStatus = topEvent.status || topEvent.activity || 'Shipment Manifested & Dispatched from Origin Hub'
       result.currentStage = 'in_transit'
     } else {
       result.currentStatus = 'Shipment Booked & Order Created'

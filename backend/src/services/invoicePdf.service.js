@@ -13,44 +13,46 @@ if (!fs.existsSync(INVOICES_DIR)) {
   fs.mkdirSync(INVOICES_DIR, { recursive: true })
 }
 
-// Logo path
-const LOGO_PATH = path.join(__dirname, '..', 'assets', 'PRINCE LOGO.png')
-
 /**
- * Convert number to words (Indian format for INR)
+ * Convert number to words (Indian format for INR / standard currency)
  */
-function numberToWords(num) {
-  if (num === 0) return 'Zero'
-  
+function numberToWords(num, currency = 'INR') {
+  if (!num || isNaN(num) || num === 0) return 'Zero Rupees Only'
+
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
     'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
-  
+
   function convertGroup(n) {
     if (n === 0) return ''
     if (n < 20) return ones[n]
     if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '')
     return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + convertGroup(n % 100) : '')
   }
-  
-  const intPart = Math.floor(num)
-  
-  if (intPart >= 10000000) {
-    const crore = Math.floor(intPart / 10000000)
-    const rem = intPart % 10000000
-    return convertGroup(crore) + ' Crore' + (rem > 0 ? ' ' + numberToWords(rem) : '')
+
+  function numberToWordsHelper(n) {
+    if (n >= 10000000) {
+      const crore = Math.floor(n / 10000000)
+      const rem = n % 10000000
+      return convertGroup(crore) + ' Crore' + (rem > 0 ? ' ' + numberToWordsHelper(rem) : '')
+    }
+    if (n >= 100000) {
+      const lakh = Math.floor(n / 100000)
+      const rem = n % 100000
+      return convertGroup(lakh) + ' Lakh' + (rem > 0 ? ' ' + numberToWordsHelper(rem) : '')
+    }
+    if (n >= 1000) {
+      const thousand = Math.floor(n / 1000)
+      const rem = n % 1000
+      return convertGroup(thousand) + ' Thousand' + (rem > 0 ? ' ' + numberToWordsHelper(rem) : '')
+    }
+    return convertGroup(n)
   }
-  if (intPart >= 100000) {
-    const lakh = Math.floor(intPart / 100000)
-    const rem = intPart % 100000
-    return convertGroup(lakh) + ' Lakh' + (rem > 0 ? ' ' + numberToWords(rem) : '')
-  }
-  if (intPart >= 1000) {
-    const thousand = Math.floor(intPart / 1000)
-    const rem = intPart % 1000
-    return convertGroup(thousand) + ' Thousand' + (rem > 0 ? ' ' + numberToWords(rem) : '')
-  }
-  return convertGroup(intPart)
+
+  const intPart = Math.floor(Math.abs(num))
+  const words = numberToWordsHelper(intPart).trim()
+  const currLabel = (currency === 'INR' || currency === '₹') ? 'Rupees' : (currency || 'Rupees')
+  return `${words} ${currLabel} Only`
 }
 
 /**
@@ -62,10 +64,10 @@ async function generateBarcode(awbNumber) {
       bcid: 'code128',
       text: String(awbNumber),
       scale: 3,
-      height: 12,
+      height: 10,
       includetext: true,
       textxalign: 'center',
-      textsize: 10
+      textsize: 8
     })
     return png
   } catch (err) {
@@ -76,7 +78,7 @@ async function generateBarcode(awbNumber) {
 
 /**
  * Generate an invoice PDF for a shipment.
- * Simple plain black-and-white bordered table format (no firm name, no colors).
+ * Full-page bordered table layout matching official format.
  */
 export async function generateInvoicePdf(params) {
   const {
@@ -89,10 +91,10 @@ export async function generateInvoicePdf(params) {
     parcelsData = []
   } = params
 
-  const invoiceNo = awbNumber
-  const invoiceDate = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })
-  const currency = invoiceMeta.currency || 'INR'
-  const incoterms = invoiceMeta.incoterms || 'CIF'
+  const invoiceNo = invoiceMeta.invoice_no || awbNumber
+  const invoiceDate = invoiceMeta.invoice_date || shipment.invoice_date || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
+  const currency = invoiceMeta.currency || shipment.invoice_currency || 'INR'
+  const incoterms = invoiceMeta.incoterms || shipment.terms_of_trade || 'CIF'
 
   // Parse parcels data
   let parsedParcels = []
@@ -108,11 +110,11 @@ export async function generateInvoicePdf(params) {
   const totalPieces = parseInt(shipment.no_of_pieces) || (parsedParcels.length > 0 ? parsedParcels.length : 1)
   let actualWeight = parseFloat(shipment.weight) || 0
   if (actualWeight <= 0 && parsedParcels.length > 0) {
-    actualWeight = Math.round(parsedParcels.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0) * 1000) / 1000
+    actualWeight = Math.round(parsedParcels.reduce((sum, p) => sum + (parseFloat(p.weight) || 0), 0) * 100) / 100
   }
 
   const l = parseFloat(shipment.length) || 0
-  const b = parseFloat(shipment.breadth) || 0
+  const b = parseFloat(shipment.breadth || shipment.width) || 0
   const h = parseFloat(shipment.height) || 0
   let volWeight = parseFloat(shipment.volumetric_weight) || 0
   if (volWeight <= 0 && parsedParcels.length > 0) {
@@ -128,38 +130,38 @@ export async function generateInvoicePdf(params) {
     volWeight = Math.round(((l * b * h) / 5000) * totalPieces * 100) / 100
   }
 
-  const shippingChargeVal = parseFloat(shipment.shipping_charge || shipment.amount || 0) || 0
-  const extraChargeVal = parseFloat(shipment.extra_charge || 0) || 0
+  const chargeableWeight = parseFloat(shipment.chargeable_weight || shipment.final_chargeable_weight) || Math.max(actualWeight, volWeight)
 
   // Calculate total amount from items or shipment data
   let totalAmount = 0
-  invoiceItems.forEach(item => {
-    totalAmount += parseFloat(item.amount) || 0
-  })
-  if (parseFloat(shipment.total_amount) > 0) {
-    totalAmount = parseFloat(shipment.total_amount)
-  } else if (shippingChargeVal > 0) {
-    totalAmount = shippingChargeVal + extraChargeVal
-  } else if (totalAmount === 0) {
-    totalAmount = parseFloat(invoiceMeta.total_amount) || 0
+  if (invoiceItems && invoiceItems.length > 0) {
+    invoiceItems.forEach(item => {
+      totalAmount += parseFloat(item.amount) || (parseFloat(item.quantity || 1) * parseFloat(item.unit_rates || item.rate || 0)) || 0
+    })
+  }
+  if (totalAmount <= 0) {
+    if (parseFloat(shipment.total_amount) > 0) {
+      totalAmount = parseFloat(shipment.total_amount)
+    } else if (parseFloat(shipment.declared_value) > 0) {
+      totalAmount = parseFloat(shipment.declared_value)
+    } else if (parseFloat(invoiceMeta.total_amount) > 0) {
+      totalAmount = parseFloat(invoiceMeta.total_amount)
+    }
   }
 
-  // Destination country
-  const destCountry = (receiver.country || shipment.destination_country || '').toUpperCase()
-
   // Aadhar / ID info from sender
-  const senderIdLabel = sender.gstin_type || ''
-  const senderIdNo = sender.gstin_no || ''
+  const senderIdLabel = (sender.gstin_type && !/none/i.test(sender.gstin_type)) ? sender.gstin_type.toUpperCase() : 'AADHAR CARD'
+  const senderIdNo = sender.gstin_no || sender.aadhar_no || shipment.sender_gstin_no || ''
 
   // Other reference
-  const otherRef = shipment.order_reference || ''
+  const otherRef = shipment.order_reference || shipment.reference_name || ''
+
+  // Generate barcode buffer
+  const barcodeBuffer = await generateBarcode(awbNumber)
 
   // Create PDF
   const fileName = `invoice_${awbNumber}_${Date.now()}.pdf`
   const filePath = path.join(INVOICES_DIR, fileName)
-  const relativePath = `uploads/invoices/${fileName}`
-
-  // All black for simple style
   const BLACK = '#000000'
 
   return new Promise((resolve, reject) => {
@@ -167,155 +169,198 @@ export async function generateInvoicePdf(params) {
     const stream = fs.createWriteStream(filePath)
     doc.pipe(stream)
 
-    const pageWidth = doc.page.width - 50 // margins
+    const pageWidth = doc.page.width - 50 // 545.28 pt
     const leftMargin = 25
     const halfWidth = pageWidth / 2
     let y = 20
-    const lineH = 14
-    const borderW = 0.8
+    const borderW = 0.6
 
-    // ─── ROW 1: Invoice Info (left) + AWB Info (right) ───
-    const row1Height = 85
+    // ─── TOP HEADER: INVOICE ───
+    const topHeaderH = 22
+    doc.rect(leftMargin, y, pageWidth, topHeaderH).strokeColor(BLACK).lineWidth(borderW).stroke()
+    doc.fillColor(BLACK).fontSize(13).font('Helvetica-Bold')
+       .text('INVOICE', leftMargin, y + 5, { width: pageWidth, align: 'center' })
+    y += topHeaderH
+
+    // ─── ROW 1: INVOICE DETAILS (Left) + BARCODE & REFERENCE (Right) ───
+    const row1Height = 72
     doc.rect(leftMargin, y, halfWidth, row1Height).strokeColor(BLACK).lineWidth(borderW).stroke()
     doc.rect(leftMargin + halfWidth, y, halfWidth, row1Height).strokeColor(BLACK).lineWidth(borderW).stroke()
 
-    // Left: Invoice details
-    doc.fillColor(BLACK).fontSize(9).font('Helvetica-Bold')
+    // Left box details
+    doc.fillColor(BLACK).fontSize(8.5).font('Helvetica-Bold')
     let lx = leftMargin + 6
     let ly = y + 8
+    const lineH = 13.5
     doc.text(`INVOICE NO.:  ${invoiceNo}`, lx, ly); ly += lineH
     doc.text(`INVOICE DATE. :  ${invoiceDate}`, lx, ly); ly += lineH
     doc.text(`TOTAL PIECES :  ${totalPieces}`, lx, ly); ly += lineH
-    doc.text(`ACTUAL WEIGHT :  ${actualWeight.toFixed(2)}`, lx, ly); ly += lineH
-    doc.text(`VOLUMETRIC WEIGHT :   ${volWeight.toFixed(2)}`, lx, ly)
+    doc.text(`CHARGEABLE WEIGHT :  ${chargeableWeight.toFixed(2)}`, lx, ly)
 
-    // Right: AWB + Other Ref + ID
-    let rx = leftMargin + halfWidth + 6
-    let ry = y + 8
-    doc.font('Helvetica-Bold').text(`AWB NO. :  ${awbNumber}`, rx, ry); ry += lineH
-    doc.text(`OTHER REFERENCE${otherRef ? ` :  ${otherRef}` : ''}`, rx, ry); ry += lineH
+    // Right box: Barcode image + Other reference
+    let rx = leftMargin + halfWidth
+    let ry = y + 5
+    if (barcodeBuffer) {
+      try {
+        const barcodeW = 140
+        doc.image(barcodeBuffer, rx + (halfWidth - barcodeW) / 2, ry, { width: barcodeW, height: 28 })
+      } catch (e) {
+        doc.fontSize(8.5).font('Helvetica-Bold').text(`AWB: ${awbNumber}`, rx + 6, ry + 8)
+      }
+    } else {
+      doc.fontSize(8.5).font('Helvetica-Bold').text(`AWB: ${awbNumber}`, rx + 6, ry + 8)
+    }
+
+    let rTextY = y + 36
+    doc.fillColor(BLACK).fontSize(8.5).font('Helvetica-Bold')
+    doc.text(`OTHER REFERENCE${otherRef ? ` :  ${otherRef}` : ''}`, rx + 6, rTextY); rTextY += lineH
     if (senderIdNo) {
-      const docLabel = (senderIdLabel && !/none/i.test(senderIdLabel)) ? senderIdLabel.toUpperCase() : 'AADHAR CARD'
-      doc.text(`${docLabel} :  ${senderIdNo}`, rx, ry); ry += lineH
+      doc.text(`${senderIdLabel} :  ${senderIdNo}`, rx + 6, rTextY)
     }
 
     y += row1Height
 
-    // ─── ROW 2: Shipper (left) + Consignee (right) ───
-    const row2Height = 120
-
-    // Shipper header
-    doc.rect(leftMargin, y, halfWidth, 18).strokeColor(BLACK).lineWidth(borderW).stroke()
-    doc.rect(leftMargin + halfWidth, y, halfWidth, 18).strokeColor(BLACK).lineWidth(borderW).stroke()
-    doc.fontSize(9).font('Helvetica-Bold')
+    // ─── ROW 2: SHIPPER / CONSIGNEE HEADERS ───
+    const headerBarH = 17
+    doc.rect(leftMargin, y, halfWidth, headerBarH).strokeColor(BLACK).lineWidth(borderW).stroke()
+    doc.rect(leftMargin + halfWidth, y, halfWidth, headerBarH).strokeColor(BLACK).lineWidth(borderW).stroke()
+    doc.fontSize(8.5).font('Helvetica-Bold')
     doc.text('SHIPPER', leftMargin + 6, y + 4)
     doc.text('CONSIGNEE', leftMargin + halfWidth + 6, y + 4)
-    y += 18
+    y += headerBarH
 
-    // Shipper + Consignee details
-    doc.rect(leftMargin, y, halfWidth, row2Height).strokeColor(BLACK).lineWidth(borderW).stroke()
-    doc.rect(leftMargin + halfWidth, y, halfWidth, row2Height).strokeColor(BLACK).lineWidth(borderW).stroke()
+    // ─── ROW 3: SHIPPER / CONSIGNEE DETAILS ───
+    const addressRowH = 100
+    doc.rect(leftMargin, y, halfWidth, addressRowH).strokeColor(BLACK).lineWidth(borderW).stroke()
+    doc.rect(leftMargin + halfWidth, y, halfWidth, addressRowH).strokeColor(BLACK).lineWidth(borderW).stroke()
 
-    doc.fontSize(8.5).font('Helvetica-Bold')
+    // Shipper details
     let sy = y + 6
-    if (sender.name) { doc.text(`${sender.name.toUpperCase()}`, leftMargin + 6, sy); sy += lineH }
-    doc.font('Helvetica')
-    if (sender.company) { doc.font('Helvetica-Bold').text(`COMPANY NAME   ${sender.company.toUpperCase()}`, leftMargin + 6, sy); doc.font('Helvetica'); sy += lineH }
-    const senderAddr = [sender.address, sender.address_2].filter(Boolean).join(', ')
-    if (senderAddr) { doc.font('Helvetica-Bold').text(`ADDRESS :  `, leftMargin + 6, sy, { continued: true }).font('Helvetica').text(senderAddr.toUpperCase(), { width: halfWidth - 14 }); sy += (senderAddr.length > 45 ? 24 : lineH) }
-    const senderCityLine = [sender.city, sender.state].filter(Boolean).join(', ')
-    if (senderCityLine) { doc.text(senderCityLine.toUpperCase(), leftMargin + 6, sy); sy += lineH }
-    if (sender.country) { doc.text(`${sender.country.toUpperCase()}, ${sender.pincode || ''}`, leftMargin + 6, sy); sy += lineH }
-    if (sender.email) { doc.font('Helvetica-Bold').text('EMAIL', leftMargin + 6, sy); sy += lineH }
-    if (sender.phone) { doc.font('Helvetica-Bold').text(`PHONE NUMBER :  ${sender.phone}`, leftMargin + 6, sy) }
+    doc.fontSize(8).font('Helvetica-Bold')
+    const sName = (sender.name || shipment.sender_name || '').toUpperCase()
+    if (sName) { doc.text(sName, leftMargin + 6, sy); sy += 12 }
+
+    const sComp = (sender.company || shipment.sender_company || sName).toUpperCase()
+    doc.font('Helvetica-Bold').text('COMPANY NAME  ', leftMargin + 6, sy, { continued: true })
+       .font('Helvetica').text(sComp); sy += 12
+
+    const sAddr1 = (sender.address || sender.address_1 || shipment.sender_address || '').toUpperCase()
+    const sAddr2 = (sender.address_2 || shipment.sender_address_2 || '').toUpperCase()
+    doc.font('Helvetica-Bold').text('ADDRESS :  ', leftMargin + 6, sy, { continued: true })
+       .font('Helvetica').text(sAddr1, { width: halfWidth - 60 }); sy += (sAddr1.length > 35 ? 18 : 12)
+    if (sAddr2) { doc.font('Helvetica').text(sAddr2, leftMargin + 55, sy, { width: halfWidth - 65 }); sy += 12 }
+
+    const sCityState = [sender.city || shipment.sender_city, sender.state || shipment.sender_state].filter(Boolean).join(', ').toUpperCase()
+    if (sCityState) { doc.font('Helvetica').text(sCityState, leftMargin + 6, sy); sy += 12 }
+
+    const sCountryPin = [sender.country || shipment.sender_country || 'INDIA', sender.pincode || sender.zip_code || shipment.sender_pincode || ''].filter(Boolean).join(', ').toUpperCase()
+    if (sCountryPin) { doc.font('Helvetica').text(sCountryPin, leftMargin + 6, sy); sy += 12 }
+
+    const sEmail = (sender.email || shipment.sender_email || '').trim()
+    doc.font('Helvetica-Bold').text('EMAIL  ', leftMargin + 6, sy, { continued: true })
+       .font('Helvetica').text(sEmail || ''); sy += 12
+
+    const sPhone = sender.phone || sender.contact_no || shipment.sender_phone || ''
+    doc.font('Helvetica-Bold').text('PHONE NUMBER :  ', leftMargin + 6, sy, { continued: true })
+       .font('Helvetica').text(sPhone || '')
 
     // Consignee details
-    let ry2 = y + 6
-    doc.font('Helvetica-Bold').fontSize(8.5)
-    if (receiver.name) { doc.text(`${receiver.name.toUpperCase()}`, leftMargin + halfWidth + 6, ry2); ry2 += lineH }
-    doc.font('Helvetica')
-    if (receiver.company) { doc.font('Helvetica-Bold').text(`COMPANY NAME   ${receiver.company.toUpperCase()}`, leftMargin + halfWidth + 6, ry2); doc.font('Helvetica'); ry2 += lineH }
-    const receiverAddr = [receiver.address, receiver.address_2].filter(Boolean).join(', ')
-    if (receiverAddr) { doc.font('Helvetica-Bold').text(`ADDRESS :  `, leftMargin + halfWidth + 6, ry2, { continued: true }).font('Helvetica').text(receiverAddr.toUpperCase(), { width: halfWidth - 14 }); ry2 += (receiverAddr.length > 45 ? 24 : lineH) }
-    const receiverCityLine = [receiver.city, receiver.state].filter(Boolean).join(', ')
-    if (receiverCityLine) { doc.text(receiverCityLine.toUpperCase(), leftMargin + halfWidth + 6, ry2); ry2 += lineH }
-    if (receiver.country) { doc.text(`${receiver.country.toUpperCase()}, ${receiver.pincode || ''}`, leftMargin + halfWidth + 6, ry2); ry2 += lineH }
-    if (receiver.email) { doc.font('Helvetica-Bold').text(`EMAIL  ${receiver.email}`, leftMargin + halfWidth + 6, ry2); ry2 += lineH }
-    if (receiver.phone) { doc.font('Helvetica-Bold').text(`PHONE NUMBER :  + ${receiver.phone}`, leftMargin + halfWidth + 6, ry2) }
+    let cy = y + 6
+    doc.fontSize(8).font('Helvetica-Bold')
+    const cName = (receiver.name || shipment.receiver_name || '').toUpperCase()
+    if (cName) { doc.text(cName, leftMargin + halfWidth + 6, cy); cy += 12 }
 
-    y += row2Height
+    const cComp = (receiver.company || shipment.receiver_company || cName).toUpperCase()
+    doc.font('Helvetica-Bold').text('COMPANY NAME  ', leftMargin + halfWidth + 6, cy, { continued: true })
+       .font('Helvetica').text(cComp); cy += 12
 
-    // ─── DESTINATION BAR ───
-    doc.rect(leftMargin, y, pageWidth, 18).strokeColor(BLACK).lineWidth(borderW).stroke()
-    doc.fontSize(9).font('Helvetica-Bold')
-    doc.text(`DESTINATION: ${destCountry}`, leftMargin + 4, y + 4, { width: pageWidth - 8, align: 'center' })
-    y += 18
+    const cAddr1 = (receiver.address || receiver.address_1 || shipment.receiver_address || '').toUpperCase()
+    const cAddr2 = (receiver.address_2 || shipment.receiver_address_2 || '').toUpperCase()
+    doc.font('Helvetica-Bold').text('ADDRESS :  ', leftMargin + halfWidth + 6, cy, { continued: true })
+       .font('Helvetica').text(cAddr1, { width: halfWidth - 60 }); cy += (cAddr1.length > 35 ? 18 : 12)
+    if (cAddr2) { doc.font('Helvetica').text(cAddr2, leftMargin + halfWidth + 55, cy, { width: halfWidth - 65 }); cy += 12 }
 
-    // ─── ITEMS TABLE HEADER ───
+    const cCityState = [receiver.city || shipment.receiver_city, receiver.state || shipment.receiver_state].filter(Boolean).join(', ').toUpperCase()
+    if (cCityState) { doc.font('Helvetica').text(cCityState, leftMargin + halfWidth + 6, cy); cy += 12 }
+
+    const cCountryPin = [receiver.country || shipment.receiver_country || shipment.destination_country || '', receiver.pincode || receiver.zip_code || shipment.receiver_pincode || '0000'].filter(Boolean).join(', ').toUpperCase()
+    if (cCountryPin) { doc.font('Helvetica').text(cCountryPin, leftMargin + halfWidth + 6, cy); cy += 12 }
+
+    const cEmail = (receiver.email || shipment.receiver_email || '').trim()
+    doc.font('Helvetica-Bold').text('EMAIL  ', leftMargin + halfWidth + 6, cy, { continued: true })
+       .font('Helvetica').text(cEmail || ''); cy += 12
+
+    const cPhone = receiver.phone || receiver.contact_no || shipment.receiver_phone || ''
+    doc.font('Helvetica-Bold').text('PHONE NUMBER :  ', leftMargin + halfWidth + 6, cy, { continued: true })
+       .font('Helvetica').text(cPhone || '')
+
+    y += addressRowH
+
+    // ─── ROW 4: 7-COLUMN TABLE HEADER ───
+    // Columns: SR NO. (32), DESCRIPTION (200), HS CODE (65), UNIT TYPE (50), QUANTITY (55), UNIT RATES (65), AMOUNT (CIF) (78.28)
     const colWidths = {
-      sr: 35, description: 140, hs: 65, cto: 35, unit: 45, unitWt: 50, qty: 55, rates: 55, amount: 60
+      sr: 32,
+      desc: 200,
+      hs: 65,
+      unitType: 50,
+      qty: 55,
+      rates: 65,
+      amount: pageWidth - (32 + 200 + 65 + 50 + 55 + 65) // 78.28
     }
-    const totalColWidth = Object.values(colWidths).reduce((a, b) => a + b, 0)
-    // Scale columns to fit page width
-    const scale = pageWidth / totalColWidth
-    Object.keys(colWidths).forEach(k => { colWidths[k] = Math.round(colWidths[k] * scale) })
 
-    // Table header row
-    const headerH = 28
-    doc.rect(leftMargin, y, pageWidth, headerH).strokeColor(BLACK).lineWidth(borderW).stroke()
+    const tableHeaderH = 25
+    doc.rect(leftMargin, y, pageWidth, tableHeaderH).strokeColor(BLACK).lineWidth(borderW).stroke()
     doc.fillColor(BLACK).fontSize(7.5).font('Helvetica-Bold')
 
-    let cx = leftMargin
-    const headers = [
-      { text: 'SR\nNO.', w: colWidths.sr },
-      { text: 'DESCRIPTION', w: colWidths.description },
-      { text: 'HS\nCODE', w: colWidths.hs },
-      { text: 'C/T/O', w: colWidths.cto },
-      { text: 'UNIT\nTYPE', w: colWidths.unit },
-      { text: 'UNIT\nWEIGHT', w: colWidths.unitWt },
-      { text: 'QUANTITY', w: colWidths.qty },
-      { text: 'UNIT\nRATES', w: colWidths.rates },
-      { text: `AMOUNT\n(${incoterms || 'CIF'})`, w: colWidths.amount }
+    const cols = [
+      { key: 'sr', label: 'SR\nNO.', w: colWidths.sr, align: 'center' },
+      { key: 'desc', label: 'DESCRIPTION', w: colWidths.desc, align: 'center', topOffset: 8 },
+      { key: 'hs', label: 'HS\nCODE', w: colWidths.hs, align: 'center' },
+      { key: 'unitType', label: 'UNIT\nTYPE', w: colWidths.unitType, align: 'center' },
+      { key: 'qty', label: 'QUANTITY', w: colWidths.qty, align: 'center', topOffset: 8 },
+      { key: 'rates', label: 'UNIT\nRATES', w: colWidths.rates, align: 'center' },
+      { key: 'amount', label: `AMOUNT\n(${incoterms})`, w: colWidths.amount, align: 'center' }
     ]
-    headers.forEach(h => {
-      doc.rect(cx, y, h.w, headerH).strokeColor(BLACK).lineWidth(0.5).stroke()
-      doc.text(h.text, cx + 2, y + 4, { width: h.w - 4, align: 'center' })
-      cx += h.w
-    })
-    y += headerH
 
-    // ─── Build items grouped by box/parcel ───
-    // If no parcels, create a single box from main shipment dimensions
+    let colX = leftMargin
+    cols.forEach(c => {
+      doc.rect(colX, y, c.w, tableHeaderH).strokeColor(BLACK).lineWidth(0.5).stroke()
+      doc.text(c.label, colX + 2, y + (c.topOffset || 4), { width: c.w - 4, align: c.align })
+      colX += c.w
+    })
+    y += tableHeaderH
+
+    // ─── BOXES AND LINE ITEMS ───
     let boxesToRender = parsedParcels
     if (boxesToRender.length === 0) {
       boxesToRender = [{
         parcel_no: 1,
-        weight: shipment.weight || 0,
-        length: shipment.length || 0,
-        breadth: shipment.breadth || 0,
-        height: shipment.height || 0
+        weight: actualWeight || shipment.weight || 0,
+        length: l,
+        breadth: b,
+        height: h
       }]
     }
 
-    // Distribute invoice items across boxes (all items go to box 1 if no box assignment)
-    const items = invoiceItems.length > 0 ? invoiceItems : [{
+    const items = invoiceItems && invoiceItems.length > 0 ? invoiceItems : [{
       sr_no: 1,
-      description: shipment.content_description || '',
-      hs_code: '',
-      c_t_o: 'IN',
+      description: shipment.content_description || shipment.description || 'GOODS',
+      hs_code: shipment.hs_code || '',
       unit_type: 'PCS',
-      unit_weight: '0.00',
       quantity: totalPieces,
       unit_rates: (totalAmount / totalPieces) || 0,
       amount: totalAmount
     }]
+
+    const rowH = 17
+    const bottomStartY = 735 // Fixed position for totals row so table fills full page
 
     boxesToRender.forEach((parcel, boxIdx) => {
       const boxNo = parcel.parcel_no || parcel.box_no || (boxIdx + 1)
       const pl = parseFloat(parcel.length) || l
       const pb = parseFloat(parcel.breadth || parcel.width) || b
       const ph = parseFloat(parcel.height) || h
-      const pw = parseFloat(parcel.weight) || actualWeight
+      const pw = parseFloat(parcel.weight) || (actualWeight / (boxesToRender.length || 1))
 
       // Box banner row
       const bannerText = `BOX NO: ${boxNo} , DIMENSIONS (CMS) ${pl.toFixed(2)} * ${pb.toFixed(2)} * ${ph.toFixed(2)} , ACTUAL WEIGHT - ${pw.toFixed(2)} KG`
@@ -324,70 +369,109 @@ export async function generateInvoicePdf(params) {
          .text(bannerText, leftMargin + 4, y + 4, { width: pageWidth - 8, align: 'center' })
       y += 16
 
-      // Items for this box (if only one box, show all items; otherwise filter by box_no)
+      // Items for this box
       const boxItems = boxesToRender.length === 1
         ? items
         : items.filter(item => (parseInt(item.box_no) || 1) === (boxIdx + 1))
 
-      // If no items for this box, show at least the box banner
-      const displayItems = boxItems.length > 0 ? boxItems : items.filter((_, i) => boxIdx === 0 && boxesToRender.length > 1)
+      const displayItems = boxItems.length > 0 ? boxItems : (boxIdx === 0 ? items : [])
 
       displayItems.forEach((item, idx) => {
-        const rowH = 18
-        doc.rect(leftMargin, y, pageWidth, rowH).strokeColor(BLACK).lineWidth(0.3).stroke()
-        doc.fillColor(BLACK).fontSize(7.5).font('Helvetica')
+        if (y + rowH > bottomStartY) return // Prevent overflow
 
         const qty = parseFloat(item.quantity || 1)
         const amt = parseFloat(item.amount) || 0
-        const rate = parseFloat(item.unit_rates) || (amt > 0 && qty > 0 ? amt / qty : 0)
-        const unitWt = parseFloat(item.unit_weight) || 0
+        const rate = parseFloat(item.unit_rates || item.rate) || (amt > 0 && qty > 0 ? amt / qty : 0)
 
-        cx = leftMargin
-        // Draw cell borders
-        headers.forEach(h => {
-          doc.rect(cx, y, h.w, rowH).strokeColor(BLACK).lineWidth(0.3).stroke()
-          cx += h.w
+        // Draw cells
+        let cx = leftMargin
+        cols.forEach(c => {
+          doc.rect(cx, y, c.w, rowH).strokeColor(BLACK).lineWidth(0.4).stroke()
+          cx += c.w
         })
 
         cx = leftMargin
-        doc.text(String(item.sr_no || idx + 1), cx + 2, y + 4, { width: colWidths.sr - 4, align: 'center' }); cx += colWidths.sr
-        doc.text(String(item.description || '').toUpperCase(), cx + 2, y + 4, { width: colWidths.description - 4, align: 'left' }); cx += colWidths.description
-        doc.text(String(item.hs_code || ''), cx + 2, y + 4, { width: colWidths.hs - 4, align: 'center' }); cx += colWidths.hs
-        doc.text(String(item.c_t_o || item.origin || 'IN'), cx + 2, y + 4, { width: colWidths.cto - 4, align: 'center' }); cx += colWidths.cto
-        doc.text(String(item.unit_type || 'PCS'), cx + 2, y + 4, { width: colWidths.unit - 4, align: 'center' }); cx += colWidths.unit
-        doc.text(unitWt.toFixed(2), cx + 2, y + 4, { width: colWidths.unitWt - 4, align: 'center' }); cx += colWidths.unitWt
-        doc.text(String(qty), cx + 2, y + 4, { width: colWidths.qty - 4, align: 'center' }); cx += colWidths.qty
-        doc.text(rate.toFixed(2), cx + 2, y + 4, { width: colWidths.rates - 4, align: 'right' }); cx += colWidths.rates
-        doc.text(amt.toFixed(2), cx + 2, y + 4, { width: colWidths.amount - 4, align: 'right' })
+        doc.fillColor(BLACK).fontSize(7.5).font('Helvetica')
+
+        // SR NO
+        doc.text(String(item.sr_no || idx + 1), cx + 2, y + 4.5, { width: colWidths.sr - 4, align: 'center' })
+        cx += colWidths.sr
+
+        // DESCRIPTION
+        doc.text(String(item.description || '').toUpperCase(), cx + 4, y + 4.5, { width: colWidths.desc - 8, align: 'left' })
+        cx += colWidths.desc
+
+        // HS CODE
+        doc.text(String(item.hs_code || ''), cx + 2, y + 4.5, { width: colWidths.hs - 4, align: 'center' })
+        cx += colWidths.hs
+
+        // UNIT TYPE
+        doc.text(String(item.unit_type || 'PCS').toUpperCase(), cx + 2, y + 4.5, { width: colWidths.unitType - 4, align: 'center' })
+        cx += colWidths.unitType
+
+        // QUANTITY
+        doc.text(String(qty), cx + 2, y + 4.5, { width: colWidths.qty - 4, align: 'center' })
+        cx += colWidths.qty
+
+        // UNIT RATES
+        doc.text(rate.toFixed(2), cx + 2, y + 4.5, { width: colWidths.rates - 6, align: 'right' })
+        cx += colWidths.rates
+
+        // AMOUNT
+        doc.text(amt.toFixed(2), cx + 2, y + 4.5, { width: colWidths.amount - 6, align: 'right' })
 
         y += rowH
       })
     })
 
-    // Empty rows to fill space
-    const emptyRowsNeeded = Math.max(0, 3 - items.length)
-    for (let i = 0; i < emptyRowsNeeded; i++) {
-      doc.rect(leftMargin, y, pageWidth, 16).strokeColor(BLACK).lineWidth(0.3).stroke()
-      headers.forEach(h => {
-        doc.rect(leftMargin, y, h.w, 16).strokeColor(BLACK).lineWidth(0.3).stroke()
+    // ─── EMPTY GRID ROWS TO FILL DOWN TO BOTTOM ───
+    while (y + rowH <= bottomStartY) {
+      let cx = leftMargin
+      cols.forEach(c => {
+        doc.rect(cx, y, c.w, rowH).strokeColor(BLACK).lineWidth(0.4).stroke()
+        cx += c.w
       })
-      y += 16
+      y += rowH
     }
 
-    // ─── TOTALS ROW ───
-    y += 2
-    doc.rect(leftMargin, y, pageWidth, 22).strokeColor(BLACK).lineWidth(borderW).stroke()
-    doc.fillColor(BLACK).fontSize(9).font('Helvetica-Bold')
-    doc.text('TOTAL AMOUNT', leftMargin + 4, y + 6, { width: pageWidth - colWidths.amount - 10, align: 'right' })
-    doc.text(`${totalAmount.toFixed(2)}`, leftMargin + pageWidth - colWidths.amount - 4, y + 6, { width: colWidths.amount, align: 'right' })
-    y += 26
+    // ─── TOTAL ROW ───
+    const totalRowH = 20
+    const wordsWidth = pageWidth - (colWidths.rates + colWidths.amount)
+    const totalNumWidth = colWidths.rates + colWidths.amount
 
-    // ─── DECLARATION ───
-    doc.rect(leftMargin, y, pageWidth, 36).strokeColor(BLACK).lineWidth(borderW).stroke()
-    doc.fillColor(BLACK).fontSize(7).font('Helvetica')
-       .text('We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.', leftMargin + 6, y + 6, { width: pageWidth - 14, lineGap: 1.5 })
-    doc.fontSize(7).font('Helvetica-Bold')
-       .text('Authorized Signatory', leftMargin + pageWidth - 140, y + 22, { width: 130, align: 'right' })
+    doc.rect(leftMargin, y, wordsWidth, totalRowH).strokeColor(BLACK).lineWidth(borderW).stroke()
+    doc.rect(leftMargin + wordsWidth, y, totalNumWidth, totalRowH).strokeColor(BLACK).lineWidth(borderW).stroke()
+
+    // Words
+    const amountInWords = numberToWords(totalAmount, currency)
+    doc.fillColor(BLACK).fontSize(7.5).font('Helvetica-Bold')
+       .text('AMOUNT CHARGEABLE', leftMargin + 6, y + 6)
+    doc.font('Helvetica')
+       .text(amountInWords, leftMargin + 130, y + 6, { width: wordsWidth - 136, align: 'left' })
+
+    // Total Amount
+    doc.font('Helvetica-Bold').fontSize(8.5)
+       .text(`TOTAL: ${totalAmount.toFixed(2)} ${currency}`, leftMargin + wordsWidth + 4, y + 5.5, { width: totalNumWidth - 8, align: 'center' })
+
+    y += totalRowH
+
+    // ─── NOTES & SIGNATURE / STAMP ROW ───
+    const notesRowH = 48
+    doc.rect(leftMargin, y, halfWidth, notesRowH).strokeColor(BLACK).lineWidth(borderW).stroke()
+    doc.rect(leftMargin + halfWidth, y, halfWidth, notesRowH).strokeColor(BLACK).lineWidth(borderW).stroke()
+
+    // Left: NOTES
+    doc.fillColor(BLACK).fontSize(7.5).font('Helvetica-Bold')
+       .text('NOTES', leftMargin + 6, y + 5)
+    const noteText = invoiceMeta.note || 'We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.'
+    doc.font('Helvetica').fontSize(6.5)
+       .text(noteText, leftMargin + 6, y + 16, { width: halfWidth - 12, lineGap: 1 })
+
+    // Right: SIGNATURE / STAMP
+    doc.font('Helvetica-Bold').fontSize(7.5)
+       .text('SIGNATURE / STAMP', leftMargin + halfWidth + 6, y + 5)
+
+    y += notesRowH
 
     // Finalize
     doc.end()
@@ -400,4 +484,3 @@ export async function generateInvoicePdf(params) {
     })
   })
 }
-

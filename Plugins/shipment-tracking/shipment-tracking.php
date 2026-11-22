@@ -343,12 +343,63 @@ function pe_attach_company_origin_events(&$tracking, $result) {
     $is_dispatched = !empty($result->VENDORID1) || !empty($result->VENDORID2) || !empty($result->VENDNAME) || intval($result->SERVICE ?? 0) > 0 || !empty($tracking);
 
     if ($is_dispatched) {
+        // Find actual push / manifest date from parcel_history or shipments table
+        global $wpdb;
+        $dispatch_date = '';
+        $dispatch_time = '11:15 AM';
+        $awb_no_int = intval(preg_replace('/\D/', '', $result->AWBNO ?? ''));
+
+        if ($awb_no_int > 0) {
+            $hist_manifest = $wpdb->get_row($wpdb->prepare(
+                "SELECT `date`, `time` FROM parcel_history 
+                 WHERE AWBNO = %d AND (activity LIKE %s OR activity LIKE %s)
+                 ORDER BY `date` DESC, `time` DESC LIMIT 1",
+                $awb_no_int, '%MANIFEST%', '%DISPATCH%'
+            ));
+            if ($hist_manifest && !empty($hist_manifest->date)) {
+                $dispatch_date = pe_fdate($hist_manifest->date);
+                if (!empty($hist_manifest->time)) {
+                    $dispatch_time = date('h:i A', strtotime($hist_manifest->time));
+                }
+            }
+        }
+
+        // Fallback: check shipments table if available
+        if (empty($dispatch_date) && !empty($result->AWBNO)) {
+            $shp = $wpdb->get_row($wpdb->prepare(
+                "SELECT pushed_at, last_push_at, updated_at FROM shipments 
+                 WHERE (tracking_number = %s OR order_id = %s) AND (vendor_push_status = 'success' OR is_locked = 1) LIMIT 1",
+                $result->AWBNO, $result->AWBNO
+            ));
+            if ($shp) {
+                $p_raw = !empty($shp->pushed_at) ? $shp->pushed_at : (!empty($shp->last_push_at) ? $shp->last_push_at : $shp->updated_at);
+                if ($p_raw) {
+                    $dispatch_date = pe_fdate($p_raw);
+                    $dispatch_time = date('h:i A', strtotime($p_raw));
+                }
+            }
+        }
+
+        if (empty($dispatch_date)) {
+            $dispatch_date = current_time('M d, Y');
+        }
+
+        // 1. Shipment Manifested & Dispatched from Origin Hub (push date - sorts to top)
         $company_events[] = [
-            'date' => $bdate,
-            'time' => '11:15 AM',
+            'date' => $dispatch_date,
+            'time' => $dispatch_time,
             'location' => $origin_location . ' (PRINCE EXPRESS HUB)',
             'activity' => 'Shipment Manifested & Dispatched from Origin Hub',
             '_pe_origin' => 2,
+        ];
+
+        // 2. Shipment Booked & Order Created (original booking date)
+        $company_events[] = [
+            'date' => $bdate,
+            'time' => '10:00 AM',
+            'location' => $origin_location . ' (PRINCE EXPRESS)',
+            'activity' => 'Shipment Booked & Order Created',
+            '_pe_origin' => 1,
         ];
     } else {
         $company_events[] = [
@@ -368,6 +419,18 @@ function pe_attach_company_origin_events(&$tracking, $result) {
     }));
 
     $tracking = array_merge($tracking, $company_events);
+
+    // Sort tracking events chronologically descending (newest on top)
+    usort($tracking, function($a, $b) {
+        $ta = strtotime(str_replace(',', '', $a['date'] ?? '') . ' ' . ($a['time'] ?? ''));
+        $tb = strtotime(str_replace(',', '', $b['date'] ?? '') . ' ' . ($b['time'] ?? ''));
+        if ($tb !== $ta) return $tb - $ta;
+        $isManA = stripos($a['activity'] ?? $a['status'] ?? '', 'manifest') !== false;
+        $isManB = stripos($b['activity'] ?? $b['status'] ?? '', 'manifest') !== false;
+        if ($isManA && !$isManB) return -1;
+        if (!$isManA && $isManB) return 1;
+        return 0;
+    });
 }
 
 // ========================================

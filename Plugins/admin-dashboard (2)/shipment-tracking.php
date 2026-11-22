@@ -395,6 +395,18 @@ function pe_attach_company_origin_events(&$tracking, $result) {
     }));
 
     $tracking = array_merge($tracking, $company_events);
+
+    // Sort tracking events chronologically descending (newest on top)
+    usort($tracking, function($a, $b) {
+        $ta = strtotime(str_replace(',', '', $a['date'] ?? '') . ' ' . ($a['time'] ?? ''));
+        $tb = strtotime(str_replace(',', '', $b['date'] ?? '') . ' ' . ($b['time'] ?? ''));
+        if ($tb !== $ta) return $tb - $ta;
+        $isManA = stripos($a['activity'] ?? $a['status'] ?? '', 'manifest') !== false;
+        $isManB = stripos($b['activity'] ?? $b['status'] ?? '', 'manifest') !== false;
+        if ($isManA && !$isManB) return -1;
+        if (!$isManA && $isManB) return 1;
+        return 0;
+    });
 }
 
 // ========================================

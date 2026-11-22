@@ -78,9 +78,9 @@ const INITIAL_FORM = {
   invoice_type: 'INVOICE',
   invoice_currency: 'INR',
   terms_of_trade: 'CIF',
-  invoice_note: '',
+  invoice_note: 'GIFT',
   hs_code: '',
-  export_reason: '',
+  export_reason: 'GIFT',
 
   // Payment & Other
   payment_mode: 'prepaid',
@@ -882,9 +882,9 @@ export default function CustomerBookingPage() {
         invoice_type: form.invoice_type || 'INVOICE',
         invoice_currency: form.invoice_currency,
         hs_code: form.hs_code,
-        export_reason: form.export_reason || form.invoice_note || '',
+        export_reason: form.export_reason || form.invoice_note || 'GIFT',
         terms_of_trade: form.terms_of_trade,
-        invoice_note: form.invoice_note || '',
+        invoice_note: form.invoice_note || form.export_reason || 'GIFT',
         invoice_items: invoiceItems
           .filter(item => item.description || parseFloat(item.quantity) > 0 || parseFloat(item.amount) > 0)
           .map((item, idx) => ({

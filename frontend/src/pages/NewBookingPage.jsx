@@ -98,7 +98,8 @@ const INITIAL_FORM = {
   invoice_date: '',
   invoice_currency: 'INR',
   hs_code: '',
-  export_reason: '',
+  export_reason: 'GIFT',
+  invoice_note: 'GIFT',
   terms_of_trade: 'CIF',
   // eAWB Details
   eawb_no: '',
@@ -1701,10 +1702,10 @@ export default function NewBookingPage() {
     invoice_date: form.invoice_date,
     invoice_currency: form.invoice_currency,
     hs_code: form.hs_code,
-    export_reason: form.export_reason || form.invoice_note || '',
+    export_reason: form.export_reason || form.invoice_note || 'GIFT',
     terms_of_trade: form.terms_of_trade,
     invoice_type: form.invoice_type || 'INVOICE',
-    invoice_note: form.invoice_note || '',
+    invoice_note: form.invoice_note || form.export_reason || 'GIFT',
     parcels: parcels.map((p, idx) => {
       const pWeight = (p.weight !== undefined && p.weight !== '') ? String(p.weight) : (parcels.length === 1 ? String(form.weight || '') : '')
       const pLength = (p.length !== undefined && p.length !== '') ? String(p.length) : (parcels.length === 1 ? String(form.length || '') : '')

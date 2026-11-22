@@ -331,15 +331,15 @@ export default class FlySwiftAdapter extends BaseAdapter {
       if (!isNaN(parsed)) invoiceTypeId = parsed
     }
 
-    // Resolve free_form_note_master_code (string: GIFT or SAMPLE)
-    let noteMasterCode = 'SAMPLE'
+    // Resolve free_form_note_master_code (string: GIFT or SAMPLE - default: GIFT)
+    let noteMasterCode = 'GIFT'
     const rawNote = String(shipmentData.free_form_note_master_code || shipmentData.export_reason || shipmentData.invoice_note || shipmentData.note || '').trim().toUpperCase()
-    if (rawNote.includes('GIFT')) {
+    if (rawNote.includes('SAMPLE')) {
+      noteMasterCode = 'SAMPLE'
+    } else if (rawNote.includes('GIFT')) {
       noteMasterCode = 'GIFT'
-    } else if (rawNote.includes('SAMPLE')) {
-      noteMasterCode = 'SAMPLE'
     } else {
-      noteMasterCode = 'SAMPLE'
+      noteMasterCode = 'GIFT'
     }
 
     const freeFormCurrency = shipmentData.free_form_currency || shipmentData.invoice_currency || 'INR'
