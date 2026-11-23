@@ -7,6 +7,51 @@ import { fileURLToPath } from 'url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+const COUNTRY_MAP = {
+  'US': 'UNITED STATES', 'USA': 'UNITED STATES', 'UNITED STATES': 'UNITED STATES',
+  'GB': 'UNITED KINGDOM', 'UK': 'UNITED KINGDOM', 'GBR': 'UNITED KINGDOM', 'UNITED KINGDOM': 'UNITED KINGDOM',
+  'CA': 'CANADA', 'CAN': 'CANADA', 'CANADA': 'CANADA',
+  'AU': 'AUSTRALIA', 'AUS': 'AUSTRALIA', 'AUSTRALIA': 'AUSTRALIA',
+  'NZ': 'NEW ZEALAND', 'NZL': 'NEW ZEALAND', 'NEW ZEALAND': 'NEW ZEALAND',
+  'DE': 'GERMANY', 'DEU': 'GERMANY', 'GERMANY': 'GERMANY',
+  'FR': 'FRANCE', 'FRA': 'FRANCE', 'FRANCE': 'FRANCE',
+  'IT': 'ITALY', 'ITA': 'ITALY', 'ITALY': 'ITALY',
+  'ES': 'SPAIN', 'ESP': 'SPAIN', 'SPAIN': 'SPAIN',
+  'NL': 'NETHERLANDS', 'NLD': 'NETHERLANDS', 'NETHERLANDS': 'NETHERLANDS',
+  'BE': 'BELGIUM', 'BEL': 'BELGIUM', 'BELGIUM': 'BELGIUM',
+  'CH': 'SWITZERLAND', 'CHE': 'SWITZERLAND', 'SWITZERLAND': 'SWITZERLAND',
+  'AT': 'AUSTRIA', 'AUT': 'AUSTRIA', 'AUSTRIA': 'AUSTRIA',
+  'SE': 'SWEDEN', 'SWE': 'SWEDEN', 'SWEDEN': 'SWEDEN',
+  'NO': 'NORWAY', 'NOR': 'NORWAY', 'NORWAY': 'NORWAY',
+  'DK': 'DENMARK', 'DNK': 'DENMARK', 'DENMARK': 'DENMARK',
+  'IE': 'IRELAND', 'IRL': 'IRELAND', 'IRELAND': 'IRELAND',
+  'PL': 'POLAND', 'POL': 'POLAND', 'POLAND': 'POLAND',
+  'PT': 'PORTUGAL', 'PRT': 'PORTUGAL', 'PORTUGAL': 'PORTUGAL',
+  'GR': 'GREECE', 'GRC': 'GREECE', 'GREECE': 'GREECE',
+  'TR': 'TURKEY', 'TUR': 'TURKEY', 'TURKEY': 'TURKEY',
+  'AE': 'UNITED ARAB EMIRATES', 'UAE': 'UNITED ARAB EMIRATES', 'ARE': 'UNITED ARAB EMIRATES', 'UNITED ARAB EMIRATES': 'UNITED ARAB EMIRATES',
+  'SA': 'SAUDI ARABIA', 'SAU': 'SAUDI ARABIA', 'SAUDI ARABIA': 'SAUDI ARABIA',
+  'QA': 'QATAR', 'QAT': 'QATAR', 'QATAR': 'QATAR',
+  'KW': 'KUWAIT', 'KWT': 'KUWAIT', 'KUWAIT': 'KUWAIT',
+  'BH': 'BAHRAIN', 'BHR': 'BAHRAIN', 'BAHRAIN': 'BAHRAIN',
+  'OM': 'OMAN', 'OMN': 'OMAN', 'OMAN': 'OMAN',
+  'SG': 'SINGAPORE', 'SGP': 'SINGAPORE', 'SINGAPORE': 'SINGAPORE',
+  'MY': 'MALAYSIA', 'MYS': 'MALAYSIA', 'MALAYSIA': 'MALAYSIA',
+  'HK': 'HONG KONG', 'HKG': 'HONG KONG', 'HONG KONG': 'HONG KONG',
+  'JP': 'JAPAN', 'JPN': 'JAPAN', 'JAPAN': 'JAPAN',
+  'KR': 'SOUTH KOREA', 'KOR': 'SOUTH KOREA', 'SOUTH KOREA': 'SOUTH KOREA', 'KOREA': 'SOUTH KOREA',
+  'CN': 'CHINA', 'CHN': 'CHINA', 'CHINA': 'CHINA',
+  'IN': 'INDIA', 'IND': 'INDIA', 'INDIA': 'INDIA',
+  'ZM': 'ZAMBIA', 'ZMB': 'ZAMBIA', 'ZAMBIA': 'ZAMBIA',
+  'ZA': 'SOUTH AFRICA', 'ZAF': 'SOUTH AFRICA', 'SOUTH AFRICA': 'SOUTH AFRICA'
+}
+
+function getFullCountryName(c) {
+  if (!c) return ''
+  const clean = String(c).trim().toUpperCase()
+  return COUNTRY_MAP[clean] || clean
+}
+
 // Ensure uploads directory exists
 const INVOICES_DIR = path.join(__dirname, '..', '..', 'uploads', 'invoices')
 if (!fs.existsSync(INVOICES_DIR)) {
@@ -230,69 +275,161 @@ export async function generateInvoicePdf(params) {
     y += headerBarH
 
     // ─── ROW 3: SHIPPER / CONSIGNEE DETAILS ───
-    const addressRowH = 100
+    const senderData = {
+      name: sender.name || shipment.sender_name || '',
+      company: sender.company || shipment.sender_company || '',
+      address: sender.address || sender.address_1 || shipment.sender_address || '',
+      address_2: sender.address_2 || shipment.sender_address_2 || '',
+      city: sender.city || shipment.sender_city || '',
+      state: sender.state || shipment.sender_state || '',
+      country: sender.country || shipment.sender_country || 'INDIA',
+      pincode: sender.pincode || sender.zip_code || shipment.sender_pincode || '',
+      email: sender.email || shipment.sender_email || '',
+      phone: sender.phone || sender.contact_no || shipment.sender_phone || ''
+    }
+
+    const receiverData = {
+      name: receiver.name || shipment.receiver_name || '',
+      company: receiver.company || shipment.receiver_company || '',
+      address: receiver.address || receiver.address_1 || shipment.receiver_address || '',
+      address_2: receiver.address_2 || shipment.receiver_address_2 || '',
+      city: receiver.city || shipment.receiver_city || '',
+      state: receiver.state || shipment.receiver_state || '',
+      country: receiver.country || shipment.receiver_country || shipment.destination_country || '',
+      pincode: receiver.pincode || receiver.zip_code || shipment.receiver_pincode || '0000',
+      email: receiver.email || shipment.receiver_email || '',
+      phone: receiver.phone || receiver.contact_no || shipment.receiver_phone || ''
+    }
+
+    const partyContentW = halfWidth - 12
+
+    function calculatePartyHeight(party, contentW) {
+      doc.fontSize(7.5)
+      let h = 8 // top padding
+      const lineH = 11.5
+
+      const name = (party.name || '').toUpperCase()
+      if (name) {
+        doc.font('Helvetica-Bold')
+        h += Math.max(lineH, doc.heightOfString(name, { width: contentW }) + 1.5)
+      }
+
+      const comp = (party.company || name || '').toUpperCase()
+      doc.font('Helvetica-Bold')
+      h += Math.max(lineH, doc.heightOfString('COMPANY NAME  ' + comp, { width: contentW }) + 1.5)
+
+      const addr1 = (party.address || '').toUpperCase()
+      if (addr1) {
+        doc.font('Helvetica')
+        h += Math.max(lineH, doc.heightOfString('ADDRESS :  ' + addr1, { width: contentW }) + 1.5)
+      } else {
+        h += lineH
+      }
+
+      const addr2 = (party.address_2 || '').toUpperCase()
+      if (addr2) {
+        doc.font('Helvetica')
+        h += Math.max(lineH, doc.heightOfString(addr2, { width: contentW }) + 1.5)
+      }
+
+      const cityState = [party.city, party.state].filter(Boolean).join(', ').toUpperCase()
+      if (cityState) {
+        doc.font('Helvetica')
+        h += Math.max(lineH, doc.heightOfString(cityState, { width: contentW }) + 1.5)
+      }
+
+      const fullCountry = getFullCountryName(party.country || 'INDIA')
+      const countryPin = [fullCountry, party.pincode || ''].filter(Boolean).join(', ').toUpperCase()
+      if (countryPin) {
+        doc.font('Helvetica')
+        h += Math.max(lineH, doc.heightOfString(countryPin, { width: contentW }) + 1.5)
+      }
+
+      h += lineH // EMAIL line
+      h += lineH // PHONE NUMBER line
+      h += 8 // bottom padding
+      return h
+    }
+
+    const sHeight = calculatePartyHeight(senderData, partyContentW)
+    const cHeight = calculatePartyHeight(receiverData, partyContentW)
+    const addressRowH = Math.max(118, sHeight, cHeight)
+
     doc.rect(leftMargin, y, halfWidth, addressRowH).strokeColor(BLACK).lineWidth(borderW).stroke()
     doc.rect(leftMargin + halfWidth, y, halfWidth, addressRowH).strokeColor(BLACK).lineWidth(borderW).stroke()
 
-    // Shipper details
-    let sy = y + 6
-    doc.fontSize(8).font('Helvetica-Bold')
-    const sName = (sender.name || shipment.sender_name || '').toUpperCase()
-    if (sName) { doc.text(sName, leftMargin + 6, sy); sy += 12 }
+    function renderPartyBlock(party, startX, startY, boxW) {
+      let py = startY + 6
+      const padX = startX + 6
+      const cW = boxW - 12
+      const lineH = 11.5
 
-    const sComp = (sender.company || shipment.sender_company || sName).toUpperCase()
-    doc.font('Helvetica-Bold').text('COMPANY NAME  ', leftMargin + 6, sy, { continued: true })
-       .font('Helvetica').text(sComp); sy += 12
+      // 1. Name
+      const name = (party.name || '').toUpperCase()
+      if (name) {
+        doc.font('Helvetica-Bold').fontSize(7.5).text(name, padX, py, { width: cW })
+        py += Math.max(lineH, doc.heightOfString(name, { width: cW }) + 1.5)
+      }
 
-    const sAddr1 = (sender.address || sender.address_1 || shipment.sender_address || '').toUpperCase()
-    const sAddr2 = (sender.address_2 || shipment.sender_address_2 || '').toUpperCase()
-    doc.font('Helvetica-Bold').text('ADDRESS :  ', leftMargin + 6, sy, { continued: true })
-       .font('Helvetica').text(sAddr1, { width: halfWidth - 60 }); sy += (sAddr1.length > 35 ? 18 : 12)
-    if (sAddr2) { doc.font('Helvetica').text(sAddr2, leftMargin + 55, sy, { width: halfWidth - 65 }); sy += 12 }
+      // 2. Company Name
+      const comp = (party.company || name || '').toUpperCase()
+      doc.font('Helvetica-Bold').fontSize(7.5).text('COMPANY NAME  ', padX, py, { continued: true })
+         .font('Helvetica').text(comp, { width: cW })
+      py += Math.max(lineH, doc.heightOfString('COMPANY NAME  ' + comp, { width: cW }) + 1.5)
 
-    const sCityState = [sender.city || shipment.sender_city, sender.state || shipment.sender_state].filter(Boolean).join(', ').toUpperCase()
-    if (sCityState) { doc.font('Helvetica').text(sCityState, leftMargin + 6, sy); sy += 12 }
+      // 3. Address Line 1
+      const addr1 = (party.address || '').toUpperCase()
+      if (addr1) {
+        doc.font('Helvetica-Bold').fontSize(7.5).text('ADDRESS :  ', padX, py, { continued: true })
+           .font('Helvetica').text(addr1, { width: cW })
+        py += Math.max(lineH, doc.heightOfString('ADDRESS :  ' + addr1, { width: cW }) + 1.5)
+      } else {
+        doc.font('Helvetica-Bold').fontSize(7.5).text('ADDRESS :', padX, py)
+        py += lineH
+      }
 
-    const sCountryPin = [sender.country || shipment.sender_country || 'INDIA', sender.pincode || sender.zip_code || shipment.sender_pincode || ''].filter(Boolean).join(', ').toUpperCase()
-    if (sCountryPin) { doc.font('Helvetica').text(sCountryPin, leftMargin + 6, sy); sy += 12 }
+      // 4. Address Line 2 (flush left with padX, NOT indented!)
+      const addr2 = (party.address_2 || '').toUpperCase()
+      if (addr2) {
+        doc.font('Helvetica').fontSize(7.5).text(addr2, padX, py, { width: cW })
+        py += Math.max(lineH, doc.heightOfString(addr2, { width: cW }) + 1.5)
+      }
 
-    const sEmail = (sender.email || shipment.sender_email || '').trim()
-    doc.font('Helvetica-Bold').text('EMAIL  ', leftMargin + 6, sy, { continued: true })
-       .font('Helvetica').text(sEmail || ''); sy += 12
+      // 5. City, State
+      const cityState = [party.city, party.state].filter(Boolean).join(', ').toUpperCase()
+      if (cityState) {
+        doc.font('Helvetica').fontSize(7.5).text(cityState, padX, py, { width: cW })
+        py += Math.max(lineH, doc.heightOfString(cityState, { width: cW }) + 1.5)
+      }
 
-    const sPhone = sender.phone || sender.contact_no || shipment.sender_phone || ''
-    doc.font('Helvetica-Bold').text('PHONE NUMBER :  ', leftMargin + 6, sy, { continued: true })
-       .font('Helvetica').text(sPhone || '')
+      // 6. Country, Pincode
+      const fullCountry = getFullCountryName(party.country || 'INDIA')
+      const countryPin = [fullCountry, party.pincode || ''].filter(Boolean).join(', ').toUpperCase()
+      if (countryPin) {
+        doc.font('Helvetica').fontSize(7.5).text(countryPin, padX, py, { width: cW })
+        py += Math.max(lineH, doc.heightOfString(countryPin, { width: cW }) + 1.5)
+      }
 
-    // Consignee details
-    let cy = y + 6
-    doc.fontSize(8).font('Helvetica-Bold')
-    const cName = (receiver.name || shipment.receiver_name || '').toUpperCase()
-    if (cName) { doc.text(cName, leftMargin + halfWidth + 6, cy); cy += 12 }
+      // 7. Email
+      const email = (party.email || '').trim()
+      if (email) {
+        doc.font('Helvetica-Bold').fontSize(7.5).text('EMAIL :  ', padX, py, { continued: true })
+           .font('Helvetica').text(email, { width: cW })
+      } else {
+        doc.font('Helvetica-Bold').fontSize(7.5).text('EMAIL', padX, py)
+      }
+      py += lineH
 
-    const cComp = (receiver.company || shipment.receiver_company || cName).toUpperCase()
-    doc.font('Helvetica-Bold').text('COMPANY NAME  ', leftMargin + halfWidth + 6, cy, { continued: true })
-       .font('Helvetica').text(cComp); cy += 12
+      // 8. Phone Number
+      const phone = (party.phone || '').trim()
+      doc.font('Helvetica-Bold').fontSize(7.5).text('PHONE NUMBER :  ', padX, py, { continued: !!phone })
+      if (phone) {
+        doc.font('Helvetica').text(phone, { width: cW })
+      }
+    }
 
-    const cAddr1 = (receiver.address || receiver.address_1 || shipment.receiver_address || '').toUpperCase()
-    const cAddr2 = (receiver.address_2 || shipment.receiver_address_2 || '').toUpperCase()
-    doc.font('Helvetica-Bold').text('ADDRESS :  ', leftMargin + halfWidth + 6, cy, { continued: true })
-       .font('Helvetica').text(cAddr1, { width: halfWidth - 60 }); cy += (cAddr1.length > 35 ? 18 : 12)
-    if (cAddr2) { doc.font('Helvetica').text(cAddr2, leftMargin + halfWidth + 55, cy, { width: halfWidth - 65 }); cy += 12 }
-
-    const cCityState = [receiver.city || shipment.receiver_city, receiver.state || shipment.receiver_state].filter(Boolean).join(', ').toUpperCase()
-    if (cCityState) { doc.font('Helvetica').text(cCityState, leftMargin + halfWidth + 6, cy); cy += 12 }
-
-    const cCountryPin = [receiver.country || shipment.receiver_country || shipment.destination_country || '', receiver.pincode || receiver.zip_code || shipment.receiver_pincode || '0000'].filter(Boolean).join(', ').toUpperCase()
-    if (cCountryPin) { doc.font('Helvetica').text(cCountryPin, leftMargin + halfWidth + 6, cy); cy += 12 }
-
-    const cEmail = (receiver.email || shipment.receiver_email || '').trim()
-    doc.font('Helvetica-Bold').text('EMAIL  ', leftMargin + halfWidth + 6, cy, { continued: true })
-       .font('Helvetica').text(cEmail || ''); cy += 12
-
-    const cPhone = receiver.phone || receiver.contact_no || shipment.receiver_phone || ''
-    doc.font('Helvetica-Bold').text('PHONE NUMBER :  ', leftMargin + halfWidth + 6, cy, { continued: true })
-       .font('Helvetica').text(cPhone || '')
+    renderPartyBlock(senderData, leftMargin, y, halfWidth)
+    renderPartyBlock(receiverData, leftMargin + halfWidth, y, halfWidth)
 
     y += addressRowH
 
@@ -353,7 +490,10 @@ export async function generateInvoicePdf(params) {
     }]
 
     const rowH = 17
-    const bottomStartY = 735 // Fixed position for totals row so table fills full page
+    const totalRowH = 20
+    const notesRowH = 48
+    // Dynamically calculate bottomStartY from page height so entire layout fits on single page
+    const bottomStartY = Math.floor(doc.page.height - doc.page.margins.bottom - totalRowH - notesRowH)
 
     boxesToRender.forEach((parcel, boxIdx) => {
       const boxNo = parcel.parcel_no || parcel.box_no || (boxIdx + 1)
@@ -435,7 +575,6 @@ export async function generateInvoicePdf(params) {
     }
 
     // ─── TOTAL ROW ───
-    const totalRowH = 20
     const wordsWidth = pageWidth - (colWidths.rates + colWidths.amount)
     const totalNumWidth = colWidths.rates + colWidths.amount
 
@@ -456,7 +595,6 @@ export async function generateInvoicePdf(params) {
     y += totalRowH
 
     // ─── NOTES & SIGNATURE / STAMP ROW ───
-    const notesRowH = 48
     doc.rect(leftMargin, y, halfWidth, notesRowH).strokeColor(BLACK).lineWidth(borderW).stroke()
     doc.rect(leftMargin + halfWidth, y, halfWidth, notesRowH).strokeColor(BLACK).lineWidth(borderW).stroke()
 
