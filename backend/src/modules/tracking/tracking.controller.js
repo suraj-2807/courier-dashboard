@@ -470,8 +470,11 @@ function resolveTracker(config, vendorCode = '') {
   const trackingUrl = (config?.tracking_api_url || '').toLowerCase()
   const authUrl = (config?.auth_url || '').toLowerCase()
 
-  // Pacific Express
-  if (code.includes('pacific') || name.includes('pacific') || trackingUrl.includes('pacificexp') || authUrl.includes('pacificexp')) {
+  // Pacific Express & Atlantic Courier (eShip platform)
+  if (
+    code.includes('pacific') || name.includes('pacific') || trackingUrl.includes('pacificexp') || authUrl.includes('pacificexp') ||
+    code.includes('atlantic') || name.includes('atlantic') || trackingUrl.includes('atlanticcourier') || authUrl.includes('atlanticcourier')
+  ) {
     return trackPacific
   }
 

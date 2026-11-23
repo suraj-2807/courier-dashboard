@@ -282,6 +282,20 @@ export function resolveVendorDetails(vendorCode, vendorName, serviceCode = null,
     }
   }
 
+  // 8. Atlantic Courier (eShip platform)
+  if (code.includes('atlantic') || name.includes('atlantic')) {
+    return {
+      vendCode: 'ATLANTIC',
+      vendName: 'ATLANTIC',
+      service: svcInt > 0 ? svcInt : 1007,
+      autotrack: 1,
+      accode: getCred('accode', 'customer_code', 'acc_code') || '',
+      tuser: getCred('tuser', 'username', 'user_id', 'UserID') || '',
+      tpass: getCred('tpass', 'password', 'Password') || '',
+      apikey: getCred('apikey', 'api_key') || ''
+    }
+  }
+
   // Fallback / custom service resolution
   const finalSvc = svcInt > 0 ? svcInt : 0
   const finalCode = (vendorCode || 'PXC').toUpperCase()

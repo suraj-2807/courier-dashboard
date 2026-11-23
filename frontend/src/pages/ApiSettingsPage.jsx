@@ -278,6 +278,29 @@ const VENDOR_PRESETS = [
       environment: 'production',
       is_active: true
     }
+  },
+  {
+    id: 'atlantic',
+    name: 'Atlantic Courier',
+    badge: 'eShip Platform',
+    color: '#0891b2',
+    values: {
+      name: 'Atlantic Courier',
+      vendor_code: 'atlantic',
+      auth_type: 'inline',
+      auth_url: '',
+      shipment_api_url: 'https://cloud.atlanticcourier.net/api/v1/Awbentry/Awbentry',
+      tracking_api_url: 'https://cloud.atlanticcourier.net/api/v1/Tracking/Tracking',
+      shipment_api_method: 'POST',
+      user_id: '',
+      password: '',
+      customer_code: '',
+      response_tracking_path: 'AWBNo',
+      response_success_path: 'Status',
+      response_success_value: 'Success',
+      environment: 'production',
+      is_active: true
+    }
   }
 ]
 

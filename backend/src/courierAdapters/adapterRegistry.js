@@ -44,6 +44,9 @@ const ADAPTERS = {
   'pacifc': PacificAdapter,       // Support typo variation as requested
   'pacificexpress': PacificAdapter,
   'pacific_express': PacificAdapter,
+  'atlantic': PacificAdapter,     // Atlantic Courier (eShip / Awbentry Cloud platform)
+  'atlanticcourier': PacificAdapter,
+  'atlantic_courier': PacificAdapter,
   // 'bluedart': BlueDartAdapter,
   // 'delhivery': DelhiveryAdapter,
 }

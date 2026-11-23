@@ -891,8 +891,8 @@ function pe_fetch_tracking($result) {
             $history = pe_parse_flyswift_events($body, $result, 'Sairaj International');
         }
     }
-    // 5. PACIFIC EXPRESS
-    elseif ($svc == 1007 || $svc == 1008 || strpos($vend, 'pacific') !== false) {
+    // 5. PACIFIC EXPRESS / ATLANTIC COURIER
+    elseif ($svc == 1007 || $svc == 1008 || strpos($vend, 'pacific') !== false || strpos($vend, 'atlantic') !== false) {
         $user_id = !empty($result->TUSER) ? trim($result->TUSER) : 'P0503';
         $password = !empty($result->TPASS) ? trim($result->TPASS) : 'P0503@7199';
         $d = json_encode([
@@ -901,7 +901,13 @@ function pe_fetch_tracking($result) {
             "AWBNo" => $vendor_awb,
             "Type" => "A"
         ]);
-        $url = ($svc == 1008) ? "http://cloud.pacegroupintl.com/api/v1/Tracking/Tracking" : "https://eship.pacificexp.net/api/v1/Tracking/Tracking";
+        if (strpos($vend, 'atlantic') !== false) {
+            $url = "https://cloud.atlanticcourier.net/api/v1/Tracking/Tracking";
+        } elseif ($svc == 1008) {
+            $url = "http://cloud.pacegroupintl.com/api/v1/Tracking/Tracking";
+        } else {
+            $url = "https://eship.pacificexp.net/api/v1/Tracking/Tracking";
+        }
         PE_Data::log('Calling Pacific Express Tracking API', ['url' => $url, 'payload' => ["UserID" => $user_id, "AWBNo" => $vendor_awb, "Type" => "A"]]);
         
         $r = wp_remote_post($url, ['body' => $d, 'headers' => ['Content-Type' => 'application/json'], 'timeout' => 15, 'sslverify' => false]);

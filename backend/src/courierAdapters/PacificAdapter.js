@@ -78,10 +78,10 @@ export default class PacificAdapter extends BaseAdapter {
   buildPayload(shipmentData, authContext) {
     const credentials = parseCredentials(this.config.auth_credentials)
 
-    // Credentials — match Pacific API spec max lengths
-    const userId = this._truncate(credentials.user_id || credentials.username || credentials.UserID || 'P0503', 10)
-    const password = this._truncate(credentials.password || credentials.Password || 'P0503@7199', 10)
-    const customerCode = this._truncate(credentials.customer_code || credentials.CustomerCode || userId, 10)
+    // Credentials
+    const userId = this._truncate(credentials.user_id || credentials.username || credentials.UserID || '', 50)
+    const password = this._truncate(credentials.password || credentials.Password || '', 50)
+    const customerCode = this._truncate(credentials.customer_code || credentials.CustomerCode || userId, 50)
 
     // VendorName & ServiceName resolution
     let vendorName = ''
