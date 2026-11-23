@@ -3891,11 +3891,11 @@ export const cloneBooking = async (req, res) => {
         src.customer_type || 'walkin',
         src.sender_id ?? null,
         src.receiver_id ?? null,
-        src.courier_provider_id ?? null,
-        src.vendor_config_id ?? null,
-        src.vendor_code || '',
-        src.service_code || '',
-        src.product_code || '',
+        null, // courier_provider_id: blank on duplication
+        null, // vendor_config_id: blank on duplication
+        '',   // vendor_code: blank on duplication
+        '',   // service_code: blank on duplication
+        '',   // product_code: blank on duplication
         newTracking,
         parseFloat(src.weight) || 0,
         parseFloat(src.chargeable_weight) || 0,
@@ -3905,14 +3905,14 @@ export const cloneBooking = async (req, res) => {
         parseInt(src.no_of_pieces) || 1,
         src.content_description || '',
         parseFloat(src.declared_value) || 0,
-        parseFloat(src.cod_amount) || 0,
+        0,    // cod_amount
         src.payment_mode || 'prepaid',
         src.package_type || 'parcel',
-        parseFloat(src.total_amount) || 0,
-        parseFloat(src.shipping_charge) || 0,
-        parseFloat(src.rate_per_kg) || 0,
-        parseFloat(src.extra_charge) || 0,
-        parseFloat(src.final_chargeable_weight) || 0,
+        0,    // total_amount: blank on duplication
+        0,    // shipping_charge: blank on duplication
+        0,    // rate_per_kg: blank on duplication
+        0,    // extra_charge: blank on duplication
+        0,    // final_chargeable_weight: blank on duplication
         src.order_reference ? `${src.order_reference}-COPY` : '',
         src.remarks || '',
         src.sender_name || src.s_name || '',
@@ -3963,14 +3963,14 @@ export const cloneBooking = async (req, res) => {
       [newId, 'Shipment Booked & Order Created', 'Shipment cloned and saved as draft', src.sender_city || 'Origin Hub']
     )
 
-    // Generate invoice PDF
-    try {
-      const invoicePdfPath = await generateInvoiceForBooking(newTracking, src, src.sender_id, src.receiver_id)
-      await execute('UPDATE shipments SET invoice_pdf_path = ? WHERE id = ?', [invoicePdfPath, newId])
-    } catch {}
-
     const clonedRows = await query('SELECT * FROM shipments WHERE id = ?', [newId])
     const clonedShipment = clonedRows[0] || {}
+
+    // Generate invoice PDF for cloned draft
+    try {
+      const invoicePdfPath = await generateInvoiceForBooking(newTracking, clonedShipment, src.sender_id, src.receiver_id)
+      await execute('UPDATE shipments SET invoice_pdf_path = ? WHERE id = ?', [invoicePdfPath, newId])
+    } catch {}
 
     // Sync draft to Remote AWBENTRY and parcel_history
     try {

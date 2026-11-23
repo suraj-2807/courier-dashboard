@@ -724,7 +724,7 @@ export default function BookingDetailPage() {
                 }
               />
               <InfoField icon={Package} label="Package & Boxes" value={`${booking.package_type || 'Parcel'} (${booking.no_of_pieces || 1} Box${(parseInt(booking.no_of_pieces) || 1) > 1 ? 'es' : ''})`} />
-              <InfoField icon={CreditCard} label="Amount" value={formatCurrency(booking.total_amount)} highlight />
+              <InfoField icon={CreditCard} label="Amount" value={parseFloat(booking.total_amount || 0) > 0 ? formatCurrency(booking.total_amount) : '—'} highlight={parseFloat(booking.total_amount || 0) > 0} />
             </div>
             {booking.remarks && (
               <div className="mt-4 p-3 bg-surface-alt rounded-xl border border-border-light">
@@ -764,40 +764,41 @@ export default function BookingDetailPage() {
               <div className="bg-surface-alt p-3 rounded-xl border border-border-light">
                 <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Final Chargeable Wt</p>
                 <p className="text-[15px] font-extrabold text-navy mt-1">
-                  {parseFloat(booking.final_chargeable_weight || booking.chargeable_weight || booking.weight || 0).toFixed(2)} kg
+                  {parseFloat(booking.final_chargeable_weight || booking.chargeable_weight || booking.weight || 0) > 0 ? `${parseFloat(booking.final_chargeable_weight || booking.chargeable_weight || booking.weight || 0).toFixed(2)} kg` : '—'}
                 </p>
               </div>
 
               <div className="bg-surface-alt p-3 rounded-xl border border-border-light">
                 <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Rate / Kg</p>
                 <p className="text-[15px] font-extrabold text-text-primary mt-1">
-                  ₹{parseFloat(booking.rate_per_kg || 0).toFixed(2)}
+                  {parseFloat(booking.rate_per_kg || 0) > 0 ? `₹${parseFloat(booking.rate_per_kg).toFixed(2)}` : '—'}
                 </p>
               </div>
 
               <div className="bg-surface-alt p-3 rounded-xl border border-border-light">
                 <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Shipping Charge</p>
                 <p className="text-[15px] font-extrabold text-primary mt-1">
-                  ₹{parseFloat(booking.shipping_charge || 0).toFixed(2)}
+                  {parseFloat(booking.shipping_charge || 0) > 0 ? `₹${parseFloat(booking.shipping_charge).toFixed(2)}` : '—'}
                 </p>
               </div>
 
               <div className="bg-surface-alt p-3 rounded-xl border border-border-light">
                 <p className="text-[10px] font-bold text-text-tertiary uppercase tracking-wider">Extra Charge</p>
                 <p className="text-[15px] font-extrabold text-amber-700 mt-1">
-                  ₹{parseFloat(booking.extra_charge || 0).toFixed(2)}
+                  {parseFloat(booking.extra_charge || 0) > 0 ? `₹${parseFloat(booking.extra_charge).toFixed(2)}` : '—'}
                 </p>
               </div>
 
               <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-200 col-span-2 sm:col-span-1">
                 <p className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Final Shipping</p>
                 <p className="text-[16px] font-black text-emerald-700 mt-1">
-                  ₹{(() => {
+                  {(() => {
                     const ship = parseFloat(booking.shipping_charge) || 0
                     const extra = parseFloat(booking.extra_charge) || 0
                     const sum = ship + extra
-                    if (sum > 0) return sum.toFixed(2)
-                    return (parseFloat(booking.total_amount) || 0).toFixed(2)
+                    if (sum > 0) return `₹${sum.toFixed(2)}`
+                    const tot = parseFloat(booking.total_amount) || 0
+                    return tot > 0 ? `₹${tot.toFixed(2)}` : '—'
                   })()}
                 </p>
               </div>
