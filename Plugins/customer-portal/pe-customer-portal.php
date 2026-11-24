@@ -651,12 +651,17 @@ function pe_cp_ajax_shipments()
         }
 
         // Status = FULL tracking activity text (show real tracking update)
-        if ($is_delivered) {
+        $st_shp = (!empty($shp) && !empty($shp->status)) ? strtolower(trim($shp->status)) : '';
+        $is_shp_draft = ($st_shp === 'draft' && ($shp->vendor_push_status ?? '') !== 'success' && intval($shp->is_locked ?? 0) === 0);
+
+        if ($is_shp_draft) {
+            $status = 'Shipment Booked';
+        } elseif ($is_delivered) {
             $status = (!empty($ph) && preg_match('/\b(deliver|dlvd|pod|proof|sign|delivery\s*order.*collected|do\s*collected)\b/i', $ph) && !preg_match('/out for|undeliver/i', $ph)) ? $ph : 'Proof of Delivery';
         } elseif (!empty($ph)) {
             $status = $ph; // Full tracking activity text
-        } elseif (!empty($shp->status) && !in_array(strtolower($shp->status), ['booked', 'created', 'pending'])) {
-            $status = ucwords(str_replace('_', ' ', strtolower(trim($shp->status))));
+        } elseif (!empty($shp->status) && !in_array($st_shp, ['booked', 'created', 'pending'])) {
+            $status = ucwords(str_replace('_', ' ', $st_shp));
         } elseif (!empty($fwd)) {
             $status = 'In Transit';
         } else {
@@ -961,23 +966,30 @@ function pe_cp_ajax_track_status()
 
     // 3. Fallback to parcel_history if live API failed or returned nothing
     if (empty($status)) {
-        $latest_ph = $wpdb->get_row($wpdb->prepare(
-            "SELECT activity, date, time, location FROM parcel_history WHERE AWBNO = %d ORDER BY date DESC, time DESC LIMIT 1",
-            $awb
-        ));
-        if ($latest_ph && !empty($latest_ph->activity)) {
-            $status = trim($latest_ph->activity);
-            $parts = [];
-            if (!empty($latest_ph->location)) $parts[] = trim($latest_ph->location);
-            if (!empty($latest_ph->date)) {
-                $dtStr = date('d M Y', strtotime($latest_ph->date));
-                $tmStr = (!empty($latest_ph->time) && $latest_ph->time !== '00:00:00') ? ' ' . date('h:i A', strtotime($latest_ph->time)) : '';
-                $parts[] = $dtStr . $tmStr;
-            }
-            $last_update = implode(' · ', $parts);
+        $adm_st_lower = strtolower(trim($admin_shp['status'] ?? ''));
+        $is_admin_draft = ($adm_st_lower === 'draft' && ($admin_shp['vendor_push_status'] ?? '') !== 'success' && intval($admin_shp['is_locked'] ?? 0) === 0);
 
-            if (preg_match('/\b(delivered|dlvd|proof of delivery|signed by|pod)\b/i', $status) && !preg_match('/out for|undeliver|not delivered|attempt|fail|expected|scheduled/i', $status)) {
-                $is_delivered = true;
+        if ($is_admin_draft) {
+            $status = 'Shipment Booked';
+        } else {
+            $latest_ph = $wpdb->get_row($wpdb->prepare(
+                "SELECT activity, date, time, location FROM parcel_history WHERE AWBNO = %d ORDER BY date DESC, time DESC LIMIT 1",
+                $awb
+            ));
+            if ($latest_ph && !empty($latest_ph->activity)) {
+                $status = trim($latest_ph->activity);
+                $parts = [];
+                if (!empty($latest_ph->location)) $parts[] = trim($latest_ph->location);
+                if (!empty($latest_ph->date)) {
+                    $dtStr = date('d M Y', strtotime($latest_ph->date));
+                    $tmStr = (!empty($latest_ph->time) && $latest_ph->time !== '00:00:00') ? ' ' . date('h:i A', strtotime($latest_ph->time)) : '';
+                    $parts[] = $dtStr . $tmStr;
+                }
+                $last_update = implode(' · ', $parts);
+
+                if (preg_match('/\b(delivered|dlvd|proof of delivery|signed by|pod)\b/i', $status) && !preg_match('/out for|undeliver|not delivered|attempt|fail|expected|scheduled/i', $status)) {
+                    $is_delivered = true;
+                }
             }
         }
     }
@@ -1372,7 +1384,34 @@ function pe_cp_ajax_shipment_detail()
     $raw_bdate = (!empty($row->AWBDATE) && $row->AWBDATE !== '0000-00-00') ? $row->AWBDATE : current_time('Y-m-d');
     $bDateFormatted = date('d/m/Y', strtotime($raw_bdate));
 
-    $is_dispatched = !empty($row->VENDORID1) || !empty($row->VENDORID2) || !empty($row->VENDNAME) || intval($row->SERVICE ?? 0) > 0 || (!empty($shp) && (!empty($shp->vendor_awb_number) || $shp->vendor_push_status === 'success' || $shp->is_locked == 1));
+    $has_real_vendor_awb = false;
+    $v1 = trim(strval($row->VENDORID1 ?? ''));
+    $v2 = trim(strval($row->VENDORID2 ?? ''));
+    $awb_str = strval($row->AWBNO ?? '');
+    if (!empty($v1) && $v1 !== $awb_str && $v1 !== '0' && $v1 !== '0.00' && strtolower($v1) !== 'none') {
+        $has_real_vendor_awb = true;
+    }
+    if (!empty($v2) && $v2 !== $awb_str && $v2 !== '0' && $v2 !== '0.00' && strtolower($v2) !== 'none') {
+        $has_real_vendor_awb = true;
+    }
+
+    $is_dispatched = false;
+    if (!empty($shp)) {
+        $st_shp = strtolower(trim($shp->status ?? ''));
+        $is_dispatched = (
+            ($shp->vendor_push_status ?? '') === 'success' ||
+            intval($shp->is_locked ?? 0) === 1 ||
+            intval($shp->is_pushed_to_vendor ?? 0) === 1 ||
+            (!empty($shp->vendor_awb_number) && $shp->vendor_awb_number !== $shp->tracking_number) ||
+            $has_real_vendor_awb ||
+            in_array($st_shp, ['in_transit', 'dispatched', 'manifested', 'out_for_delivery', 'delivered', 'pod'])
+        );
+        if ($st_shp === 'draft' && ($shp->vendor_push_status ?? '') !== 'success' && intval($shp->is_locked ?? 0) === 0 && !$has_real_vendor_awb) {
+            $is_dispatched = false;
+        }
+    } else {
+        $is_dispatched = $has_real_vendor_awb;
+    }
 
     // Filter out vendor generic placeholders and previous duplicates of company events
     $vendor_placeholders = [
@@ -1383,7 +1422,13 @@ function pe_cp_ajax_shipment_detail()
     foreach ($tracking_events as $ev) {
         $act = strtolower(trim($ev['activity'] ?? ''));
         $loc = strtolower(trim($ev['location'] ?? ''));
-        if (strpos($loc, 'prince express') !== false || strpos($act, 'shipment booked & order created') !== false || strpos($act, 'manifested & dispatched') !== false) {
+
+        // If draft, strictly remove any manifest or dispatch events
+        if (!$is_dispatched && (strpos($act, 'manifest') !== false || strpos($act, 'dispatch') !== false)) {
+            continue;
+        }
+
+        if (strpos($loc, 'prince express') !== false || strpos($act, 'shipment booked') !== false || strpos($act, 'order created') !== false || strpos($act, 'manifested') !== false || strpos($act, 'dispatched') !== false) {
             continue; // Re-add canonically with correct dates and locations
         }
         $skip = false;
@@ -1438,22 +1483,19 @@ function pe_cp_ajax_shipment_detail()
         if (empty($live_stage)) {
             $live_stage = 'in_transit';
         }
+        $tracking_events = array_merge($clean_events, $company_events);
     } else {
+        // DRAFT: strictly ONLY the single booking event
         $company_events[] = [
             'activity' => 'Shipment Booked & Order Created',
             'date' => $bDateFormatted,
             'time' => '10:00 AM',
             'location' => $origin_location . ' (PRINCE EXPRESS)'
         ];
-        if (empty($live_status)) {
-            $live_status = 'Shipment Booked & Order Created';
-        }
-        if (empty($live_stage)) {
-            $live_stage = 'booked';
-        }
+        $live_status = 'Shipment Booked & Order Created';
+        $live_stage = 'booked';
+        $tracking_events = $company_events;
     }
-
-    $tracking_events = array_merge($clean_events, $company_events);
 
     // Sort newest on top (descending)
     usort($tracking_events, function($a, $b) {
@@ -2662,7 +2704,15 @@ function pe_cp_ajax_export_shipments_excel()
     // Output AWBENTRY rows
     foreach ($rows as $r) {
         $status = 'Shipment Booked';
-        if (intval($r->PODTOWEB ?? 0) === 1 || strval($r->PODTOWEB ?? '') === '1') {
+        $shp_row = $wpdb->get_row($wpdb->prepare(
+            "SELECT status, vendor_push_status, is_locked, vendor_awb_number FROM shipments WHERE tracking_number = %s OR order_id = %s LIMIT 1",
+            strval($r->AWBNO), strval($r->AWBNO)
+        ));
+        $is_draft_row = ($shp_row && strtolower(trim($shp_row->status ?? '')) === 'draft' && ($shp_row->vendor_push_status ?? '') !== 'success' && intval($shp_row->is_locked ?? 0) === 0);
+
+        if ($is_draft_row) {
+            $status = 'Shipment Booked';
+        } elseif (intval($r->PODTOWEB ?? 0) === 1 || strval($r->PODTOWEB ?? '') === '1') {
             $status = 'Delivered';
         } else {
             $latest_ph = $wpdb->get_var($wpdb->prepare(
@@ -2671,7 +2721,7 @@ function pe_cp_ajax_export_shipments_excel()
             ));
             if ($latest_ph && trim($latest_ph)) {
                 $status = trim($latest_ph);
-            } elseif (!empty($r->VENDORAWB1)) {
+            } elseif (!empty($r->VENDORAWB1) && strval($r->VENDORAWB1) !== strval($r->AWBNO)) {
                 $status = 'In Transit';
             }
         }

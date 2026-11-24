@@ -911,16 +911,23 @@ export async function autoSyncParcelHistoryEntries(pool, shipment, awbNo, sender
     }
 
     // 2. Check if shipment has been pushed to vendor / dispatched
-    const isPushed = !!(
-      shipment.is_pushed_to_vendor ||
+    const isExplicitDraft = String(shipment.status || '').toLowerCase() === 'draft' && shipment.vendor_push_status !== 'success' && !shipment.is_locked && !shipment.is_pushed_to_vendor
+
+    const hasRealVendorAwb = Boolean(
+      (vendorAwb && String(vendorAwb).trim() !== '' && String(vendorAwb).trim() !== String(awbNo) && String(vendorAwb).trim() !== '0') ||
+      (shipment.vendor_awb_number && String(shipment.vendor_awb_number).trim() !== '' && String(shipment.vendor_awb_number).trim() !== String(awbNo) && String(shipment.vendor_awb_number).trim() !== '0') ||
+      (shipment.vendor_awb && String(shipment.vendor_awb).trim() !== '' && String(shipment.vendor_awb).trim() !== String(awbNo) && String(shipment.vendor_awb).trim() !== '0') ||
+      (vendorResult?.vendorAwb && String(vendorResult.vendorAwb).trim() !== String(awbNo) && String(vendorResult.vendorAwb).trim() !== '0') ||
+      (vendorResult?.awbNo && String(vendorResult.awbNo).trim() !== String(awbNo) && String(vendorResult.awbNo).trim() !== '0') ||
+      (vendorResult?.awbNumber && String(vendorResult.awbNumber).trim() !== String(awbNo) && String(vendorResult.awbNumber).trim() !== '0')
+    )
+
+    const isPushed = !isExplicitDraft && (
+      Boolean(shipment.is_pushed_to_vendor) ||
       shipment.vendor_push_status === 'success' ||
-      shipment.vendor_awb ||
-      shipment.vendor_awb_number ||
-      vendorAwb ||
-      vendorResult?.vendorAwb ||
-      vendorResult?.awbNo ||
-      vendorResult?.awbNumber ||
-      ['manifested', 'dispatched', 'in_transit'].includes(String(shipment.tracking_status || shipment.status || '').toLowerCase())
+      Boolean(shipment.is_locked) ||
+      hasRealVendorAwb ||
+      ['manifested', 'dispatched', 'in_transit', 'out_for_delivery', 'delivered'].includes(String(shipment.tracking_status || shipment.status || '').toLowerCase())
     )
 
     if (isPushed) {
@@ -929,13 +936,28 @@ export async function autoSyncParcelHistoryEntries(pool, shipment, awbNo, sender
         [awbNo]
       )
       if (existingManifest.length === 0) {
-        const pushDate = formatToYMD(shipment.pushed_at || shipment.last_push_at || new Date())
+        let pushDate = bDate
+        let pushTime = currentTime
+        if (shipment.pushed_at || shipment.last_push_at) {
+          const pRaw = shipment.pushed_at || shipment.last_push_at
+          pushDate = formatToYMD(pRaw)
+          const pObj = new Date(pRaw)
+          if (!isNaN(pObj.getTime())) {
+            pushTime = pObj.toTimeString().split(' ')[0] || currentTime
+          }
+        }
         console.log(`[Remote parcel_history AutoSync] Inserting MANIFESTED & DISPATCHED for AWBNO ${awbNo} on ${pushDate}...`)
         await pool.execute(
           'INSERT INTO parcel_history (AWBNO, `date`, `time`, activity, location) VALUES (?, ?, ?, ?, ?)',
-          [awbNo, pushDate, currentTime, 'MANIFESTED & DISPATCHED', loc]
+          [awbNo, pushDate, pushTime, 'MANIFESTED & DISPATCHED', loc]
         )
       }
+    } else {
+      // Draft shipment: clean up any errantly inserted manifest/dispatch records from parcel_history
+      await pool.execute(
+        "DELETE FROM parcel_history WHERE AWBNO = ? AND (activity LIKE '%MANIFEST%' OR activity LIKE '%DISPATCH%')",
+        [awbNo]
+      )
     }
   } catch (err) {
     console.error('[Remote parcel_history AutoSync] Error:', err.message)

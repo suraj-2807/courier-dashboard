@@ -133,46 +133,91 @@ class PE_Data {
                 ]);
             }
 
-            // 2. Auto-create parcel_history "MANIFESTED & DISPATCHED" if pushed and missing
-            $is_dispatched_init = !empty($r->VENDORID1) || !empty($r->VENDORID2) || !empty($r->VENDNAME) || intval($r->SERVICE ?? 0) > 0;
+            // 2. Determine if shipment is dispatched/pushed to vendor or draft
+            $shp_init = $wpdb->get_row($wpdb->prepare(
+                "SELECT id, status, is_locked, vendor_push_status, is_pushed_to_vendor, vendor_awb_number, pushed_at, last_push_at, updated_at 
+                 FROM shipments 
+                 WHERE (tracking_number = %s OR order_id = %s) LIMIT 1",
+                strval($awb_row->AWBNO), strval($awb_row->AWBNO)
+            ));
+
+            $has_real_vendor_awb = false;
+            $v1 = trim(strval($r->VENDORID1 ?? ''));
+            $v2 = trim(strval($r->VENDORID2 ?? ''));
+            $awb_str = strval($awb_row->AWBNO ?? '');
+            if (!empty($v1) && $v1 !== $awb_str && $v1 !== '0' && $v1 !== '0.00' && strtolower($v1) !== 'none') {
+                $has_real_vendor_awb = true;
+            }
+            if (!empty($v2) && $v2 !== $awb_str && $v2 !== '0' && $v2 !== '0.00' && strtolower($v2) !== 'none') {
+                $has_real_vendor_awb = true;
+            }
+
+            $is_dispatched_init = false;
+            if ($shp_init) {
+                $st_init = strtolower(trim($shp_init->status ?? ''));
+                $is_dispatched_init = (
+                    $shp_init->vendor_push_status === 'success' ||
+                    intval($shp_init->is_locked ?? 0) === 1 ||
+                    intval($shp_init->is_pushed_to_vendor ?? 0) === 1 ||
+                    (!empty($shp_init->vendor_awb_number) && $shp_init->vendor_awb_number !== $shp_init->tracking_number) ||
+                    $has_real_vendor_awb ||
+                    in_array($st_init, ['in_transit', 'dispatched', 'manifested', 'out_for_delivery', 'delivered', 'pod'])
+                );
+                // If explicitly draft in shipments table, it is not dispatched
+                if ($st_init === 'draft' && $shp_init->vendor_push_status !== 'success' && intval($shp_init->is_locked ?? 0) === 0 && !$has_real_vendor_awb) {
+                    $is_dispatched_init = false;
+                }
+            } else {
+                $is_dispatched_init = $has_real_vendor_awb;
+            }
+
             if ($is_dispatched_init) {
                 $has_manifest = $wpdb->get_var($wpdb->prepare(
                     "SELECT COUNT(*) FROM parcel_history WHERE AWBNO = %d AND (activity LIKE '%%MANIFEST%%' OR activity LIKE '%%DISPATCH%%')", $history_awb_no
                 ));
                 if (!$has_manifest) {
                     $p_date = current_time('Y-m-d');
-                    $shp = $wpdb->get_row($wpdb->prepare(
-                        "SELECT pushed_at, last_push_at, updated_at FROM shipments WHERE (tracking_number = %s OR order_id = %s) LIMIT 1",
-                        $awb_row->AWBNO, $awb_row->AWBNO
-                    ));
-                    if ($shp) {
-                        $p_raw = !empty($shp->pushed_at) ? $shp->pushed_at : (!empty($shp->last_push_at) ? $shp->last_push_at : $shp->updated_at);
-                        if ($p_raw) $p_date = date('Y-m-d', strtotime($p_raw));
+                    $p_time = '11:15:00';
+                    if ($shp_init) {
+                        $p_raw = !empty($shp_init->pushed_at) ? $shp_init->pushed_at : (!empty($shp_init->last_push_at) ? $shp_init->last_push_at : $shp_init->updated_at);
+                        if ($p_raw) {
+                            $p_date = date('Y-m-d', strtotime($p_raw));
+                            $p_time = date('H:i:s', strtotime($p_raw));
+                        }
                     }
                     self::log('Creating parcel_history Entry: MANIFESTED & DISPATCHED', ['AWBNO' => $history_awb_no, 'date' => $p_date]);
                     $wpdb->insert('parcel_history', [
                         'AWBNO'    => $history_awb_no,
                         'date'     => $p_date,
-                        'time'     => current_time('H:i:s'),
+                        'time'     => $p_time,
                         'activity' => 'MANIFESTED & DISPATCHED',
                         'location' => strtoupper(trim($awb_row->ORIGIN ?: 'SURAT')),
                     ]);
+                }
+            } else {
+                // If it is a draft, clean up any errantly inserted manifest/dispatch records from parcel_history
+                if ($shp_init && strtolower(trim($shp_init->status ?? '')) === 'draft') {
+                    $wpdb->query($wpdb->prepare(
+                        "DELETE FROM parcel_history WHERE AWBNO = %d AND (activity LIKE %s OR activity LIKE %s)",
+                        $history_awb_no, '%MANIFEST%', '%DISPATCH%'
+                    ));
                 }
             }
 
             self::$result = $r;
 
-            // Tracking: check vendor API first if configured, else fallback to parcel_history
+            // Tracking: check vendor API only if dispatched and configured, else fallback to parcel_history
             $api = intval($r->API);
             $svc = intval($r->SERVICE);
             $vend = strtolower(trim(($r->VENDNAME ?? '') . ' ' . ($r->VENDCODE ?? '')));
-            $should_fetch_api = ($api == 1 || $svc > 0 || !empty($vend));
+            $should_fetch_api = $is_dispatched_init && ($api == 1 || $svc > 0 || !empty($vend));
 
             self::log('Evaluating API Tracking Eligibility', [
                 'AUTOTRACK' => $api,
                 'SERVICE' => $svc,
                 'VENDNAME' => $r->VENDNAME,
                 'VENDCODE' => $r->VENDCODE,
+                'is_dispatched' => $is_dispatched_init,
                 'should_fetch_api' => $should_fetch_api
             ]);
 
@@ -186,7 +231,7 @@ class PE_Data {
                 }
             }
 
-            // Fallback: if API returned no events, read from local parcel_history table
+            // Fallback: if API returned no events or not dispatched, read from local parcel_history table
             if (empty(self::$tracking)) {
                 $rows = $wpdb->get_results($wpdb->prepare(
                     "SELECT * FROM parcel_history WHERE AWBNO = %d ORDER BY date ASC, time ASC", $history_awb_no
@@ -194,6 +239,11 @@ class PE_Data {
                 self::log('Local parcel_history Rows Fetched', ['count' => count($rows ?: [])]);
                 if ($rows) {
                     foreach ($rows as $rw) {
+                        $act_lower = strtolower(trim($rw->activity ?? ''));
+                        // If draft, do NOT include any manifest or dispatch activity from parcel_history
+                        if (!$is_dispatched_init && (strpos($act_lower, 'manifest') !== false || strpos($act_lower, 'dispatch') !== false)) {
+                            continue;
+                        }
                         $loc = $rw->location ?? '';
                         if (preg_match('/^\d+$/', trim($loc))) $loc = '';
                         self::$tracking[] = [
@@ -205,8 +255,12 @@ class PE_Data {
                     }
                 }
                 if (!empty(self::$tracking)) {
-                    $latest = end(self::$tracking);
-                    self::$status = !empty($latest['activity']) ? $latest['activity'] : "In Transit";
+                    if (!$is_dispatched_init) {
+                        self::$status = "Shipment Booked & Order Created";
+                    } else {
+                        $latest = end(self::$tracking);
+                        self::$status = !empty($latest['activity']) ? $latest['activity'] : "In Transit";
+                    }
                     $r->STATUS = self::$status;
                 } else {
                     self::$status = "Booked";
@@ -366,15 +420,73 @@ function pe_attach_company_origin_events(&$tracking, $result) {
         return true;
     }));
 
+    global $wpdb;
+    $awb_no_str = strval($result->AWBNO ?? '');
+    $awb_no_int = intval(preg_replace('/\D/', '', $awb_no_str));
+
+    $shp = null;
+    if (!empty($awb_no_str)) {
+        $shp = $wpdb->get_row($wpdb->prepare(
+            "SELECT id, status, is_locked, vendor_push_status, is_pushed_to_vendor, vendor_awb_number, pushed_at, last_push_at, updated_at 
+             FROM shipments 
+             WHERE (tracking_number = %s OR order_id = %s) LIMIT 1",
+            $awb_no_str, $awb_no_str
+        ));
+    }
+
+    $has_real_vendor_awb = false;
+    $v1 = trim(strval($result->VENDORID1 ?? ''));
+    $v2 = trim(strval($result->VENDORID2 ?? ''));
+    if (!empty($v1) && $v1 !== $awb_no_str && $v1 !== '0' && $v1 !== '0.00' && strtolower($v1) !== 'none') {
+        $has_real_vendor_awb = true;
+    }
+    if (!empty($v2) && $v2 !== $awb_no_str && $v2 !== '0' && $v2 !== '0.00' && strtolower($v2) !== 'none') {
+        $has_real_vendor_awb = true;
+    }
+
+    $is_dispatched = false;
+    if ($shp) {
+        $ship_status = strtolower(trim($shp->status ?? ''));
+        $is_dispatched = (
+            $shp->vendor_push_status === 'success' ||
+            intval($shp->is_locked ?? 0) === 1 ||
+            intval($shp->is_pushed_to_vendor ?? 0) === 1 ||
+            (!empty($shp->vendor_awb_number) && $shp->vendor_awb_number !== $shp->tracking_number) ||
+            $has_real_vendor_awb ||
+            in_array($ship_status, ['in_transit', 'dispatched', 'manifested', 'out_for_delivery', 'delivered', 'pod'])
+        );
+        // If explicitly draft in shipments table, it is strictly not dispatched
+        if ($ship_status === 'draft' && $shp->vendor_push_status !== 'success' && intval($shp->is_locked ?? 0) === 0 && !$has_real_vendor_awb) {
+            $is_dispatched = false;
+        }
+    } else {
+        $is_dispatched = $has_real_vendor_awb;
+    }
+
+    // Clean tracking events: remove duplicates of company origin events
+    $clean_tracking = [];
+    foreach ($tracking as $ev) {
+        $act = strtolower(trim($ev['activity'] ?? ($ev['status'] ?? '')));
+        $loc = strtolower(trim($ev['location'] ?? ''));
+
+        // If draft, strictly remove any manifest or dispatch events
+        if (!$is_dispatched && (strpos($act, 'manifest') !== false || strpos($act, 'dispatch') !== false)) {
+            continue;
+        }
+
+        // Remove any prior company origin events to re-add canonically
+        if (strpos($loc, 'prince express') !== false || strpos($act, 'shipment booked') !== false || strpos($act, 'order created') !== false || strpos($act, 'manifested & dispatched') !== false) {
+            continue;
+        }
+
+        $clean_tracking[] = $ev;
+    }
+
     $company_events = [];
-    $is_dispatched = !empty($result->VENDORID1) || !empty($result->VENDORID2) || !empty($result->VENDNAME) || intval($result->SERVICE ?? 0) > 0 || !empty($tracking);
 
     if ($is_dispatched) {
-        // Find actual push / manifest date from parcel_history or shipments table
-        global $wpdb;
         $dispatch_date = '';
         $dispatch_time = '11:15 AM';
-        $awb_no_int = intval(preg_replace('/\D/', '', $result->AWBNO ?? ''));
 
         if ($awb_no_int > 0) {
             $hist_manifest = $wpdb->get_row($wpdb->prepare(
@@ -383,27 +495,20 @@ function pe_attach_company_origin_events(&$tracking, $result) {
                  ORDER BY `date` DESC, `time` DESC LIMIT 1",
                 $awb_no_int, '%MANIFEST%', '%DISPATCH%'
             ));
-            if ($hist_manifest && !empty($hist_manifest->date)) {
+            if ($hist_manifest && !empty($hist_manifest->date) && $hist_manifest->date !== '0000-00-00') {
                 $dispatch_date = pe_fdate($hist_manifest->date);
-                if (!empty($hist_manifest->time)) {
+                if (!empty($hist_manifest->time) && $hist_manifest->time !== '00:00:00') {
                     $dispatch_time = date('h:i A', strtotime($hist_manifest->time));
                 }
             }
         }
 
         // Fallback: check shipments table if available
-        if (empty($dispatch_date) && !empty($result->AWBNO)) {
-            $shp = $wpdb->get_row($wpdb->prepare(
-                "SELECT pushed_at, last_push_at, updated_at FROM shipments 
-                 WHERE (tracking_number = %s OR order_id = %s) AND (vendor_push_status = 'success' OR is_locked = 1) LIMIT 1",
-                $result->AWBNO, $result->AWBNO
-            ));
-            if ($shp) {
-                $p_raw = !empty($shp->pushed_at) ? $shp->pushed_at : (!empty($shp->last_push_at) ? $shp->last_push_at : $shp->updated_at);
-                if ($p_raw) {
-                    $dispatch_date = pe_fdate($p_raw);
-                    $dispatch_time = date('h:i A', strtotime($p_raw));
-                }
+        if (empty($dispatch_date) && $shp) {
+            $p_raw = !empty($shp->pushed_at) ? $shp->pushed_at : (!empty($shp->last_push_at) ? $shp->last_push_at : $shp->updated_at);
+            if ($p_raw) {
+                $dispatch_date = pe_fdate($p_raw);
+                $dispatch_time = date('h:i A', strtotime($p_raw));
             }
         }
 
@@ -428,7 +533,10 @@ function pe_attach_company_origin_events(&$tracking, $result) {
             'activity' => 'Shipment Booked & Order Created',
             '_pe_origin' => 1,
         ];
+
+        $tracking = array_merge($clean_tracking, $company_events);
     } else {
+        // DRAFT: strictly ONLY the single initial booked event
         $company_events[] = [
             'date' => $bdate,
             'time' => '10:00 AM',
@@ -436,16 +544,10 @@ function pe_attach_company_origin_events(&$tracking, $result) {
             'activity' => 'Shipment Booked & Order Created',
             '_pe_origin' => 1,
         ];
+        $tracking = $company_events;
+        self::$status = 'Shipment Booked & Order Created';
+        $result->STATUS = self::$status;
     }
-
-    $tracking = array_values(array_filter($tracking, function($ev) {
-        $act = strtolower(trim($ev['activity'] ?? ''));
-        if (strpos($act, 'shipment booked & order created') !== false) return false;
-        if (strpos($act, 'manifested & dispatched from origin') !== false) return false;
-        return true;
-    }));
-
-    $tracking = array_merge($tracking, $company_events);
 
     // Sort tracking events chronologically descending (newest on top)
     usort($tracking, function($a, $b) {
