@@ -1,0 +1,173 @@
+import { Routes, Route, Navigate } from 'react-router-dom'
+import ProtectedRoute from './ProtectedRoute'
+import DashboardLayout from '../layouts/DashboardLayout'
+
+import LoginPage from '../pages/LoginPage'
+import DashboardPage from '../pages/DashboardPage'
+import BookingsPage from '../pages/BookingsPage'
+import BookingDetailWithLabels from '../pages/BookingDetailWithLabels'
+import NewBookingPage from '../pages/NewBookingPage'
+import TrackingPage from '../pages/TrackingPage'
+import ApiSettingsPage from '../pages/ApiSettingsPage'
+import RatesPage from '../pages/RatesPage'
+import CustomerBookingPage from '../pages/CustomerBookingPage'
+import BookingRequestsPage from '../pages/BookingRequestsPage'
+import UsersPage from '../pages/UsersPage'
+import ProductsPage from '../pages/ProductsPage'
+import CustomersPage from '../pages/CustomersPage'
+import AccountingPage from '../pages/AccountingPage'
+
+export default function AppRoutes() {
+  return (
+    <Routes>
+      {/* Public routes */}
+      <Route path="/login" element={<LoginPage />} />
+
+      {/* Protected routes */}
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <DashboardPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/customers"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <CustomersPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/bookings"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <BookingsPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/bookings/new"
+        element={
+          <ProtectedRoute>
+            <NewBookingPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/bookings/edit/:id"
+        element={
+          <ProtectedRoute>
+            <NewBookingPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/bookings/:id"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <BookingDetailWithLabels />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/tracking"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <TrackingPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/api-settings"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <ApiSettingsPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/rates"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <RatesPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/rates/editor"
+        element={<Navigate to="/rates" replace />}
+      />
+      <Route
+        path="/vendor-rate-import"
+        element={<Navigate to="/rates" replace />}
+      />
+      <Route
+        path="/booking-requests"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <BookingRequestsPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/users"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <UsersPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/products"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <ProductsPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/accounting"
+        element={
+          <ProtectedRoute>
+            <DashboardLayout>
+              <AccountingPage />
+            </DashboardLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/senders"
+        element={<Navigate to="/users" replace />}
+      />
+
+      {/* Customer-facing routes (public — auth handled by WP plugin) */}
+      <Route path="/customer/booking" element={<CustomerBookingPage />} />
+
+      {/* Catch all */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}
