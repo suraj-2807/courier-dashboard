@@ -5,7 +5,7 @@ import DashboardLayout from '../layouts/DashboardLayout'
 import LoginPage from '../pages/LoginPage'
 import DashboardPage from '../pages/DashboardPage'
 import BookingsPage from '../pages/BookingsPage'
-import BookingDetailPage from '../pages/BookingDetailPage'
+import BookingDetailWithLabels from '../pages/BookingDetailWithLabels'
 import NewBookingPage from '../pages/NewBookingPage'
 import TrackingPage from '../pages/TrackingPage'
 import ApiSettingsPage from '../pages/ApiSettingsPage'
@@ -75,7 +75,7 @@ export default function AppRoutes() {
         element={
           <ProtectedRoute>
             <DashboardLayout>
-              <BookingDetailPage />
+              <BookingDetailWithLabels />
             </DashboardLayout>
           </ProtectedRoute>
         }
