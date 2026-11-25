@@ -249,25 +249,34 @@ export const updateApiSetting = async (req, res) => {
       values.push(body.api_url)
     }
 
-    // Build encrypted credentials from simple fields
-    if (body.user_id || body.username || body.email || body.password || body.customer_code || body.company_code || body.company_id || body.customer_id) {
-      const credentials = {}
-      if (body.user_id) credentials.user_id = body.user_id
-      if (body.username) credentials.username = body.username
-      if (body.email) credentials.email = body.email
-      if (body.password) credentials.password = body.password
-      if (body.customer_code) credentials.customer_code = body.customer_code
-      if (body.company_code) credentials.company_code = body.company_code
-      if (body.company_id) credentials.company_id = body.company_id
-      if (body.customer_id) credentials.customer_id = body.customer_id
-      setClauses.push('auth_credentials = ?')
-      values.push(encrypt(JSON.stringify(credentials)))
-    }
-
-    // Handle advanced auth_credentials object
+    const credentialFields = ['user_id', 'username', 'email', 'password', 'customer_code', 'company_code', 'company_id', 'customer_id']
+    const credentialUpdates = Object.fromEntries(
+      credentialFields.filter(field => body[field]).map(field => [field, body[field]])
+    )
+    let previousCredentials
     if (body.auth_credentials && typeof body.auth_credentials === 'object') {
       setClauses.push('auth_credentials = ?')
       values.push(encrypt(JSON.stringify(body.auth_credentials)))
+    } else if (Object.keys(credentialUpdates).length > 0) {
+      const [config] = await query(
+        'SELECT CAST(auth_credentials AS CHAR) AS auth_credentials FROM vendor_api_configs WHERE id = ?',
+        [id]
+      )
+      if (!config) {
+        return res.status(404).json({ success: false, message: 'API configuration not found' })
+      }
+
+      previousCredentials = config.auth_credentials
+      const credentials = previousCredentials ? JSON.parse(decrypt(previousCredentials)) : {}
+      if (!credentials || typeof credentials !== 'object' || Array.isArray(credentials)) {
+        throw new Error('Stored API credentials could not be read')
+      }
+      if (Object.keys(credentialUpdates).some(field => field !== 'company_code' && credentialUpdates[field] !== credentials[field])) {
+        delete credentials._cached_token
+        delete credentials._token_cached_at
+      }
+      setClauses.push('auth_credentials = ?')
+      values.push(encrypt(JSON.stringify({ ...credentials, ...credentialUpdates })))
     }
 
     if (setClauses.length === 0) {
@@ -278,11 +287,16 @@ export const updateApiSetting = async (req, res) => {
     }
 
     values.push(id)
+    const mergeCredentials = previousCredentials !== undefined
+    if (mergeCredentials) values.push(previousCredentials)
 
-    await execute(
-      `UPDATE vendor_api_configs SET ${setClauses.join(', ')} WHERE id = ?`,
+    const updated = await execute(
+      `UPDATE vendor_api_configs SET ${setClauses.join(', ')} WHERE id = ?${mergeCredentials ? ' AND BINARY auth_credentials <=> BINARY ?' : ''}`,
       values
     )
+    if (mergeCredentials && updated.affectedRows === 0) {
+      return res.status(409).json({ success: false, message: 'API credentials changed while you were editing. Reload settings and try again.' })
+    }
 
     const rows = await query(
       'SELECT * FROM vendor_api_configs WHERE id = ?',

@@ -1,6 +1,7 @@
 import GenericAdapter from './GenericAdapter.js'
 import FlySwiftAdapter from './FlySwiftAdapter.js'
 import PacificAdapter from './PacificAdapter.js'
+import AtlanticAdapter from './AtlanticAdapter.js'
 
 /**
  * Adapter Registry — resolves the correct courier adapter by vendor_code.
@@ -44,9 +45,9 @@ const ADAPTERS = {
   'pacifc': PacificAdapter,       // Support typo variation as requested
   'pacificexpress': PacificAdapter,
   'pacific_express': PacificAdapter,
-  'atlantic': PacificAdapter,     // Atlantic Courier (eShip / Awbentry Cloud platform)
-  'atlanticcourier': PacificAdapter,
-  'atlantic_courier': PacificAdapter,
+  'atlantic': AtlanticAdapter,
+  'atlanticcourier': AtlanticAdapter,
+  'atlantic_courier': AtlanticAdapter,
   // 'bluedart': BlueDartAdapter,
   // 'delhivery': DelhiveryAdapter,
 }
