@@ -280,6 +280,30 @@ const VENDOR_PRESETS = [
     }
   },
   {
+    id: 'pace',
+    name: 'Pace Group International',
+    badge: 'Xpresion Platform',
+    color: '#4338ca',
+    values: {
+      name: 'Pace Group International',
+      vendor_code: 'pace',
+      auth_type: 'inline',
+      auth_url: '',
+      shipment_api_url: 'https://cloud.pacegroupintl.com/api/v1/Awbentry/Awbentry',
+      tracking_api_url: 'https://cloud.pacegroupintl.com/api/v1/Tracking/Tracking',
+      shipment_api_method: 'POST',
+      user_id: '',
+      password: '',
+      customer_code: '',
+      company_code: '',
+      response_tracking_path: 'AWBNo',
+      response_success_path: 'Status',
+      response_success_value: 'Success',
+      environment: 'production',
+      is_active: false
+    }
+  },
+  {
     id: 'atlantic',
     name: 'Atlantic Courier',
     badge: 'eShip Platform',

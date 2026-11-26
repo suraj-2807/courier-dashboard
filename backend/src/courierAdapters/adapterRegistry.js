@@ -2,6 +2,7 @@ import GenericAdapter from './GenericAdapter.js'
 import FlySwiftAdapter from './FlySwiftAdapter.js'
 import PacificAdapter from './PacificAdapter.js'
 import AtlanticAdapter from './AtlanticAdapter.js'
+import PaceAdapter from './PaceAdapter.js'
 
 /**
  * Adapter Registry — resolves the correct courier adapter by vendor_code.
@@ -48,6 +49,7 @@ const ADAPTERS = {
   'atlantic': AtlanticAdapter,
   'atlanticcourier': AtlanticAdapter,
   'atlantic_courier': AtlanticAdapter,
+  'pace': PaceAdapter,
   // 'bluedart': BlueDartAdapter,
   // 'delhivery': DelhiveryAdapter,
 }
