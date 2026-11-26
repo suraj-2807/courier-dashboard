@@ -1,5 +1,6 @@
 import mysql from 'mysql2/promise'
 import dotenv from 'dotenv'
+import { parseCredentials } from '../courierAdapters/PacificAdapter.js'
 
 dotenv.config()
 
@@ -155,6 +156,20 @@ export function resolveVendorDetails(vendorCode, vendorName, serviceCode = null,
       if (creds && creds[k]) return String(creds[k]).trim()
     }
     return ''
+  }
+
+  if (code === 'pace' || name.includes('pace group') || svcInt === 1008) {
+    creds = parseCredentials(authCredentials)
+    return {
+      vendCode: 'PACE',
+      vendName: 'PACE GROUP',
+      service: 1008,
+      autotrack: 1,
+      accode: getCred('accode', 'customer_code', 'acc_code', 'user_id', 'userId', 'UserID'),
+      tuser: getCred('tuser', 'user_id', 'username', 'user', 'UserID', 'userId'),
+      tpass: getCred('tpass', 'password', 'Password'),
+      apikey: getCred('apikey', 'api_key', 'apiKey')
+    }
   }
 
   // 1. Pacific Courier / Pace
@@ -401,11 +416,12 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
 
     // ── Resolve Vendor & Service Details ──
     let vendorName = shipment.vendor_name || ''
-    let vendorCode = shipment.vendor_code || shipment.vac_vendor_code || ''
+    let integrationCode = shipment.vac_vendor_code || ''
+    let vendorCode = shipment.vendor_code || integrationCode
     let serviceCode = shipment.service_code || ''
-    let authCredentials = shipment.vac_auth_credentials || null
+    let authCredentials = shipment.vac_auth_credentials || shipment.vac_credentials || null
 
-    if (shipment.vendor_config_id && (!vendorName || !vendorCode || !serviceCode)) {
+    if (shipment.vendor_config_id && (!vendorName || !vendorCode || !serviceCode || !authCredentials)) {
       try {
         const configRows = await query(
           'SELECT name, vendor_code, available_services, auth_credentials FROM vendor_api_configs WHERE id = ? LIMIT 1',
@@ -414,7 +430,8 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
         if (configRows && configRows.length > 0) {
           const cfg = configRows[0]
           if (!vendorName) vendorName = cfg.name || ''
-          if (!vendorCode) vendorCode = cfg.vendor_code || ''
+          integrationCode = cfg.vendor_code || integrationCode
+          if (!vendorCode) vendorCode = integrationCode
           if (!authCredentials) authCredentials = cfg.auth_credentials
           if (!serviceCode && cfg.available_services) {
             let svcs = cfg.available_services
@@ -433,7 +450,8 @@ export async function syncToRemoteAwbEntry(shipment, vendorResult = {}) {
 
     const vendorAwb = shipment.vendor_awb_number || vendorResult.awbNumber || ''
     const vendorAwb2 = shipment.vendor_awb_number_2 || shipment.forwarding_no || vendorResult.vendorAwb2 || vendorResult.forwardingNo || vendorResult.forwarding_no || ''
-    const vendorDetails = resolveVendorDetails(vendorCode, vendorName, serviceCode, authCredentials)
+    const reportingCode = integrationCode.toLowerCase() === 'pace' ? 'pace' : vendorCode
+    const vendorDetails = resolveVendorDetails(reportingCode, vendorName, serviceCode, authCredentials)
     const productCode = shipment.product_code || 'SPX'
 
     // ── Debug log to verify mappings ──

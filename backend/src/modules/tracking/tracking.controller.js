@@ -1,3 +1,4 @@
+import { getPaceTrackingSettings, isPaceVendor } from '../../courierAdapters/PaceAdapter.js'
 import { query } from '../../config/db.js'
 import { decrypt } from '../../utils/encryption.js'
 
@@ -61,11 +62,14 @@ function determineCurrentStageAndStatus(events = [], initialStatus = '') {
 
 // ─── Pacific Express Tracking ──────────────────────────────────────
 async function trackPacific(awb, config) {
+  const pace = isPaceVendor(config) ? getPaceTrackingSettings(config) : null
+  const vendorName = pace ? 'Pace Group International' : 'Pacific Express'
+  const vendorCode = pace ? 'pace' : 'pacific'
   const creds = parseCredentials(config.auth_credentials)
-  const userId = creds.user_id || creds.username || creds.UserID || 'P0503'
-  const password = creds.password || creds.Password || 'P0503@7199'
+  const userId = pace?.userId || creds.user_id || creds.username || creds.UserID || 'P0503'
+  const password = pace?.password || creds.password || creds.Password || 'P0503@7199'
 
-  let trackingUrl = config.tracking_api_url || 'https://eship.pacificexp.net/api/v1/Tracking/Tracking'
+  let trackingUrl = pace?.trackingUrl || config.tracking_api_url || 'https://eship.pacificexp.net/api/v1/Tracking/Tracking'
   if (trackingUrl && !trackingUrl.startsWith('http://') && !trackingUrl.startsWith('https://')) {
     trackingUrl = `https://${trackingUrl}`
   }
@@ -85,7 +89,7 @@ async function trackPacific(awb, config) {
   const latencyMs = Date.now() - startTime
 
   if (!response.ok) {
-    throw new Error(`Pacific tracking API returned status ${response.status}`)
+    throw new Error(`${vendorName} tracking API returned status ${response.status}`)
   }
 
   const rawText = await response.text()
@@ -93,14 +97,14 @@ async function trackPacific(awb, config) {
   try {
     data = JSON.parse(rawText)
   } catch (e) {
-    throw new Error('Pacific tracking returned non-JSON response')
+    throw new Error(`${vendorName} tracking returned non-JSON response`)
   }
 
   // Support both flat ResponseCode and nested data.Response
   const resObj = data.Response || data
 
   if (resObj.ErrorCode !== '0' && resObj.ResponseCode !== 'RT01' && String(resObj.ErrorDisc || '').toLowerCase() !== 'success') {
-    throw new Error(resObj.ErrorDisc || 'Pacific tracking failed: invalid response')
+    throw new Error(resObj.ErrorDisc || `${vendorName} tracking failed: invalid response`)
   }
 
   const tracking = (Array.isArray(resObj.Tracking) ? resObj.Tracking[0] : resObj.Tracking) || {}
@@ -121,8 +125,8 @@ async function trackPacific(awb, config) {
   const secondaryCarrier = tracking.VendorName2 || tracking.VendorName || tracking.Vendor_Code1 || tracking.Vendor_Code || ''
 
   return {
-    vendor: 'Pacific Express',
-    vendorCode: 'pacific',
+    vendor: vendorName,
+    vendorCode,
     shipmentInfo: {
       awbNo: tracking.AWBNo || awb,
       vendorAwbNo: secondaryAwb,
@@ -134,7 +138,7 @@ async function trackPacific(awb, config) {
       destinationCountry: tracking.Destination_Country || '',
       consignee: tracking.Consignee || '',
       shipperName: tracking.Shipper_Name || '',
-      vendorName: tracking.VendorName || 'Pacific Express',
+      vendorName: tracking.VendorName || vendorName,
       serviceName: tracking.ServiceName || '',
       weight: tracking.Weight || '',
       refNo: tracking.RefNo || '',
@@ -152,8 +156,8 @@ async function trackPacific(awb, config) {
     currentStage,
     apiLog: {
       success: true,
-      vendorName: 'Pacific Express',
-      vendorCode: 'pacific',
+      vendorName,
+      vendorCode,
       endpoint: trackingUrl,
       httpStatus: response.status,
       latencyMs,
@@ -161,7 +165,7 @@ async function trackPacific(awb, config) {
       awb: String(awb).trim(),
       eventsCount: events.length,
       status: statusString,
-      message: `Live tracking synced from Pacific Express API (${events.length} events, ${latencyMs}ms)`
+      message: `Live tracking synced from ${vendorName} API (${events.length} events, ${latencyMs}ms)`
     }
   }
 }
@@ -465,6 +469,8 @@ async function trackTrackmateVendor(awb, config, defaultVendorName = 'Courier Pa
 
 // ─── Dynamic Tracker Resolver ───────────────────────────────────────
 function resolveTracker(config, vendorCode = '') {
+  if (isPaceVendor(config, vendorCode)) return trackPacific
+
   const code = (vendorCode || config?.vendor_code || '').toLowerCase().trim()
   const name = (config?.name || '').toLowerCase()
   const trackingUrl = (config?.tracking_api_url || '').toLowerCase()

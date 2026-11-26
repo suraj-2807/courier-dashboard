@@ -3,6 +3,7 @@ import path from 'path'
 import { decrypt } from '../utils/encryption.js'
 import { createAdapter } from '../courierAdapters/adapterRegistry.js'
 import { parseCredentials } from '../courierAdapters/PacificAdapter.js'
+import { isPaceVendor } from '../courierAdapters/PaceAdapter.js'
 import { query, execute } from '../config/db.js'
 
 /**
@@ -200,7 +201,8 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
     const authContext = await adapter.authenticate()
 
     // Step 4: Build payload
-    requestPayload = adapter.buildPayload(shipmentData, authContext)
+    const payload = adapter.buildPayload(shipmentData, authContext)
+    requestPayload = isPaceVendor(config) ? { ...payload, Password: '[redacted]' } : payload
 
     // Step 5: Build headers
     const headers = adapter.buildHeaders(authContext)
@@ -209,7 +211,7 @@ export async function pushShipmentToVendor(vendorConfigId, shipmentId, shipmentD
     const response = await fetch(adapter.getShipmentUrl(), {
       method: adapter.getHttpMethod(),
       headers,
-      body: JSON.stringify(requestPayload),
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(90000)
     })
 
@@ -462,7 +464,7 @@ export async function pushToVendorApi(config, shipmentData) {
     return {
       success: parsed.success,
       trackingNumber: parsed.awbNumber,
-      requestPayload: payload,
+      requestPayload: isPaceVendor(config) ? { ...payload, Password: '[redacted]' } : payload,
       responseStatus: response.status,
       responseBody,
       error: parsed.errorMessage || null
