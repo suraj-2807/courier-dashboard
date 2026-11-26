@@ -457,10 +457,11 @@ export async function syncShipmentTracking(shipmentOrId) {
       }
     }
 
-    if (!trackResult || (!trackResult.vendorAwbNo && (!trackResult.events || trackResult.events.length === 0))) {
+    if (!isPaceVendor(config, shipment.vac_vendor_code || shipment.vendor_code) &&
+        (!trackResult || (!trackResult.vendorAwbNo && (!trackResult.events || trackResult.events.length === 0)))) {
       const allConfigs = await query('SELECT * FROM vendor_api_configs WHERE is_active = TRUE ORDER BY created_at DESC')
       for (const cfg of allConfigs) {
-        if (config && cfg.id === config.id) continue
+        if (isPaceVendor(cfg) || (config && cfg.id === config.id)) continue
         const tracker = resolveTracker(cfg)
         try {
           const res = await tracker(awbToTrack, cfg)

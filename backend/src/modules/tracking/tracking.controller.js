@@ -608,6 +608,25 @@ export const liveTrack = async (req, res) => {
     }
 
     const searchStr = String(awb).trim()
+    if (isPaceVendor(null, vendor_code)) {
+      const [paceConfig] = await query(
+        `SELECT * FROM vendor_api_configs WHERE LOWER(vendor_code) = 'pace' AND is_active = TRUE LIMIT 1`
+      )
+      if (!paceConfig) {
+        return res.status(404).json({ success: false, message: 'Pace tracking is not active.' })
+      }
+
+      try {
+        const tracking = await trackPacific(searchStr, paceConfig)
+        if (tracking.events.length || tracking.shipmentInfo.awbNo) {
+          return res.json({ success: true, tracking })
+        }
+      } catch (error) {
+        return res.status(502).json({ success: false, message: error.message })
+      }
+      return res.status(404).json({ success: false, message: 'Pace returned no tracking data.' })
+    }
+
     let vendorAwbToTrack = searchStr
     let matchedShipment = null
     let vendorCode = vendor_code || ''
@@ -980,12 +999,13 @@ function attachCompanyOriginEvents(result, matchedShipment) {
       }
     }
 
-    // ── 5. Fallback: Iterate across all active vendor configs ──
-    const allConfigs = await query(
+    // Pace accepts only explicitly selected or linked shipments.
+    const allConfigs = isPaceVendor(config, vendorCode) ? [] : await query(
       `SELECT * FROM vendor_api_configs WHERE is_active = TRUE ORDER BY created_at DESC`
     )
 
     for (const cfg of allConfigs) {
+      if (isPaceVendor(cfg)) continue
       const tracker = resolveTracker(cfg)
 
       // Try tracking with vendorAwbToTrack first, and searchStr as fallback

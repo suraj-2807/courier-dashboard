@@ -2794,7 +2794,10 @@ export default function NewBookingPage() {
                       updateForm('vendor_config_id', newId)
                       const newVendor = activeVendors.find(v => String(v.id) === String(newId))
                       const isPacific = newVendor?.name?.toLowerCase().includes('pacific') || newVendor?.vendor_code?.toLowerCase()?.includes('pacific')
-                      updateForm('vendor_code', isPacific ? 'PC' : (newVendor?.vendor_code || ''))
+                      const vendorCodes = safeArr(newVendor?.available_vendor_codes)
+                      const isPace = newVendor?.vendor_code?.toLowerCase() === 'pace'
+                      const defaultVendorCode = isPace ? vendorCodes[0]?.code || '' : newVendor?.vendor_code || ''
+                      updateForm('vendor_code', isPacific ? 'PC' : defaultVendorCode)
                       
                       let defService = ''
                       const services = Array.isArray(newVendor?.available_services) ? newVendor.available_services : []
@@ -2837,6 +2840,21 @@ export default function NewBookingPage() {
                           readOnly
                           className="w-full bg-gray-100/80 text-gray-500 text-[13px] font-bold cursor-not-allowed border border-gray-200 rounded px-2.5 py-1 select-none"
                         />
+                      </CompactField>
+                    )}
+
+                    {selectedVendor?.vendor_code?.toLowerCase() === 'pace' && (
+                      <CompactField label="Vendor Code">
+                        <select
+                          value={form.vendor_code}
+                          onChange={e => updateForm('vendor_code', e.target.value)}
+                          className="w-full bg-transparent focus:outline-none text-[13px] text-gray-800 cursor-pointer font-bold"
+                        >
+                          <option value="">— Select Vendor Code —</option>
+                          {vendorVendorCodes.map(({ code, label }) => (
+                            <option key={code} value={code}>{code}{label && label !== code ? ` — ${label}` : ''}</option>
+                          ))}
+                        </select>
                       </CompactField>
                     )}
 
